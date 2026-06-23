@@ -9,8 +9,10 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -54,7 +56,12 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
-	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
+	upstreamURL, err := buildAIProxyGetURL(channel, path, r.URL.Query())
+	if err != nil {
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	request, err := http.NewRequest(http.MethodGet, upstreamURL, nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
 		return
@@ -212,6 +219,25 @@ func readAIRequestCount(body []byte, contentType string) int {
 }
 
 var errMissingModel = &aiError{"缺少模型名称"}
+
+func buildAIProxyGetURL(channel model.ModelChannel, path string, query url.Values) (string, error) {
+	upstreamURL := service.BuildModelChannelURL(channel, path)
+	if len(query) == 0 {
+		return upstreamURL, nil
+	}
+	parsed, err := url.Parse(upstreamURL)
+	if err != nil {
+		return "", err
+	}
+	upstreamQuery := parsed.Query()
+	for key, values := range query {
+		for _, value := range values {
+			upstreamQuery.Add(key, value)
+		}
+	}
+	parsed.RawQuery = upstreamQuery.Encode()
+	return parsed.String(), nil
+}
 
 func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 	if !isArkSeedanceVideo(baseURL, modelName) {

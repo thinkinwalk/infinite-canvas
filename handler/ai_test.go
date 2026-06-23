@@ -1,9 +1,22 @@
 package handler
 
 import (
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/basketikun/infinite-canvas/model"
 )
+
+func TestBuildAIProxyGetURLPreservesQuery(t *testing.T) {
+	upstreamURL, err := buildAIProxyGetURL(model.ModelChannel{BaseURL: "https://new.dszyym.com/v1"}, "/videos/task_123", url.Values{"model": {"grok-imagine-1.0-video"}})
+	if err != nil {
+		t.Fatalf("build url failed: %v", err)
+	}
+	if upstreamURL != "https://new.dszyym.com/v1/videos/task_123?model=grok-imagine-1.0-video" {
+		t.Fatalf("url = %q", upstreamURL)
+	}
+}
 
 func TestAIUpstreamErrorDetail(t *testing.T) {
 	got := aiUpstreamErrorDetail([]byte(`{"error":{"code":"InvalidParameter","message":"reference video fps is invalid"}}`))
