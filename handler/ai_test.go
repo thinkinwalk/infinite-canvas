@@ -39,6 +39,37 @@ func TestFallbackOpenAIVideoStatusUsesContentEndpoint(t *testing.T) {
 	}
 }
 
+func TestFallbackOpenAIVideoStatusTreatsForbiddenContentAsRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not ready", http.StatusForbidden)
+	}))
+	defer server.Close()
+	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-video", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	if !fallbackOpenAIVideoStatus(response, request, http.StatusForbidden) {
+		t.Fatal("fallback did not handle forbidden status")
+	}
+	if response.Body.String() != `{"id":"task_123","status":"running"}` {
+		t.Fatalf("body = %q", response.Body.String())
+	}
+}
+
+func TestFallbackOpenAIVideoStatusTreatsAnyContentErrorAsRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not ready", http.StatusBadRequest)
+	}))
+	defer server.Close()
+	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-video", nil)
+	response := httptest.NewRecorder()
+	if !fallbackOpenAIVideoStatus(response, request, http.StatusForbidden) {
+		t.Fatal("fallback did not handle forbidden status")
+	}
+	if response.Body.String() != `{"id":"task_123","status":"running"}` {
+		t.Fatalf("body = %q", response.Body.String())
+	}
+}
+
 func TestAIUpstreamErrorDetail(t *testing.T) {
 	got := aiUpstreamErrorDetail([]byte(`{"error":{"code":"InvalidParameter","message":"reference video fps is invalid"}}`))
 	if got != "InvalidParameter reference video fps is invalid" {

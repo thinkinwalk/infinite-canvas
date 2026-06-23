@@ -185,7 +185,7 @@ func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, sta
 		_, _ = fmt.Fprintf(w, `{"id":%q,"status":"completed"}`, taskID)
 		return true
 	}
-	if contentResponse.StatusCode == http.StatusNotFound || contentResponse.StatusCode == http.StatusAccepted || contentResponse.StatusCode == http.StatusTooManyRequests || contentResponse.StatusCode >= http.StatusInternalServerError {
+	if contentResponse.StatusCode >= http.StatusBadRequest {
 		_, _ = io.Copy(io.Discard, contentResponse.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
