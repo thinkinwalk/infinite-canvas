@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -15,6 +17,25 @@ func TestBuildAIProxyGetURLPreservesQuery(t *testing.T) {
 	}
 	if upstreamURL != "https://new.dszyym.com/v1/videos/task_123?model=grok-imagine-1.0-video" {
 		t.Fatalf("url = %q", upstreamURL)
+	}
+}
+
+func TestFallbackOpenAIVideoStatusUsesContentEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/videos/task_123/content" {
+			t.Fatalf("content path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer server.Close()
+	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-video", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	if !fallbackOpenAIVideoStatus(response, request, http.StatusForbidden) {
+		t.Fatal("fallback did not handle forbidden status")
+	}
+	if response.Body.String() != `{"id":"task_123","status":"completed"}` {
+		t.Fatalf("body = %q", response.Body.String())
 	}
 }
 

@@ -131,6 +131,9 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 
 	if response.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		if fallbackOpenAIVideoStatus(w, request, response.StatusCode) {
+			return
+		}
 		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
 		if onFailure != nil {
 			onFailure()
@@ -149,6 +152,47 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, response.Body)
+}
+
+func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, statusCode int) bool {
+	if statusCode != http.StatusUnauthorized && statusCode != http.StatusForbidden {
+		return false
+	}
+	path := request.URL.Path
+	if !strings.Contains(path, "/videos/") || strings.HasSuffix(path, "/content") {
+		return false
+	}
+	taskID := path[strings.LastIndex(path, "/videos/")+len("/videos/"):]
+	if taskID == "" || strings.Contains(taskID, "/") {
+		return false
+	}
+	contentURL := *request.URL
+	contentURL.Path = strings.TrimRight(request.URL.Path, "/") + "/content"
+	contentRequest, err := http.NewRequest(http.MethodGet, contentURL.String(), nil)
+	if err != nil {
+		return false
+	}
+	contentRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
+	contentResponse, err := http.DefaultClient.Do(contentRequest)
+	if err != nil {
+		return false
+	}
+	defer contentResponse.Body.Close()
+	if contentResponse.StatusCode >= http.StatusOK && contentResponse.StatusCode < http.StatusBadRequest {
+		_, _ = io.Copy(io.Discard, contentResponse.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, `{"id":%q,"status":"completed"}`, taskID)
+		return true
+	}
+	if contentResponse.StatusCode == http.StatusNotFound || contentResponse.StatusCode == http.StatusAccepted || contentResponse.StatusCode == http.StatusTooManyRequests || contentResponse.StatusCode >= http.StatusInternalServerError {
+		_, _ = io.Copy(io.Discard, contentResponse.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, `{"id":%q,"status":"running"}`, taskID)
+		return true
+	}
+	return false
 }
 
 func readAIRequest(r *http.Request) ([]byte, string, string, error) {
