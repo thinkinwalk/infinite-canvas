@@ -97,10 +97,10 @@ function validateImageSize(width: number, height: number) {
     if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error("图像总像素需在 655360 到 8294400 之间，请调整尺寸");
 }
 
-function resolveRequestSize(quality: string | undefined, size: string, model?: string) {
+function resolveRequestSize(quality: string | undefined, size: string, config: Pick<AiConfig, "channelMode" | "baseUrl" | "model">) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
-    if (isOpenAIImageModel(model)) return resolveOpenAIImageSize(value);
+    if (isOfficialOpenAIImageConfig(config)) return resolveOpenAIImageSize(value);
     const dimensions = parseImageDimensions(value);
     if (dimensions) {
         validateImageSize(dimensions.width, dimensions.height);
@@ -110,8 +110,14 @@ function resolveRequestSize(quality: string | undefined, size: string, model?: s
     throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
 }
 
-function isOpenAIImageModel(model?: string) {
-    return /^gpt-image/i.test((model || "").trim());
+function isOfficialOpenAIImageConfig(config: Pick<AiConfig, "channelMode" | "baseUrl" | "model">) {
+    if (!/^gpt-image/i.test((config.model || "").trim())) return false;
+    if (config.channelMode !== "local") return false;
+    try {
+        return new URL(config.baseUrl).hostname.replace(/^www\./, "").toLowerCase() === "api.openai.com";
+    } catch {
+        return false;
+    }
 }
 
 function resolveOpenAIImageSize(size: string) {
@@ -223,7 +229,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 export async function requestGeneration(config: AiConfig, prompt: string) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size, config.model);
+    const requestSize = resolveRequestSize(quality, config.size, config);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(config, "/images/generations"),
@@ -251,7 +257,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size, config.model);
+    const requestSize = resolveRequestSize(quality, config.size, config);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     const formData = new FormData();
     formData.set("model", config.model);
