@@ -96,6 +96,24 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	if useLingzhouResponsesImageProxy(channel, modelName, path, contentType) {
+		responsesBody, err := buildLingzhouImageResponsesBody(body)
+		if err != nil {
+			log.Printf("AI proxy build Lingzhou responses request failed: model=%s err=%v", modelName, err)
+			Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
+			return
+		}
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+			FailError(w, err)
+			return
+		}
+		copyLingzhouImageResponses(w, channel, responsesBody, readAIRequestCount(body, contentType), func() {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
+				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+			}
+		})
+		return
+	}
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -134,7 +152,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 		if fallbackOpenAIVideoStatus(w, request, response.StatusCode) {
 			return
 		}
-		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
+		log.Printf("AI upstream error: url=%s status=%d body=%s", request.URL.String(), response.StatusCode, safeUpstreamText(string(body)))
 		if onFailure != nil {
 			onFailure()
 		}
@@ -152,6 +170,104 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, response.Body)
+}
+
+func useLingzhouResponsesImageProxy(channel model.ModelChannel, modelName string, path string, contentType string) bool {
+	baseURL := strings.ToLower(channel.BaseURL)
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return path == "/images/generations" &&
+		strings.Contains(baseURL, "lingzhouai.com") &&
+		strings.HasPrefix(modelName, "gpt-image") &&
+		!strings.HasPrefix(contentType, "multipart/form-data")
+}
+
+func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
+	var payload struct {
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(payload.Model) == "" || strings.TrimSpace(payload.Prompt) == "" {
+		return nil, errMissingModel
+	}
+	return json.Marshal(map[string]any{
+		"model": payload.Model,
+		"input": payload.Prompt,
+	})
+}
+
+func copyLingzhouImageResponses(w http.ResponseWriter, channel model.ModelChannel, body []byte, count int, onFailure func()) {
+	if count < 1 {
+		count = 1
+	}
+	results := make([]map[string]string, 0, count)
+	upstreamURL := service.BuildModelChannelURL(channel, "/responses")
+	for i := 0; i < count; i++ {
+		responseBody, statusCode, err := callLingzhouImageResponses(channel, upstreamURL, body)
+		if err != nil {
+			log.Printf("AI proxy Lingzhou responses request failed: url=%s err=%v", upstreamURL, err)
+			if onFailure != nil {
+				onFailure()
+			}
+			Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
+			return
+		}
+		if statusCode >= http.StatusBadRequest {
+			log.Printf("AI Lingzhou responses upstream error: url=%s status=%d body=%s", upstreamURL, statusCode, safeUpstreamText(string(responseBody)))
+			if onFailure != nil {
+				onFailure()
+			}
+			Fail(w, aiUpstreamStatusMessage(statusCode, responseBody))
+			return
+		}
+		image, err := readLingzhouResponsesImage(responseBody)
+		if err != nil {
+			log.Printf("AI Lingzhou responses parse failed: url=%s err=%v body=%s", upstreamURL, err, safeUpstreamText(string(responseBody)))
+			if onFailure != nil {
+				onFailure()
+			}
+			Fail(w, "鎺ュ彛娌℃湁杩斿洖鍥剧墖")
+			return
+		}
+		results = append(results, map[string]string{"b64_json": image})
+	}
+	writeJSON(w, map[string]any{"data": results})
+}
+
+func callLingzhouImageResponses(channel model.ModelChannel, upstreamURL string, body []byte) ([]byte, int, error) {
+	request, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer response.Body.Close()
+	responseBody, _ := io.ReadAll(response.Body)
+	return responseBody, response.StatusCode, nil
+}
+
+func readLingzhouResponsesImage(body []byte) (string, error) {
+	var payload struct {
+		Output []struct {
+			Type   string `json:"type"`
+			Result string `json:"result"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", err
+	}
+	for _, item := range payload.Output {
+		if item.Result != "" && (item.Type == "" || item.Type == "image_generation_call") {
+			return item.Result, nil
+		}
+	}
+	return "", fmt.Errorf("missing image result")
 }
 
 func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, statusCode int) bool {

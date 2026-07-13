@@ -39,6 +39,7 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+const OPENAI_IMAGE_SIZES = ["auto", "1024x1024", "1536x1024", "1024x1536"] as const;
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -96,9 +97,10 @@ function validateImageSize(width: number, height: number) {
     if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error("图像总像素需在 655360 到 8294400 之间，请调整尺寸");
 }
 
-function resolveRequestSize(quality: string | undefined, size: string) {
+function resolveRequestSize(quality: string | undefined, size: string, model?: string) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
+    if (isOpenAIImageModel(model)) return resolveOpenAIImageSize(value);
     const dimensions = parseImageDimensions(value);
     if (dimensions) {
         validateImageSize(dimensions.width, dimensions.height);
@@ -106,6 +108,30 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     }
     if (value.includes(":")) return resolveSize(quality, value);
     throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
+}
+
+function isOpenAIImageModel(model?: string) {
+    return /^gpt-image/i.test((model || "").trim());
+}
+
+function resolveOpenAIImageSize(size: string) {
+    const value = size.trim().toLowerCase();
+    if ((OPENAI_IMAGE_SIZES as readonly string[]).includes(value)) return value;
+
+    const dimensions = parseImageDimensions(value);
+    if (dimensions) return nearestOpenAIImageSize(dimensions.width, dimensions.height);
+    if (value.includes(":")) {
+        const ratio = parseImageRatio(value);
+        return nearestOpenAIImageSize(ratio.width, ratio.height);
+    }
+    throw new Error("图像尺寸格式不支持，请使用 auto、1:1、3:2、2:3 或 1024x1024");
+}
+
+function nearestOpenAIImageSize(width: number, height: number) {
+    const ratio = width / height;
+    if (ratio > 1.2) return "1536x1024";
+    if (ratio < 0.84) return "1024x1536";
+    return "1024x1024";
 }
 
 function resolveImageDataUrl(item: Record<string, unknown>) {
@@ -197,7 +223,7 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
 export async function requestGeneration(config: AiConfig, prompt: string) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = resolveRequestSize(quality, config.size, config.model);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(config, "/images/generations"),
@@ -225,7 +251,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = resolveRequestSize(quality, config.size, config.model);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     const formData = new FormData();
     formData.set("model", config.model);

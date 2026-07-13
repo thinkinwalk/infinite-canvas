@@ -77,6 +77,38 @@ func TestAIUpstreamErrorDetail(t *testing.T) {
 	}
 }
 
+func TestUseLingzhouResponsesImageProxy(t *testing.T) {
+	if !useLingzhouResponsesImageProxy(model.ModelChannel{BaseURL: "https://image.lingzhouai.com"}, "gpt-image-2-4k", "/images/generations", "application/json") {
+		t.Fatal("Lingzhou gpt-image generation should use responses proxy")
+	}
+	if useLingzhouResponsesImageProxy(model.ModelChannel{BaseURL: "https://example.com"}, "gpt-image-2-4k", "/images/generations", "application/json") {
+		t.Fatal("non-Lingzhou channel should not use responses proxy")
+	}
+	if useLingzhouResponsesImageProxy(model.ModelChannel{BaseURL: "https://image.lingzhouai.com"}, "gpt-image-2-4k", "/images/edits", "multipart/form-data") {
+		t.Fatal("image edits should not use responses proxy")
+	}
+}
+
+func TestBuildLingzhouImageResponsesBody(t *testing.T) {
+	body, err := buildLingzhouImageResponsesBody([]byte(`{"model":"gpt-image-2-4k","prompt":"cat","size":"1024x1024"}`))
+	if err != nil {
+		t.Fatalf("build responses body failed: %v", err)
+	}
+	if string(body) != `{"input":"cat","model":"gpt-image-2-4k"}` {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+func TestReadLingzhouResponsesImage(t *testing.T) {
+	got, err := readLingzhouResponsesImage([]byte(`{"output":[{"type":"message","content":[]},{"type":"image_generation_call","result":"abc123"}]}`))
+	if err != nil {
+		t.Fatalf("read image failed: %v", err)
+	}
+	if got != "abc123" {
+		t.Fatalf("image = %q", got)
+	}
+}
+
 func TestAIUpstreamErrorDetailExplainsSensitiveVideo(t *testing.T) {
 	got := aiUpstreamErrorDetail([]byte(`{"error":{"code":"InputVideoSensitiveContentDetected.PrivacyInformation","message":"The request failed because the input video may contain real person."}}`))
 	if !strings.Contains(got, "参考视频疑似包含真人") || !strings.Contains(got, "asset://") {
