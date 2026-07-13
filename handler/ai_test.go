@@ -94,7 +94,7 @@ func TestBuildLingzhouImageResponsesBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build responses body failed: %v", err)
 	}
-	if string(body) != `{"input":"cat","model":"gpt-image-2-4k"}` {
+	if string(body) != `{"input":"cat","model":"gpt-image-2-4k","tools":[{"size":"1024x1024","type":"image_generation"}]}` {
 		t.Fatalf("body = %s", body)
 	}
 }

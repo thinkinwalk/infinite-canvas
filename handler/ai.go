@@ -11,10 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
+
+var aiHTTPClient = &http.Client{Timeout: 180 * time.Second}
 
 func AIImagesGenerations(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/images/generations")
@@ -136,7 +139,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func()) {
-	response, err := http.DefaultClient.Do(request)
+	response, err := aiHTTPClient.Do(request)
 	if err != nil {
 		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
 		if onFailure != nil {
@@ -185,6 +188,7 @@ func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 	var payload struct {
 		Model  string `json:"model"`
 		Prompt string `json:"prompt"`
+		Size   string `json:"size"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
@@ -192,9 +196,14 @@ func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 	if strings.TrimSpace(payload.Model) == "" || strings.TrimSpace(payload.Prompt) == "" {
 		return nil, errMissingModel
 	}
+	tool := map[string]any{"type": "image_generation"}
+	if strings.TrimSpace(payload.Size) != "" {
+		tool["size"] = strings.TrimSpace(payload.Size)
+	}
 	return json.Marshal(map[string]any{
 		"model": payload.Model,
 		"input": payload.Prompt,
+		"tools": []map[string]any{tool},
 	})
 }
 
@@ -243,7 +252,7 @@ func callLingzhouImageResponses(channel model.ModelChannel, upstreamURL string, 
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
 	request.Header.Set("Content-Type", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := aiHTTPClient.Do(request)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -289,7 +298,7 @@ func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, sta
 		return false
 	}
 	contentRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
-	contentResponse, err := http.DefaultClient.Do(contentRequest)
+	contentResponse, err := aiHTTPClient.Do(contentRequest)
 	if err != nil {
 		return false
 	}
