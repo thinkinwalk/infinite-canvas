@@ -90,11 +90,11 @@ func TestUseLingzhouResponsesImageProxy(t *testing.T) {
 }
 
 func TestBuildLingzhouImageResponsesBody(t *testing.T) {
-	body, err := buildLingzhouImageResponsesBody([]byte(`{"model":"gpt-image-2-4k","prompt":"cat","size":"1024x1024"}`))
+	body, err := buildLingzhouImageResponsesBody([]byte(`{"model":"gpt-image-2-4k","prompt":"cat","size":"2160x3840","quality":"high"}`))
 	if err != nil {
 		t.Fatalf("build responses body failed: %v", err)
 	}
-	if string(body) != `{"input":"cat","model":"gpt-image-2-4k","tools":[{"size":"1024x1024","type":"image_generation"}]}` {
+	if string(body) != `{"input":"cat","model":"gpt-image-2-4k","tools":[{"quality":"high","size":"2160x3840","type":"image_generation"}]}` {
 		t.Fatalf("body = %s", body)
 	}
 }

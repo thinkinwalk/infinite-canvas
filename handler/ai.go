@@ -186,9 +186,10 @@ func useLingzhouResponsesImageProxy(channel model.ModelChannel, modelName string
 
 func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 	var payload struct {
-		Model  string `json:"model"`
-		Prompt string `json:"prompt"`
-		Size   string `json:"size"`
+		Model   string `json:"model"`
+		Prompt  string `json:"prompt"`
+		Size    string `json:"size"`
+		Quality string `json:"quality"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
@@ -200,6 +201,10 @@ func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 	if strings.TrimSpace(payload.Size) != "" {
 		tool["size"] = strings.TrimSpace(payload.Size)
 	}
+	if strings.TrimSpace(payload.Quality) != "" {
+		tool["quality"] = strings.TrimSpace(payload.Quality)
+	}
+	log.Printf("AI Lingzhou responses request params: model=%s size=%s quality=%s", payload.Model, payload.Size, payload.Quality)
 	return json.Marshal(map[string]any{
 		"model": payload.Model,
 		"input": payload.Prompt,
