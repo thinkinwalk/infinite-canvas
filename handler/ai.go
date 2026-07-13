@@ -17,7 +17,7 @@ import (
 	"github.com/basketikun/infinite-canvas/service"
 )
 
-var aiHTTPClient = &http.Client{Timeout: 180 * time.Second}
+var aiHTTPClient = &http.Client{Timeout: 15 * time.Minute}
 
 func AIImagesGenerations(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/images/generations")
