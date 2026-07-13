@@ -117,6 +117,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		})
 		return
 	}
+	logAIImageUpstreamParams(channel, path, modelName, body, contentType)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -178,10 +179,46 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 func useLingzhouResponsesImageProxy(channel model.ModelChannel, modelName string, path string, contentType string) bool {
 	baseURL := strings.ToLower(channel.BaseURL)
 	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	if modelName == "gpt-image-2-2k" || modelName == "gpt-image-2-4k" {
+		return false
+	}
 	return path == "/images/generations" &&
 		strings.Contains(baseURL, "lingzhouai.com") &&
 		strings.HasPrefix(modelName, "gpt-image") &&
 		!strings.HasPrefix(contentType, "multipart/form-data")
+}
+
+func logAIImageUpstreamParams(channel model.ModelChannel, path string, modelName string, body []byte, contentType string) {
+	if path != "/images/generations" && path != "/images/edits" {
+		return
+	}
+	var size string
+	var quality string
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		_, params, err := mime.ParseMediaType(contentType)
+		if err == nil {
+			form, formErr := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+			if formErr == nil {
+				defer form.RemoveAll()
+				if values := form.Value["size"]; len(values) > 0 {
+					size = values[0]
+				}
+				if values := form.Value["quality"]; len(values) > 0 {
+					quality = values[0]
+				}
+			}
+		}
+	} else {
+		var payload struct {
+			Size    string `json:"size"`
+			Quality string `json:"quality"`
+		}
+		if err := json.Unmarshal(body, &payload); err == nil {
+			size = payload.Size
+			quality = payload.Quality
+		}
+	}
+	log.Printf("AI image upstream request params: url=%s model=%s size=%s quality=%s", service.BuildModelChannelURL(channel, path), modelName, size, quality)
 }
 
 func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {

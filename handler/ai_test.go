@@ -78,8 +78,15 @@ func TestAIUpstreamErrorDetail(t *testing.T) {
 }
 
 func TestUseLingzhouResponsesImageProxy(t *testing.T) {
-	if !useLingzhouResponsesImageProxy(model.ModelChannel{BaseURL: "https://image.lingzhouai.com"}, "gpt-image-2-4k", "/images/generations", "application/json") {
-		t.Fatal("Lingzhou gpt-image generation should use responses proxy")
+	channel := model.ModelChannel{BaseURL: "https://image.lingzhouai.com"}
+	if useLingzhouResponsesImageProxy(channel, "gpt-image-2-4k", "/images/generations", "application/json") {
+		t.Fatal("Lingzhou 4k mapped model should preserve the images generation endpoint")
+	}
+	if useLingzhouResponsesImageProxy(channel, "gpt-image-2-2k", "/images/generations", "application/json") {
+		t.Fatal("Lingzhou 2k mapped model should preserve the images generation endpoint")
+	}
+	if !useLingzhouResponsesImageProxy(channel, "gpt-image-2", "/images/generations", "application/json") {
+		t.Fatal("Lingzhou base gpt-image generation should keep using the responses proxy")
 	}
 	if useLingzhouResponsesImageProxy(model.ModelChannel{BaseURL: "https://example.com"}, "gpt-image-2-4k", "/images/generations", "application/json") {
 		t.Fatal("non-Lingzhou channel should not use responses proxy")
