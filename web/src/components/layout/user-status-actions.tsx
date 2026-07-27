@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { App, Form, Input, Modal, Segmented } from "antd";
-import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, Shield, UserRound } from "lucide-react";
+import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, Shield, UserRound, Zap } from "lucide-react";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
@@ -39,6 +39,17 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const canvasTheme = canvasThemes[theme];
     const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
+    const userName = user?.displayName || user?.username || "用户";
+    const hasCredits = typeof user?.credits === "number";
+    const formattedCredits = hasCredits ? new Intl.NumberFormat("zh-CN").format(user.credits) : "";
+    const creditStyle: CSSProperties | undefined =
+        variant === "canvas"
+            ? {
+                  color: canvasTheme.node.text,
+                  borderColor: canvasTheme.toolbar.border,
+                  backgroundColor: canvasTheme.toolbar.panel,
+              }
+            : undefined;
     const authOptions: Array<{ label: string; value: AuthMode }> = [
         { label: "登录", value: "login" },
         ...(allowRegister ? [{ label: "注册", value: "register" as const }] : []),
@@ -71,6 +82,13 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
         setAuthOpen(true);
     }
 
+    function creditBadgeClass(credits: number) {
+        if (variant === "canvas") return "border shadow-sm";
+        if (credits <= 0) return "border-red-200 bg-red-50 text-red-700 shadow-sm dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-200";
+        if (credits < 100) return "border-amber-200 bg-amber-50 text-amber-700 shadow-sm dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-100";
+        return "border-sky-200 bg-sky-50 text-sky-700 shadow-sm dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-100";
+    }
+
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
             {user ? (
@@ -80,7 +98,20 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                             <Shield className="size-4" />
                         </button>
                     ) : null}
-                    <button type="button" className={naturalIconClass} style={iconStyle} aria-label={user.displayName || user.username} title={`${user.displayName || user.username}${typeof user.credits === "number" ? ` · ${user.credits} 点` : ""}`}>
+                    {hasCredits ? (
+                        <span
+                            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold leading-none transition ${creditBadgeClass(user.credits)}`}
+                            style={creditStyle}
+                            aria-label={`剩余算力 ${formattedCredits} 点`}
+                            title={`${userName} · 剩余算力 ${formattedCredits} 点`}
+                        >
+                            <Zap className="size-3.5" />
+                            <span>算力</span>
+                            <span className="tabular-nums">{formattedCredits}</span>
+                            <span className="font-medium opacity-75">点</span>
+                        </span>
+                    ) : null}
+                    <button type="button" className={naturalIconClass} style={iconStyle} aria-label={userName} title={userName}>
                         <UserRound className="size-4" />
                     </button>
                     <button type="button" className={naturalIconClass} style={iconStyle} onClick={clearSession} aria-label="退出登录" title="退出登录">
