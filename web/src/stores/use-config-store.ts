@@ -3,6 +3,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import { apiGet } from "@/services/api/request";
+import type { AdminPublicSettings } from "@/services/api/admin";
+
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 
@@ -116,11 +119,14 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
 type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
+    publicSettings: AdminPublicSettings | null;
+    isPublicSettingsLoading: boolean;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
+    loadPublicSettings: () => Promise<void>;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
@@ -168,6 +174,7 @@ export function resolveModelScript(config: AiConfig, value: string) {
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
+    if (config.channelMode === "remote") return Boolean(model.trim());
     const channel = resolveModelChannel(config, model);
     return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
 }
@@ -177,6 +184,8 @@ export const useConfigStore = create<ConfigStore>()(
         (set, get) => ({
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
+            publicSettings: null,
+            isPublicSettingsLoading: false,
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -194,6 +203,17 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            loadPublicSettings: async () => {
+                if (get().isPublicSettingsLoading) return;
+                set({ isPublicSettingsLoading: true });
+                try {
+                    set({ publicSettings: await apiGet<AdminPublicSettings>("/api/settings") });
+                } catch {
+                    set({ publicSettings: null });
+                } finally {
+                    set({ isPublicSettingsLoading: false });
+                }
+            },
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
@@ -215,7 +235,7 @@ export const useConfigStore = create<ConfigStore>()(
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
                     config: {
                         ...config,
-                        channelMode: "local",
+                        channelMode: config.channelMode === "remote" ? "remote" : "local",
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
@@ -241,7 +261,55 @@ export const useConfigStore = create<ConfigStore>()(
 
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
-    return useMemo(() => ({ ...config, channelMode: "local" as const }), [config]);
+    const publicSettings = useConfigStore((state) => state.publicSettings);
+    return useMemo(() => resolveEffectiveConfig(config, publicSettings), [config, publicSettings]);
+}
+
+function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
+    const modelChannel = publicSettings?.modelChannel;
+    if (!modelChannel) return config;
+    const channelMode = modelChannel.allowCustomChannel ? config.channelMode : "remote";
+    if (channelMode === "local") return { ...config, channelMode };
+    return remoteConfigFromPublicSettings(config, modelChannel);
+}
+
+function remoteConfigFromPublicSettings(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"]): AiConfig {
+    const channel = createModelChannel({
+        id: "remote",
+        name: "后台渠道",
+        baseUrl: "",
+        apiKey: "",
+        apiFormat: "openai",
+        models: modelChannel.availableModels.map((name) => ({ name, capability: guessCapability(name) })),
+    });
+    const channels = [channel];
+    const models = modelOptionsFromChannels(channels);
+    const byCapability = (capability: ModelCapability) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name));
+    const textModels = byCapability("text");
+    const imageModels = byCapability("image");
+    const videoModels = byCapability("video");
+    const audioModels = byCapability("audio");
+    const pick = (preferred: string, current: string, options: string[]) => {
+        const encodedPreferred = preferred ? encodeChannelModel(channel.id, preferred) : "";
+        const encodedCurrent = normalizeModelOptionValue(current, channels);
+        if (encodedCurrent && options.includes(encodedCurrent)) return encodedCurrent;
+        if (encodedPreferred && options.includes(encodedPreferred)) return encodedPreferred;
+        return options[0] || "";
+    };
+    const textModel = pick(modelChannel.defaultTextModel || modelChannel.defaultModel, config.textModel || config.model, textModels);
+    return {
+        ...config,
+        channelMode: "remote",
+        apiFormat: "openai",
+        channels,
+        models,
+        model: pick(modelChannel.defaultModel || modelChannel.defaultTextModel, config.model, textModels) || textModel,
+        imageModel: pick(modelChannel.defaultImageModel, config.imageModel, imageModels),
+        videoModel: pick(modelChannel.defaultVideoModel, config.videoModel, videoModels),
+        textModel,
+        audioModel: pick("", config.audioModel, audioModels),
+        systemPrompt: modelChannel.systemPrompt,
+    };
 }
 
 /** Normalize a mixed list of raw model names or model objects into deduped ChannelModel entries. */

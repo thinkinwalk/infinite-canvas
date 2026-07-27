@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { App } from "antd";
 
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
@@ -11,8 +12,15 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
+    const hydrateUser = useUserStore((state) => state.hydrateUser);
 
     usePromptSourceScheduler();
+
+    useEffect(() => {
+        void loadPublicSettings();
+        void hydrateUser();
+    }, [hydrateUser, loadPublicSettings]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;

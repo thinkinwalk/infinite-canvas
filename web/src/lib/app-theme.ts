@@ -1,6 +1,14 @@
 import type { ThemeConfig } from "antd";
 import { theme as antdTheme } from "antd";
 
+export const adminLayoutStyle = {
+    siderWidth: 232,
+    brandHeight: 64,
+    headerHeight: 64,
+    menu: { borderInlineEnd: 0, padding: "12px 8px" },
+    menuItem: { borderRadius: 8, marginInline: 0, width: "100%" },
+};
+
 const neutral = {
     light: {
         primary: "#171717",

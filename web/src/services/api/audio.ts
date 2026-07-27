@@ -3,15 +3,24 @@ import axios from "axios";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
 
 function aiApiUrl(config: AiConfig, path: string) {
+    if (config.channelMode === "remote") return `/api/v1${path}`;
     return buildApiUrl(config.baseUrl, path);
 }
 
 function aiHeaders(config: AiConfig) {
+    if (config.channelMode === "remote") {
+        const token = useUserStore.getState().token;
+        return {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "Content-Type": "application/json",
+        };
+    }
     return {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
@@ -58,6 +67,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
             { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
         );
         await assertAudioBlob(response.data);
+        if (requestConfig.channelMode === "remote") void useUserStore.getState().hydrateUser();
         return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
     } catch (error) {
         throw new Error(readAxiosError(error, "音频生成失败"));
@@ -84,6 +94,7 @@ export async function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<U
 }
 
 function assertAudioConfig(config: AiConfig, model: string) {
+    if (config.channelMode === "remote" && model) return;
     if (!model) throw new Error("请先配置音频模型");
     if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
     if (!config.apiKey.trim()) throw new Error("请先配置 API Key");

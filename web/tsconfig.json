@@ -14,7 +14,10 @@
         "jsx": "react-jsx",
         "incremental": true,
         "paths": {
-            "@/*": ["./src/*"]
+            "@/*": ["./src/*"],
+            "next/link": ["./src/lib/next-shims/link.tsx"],
+            "next/navigation": ["./src/lib/next-shims/navigation.ts"],
+            "next/dynamic": ["./src/lib/next-shims/dynamic.tsx"]
         }
     },
     "include": ["vite.config.ts", "src/**/*.ts", "src/**/*.tsx"],

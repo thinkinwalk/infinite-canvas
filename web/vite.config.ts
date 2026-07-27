@@ -44,6 +44,9 @@ export default defineConfig({
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),
+            "next/link": resolve(webDir, "src/lib/next-shims/link.tsx"),
+            "next/navigation": resolve(webDir, "src/lib/next-shims/navigation.ts"),
+            "next/dynamic": resolve(webDir, "src/lib/next-shims/dynamic.tsx"),
         },
     },
     define: {

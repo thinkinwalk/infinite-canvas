@@ -1,20 +1,39 @@
-# 构建 Vite 前端产物。
-FROM oven/bun:1.3.13 AS web-build
+FROM node:22-alpine AS web-build
 
 WORKDIR /app/web
-COPY web/package.json web/bun.lock ./
-RUN --mount=type=cache,target=/root/.bun/install/cache bun install --cache-dir=/root/.bun/install/cache
+COPY web/package.json web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm install --legacy-peer-deps && npm install --legacy-peer-deps --save=false @rollup/rollup-linux-x64-musl@4.62.2 lightningcss-linux-x64-musl@1.32.0 @tailwindcss/oxide-linux-x64-musl@4.2.4
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
-RUN bun run build
+RUN npm run build
 
-# 运行镜像：只启动静态前端，AI 请求由浏览器前台直连用户自己的接口。
-FROM nginx:1.27-alpine
+FROM golang:1.25-alpine AS api-build
 
-COPY --from=web-build /app/web/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY web/docker-entrypoint.sh /docker-entrypoint.d/40-runtime-config.sh
-RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh
+WORKDIR /app
+COPY go.mod go.sum ./
+COPY config ./config
+COPY handler ./handler
+COPY middleware ./middleware
+COPY model ./model
+COPY repository ./repository
+COPY router ./router
+COPY service ./service
+COPY main.go ./
+RUN go build -o /server .
+
+FROM alpine:3.22
+
+WORKDIR /app
+COPY VERSION /app/VERSION
+COPY CHANGELOG.md /app/CHANGELOG.md
+COPY --from=api-build /server /app/server
+COPY --from=web-build /app/web/dist /app/web/dist
+RUN apk add --no-cache ca-certificates && mkdir -p /app/data/prompts
+
+ENV PORT=3000
+ENV STATIC_DIR=/app/web/dist
+ENV PROMPT_DATA_DIR=/app/data/prompts
 
 EXPOSE 3000
+CMD ["/app/server"]

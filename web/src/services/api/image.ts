@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -279,14 +280,26 @@ function withSystemPrompt(config: AiConfig, prompt: string) {
 }
 
 function aiApiUrl(config: AiConfig, path: string) {
+    if (config.channelMode === "remote") return `/api/v1${path}`;
     return buildApiUrl(config.baseUrl, path);
 }
 
 function aiHeaders(config: AiConfig, contentType?: string) {
+    if (config.channelMode === "remote") {
+        const token = useUserStore.getState().token;
+        return {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(contentType ? { "Content-Type": contentType } : {}),
+        };
+    }
     return {
         Authorization: `Bearer ${config.apiKey}`,
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
+}
+
+function refreshRemoteUser(config: AiConfig) {
+    if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
 }
 
 function geminiBaseUrl(config: Pick<AiConfig, "baseUrl">) {
@@ -711,6 +724,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             },
         );
         const images = parseImagePayload(response.data);
+        refreshRemoteUser(requestConfig);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
@@ -775,6 +789,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
         const images = parseImagePayload(response.data);
+        refreshRemoteUser(requestConfig);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
@@ -812,6 +827,7 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
             input: toResponseInput(withSystemMessage(requestConfig, messages)),
         }, onDelta, options)).content || "没有返回内容";
         if (answer === "没有返回内容") onDelta(answer);
+        refreshRemoteUser(requestConfig);
         return answer;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
