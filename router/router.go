@@ -26,6 +26,8 @@ func New() *gin.Engine {
 	api.GET("/auth/linux-do/authorize", gin.WrapF(handler.LinuxDoAuthorize))
 	api.GET("/auth/linux-do/callback", gin.WrapF(handler.LinuxDoCallback))
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
+	api.GET("/credit-logs", middleware.UserAuth, gin.WrapF(handler.UserCreditLogs))
+	api.POST("/redeem", middleware.UserAuth, gin.WrapF(handler.UserRedeemCode))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
@@ -63,6 +65,15 @@ func New() *gin.Engine {
 	admin.POST("/credit-logs", gin.WrapF(handler.AdminSaveCreditLog))
 	admin.DELETE("/credit-logs/:id", func(c *gin.Context) {
 		handler.AdminDeleteCreditLog(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/redemption-codes", gin.WrapF(handler.AdminRedemptionCodes))
+	admin.POST("/redemption-codes", gin.WrapF(handler.AdminCreateRedemptionCodes))
+	admin.DELETE("/redemption-codes/invalid", gin.WrapF(handler.AdminDeleteInvalidRedemptionCodes))
+	admin.POST("/redemption-codes/:id/status", func(c *gin.Context) {
+		handler.AdminUpdateRedemptionCodeStatus(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.DELETE("/redemption-codes/:id", func(c *gin.Context) {
+		handler.AdminDeleteRedemptionCode(c.Writer, c.Request, c.Param("id"))
 	})
 	admin.GET("/settings", gin.WrapF(handler.AdminSettings))
 	admin.POST("/settings", gin.WrapF(handler.AdminSaveSettings))

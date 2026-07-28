@@ -50,6 +50,43 @@ export type AdminCreditLogListResponse = {
     total: number;
 };
 
+export type AdminRedemptionCodeStatus = "enabled" | "disabled" | "used";
+
+export type AdminRedemptionCode = {
+    id: string;
+    code: string;
+    name: string;
+    credits: number;
+    status: AdminRedemptionCodeStatus;
+    createdBy: string;
+    usedBy: string;
+    usedAt: string;
+    expiresAt: string;
+    remark: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminRedemptionCodeListResponse = {
+    items: AdminRedemptionCode[];
+    total: number;
+};
+
+export type AdminRedemptionCodeQuery = {
+    keyword?: string;
+    type?: string;
+    page?: number;
+    pageSize?: number;
+};
+
+export type CreateAdminRedemptionCodesRequest = {
+    name: string;
+    credits: number;
+    count: number;
+    expiresAt?: string;
+    remark?: string;
+};
+
 export type AdminUserQuery = {
     keyword?: string;
     page?: number;
@@ -82,6 +119,26 @@ export async function saveAdminCreditLog(token: string, log: Partial<AdminCredit
 
 export async function deleteAdminCreditLog(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminRedemptionCodes(token: string, query: AdminRedemptionCodeQuery = {}) {
+    return apiGet<AdminRedemptionCodeListResponse>("/api/admin/redemption-codes", compactApiParams(query), token);
+}
+
+export async function createAdminRedemptionCodes(token: string, payload: CreateAdminRedemptionCodesRequest) {
+    return apiPost<AdminRedemptionCode[]>("/api/admin/redemption-codes", payload, token);
+}
+
+export async function updateAdminRedemptionCodeStatus(token: string, id: string, status: "enabled" | "disabled") {
+    return apiPost<AdminRedemptionCode>(`/api/admin/redemption-codes/${encodeURIComponent(id)}/status`, { status }, token);
+}
+
+export async function deleteAdminRedemptionCode(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/redemption-codes/${encodeURIComponent(id)}`, token);
+}
+
+export async function deleteInvalidAdminRedemptionCodes(token: string) {
+    return apiDelete<number>("/api/admin/redemption-codes/invalid", token);
 }
 
 export async function fetchAdminPromptCategories(token: string) {

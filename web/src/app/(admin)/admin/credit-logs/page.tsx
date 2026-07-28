@@ -15,6 +15,7 @@ const creditLogTypeLabels: Record<string, string> = {
     admin_adjust: "后台调整",
     ai_consume: "模型消费",
     ai_refund: "失败返还",
+    redeem_topup: "兑换充值",
 };
 
 export default function AdminCreditLogsPage() {
@@ -53,12 +54,14 @@ export default function AdminCreditLogsPage() {
             title: "变动",
             dataIndex: "amount",
             width: 100,
+            align: "right",
             render: (_, item) => <Typography.Text type={item.amount >= 0 ? "success" : "danger"}>{item.amount}</Typography.Text>,
         },
         {
             title: "余额",
             dataIndex: "balance",
             width: 100,
+            align: "right",
         },
         {
             title: "备注",
@@ -132,7 +135,7 @@ export default function AdminCreditLogsPage() {
                     cardProps={{ variant: "borderless" }}
                     headerTitle={
                         <Space>
-                            <Typography.Text strong>算力点日志</Typography.Text>
+                            <Typography.Text strong>使用日志</Typography.Text>
                             <Tag>{total} 条</Tag>
                         </Space>
                     }
@@ -214,7 +217,7 @@ export default function AdminCreditLogsPage() {
                 okButtonProps={{ danger: true }}
                 cancelText="取消"
             >
-                确定删除这条算力点日志吗？
+                确定删除这条使用日志吗？
             </Modal>
         </main>
     );

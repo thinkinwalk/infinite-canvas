@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { App, Form, Input, Modal, Segmented } from "antd";
 import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, Shield, UserRound, Zap } from "lucide-react";
 
+import { CreditCenterModal } from "@/components/layout/credit-center-modal";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
 import { DOCS_URL } from "@/constant/env";
@@ -25,6 +26,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const { message } = App.useApp();
     const [authOpen, setAuthOpen] = useState(false);
     const [authMode, setAuthMode] = useState<AuthMode>("login");
+    const [creditCenterOpen, setCreditCenterOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [form] = Form.useForm<AuthPayload>();
     const theme = useThemeStore((state) => state.theme);
@@ -99,17 +101,19 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                         </button>
                     ) : null}
                     {hasCredits ? (
-                        <span
+                        <button
+                            type="button"
                             className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold leading-none transition ${creditBadgeClass(user.credits)}`}
                             style={creditStyle}
-                            aria-label={`剩余算力 ${formattedCredits} 点`}
-                            title={`${userName} · 剩余算力 ${formattedCredits} 点`}
+                            onClick={() => setCreditCenterOpen(true)}
+                            aria-label="算力中心"
+                            title={`${userName} · 算力中心`}
                         >
                             <Zap className="size-3.5" />
                             <span>算力</span>
                             <span className="tabular-nums">{formattedCredits}</span>
                             <span className="font-medium opacity-75">点</span>
-                        </span>
+                        </button>
                     ) : null}
                     <button type="button" className={naturalIconClass} style={iconStyle} aria-label={userName} title={userName}>
                         <UserRound className="size-4" />
@@ -143,6 +147,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Keyboard className="size-4" />
                 </button>
             ) : null}
+            <CreditCenterModal open={creditCenterOpen} onOpenChange={setCreditCenterOpen} />
             <Modal title={authMode === "admin" ? "后台登录" : authMode === "register" ? "注册账号" : "登录账号"} open={authOpen} onCancel={() => setAuthOpen(false)} onOk={() => form.submit()} okText={authMode === "register" ? "注册" : "登录"} cancelText="取消" confirmLoading={submitting} destroyOnHidden>
                 <div className="mb-4">
                     <Segmented<AuthMode> options={authOptions} value={authMode} onChange={(value) => setAuthMode(value)} />

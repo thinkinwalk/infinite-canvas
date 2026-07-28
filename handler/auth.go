@@ -34,6 +34,22 @@ type adjustUserCreditsRequest struct {
 	Credits int `json:"credits"`
 }
 
+type redeemCodeRequest struct {
+	Code string `json:"code"`
+}
+
+type createRedemptionCodesRequest struct {
+	Name      string `json:"name"`
+	Credits   int    `json:"credits"`
+	Count     int    `json:"count"`
+	ExpiresAt string `json:"expiresAt"`
+	Remark    string `json:"remark"`
+}
+
+type updateRedemptionCodeStatusRequest struct {
+	Status model.RedemptionCodeStatus `json:"status"`
+}
+
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
@@ -95,6 +111,36 @@ func CurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, service.GuestUser())
+}
+
+func UserCreditLogs(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	logs, err := service.ListUserCreditLogs(user.ID, parseQuery(r))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, logs)
+}
+
+func UserRedeemCode(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	var request redeemCodeRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	updatedUser, credits, err := service.RedeemCode(user.ID, request.Code)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, map[string]any{"user": updatedUser, "credits": credits})
 }
 
 func AdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +207,59 @@ func AdminDeleteCreditLog(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	OK(w, true)
+}
+
+func AdminRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	codes, err := service.ListRedemptionCodes(parseQuery(r))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, codes)
+}
+
+func AdminCreateRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	var request createRedemptionCodesRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	codes, err := service.CreateRedemptionCodes(request.Name, request.Credits, request.Count, request.ExpiresAt, request.Remark, user.ID)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, codes)
+}
+
+func AdminUpdateRedemptionCodeStatus(w http.ResponseWriter, r *http.Request, id string) {
+	var request updateRedemptionCodeStatusRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	code, err := service.UpdateRedemptionCodeStatus(id, request.Status)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, code)
+}
+
+func AdminDeleteRedemptionCode(w http.ResponseWriter, r *http.Request, id string) {
+	if err := service.DeleteRedemptionCode(id); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
+func AdminDeleteInvalidRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	rows, err := service.DeleteInvalidRedemptionCodes()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, rows)
 }
 
 func loginRedirect(r *http.Request, redirect string, token string, message string) string {

@@ -387,6 +387,14 @@ func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 	return model.CreditLogList{Items: logs, Total: int(total)}, nil
 }
 
+func ListUserCreditLogs(userID string, q model.Query) (model.CreditLogList, error) {
+	logs, total, err := repository.ListCreditLogsByUser(userID, q)
+	if err != nil {
+		return model.CreditLogList{}, err
+	}
+	return model.CreditLogList{Items: logs, Total: int(total)}, nil
+}
+
 func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	if log.ID == "" {
 		log.ID = newID("credit")
@@ -397,6 +405,100 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 
 func DeleteCreditLog(id string) error {
 	return repository.DeleteCreditLog(id)
+}
+
+func ListRedemptionCodes(q model.Query) (model.RedemptionCodeList, error) {
+	codes, total, err := repository.ListRedemptionCodes(q)
+	if err != nil {
+		return model.RedemptionCodeList{}, err
+	}
+	return model.RedemptionCodeList{Items: codes, Total: int(total)}, nil
+}
+
+func CreateRedemptionCodes(name string, credits int, count int, expiresAt string, remark string, createdBy string) ([]model.RedemptionCode, error) {
+	name = strings.TrimSpace(name)
+	expiresAt = strings.TrimSpace(expiresAt)
+	if name == "" || len([]rune(name)) > 20 {
+		return nil, safeMessageError{message: "兑换码名称长度必须在 1-20 之间"}
+	}
+	if credits <= 0 {
+		return nil, safeMessageError{message: "兑换点数必须大于 0"}
+	}
+	if count <= 0 {
+		return nil, safeMessageError{message: "兑换码数量必须大于 0"}
+	}
+	if count > 100 {
+		return nil, safeMessageError{message: "一次最多生成 100 个兑换码"}
+	}
+	if expiresAt != "" {
+		expireTime, err := time.Parse(time.RFC3339, expiresAt)
+		if err != nil {
+			return nil, safeMessageError{message: "过期时间格式无效"}
+		}
+		if expireTime.Before(time.Now()) {
+			return nil, safeMessageError{message: "过期时间不能早于当前时间"}
+		}
+	}
+	result := make([]model.RedemptionCode, 0, count)
+	for i := 0; i < count; i++ {
+		item := model.RedemptionCode{
+			ID:        newID("redeem"),
+			Code:      newRedemptionCode(),
+			Name:      name,
+			Credits:   credits,
+			Status:    model.RedemptionCodeStatusEnabled,
+			CreatedBy: createdBy,
+			ExpiresAt: expiresAt,
+			Remark:    strings.TrimSpace(remark),
+			CreatedAt: now(),
+			UpdatedAt: now(),
+		}
+		saved, err := repository.SaveRedemptionCode(item)
+		if err != nil {
+			return result, err
+		}
+		result = append(result, saved)
+	}
+	return result, nil
+}
+
+func UpdateRedemptionCodeStatus(id string, status model.RedemptionCodeStatus) (model.RedemptionCode, error) {
+	if status != model.RedemptionCodeStatusEnabled && status != model.RedemptionCodeStatusDisabled {
+		return model.RedemptionCode{}, safeMessageError{message: "兑换码状态无效"}
+	}
+	code, err := repository.UpdateRedemptionCodeStatus(id, status, now())
+	if err != nil {
+		if strings.Contains(err.Error(), "已使用的兑换码不能修改状态") {
+			return model.RedemptionCode{}, safeMessageError{message: "已使用的兑换码不能修改状态"}
+		}
+		return model.RedemptionCode{}, err
+	}
+	return code, nil
+}
+
+func DeleteRedemptionCode(id string) error {
+	return repository.DeleteRedemptionCode(id)
+}
+
+func DeleteInvalidRedemptionCodes() (int64, error) {
+	return repository.DeleteInvalidRedemptionCodes(now())
+}
+
+func RedeemCode(userID string, code string) (model.AuthUser, int, error) {
+	code = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), " ", ""))
+	if code == "" {
+		return model.AuthUser{}, 0, safeMessageError{message: "请输入兑换码"}
+	}
+	remark := "兑换码充值"
+	user, redemption, err := repository.RedeemCode(code, userID, model.CreditLog{
+		ID:     newID("credit"),
+		Remark: remark,
+		Extra:  fmt.Sprintf(`{"code":"%s","name":"%s"}`, redemptionLogCode(code), ""),
+	}, now())
+	if err != nil {
+		return model.AuthUser{}, 0, redeemSafeError(err)
+	}
+	return model.PublicUser(user), redemption.Credits, nil
 }
 
 func DeleteUser(id string) error {
@@ -448,6 +550,33 @@ func newID(prefix string) string {
 
 func newAffCode() string {
 	return strings.ToUpper(strings.ReplaceAll(uuid.NewString()[:8], "-", ""))
+}
+
+func newRedemptionCode() string {
+	return strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))
+}
+
+func redemptionLogCode(code string) string {
+	if len(code) <= 8 {
+		return code
+	}
+	return code[:4] + "..." + code[len(code)-4:]
+}
+
+func redeemSafeError(err error) error {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "无效的兑换码"):
+		return safeMessageError{message: "无效的兑换码"}
+	case strings.Contains(message, "不可用"):
+		return safeMessageError{message: "该兑换码不可用"}
+	case strings.Contains(message, "已过期"):
+		return safeMessageError{message: "该兑换码已过期"}
+	case strings.Contains(message, "已被使用"):
+		return safeMessageError{message: "该兑换码已被使用"}
+	default:
+		return err
+	}
 }
 
 func normalizeUserDefaults(user *model.User) {
