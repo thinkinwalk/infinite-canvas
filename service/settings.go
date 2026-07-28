@@ -59,6 +59,9 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
 		return testArkSeedanceChannelModel(resolved, modelName)
 	}
+	if isVideoModelName(modelName) {
+		return testVideoChannelModel(resolved, modelName)
+	}
 	return testAdminChannelModel(resolved, modelName)
 }
 
@@ -411,6 +414,22 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 		return payload.Choices[0].Message.Content, nil
 	}
 	return "ok", nil
+}
+
+func testVideoChannelModel(channel model.ModelChannel, modelName string) (string, error) {
+	if strings.TrimSpace(modelName) == "" {
+		return "", errors.New("缺少模型名称")
+	}
+	models, err := fetchAdminChannelModels(channel)
+	if err != nil {
+		return "", err
+	}
+	for _, item := range models {
+		if strings.TrimSpace(item) == strings.TrimSpace(modelName) {
+			return "视频模型配置已通过：/models 鉴权成功并确认模型存在。后台测试不会创建视频任务，因此不会消耗额度；请在视频创作页验证实际生成。", nil
+		}
+	}
+	return "", safeMessageError{message: fmt.Sprintf("测试失败：/models 未返回模型 %s，请检查该渠道的模型权限或模型名", modelName)}
 }
 
 func testArkSeedanceChannelModel(channel model.ModelChannel, modelName string) (string, error) {

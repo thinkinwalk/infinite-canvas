@@ -53,6 +53,53 @@ func TestFetchAdminChannelModelsReportsArkPlanModelsUnsupported(t *testing.T) {
 	}
 }
 
+func TestTestVideoChannelModelUsesModelsEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/chat/completions" {
+			t.Fatal("video model test should not call chat completions")
+		}
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"grok-imagine-1.0-video"},{"id":"grok-imagine-video-1.5-fast"}]}`))
+	}))
+	defer server.Close()
+
+	result, err := testVideoChannelModel(model.ModelChannel{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+	}, "grok-imagine-video-1.5-fast")
+	if err != nil {
+		t.Fatalf("testVideoChannelModel returned error: %v", err)
+	}
+	if !strings.Contains(result, "/models") || !strings.Contains(result, "不会消耗额度") {
+		t.Fatalf("result = %q", result)
+	}
+}
+
+func TestTestVideoChannelModelReportsMissingModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"other-video"}]}`))
+	}))
+	defer server.Close()
+
+	_, err := testVideoChannelModel(model.ModelChannel{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+	}, "grok-imagine-video-1.5-fast")
+	if err == nil {
+		t.Fatal("expected missing model error")
+	}
+	if !strings.Contains(err.Error(), "未返回模型 grok-imagine-video-1.5-fast") {
+		t.Fatalf("error = %q", err.Error())
+	}
+}
+
 func TestBuildModelChannelURLNormalizesArkPlanTaskPath(t *testing.T) {
 	got := BuildModelChannelURL(model.ModelChannel{BaseURL: "https://ark.cn-beijing.volces.com/api/plan/v3/contents/generations/tasks?debug=1"}, "/models")
 	want := "https://ark.cn-beijing.volces.com/api/plan/v3/models"
