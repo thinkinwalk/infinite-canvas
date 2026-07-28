@@ -266,7 +266,7 @@ func uniqueModelNames(models []string) []string {
 func repairDefaultModel(current string, models []string, preferred func(string) bool) string {
 	current = strings.TrimSpace(current)
 	for _, item := range models {
-		if item == current {
+		if item == current && preferred(item) {
 			return current
 		}
 	}
@@ -274,9 +274,6 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 		if preferred(item) {
 			return item
 		}
-	}
-	if len(models) > 0 {
-		return models[0]
 	}
 	return ""
 }

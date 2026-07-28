@@ -65,11 +65,11 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{
 			ModelChannel: model.PublicModelChannelSetting{
-				AvailableModels:   []string{"grok-imagine-video", "disabled-model"},
-				DefaultModel:      "grok-imagine-video",
+				AvailableModels:   []string{"grok-imagine-1.0-video", "disabled-model"},
+				DefaultModel:      "grok-imagine-1.0-video",
 				DefaultTextModel:  "missing-text",
-				DefaultImageModel: "missing-image",
-				DefaultVideoModel: "missing-video",
+				DefaultImageModel: "doubao-seedance-2.0-fast",
+				DefaultVideoModel: "doubao-seedream-5.0-lite",
 			},
 		},
 		Private: model.PrivateSetting{

@@ -80,7 +80,7 @@ export const defaultConfig: AiConfig = {
             apiFormat: "openai",
             models: [
                 { name: "gpt-image-2", capability: "image" },
-                { name: "grok-imagine-video", capability: "video" },
+                { name: "grok-imagine-1.0-video", capability: "video" },
                 { name: "gpt-5.5", capability: "text" },
                 { name: "gpt-4o-mini-tts", capability: "audio" },
             ],
@@ -88,7 +88,7 @@ export const defaultConfig: AiConfig = {
     ],
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
+    videoModel: "default::grok-imagine-1.0-video",
     textModel: "default::gpt-5.5",
     audioModel: "default::gpt-4o-mini-tts",
     audioVoice: "alloy",
@@ -100,7 +100,7 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: ["default::gpt-image-2", "default::grok-imagine-1.0-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -137,9 +137,18 @@ const VIDEO_KEYWORDS = ["seedance", "video", "sora", "veo", "kling", "wan", "hai
 const AUDIO_KEYWORDS = ["audio", "tts", "speech", "voice", "music", "sound"];
 const IMAGE_KEYWORDS = ["seedream", "gpt-image", "image", "dall-e", "dalle", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"];
 
-/** Best-effort default capability for a freshly fetched model name; user can override in the channel editor. */
+function knownModelCapability(name: string): ModelCapability | undefined {
+    const value = name.toLowerCase();
+    if (["gpt-image", "dall-e", "dalle", "seedream", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"].some((keyword) => value.includes(keyword))) return "image";
+    if (["seedance", "grok-imagine", "sora", "veo", "kling", "hailuo"].some((keyword) => value.includes(keyword)) && value.includes("video")) return "video";
+    return undefined;
+}
+
+/** Best-effort default capability for a freshly fetched model name. */
 export function guessCapability(name: string): ModelCapability {
     const value = name.toLowerCase();
+    const knownCapability = knownModelCapability(value);
+    if (knownCapability) return knownCapability;
     if (VIDEO_KEYWORDS.some((keyword) => value.includes(keyword))) return "video";
     if (AUDIO_KEYWORDS.some((keyword) => value.includes(keyword))) return "audio";
     if (IMAGE_KEYWORDS.some((keyword) => value.includes(keyword))) return "image";
@@ -155,7 +164,8 @@ function findChannelModel(config: AiConfig, value: string): { channel: ModelChan
 }
 
 export function modelCapabilityOf(config: AiConfig, value: string): ModelCapability | undefined {
-    return findChannelModel(config, value)?.model.capability;
+    const model = findChannelModel(config, value)?.model;
+    return model ? knownModelCapability(model.name) || model.capability : undefined;
 }
 
 export function modelMatchesCapability(config: AiConfig, value: string, capability?: ModelCapability) {
@@ -165,7 +175,7 @@ export function modelMatchesCapability(config: AiConfig, value: string, capabili
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
     if (!capability) return config.models;
-    return config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name)));
+    return config.channels.flatMap((channel) => channel.models.filter((model) => (knownModelCapability(model.name) || model.capability) === capability).map((model) => encodeChannelModel(channel.id, model.name)));
 }
 
 /** The user script (if any) attached to a model; empty string means use the system default call. */
@@ -276,7 +286,7 @@ function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSet
 function remoteConfigFromPublicSettings(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"]): AiConfig {
     const channel = createModelChannel({
         id: "remote",
-        name: "后台渠道",
+        name: "平台提供",
         baseUrl: "",
         apiKey: "",
         apiFormat: "openai",
@@ -320,7 +330,7 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const name = (typeof item === "string" ? item : item?.name || "").trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
+        const capability = knownModelCapability(name) || (typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name));
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
         result.push({ name, capability, script });
     }
@@ -331,7 +341,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
     const apiFormat = normalizeApiFormat(channel?.apiFormat);
     return {
         id: channel?.id?.trim() || nanoid(),
-        name: channel?.name?.trim() || "新渠道",
+        name: normalizeChannelName(channel?.name, 0),
         baseUrl: channel?.baseUrl?.trim() || defaultBaseUrlForApiFormat(apiFormat),
         apiKey: channel?.apiKey || "",
         apiFormat,
@@ -360,8 +370,7 @@ export function modelOptionName(value: string) {
 export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
-    const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    return decoded.model;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -404,7 +413,7 @@ function normalizeChannels(config: AiConfig) {
         createModelChannel({
             ...channel,
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
-            name: channel.name || (index === 0 ? "默认渠道" : `渠道 ${index + 1}`),
+            name: normalizeChannelName(channel.name, index),
             models: normalizeChannelModels(channel.models),
         }),
     );
@@ -421,6 +430,13 @@ function normalizeChannels(config: AiConfig) {
         );
     }
     return channels;
+}
+
+function normalizeChannelName(name: string | undefined, index: number) {
+    const value = (name || "").trim();
+    if (!value) return index === 0 ? "默认渠道" : `渠道 ${index + 1}`;
+    if (value === "后台渠道") return "平台提供";
+    return value;
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {

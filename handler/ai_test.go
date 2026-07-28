@@ -28,7 +28,7 @@ func TestFallbackOpenAIVideoStatusUsesContentEndpoint(t *testing.T) {
 		_, _ = w.Write([]byte("video"))
 	}))
 	defer server.Close()
-	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-video", nil)
+	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-1.0-video", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	response := httptest.NewRecorder()
 	if !fallbackOpenAIVideoStatus(response, request, http.StatusForbidden) {
@@ -44,7 +44,7 @@ func TestFallbackOpenAIVideoStatusTreatsForbiddenContentAsRunning(t *testing.T) 
 		http.Error(w, "not ready", http.StatusForbidden)
 	}))
 	defer server.Close()
-	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-video", nil)
+	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-1.0-video", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	response := httptest.NewRecorder()
 	if !fallbackOpenAIVideoStatus(response, request, http.StatusForbidden) {
@@ -60,7 +60,7 @@ func TestFallbackOpenAIVideoStatusTreatsAnyContentErrorAsRunning(t *testing.T) {
 		http.Error(w, "not ready", http.StatusBadRequest)
 	}))
 	defer server.Close()
-	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-video", nil)
+	request := httptest.NewRequest(http.MethodGet, server.URL+"/v1/videos/task_123?model=grok-imagine-1.0-video", nil)
 	response := httptest.NewRecorder()
 	if !fallbackOpenAIVideoStatus(response, request, http.StatusForbidden) {
 		t.Fatal("fallback did not handle forbidden status")
