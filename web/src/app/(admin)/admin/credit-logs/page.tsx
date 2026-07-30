@@ -2,7 +2,7 @@
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Tag, Tooltip, Typography } from "antd";
+import { Avatar, Button, Card, Col, Flex, Form, Input, InputNumber, Modal, Row, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
@@ -39,10 +39,26 @@ export default function AdminCreditLogsPage() {
 
     const columns: ProColumns<AdminCreditLog>[] = [
         {
-            title: "用户 ID",
+            title: "用户",
             dataIndex: "userId",
-            width: 220,
-            render: (_, item) => <Typography.Text copyable>{item.userId}</Typography.Text>,
+            width: 280,
+            render: (_, item) => {
+                const userName = item.user?.displayName || item.user?.username || item.userId;
+                const avatarText = (userName || "U").slice(0, 1).toUpperCase();
+                return (
+                    <Flex align="center" gap={10} style={{ minWidth: 0 }}>
+                        <Avatar src={item.user?.avatarUrl || undefined}>{avatarText}</Avatar>
+                        <Flex vertical style={{ minWidth: 0 }}>
+                            <Typography.Text strong ellipsis>
+                                {userName}
+                            </Typography.Text>
+                            <Typography.Text type="secondary" copyable={{ text: item.userId }} ellipsis>
+                                {item.userId}
+                            </Typography.Text>
+                        </Flex>
+                    </Flex>
+                );
+            },
         },
         {
             title: "类型",
@@ -101,7 +117,7 @@ export default function AdminCreditLogsPage() {
                         <Row gutter={16} align="bottom">
                             <Col flex="360px">
                                 <Form.Item label="关键词">
-                                    <Input.Search value={keywordText} placeholder="搜索用户 ID、类型、备注或关联 ID" allowClear enterButton={<SearchOutlined />} onSearch={() => searchLogs(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
+                                    <Input.Search value={keywordText} placeholder="搜索用户、用户 ID、类型、备注或关联 ID" allowClear enterButton={<SearchOutlined />} onSearch={() => searchLogs(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
                                 </Form.Item>
                             </Col>
                             <Col flex="none">

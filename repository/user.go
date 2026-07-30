@@ -62,6 +62,36 @@ func GetUserByID(id string) (model.User, bool, error) {
 	return findUser(db, "id = ?", id)
 }
 
+// GetUsersByIDs 批量查询用户，用于给关联记录补充用户展示信息。
+func GetUsersByIDs(ids []string) (map[string]model.User, error) {
+	result := map[string]model.User{}
+	uniqueIDs := make([]string, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	if len(uniqueIDs) == 0 {
+		return result, nil
+	}
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var users []model.User
+	if err := db.Where("id IN ?", uniqueIDs).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		result[user.ID] = user
+	}
+	return result, nil
+}
+
 // GetUserByUsername 根据用户名查询用户。
 func GetUserByUsername(username string) (model.User, bool, error) {
 	db, err := DB()
@@ -135,20 +165,23 @@ func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
 		return nil, 0, err
 	}
 	q.Normalize()
-	tx := db.Model(&model.CreditLog{})
+	tx := db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id")
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ?", like, like, like, like)
+		tx = tx.Where(
+			"credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ? OR users.username LIKE ? OR users.display_name LIKE ? OR users.email LIKE ? OR users.linux_do_id LIKE ?",
+			like, like, like, like, like, like, like, like,
+		)
 	}
 	if logType := strings.TrimSpace(q.Type); logType != "" {
-		tx = tx.Where("type = ?", logType)
+		tx = tx.Where("credit_logs.type = ?", logType)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var logs []model.CreditLog
-	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
+	err = tx.Order("credit_logs.created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
 	return logs, total, err
 }
 

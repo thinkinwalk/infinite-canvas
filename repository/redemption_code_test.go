@@ -114,3 +114,38 @@ func TestListCreditLogsByUserIsolatesUsers(t *testing.T) {
 		t.Fatalf("logs=%#v total=%d, want only user-1", logs, total)
 	}
 }
+
+func TestListCreditLogsSearchesUserProfile(t *testing.T) {
+	setupRedemptionTestDB(t)
+	now := time.Now().Format(time.RFC3339)
+	if _, err := SaveUser(model.User{
+		ID:          "user-1",
+		Username:    "star-trail",
+		DisplayName: "Star Trail",
+		Email:       "star@example.com",
+		Role:        model.UserRoleUser,
+		Status:      model.UserStatusActive,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+	if _, err := SaveCreditLog(model.CreditLog{
+		ID:        "credit-1",
+		UserID:    "user-1",
+		Type:      model.CreditLogTypeAIConsume,
+		Amount:    -10,
+		Balance:   90,
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("save log: %v", err)
+	}
+
+	logs, total, err := ListCreditLogs(model.Query{Keyword: "Star Trail", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if total != 1 || len(logs) != 1 || logs[0].UserID != "user-1" {
+		t.Fatalf("logs=%#v total=%d, want user-1 log", logs, total)
+	}
+}

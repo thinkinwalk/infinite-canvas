@@ -384,6 +384,9 @@ func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 	if err != nil {
 		return model.CreditLogList{}, err
 	}
+	if err := attachCreditLogUsers(logs); err != nil {
+		return model.CreditLogList{}, err
+	}
 	return model.CreditLogList{Items: logs, Total: int(total)}, nil
 }
 
@@ -405,6 +408,31 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 
 func DeleteCreditLog(id string) error {
 	return repository.DeleteCreditLog(id)
+}
+
+func attachCreditLogUsers(logs []model.CreditLog) error {
+	ids := make([]string, 0, len(logs))
+	for _, log := range logs {
+		ids = append(ids, log.UserID)
+	}
+	users, err := repository.GetUsersByIDs(ids)
+	if err != nil {
+		return err
+	}
+	for i := range logs {
+		user, ok := users[logs[i].UserID]
+		if !ok {
+			continue
+		}
+		logs[i].User = &model.CreditLogUser{
+			ID:          user.ID,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			AvatarURL:   user.AvatarURL,
+			Email:       user.Email,
+		}
+	}
+	return nil
 }
 
 func ListRedemptionCodes(q model.Query) (model.RedemptionCodeList, error) {
