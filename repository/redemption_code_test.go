@@ -83,7 +83,7 @@ func TestRedeemCodeCreditsUserOnceAndWritesLog(t *testing.T) {
 		t.Fatalf("credits after second redeem = %d, want 160", after.Credits)
 	}
 
-	logs, total, err := ListCreditLogsByUser(user.ID, model.Query{Page: 1, PageSize: 20})
+	logs, total, _, err := ListCreditLogsByUser(user.ID, model.Query{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestListCreditLogsByUserIsolatesUsers(t *testing.T) {
 			t.Fatalf("save log: %v", err)
 		}
 	}
-	logs, total, err := ListCreditLogsByUser("user-1", model.Query{Page: 1, PageSize: 20})
+	logs, total, _, err := ListCreditLogsByUser("user-1", model.Query{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -141,11 +141,42 @@ func TestListCreditLogsSearchesUserProfile(t *testing.T) {
 		t.Fatalf("save log: %v", err)
 	}
 
-	logs, total, err := ListCreditLogs(model.Query{Keyword: "Star Trail", Page: 1, PageSize: 20})
+	logs, total, _, err := ListCreditLogs(model.Query{Keyword: "Star Trail", Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
 	if total != 1 || len(logs) != 1 || logs[0].UserID != "user-1" {
 		t.Fatalf("logs=%#v total=%d, want user-1 log", logs, total)
+	}
+}
+
+func TestListCreditLogsFiltersTimeAndStats(t *testing.T) {
+	setupRedemptionTestDB(t)
+	logs := []model.CreditLog{
+		{ID: "credit-old", UserID: "user-1", Type: model.CreditLogTypeAIConsume, Amount: -99, Balance: 901, CreatedAt: "2026-07-29T23:59:59+08:00"},
+		{ID: "credit-1", UserID: "user-1", Type: model.CreditLogTypeAIConsume, Amount: -10, Balance: 890, Remark: "调用模型 gpt-image-2", CreatedAt: "2026-07-30T09:00:00+08:00"},
+		{ID: "credit-2", UserID: "user-1", Type: model.CreditLogTypeAIRefund, Amount: 3, Balance: 893, Remark: "模型调用失败返还 gpt-image-2", CreatedAt: "2026-07-30T10:00:00+08:00"},
+	}
+	for _, log := range logs {
+		if _, err := SaveCreditLog(log); err != nil {
+			t.Fatalf("save log: %v", err)
+		}
+	}
+
+	items, total, stats, err := ListCreditLogs(model.Query{
+		Model:    "gpt-image-2",
+		Start:    "2026-07-30T00:00:00+08:00",
+		End:      "2026-07-30T23:59:59+08:00",
+		Page:     1,
+		PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("logs total=%d len=%d, want 2", total, len(items))
+	}
+	if stats.Consume != 10 || stats.Refund != 3 || stats.Net != -7 || stats.Count != 2 {
+		t.Fatalf("stats=%#v, want consume=10 refund=3 net=-7 count=2", stats)
 	}
 }

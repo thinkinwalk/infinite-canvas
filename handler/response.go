@@ -46,6 +46,9 @@ func parseQuery(r *http.Request) model.Query {
 		Tags:     q["tag"],
 		Category: q.Get("category"),
 		Type:     q.Get("type"),
+		Model:    q.Get("model"),
+		Start:    q.Get("startTime"),
+		End:      q.Get("endTime"),
 		Page:     page,
 		PageSize: pageSize,
 	}

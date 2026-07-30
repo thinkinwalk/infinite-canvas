@@ -107,8 +107,16 @@ type CreditLogUser struct {
 }
 
 type CreditLogList struct {
-	Items []CreditLog `json:"items"`
-	Total int         `json:"total"`
+	Items []CreditLog    `json:"items"`
+	Total int            `json:"total"`
+	Stats CreditLogStats `json:"stats"`
+}
+
+type CreditLogStats struct {
+	Consume int `json:"consume"`
+	Refund  int `json:"refund"`
+	Net     int `json:"net"`
+	Count   int `json:"count"`
 }
 
 type RedemptionCodeStatus string

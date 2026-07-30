@@ -52,9 +52,17 @@ export type AdminCreditLog = {
     createdAt: string;
 };
 
+export type AdminCreditLogStats = {
+    consume: number;
+    refund: number;
+    net: number;
+    count: number;
+};
+
 export type AdminCreditLogListResponse = {
     items: AdminCreditLog[];
     total: number;
+    stats: AdminCreditLogStats;
 };
 
 export type AdminRedemptionCodeStatus = "enabled" | "disabled" | "used";
@@ -100,6 +108,13 @@ export type AdminUserQuery = {
     pageSize?: number;
 };
 
+export type AdminCreditLogQuery = AdminUserQuery & {
+    type?: string;
+    model?: string;
+    startTime?: string;
+    endTime?: string;
+};
+
 export async function fetchAdminUsers(token: string, query: AdminUserQuery = {}) {
     return apiGet<AdminUserListResponse>("/api/admin/users", compactApiParams(query), token);
 }
@@ -116,7 +131,7 @@ export async function deleteAdminUser(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/users/${encodeURIComponent(id)}`, token);
 }
 
-export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery = {}) {
+export async function fetchAdminCreditLogs(token: string, query: AdminCreditLogQuery = {}) {
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 

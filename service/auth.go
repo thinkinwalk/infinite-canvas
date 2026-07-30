@@ -380,22 +380,22 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 }
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
-	logs, total, err := repository.ListCreditLogs(q)
+	logs, total, stats, err := repository.ListCreditLogs(q)
 	if err != nil {
 		return model.CreditLogList{}, err
 	}
 	if err := attachCreditLogUsers(logs); err != nil {
 		return model.CreditLogList{}, err
 	}
-	return model.CreditLogList{Items: logs, Total: int(total)}, nil
+	return model.CreditLogList{Items: logs, Total: int(total), Stats: stats}, nil
 }
 
 func ListUserCreditLogs(userID string, q model.Query) (model.CreditLogList, error) {
-	logs, total, err := repository.ListCreditLogsByUser(userID, q)
+	logs, total, stats, err := repository.ListCreditLogsByUser(userID, q)
 	if err != nil {
 		return model.CreditLogList{}, err
 	}
-	return model.CreditLogList{Items: logs, Total: int(total)}, nil
+	return model.CreditLogList{Items: logs, Total: int(total), Stats: stats}, nil
 }
 
 func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {

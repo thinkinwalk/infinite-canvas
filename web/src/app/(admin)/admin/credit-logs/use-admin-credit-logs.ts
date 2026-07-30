@@ -1,26 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 
-import { deleteAdminCreditLog, fetchAdminCreditLogs, saveAdminCreditLog, type AdminCreditLog } from "@/services/api/admin";
+import { deleteAdminCreditLog, fetchAdminCreditLogs, saveAdminCreditLog, type AdminCreditLog, type AdminCreditLogQuery } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
-const defaultPageSize = 10;
+export const defaultCreditLogPageSize = 20;
 
-export function useAdminCreditLogs() {
+export function useAdminCreditLogs(filters: AdminCreditLogQuery) {
     const { message } = App.useApp();
     const queryClient = useQueryClient();
     const token = useUserStore((state) => state.token);
     const clearSession = useUserStore((state) => state.clearSession);
-    const [keyword, setKeyword] = useState("");
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(defaultPageSize);
 
     const query = useQuery({
-        queryKey: ["admin", "credit-logs", token, keyword, page, pageSize],
-        queryFn: () => fetchAdminCreditLogs(token, { keyword, page, pageSize }),
+        queryKey: ["admin", "credit-logs", token, filters],
+        queryFn: () => fetchAdminCreditLogs(token, filters),
         enabled: Boolean(token),
         retry: false,
     });
@@ -51,27 +48,13 @@ export function useAdminCreditLogs() {
         }
     }, [clearSession, message, query.error, query.isError]);
 
-    const updateFilters = (next: Partial<{ keyword: string; page: number; pageSize: number }>) => {
-        const queryState = { keyword, page, pageSize, ...next };
-        if (next.keyword !== undefined || next.pageSize !== undefined) queryState.page = 1;
-        setKeyword(queryState.keyword);
-        setPage(queryState.page);
-        setPageSize(queryState.pageSize);
-    };
-
     const data = query.data;
 
     return {
         logs: data?.items || [],
-        keyword,
-        page,
-        pageSize,
+        stats: data?.stats || { consume: 0, refund: 0, net: 0, count: 0 },
         total: data?.total || 0,
         isLoading: query.isFetching || saveMutation.isPending || deleteMutation.isPending,
-        searchLogs: (value = keyword) => updateFilters({ keyword: value }),
-        changePage: (value: number) => updateFilters({ page: value }),
-        changePageSize: (value: number) => updateFilters({ pageSize: value }),
-        resetFilters: () => updateFilters({ keyword: "", page: 1, pageSize: defaultPageSize }),
         refreshLogs: () => query.refetch(),
         saveLog: (log: Partial<AdminCreditLog>) => saveMutation.mutateAsync(log),
         deleteLog: (id: string) => deleteMutation.mutateAsync(id),

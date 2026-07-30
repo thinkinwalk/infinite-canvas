@@ -159,53 +159,88 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	return log, db.Save(&log).Error
 }
 
-func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
+func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, model.CreditLogStats, error) {
 	db, err := DB()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, model.CreditLogStats{}, err
 	}
 	q.Normalize()
-	tx := db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id")
+	tx := applyCreditLogFilters(db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id"), q)
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, model.CreditLogStats{}, err
+	}
+	stats, err := sumCreditLogStats(tx)
+	if err != nil {
+		return nil, 0, model.CreditLogStats{}, err
+	}
+	var logs []model.CreditLog
+	err = tx.Order("credit_logs.created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
+	return logs, total, stats, err
+}
+
+func ListCreditLogsByUser(userID string, q model.Query) ([]model.CreditLog, int64, model.CreditLogStats, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, 0, model.CreditLogStats{}, err
+	}
+	q.Normalize()
+	tx := applyCreditLogFilters(db.Model(&model.CreditLog{}).Joins("LEFT JOIN users ON users.id = credit_logs.user_id").Where("credit_logs.user_id = ?", userID), q)
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, model.CreditLogStats{}, err
+	}
+	stats, err := sumCreditLogStats(tx)
+	if err != nil {
+		return nil, 0, model.CreditLogStats{}, err
+	}
+	var logs []model.CreditLog
+	err = tx.Order("credit_logs.created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
+	return logs, total, stats, err
+}
+
+func applyCreditLogFilters(tx *gorm.DB, q model.Query) *gorm.DB {
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		tx = tx.Where(
-			"credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ? OR users.username LIKE ? OR users.display_name LIKE ? OR users.email LIKE ? OR users.linux_do_id LIKE ?",
-			like, like, like, like, like, like, like, like,
+			"credit_logs.user_id LIKE ? OR credit_logs.type LIKE ? OR credit_logs.remark LIKE ? OR credit_logs.related_id LIKE ? OR credit_logs.extra LIKE ? OR credit_logs.created_at LIKE ? OR users.username LIKE ? OR users.display_name LIKE ? OR users.email LIKE ? OR users.linux_do_id LIKE ?",
+			like, like, like, like, like, like, like, like, like, like,
 		)
 	}
 	if logType := strings.TrimSpace(q.Type); logType != "" {
 		tx = tx.Where("credit_logs.type = ?", logType)
 	}
-	var total int64
-	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, err
+	if modelName := strings.TrimSpace(q.Model); modelName != "" {
+		like := "%" + modelName + "%"
+		tx = tx.Where("credit_logs.remark LIKE ? OR credit_logs.extra LIKE ?", like, like)
 	}
-	var logs []model.CreditLog
-	err = tx.Order("credit_logs.created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
-	return logs, total, err
+	if startTime := strings.TrimSpace(q.Start); startTime != "" {
+		tx = tx.Where("credit_logs.created_at >= ?", startTime)
+	}
+	if endTime := strings.TrimSpace(q.End); endTime != "" {
+		tx = tx.Where("credit_logs.created_at <= ?", endTime)
+	}
+	return tx
 }
 
-func ListCreditLogsByUser(userID string, q model.Query) ([]model.CreditLog, int64, error) {
-	db, err := DB()
-	if err != nil {
-		return nil, 0, err
-	}
-	q.Normalize()
-	tx := db.Model(&model.CreditLog{}).Where("user_id = ?", userID)
-	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
-		like := "%" + keyword + "%"
-		tx = tx.Where("type LIKE ? OR remark LIKE ? OR related_id LIKE ?", like, like, like)
-	}
-	if logType := strings.TrimSpace(q.Type); logType != "" {
-		tx = tx.Where("type = ?", logType)
-	}
-	var total int64
-	if err := tx.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	var logs []model.CreditLog
-	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&logs).Error
-	return logs, total, err
+type creditLogStatsRow struct {
+	Consume int64 `gorm:"column:consume"`
+	Refund  int64 `gorm:"column:refund"`
+	Net     int64 `gorm:"column:net"`
+	Count   int64 `gorm:"column:count"`
+}
+
+func sumCreditLogStats(tx *gorm.DB) (model.CreditLogStats, error) {
+	var row creditLogStatsRow
+	err := tx.Session(&gorm.Session{}).Select(
+		"COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS consume, COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS refund, COALESCE(SUM(amount), 0) AS net, COUNT(*) AS count",
+	).Scan(&row).Error
+	return model.CreditLogStats{
+		Consume: int(row.Consume),
+		Refund:  int(row.Refund),
+		Net:     int(row.Net),
+		Count:   int(row.Count),
+	}, err
 }
 
 func DeleteCreditLog(id string) error {
