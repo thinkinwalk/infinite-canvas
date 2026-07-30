@@ -31,15 +31,12 @@ export default function AdminUsersPage() {
     useEffect(() => setKeywordText(keyword), [keyword]);
 
     useEffect(() => {
-        if (editingUser) form.setFieldsValue({ role: "user", status: "active", ...editingUser, password: "" });
+        if (editingUser) form.setFieldsValue({ role: "user", status: "active", ...editingUser, password: "", creditReason: "" });
     }, [editingUser, form]);
 
     const saveUser = async () => {
-        const value = await form.validateFields();
-        const userValue = { ...value };
-        delete userValue.credits;
-        delete userValue.creditReason;
-        await saveAdminUser({ ...editingUser, ...userValue, password: value.password || undefined });
+        const value = await form.validateFields(["username", "password", "displayName", "email", "role", "status"]);
+        await saveAdminUser({ ...editingUser, ...value, password: value.password || undefined });
         setEditingUser(null);
     };
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/basketikun/infinite-canvas/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ListUsers 分页查询用户。
@@ -158,7 +159,7 @@ func AdjustUserCredits(id string, credits int, log model.CreditLog, now string) 
 	}
 	var user model.User
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&user).Error; err != nil {
 			return err
 		}
 		oldCredits := user.Credits
