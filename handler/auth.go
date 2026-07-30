@@ -31,7 +31,8 @@ type saveUserRequest struct {
 }
 
 type adjustUserCreditsRequest struct {
-	Credits int `json:"credits"`
+	Credits int    `json:"credits"`
+	Reason  string `json:"reason"`
 }
 
 type redeemCodeRequest struct {
@@ -173,7 +174,12 @@ func AdminSaveUser(w http.ResponseWriter, r *http.Request) {
 func AdminAdjustUserCredits(w http.ResponseWriter, r *http.Request, id string) {
 	var request adjustUserCreditsRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	user, err := service.AdjustUserCredits(id, request.Credits)
+	operator, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	user, err := service.AdjustUserCredits(id, request.Credits, request.Reason, operator)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -188,25 +194,6 @@ func AdminCreditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, logs)
-}
-
-func AdminSaveCreditLog(w http.ResponseWriter, r *http.Request) {
-	var log model.CreditLog
-	_ = json.NewDecoder(r.Body).Decode(&log)
-	result, err := service.SaveCreditLog(log)
-	if err != nil {
-		FailError(w, err)
-		return
-	}
-	OK(w, result)
-}
-
-func AdminDeleteCreditLog(w http.ResponseWriter, r *http.Request, id string) {
-	if err := service.DeleteCreditLog(id); err != nil {
-		FailError(w, err)
-		return
-	}
-	OK(w, true)
 }
 
 func AdminRedemptionCodes(w http.ResponseWriter, r *http.Request) {

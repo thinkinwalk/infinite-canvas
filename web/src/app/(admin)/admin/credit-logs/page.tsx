@@ -1,15 +1,14 @@
 "use client";
 
-import { DeleteOutlined, EditOutlined, InfoCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Avatar, Button, Card, Col, DatePicker, Descriptions, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography, theme } from "antd";
+import { Avatar, Button, Card, Col, DatePicker, Descriptions, Flex, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography, theme } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { AdminCreditLog, AdminCreditLogQuery } from "@/services/api/admin";
 import { defaultCreditLogPageSize, useAdminCreditLogs } from "./use-admin-credit-logs";
 
-type CreditLogFormValues = Partial<AdminCreditLog>;
 type DateRange = [Dayjs, Dayjs];
 type CreditLogDraft = {
     keyword: string;
@@ -82,6 +81,18 @@ function getLogPath(log: AdminCreditLog) {
     return stringValue(readExtra(log)?.path);
 }
 
+function getAdjustmentOperator(log: AdminCreditLog) {
+    const extra = readExtra(log);
+    const username = stringValue(extra?.operatorUsername);
+    const id = stringValue(extra?.operatorId);
+    if (!username && !id) return "";
+    return username && id ? `${username} (${id})` : username || id;
+}
+
+function getAdjustmentReason(log: AdminCreditLog) {
+    return stringValue(readExtra(log)?.reason);
+}
+
 function formatDate(value?: string) {
     return value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-";
 }
@@ -90,21 +101,8 @@ export default function AdminCreditLogsPage() {
     const { token: themeToken } = theme.useToken();
     const [draft, setDraft] = useState<CreditLogDraft>(() => defaultDraft());
     const [filters, setFilters] = useState<CreditLogFilters>(() => draftToFilters(defaultDraft(), 1, defaultCreditLogPageSize));
-    const { logs, stats, total, isLoading, refreshLogs, saveLog: saveAdminLog, deleteLog } = useAdminCreditLogs(filters);
-    const [form] = Form.useForm<CreditLogFormValues>();
-    const [editingLog, setEditingLog] = useState<Partial<AdminCreditLog> | null>(null);
-    const [deletingLog, setDeletingLog] = useState<AdminCreditLog | null>(null);
+    const { logs, stats, total, isLoading, refreshLogs } = useAdminCreditLogs(filters);
     const [detailLog, setDetailLog] = useState<AdminCreditLog | null>(null);
-
-    useEffect(() => {
-        if (editingLog) form.setFieldsValue({ type: "admin_adjust", amount: 0, balance: 0, ...editingLog });
-    }, [editingLog, form]);
-
-    const saveLog = async () => {
-        const value = await form.validateFields();
-        await saveAdminLog({ ...editingLog, ...value });
-        setEditingLog(null);
-    };
 
     const applyFilters = () => {
         setFilters((current) => draftToFilters(draft, 1, current.pageSize));
@@ -205,12 +203,6 @@ export default function AdminCreditLogsPage() {
                 <Space size={4}>
                     <Tooltip title="详情">
                         <Button type="text" size="small" icon={<InfoCircleOutlined />} onClick={() => setDetailLog(item)} />
-                    </Tooltip>
-                    <Tooltip title="编辑">
-                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => setEditingLog(item)} />
-                    </Tooltip>
-                    <Tooltip title="删除">
-                        <Button danger type="text" size="small" icon={<DeleteOutlined />} onClick={() => setDeletingLog(item)} />
                     </Tooltip>
                 </Space>
             ),
@@ -314,11 +306,7 @@ export default function AdminCreditLogsPage() {
                         </Space>
                     }
                     options={{ density: true, setting: true, reload: () => void refreshLogs() }}
-                    toolBarRender={() => [
-                        <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => setEditingLog({ type: "admin_adjust", amount: 0, balance: 0 })}>
-                            新增
-                        </Button>,
-                    ]}
+                    toolBarRender={() => []}
                     pagination={{
                         current: filters.page,
                         pageSize: filters.pageSize,
@@ -336,53 +324,6 @@ export default function AdminCreditLogsPage() {
                 />
             </Space>
 
-            <Modal title={editingLog?.id ? "编辑日志" : "新增日志"} open={Boolean(editingLog)} width={680} onCancel={() => setEditingLog(null)} onOk={() => void saveLog()} okText="保存" cancelText="取消" destroyOnHidden>
-                <Form form={form} layout="vertical" requiredMark={false}>
-                    <Row gutter={14}>
-                        <Col span={12}>
-                            <Form.Item name="userId" label="用户 ID" rules={[{ required: true, message: "请输入用户 ID" }]}>
-                                <Input />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="type" label="类型" rules={[{ required: true, message: "请输入类型" }]}>
-                                <Input />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="amount" label="变动数量" rules={[{ required: true, message: "请输入变动数量" }]}>
-                                <InputNumber precision={0} style={{ width: "100%" }} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="balance" label="变动后余额" rules={[{ required: true, message: "请输入变动后余额" }]}>
-                                <InputNumber min={0} precision={0} style={{ width: "100%" }} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="relatedId" label="关联 ID">
-                                <Input />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="createdAt" label="创建时间">
-                                <Input placeholder="不填则新增时自动生成" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={24}>
-                            <Form.Item name="remark" label="备注">
-                                <Input.TextArea rows={3} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={24}>
-                            <Form.Item name="extra" label="扩展信息">
-                                <Input.TextArea rows={3} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                </Form>
-            </Modal>
-
             <Modal title="日志详情" open={Boolean(detailLog)} width={760} footer={null} onCancel={() => setDetailLog(null)} destroyOnHidden>
                 {detailLog ? (
                     <Descriptions
@@ -398,6 +339,12 @@ export default function AdminCreditLogsPage() {
                             { key: "amount", label: "变动", children: <Typography.Text type={detailLog.amount >= 0 ? "success" : "danger"}>{detailLog.amount}</Typography.Text> },
                             { key: "balance", label: "余额", children: detailLog.balance },
                             { key: "relatedId", label: "关联 ID", children: detailLog.relatedId ? <Typography.Text copyable>{detailLog.relatedId}</Typography.Text> : "-" },
+                            ...(detailLog.type === "admin_adjust"
+                                ? [
+                                      { key: "operator", label: "操作管理员", children: getAdjustmentOperator(detailLog) || "-" },
+                                      { key: "reason", label: "调整原因", children: getAdjustmentReason(detailLog) || detailLog.remark || "-" },
+                                  ]
+                                : []),
                             { key: "remark", label: "备注", children: detailLog.remark || "-" },
                             { key: "createdAt", label: "创建时间", children: formatDate(detailLog.createdAt) },
                             {
@@ -416,21 +363,6 @@ export default function AdminCreditLogsPage() {
                 ) : null}
             </Modal>
 
-            <Modal
-                title="删除日志"
-                open={Boolean(deletingLog)}
-                onCancel={() => setDeletingLog(null)}
-                onOk={async () => {
-                    if (!deletingLog) return;
-                    await deleteLog(deletingLog.id);
-                    setDeletingLog(null);
-                }}
-                okText="删除"
-                okButtonProps={{ danger: true }}
-                cancelText="取消"
-            >
-                确定删除这条使用日志吗？
-            </Modal>
         </main>
     );
 }

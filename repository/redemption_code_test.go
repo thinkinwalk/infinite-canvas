@@ -180,3 +180,53 @@ func TestListCreditLogsFiltersTimeAndStats(t *testing.T) {
 		t.Fatalf("stats=%#v, want consume=10 refund=3 net=-7 count=2", stats)
 	}
 }
+
+func TestAdjustUserCreditsWritesAuditLog(t *testing.T) {
+	setupRedemptionTestDB(t)
+	now := "2026-07-30T20:00:00+08:00"
+	if _, err := SaveUser(model.User{ID: "user-1", Username: "member", Credits: 100, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+
+	updated, ok, err := AdjustUserCredits("user-1", 135, model.CreditLog{
+		ID:     "credit-adjust-1",
+		Type:   model.CreditLogTypeAdminAdjust,
+		Remark: "后台手动调整：活动补偿",
+		Extra:  `{"operatorId":"admin-1","reason":"活动补偿"}`,
+	}, now)
+	if err != nil || !ok {
+		t.Fatalf("adjust credits: ok=%v err=%v", ok, err)
+	}
+	if updated.Credits != 135 {
+		t.Fatalf("credits = %d, want 135", updated.Credits)
+	}
+	logs, total, _, err := ListCreditLogsByUser("user-1", model.Query{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if total != 1 || len(logs) != 1 || logs[0].Amount != 35 || logs[0].Balance != 135 || logs[0].Extra == "" {
+		t.Fatalf("unexpected logs: %#v total=%d", logs, total)
+	}
+}
+
+func TestAdjustUserCreditsRollsBackWhenAuditLogFails(t *testing.T) {
+	setupRedemptionTestDB(t)
+	now := "2026-07-30T20:00:00+08:00"
+	if _, err := SaveUser(model.User{ID: "user-1", Username: "member", Credits: 100, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("save user: %v", err)
+	}
+	if _, err := SaveCreditLog(model.CreditLog{ID: "duplicate-log", UserID: "user-1", Type: model.CreditLogTypeAdminAdjust, CreatedAt: now}); err != nil {
+		t.Fatalf("save existing log: %v", err)
+	}
+
+	if _, _, err := AdjustUserCredits("user-1", 200, model.CreditLog{ID: "duplicate-log", Type: model.CreditLogTypeAdminAdjust}, now); err == nil {
+		t.Fatal("adjust credits succeeded, want duplicate log error")
+	}
+	user, ok, err := GetUserByID("user-1")
+	if err != nil || !ok {
+		t.Fatalf("get user: ok=%v err=%v", ok, err)
+	}
+	if user.Credits != 100 {
+		t.Fatalf("credits = %d after rollback, want 100", user.Credits)
+	}
+}

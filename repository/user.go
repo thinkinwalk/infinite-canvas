@@ -150,6 +150,41 @@ func RefundUserCredits(id string, credits int, now string) (model.User, bool, er
 	return user, ok && tx.RowsAffected > 0, err
 }
 
+// AdjustUserCredits updates a user's balance and appends its audit log atomically.
+func AdjustUserCredits(id string, credits int, log model.CreditLog, now string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	var user model.User
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
+			return err
+		}
+		oldCredits := user.Credits
+		if oldCredits == credits {
+			return nil
+		}
+		if err := tx.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{
+			"credits":    credits,
+			"updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		user.Credits = credits
+		user.UpdatedAt = now
+		log.UserID = id
+		log.Amount = credits - oldCredits
+		log.Balance = credits
+		log.CreatedAt = now
+		return tx.Create(&log).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, false, nil
+	}
+	return user, err == nil, err
+}
+
 // SaveCreditLog 保存算力点变更流水。
 func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	db, err := DB()
@@ -241,14 +276,6 @@ func sumCreditLogStats(tx *gorm.DB) (model.CreditLogStats, error) {
 		Net:     int(row.Net),
 		Count:   int(row.Count),
 	}, err
-}
-
-func DeleteCreditLog(id string) error {
-	db, err := DB()
-	if err != nil {
-		return err
-	}
-	return db.Delete(&model.CreditLog{}, "id = ?", id).Error
 }
 
 func SaveRedemptionCode(code model.RedemptionCode) (model.RedemptionCode, error) {

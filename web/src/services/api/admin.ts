@@ -123,8 +123,8 @@ export async function saveAdminUser(token: string, user: Partial<AdminUser> & { 
     return apiPost<AdminUser>("/api/admin/users", user, token);
 }
 
-export async function adjustAdminUserCredits(token: string, id: string, credits: number) {
-    return apiPost<AdminUser>(`/api/admin/users/${encodeURIComponent(id)}/credits`, { credits }, token);
+export async function adjustAdminUserCredits(token: string, id: string, credits: number, reason: string) {
+    return apiPost<AdminUser>(`/api/admin/users/${encodeURIComponent(id)}/credits`, { credits, reason }, token);
 }
 
 export async function deleteAdminUser(token: string, id: string) {
@@ -133,14 +133,6 @@ export async function deleteAdminUser(token: string, id: string) {
 
 export async function fetchAdminCreditLogs(token: string, query: AdminCreditLogQuery = {}) {
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
-}
-
-export async function saveAdminCreditLog(token: string, log: Partial<AdminCreditLog>) {
-    return apiPost<AdminCreditLog>("/api/admin/credit-logs", log, token);
-}
-
-export async function deleteAdminCreditLog(token: string, id: string) {
-    return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
 }
 
 export async function fetchAdminRedemptionCodes(token: string, query: AdminRedemptionCodeQuery = {}) {

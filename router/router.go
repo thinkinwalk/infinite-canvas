@@ -62,10 +62,6 @@ func New() *gin.Engine {
 		handler.AdminDeleteUser(c.Writer, c.Request, c.Param("id"))
 	})
 	admin.GET("/credit-logs", gin.WrapF(handler.AdminCreditLogs))
-	admin.POST("/credit-logs", gin.WrapF(handler.AdminSaveCreditLog))
-	admin.DELETE("/credit-logs/:id", func(c *gin.Context) {
-		handler.AdminDeleteCreditLog(c.Writer, c.Request, c.Param("id"))
-	})
 	admin.GET("/redemption-codes", gin.WrapF(handler.AdminRedemptionCodes))
 	admin.POST("/redemption-codes", gin.WrapF(handler.AdminCreateRedemptionCodes))
 	admin.DELETE("/redemption-codes/invalid", gin.WrapF(handler.AdminDeleteInvalidRedemptionCodes))

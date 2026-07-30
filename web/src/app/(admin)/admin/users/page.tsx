@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import type { AdminUser } from "@/services/api/admin";
 import { useAdminUsers } from "./use-admin-users";
 
-type UserFormValues = Partial<AdminUser> & { password?: string };
+type UserFormValues = Partial<AdminUser> & { password?: string; creditReason?: string };
 
 const roleOptions = [
     { label: "普通用户", value: "user" },
@@ -38,13 +38,16 @@ export default function AdminUsersPage() {
         const value = await form.validateFields();
         const userValue = { ...value };
         delete userValue.credits;
+        delete userValue.creditReason;
         await saveAdminUser({ ...editingUser, ...userValue, password: value.password || undefined });
         setEditingUser(null);
     };
 
     const saveCredits = async () => {
         if (!editingUser?.id) return;
-        await adjustCredits(editingUser.id, form.getFieldValue("credits") || 0);
+        const values = await form.validateFields(["credits", "creditReason"]);
+        await adjustCredits(editingUser.id, values.credits || 0, values.creditReason?.trim() || "");
+        form.setFieldValue("creditReason", "");
     };
 
     const columns: ProColumns<AdminUser>[] = [
@@ -226,13 +229,18 @@ export default function AdminUsersPage() {
                             <Typography.Text strong>算力点调整</Typography.Text>
                             <Row gutter={14}>
                                 <Col span={12}>
-                                    <Form.Item label="算力点">
+                                    <Form.Item label="算力点" required>
                                         <Space.Compact style={{ width: "100%" }}>
-                                            <Form.Item name="credits" noStyle>
+                                            <Form.Item name="credits" noStyle rules={[{ required: true, message: "请输入算力点" }]}>
                                                 <InputNumber min={0} precision={0} style={{ width: "100%" }} />
                                             </Form.Item>
                                             <Button onClick={() => void saveCredits()}>调整</Button>
                                         </Space.Compact>
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item name="creditReason" label="调整原因" rules={[{ required: true, whitespace: true, message: "请填写调整原因" }]}>
+                                        <Input maxLength={200} placeholder="例如：活动补偿、人工充值" />
                                     </Form.Item>
                                 </Col>
                             </Row>

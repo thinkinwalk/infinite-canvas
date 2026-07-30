@@ -302,31 +302,36 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	return user, err
 }
 
-func AdjustUserCredits(id string, credits int) (model.User, error) {
-	user, ok, err := repository.GetUserByID(id)
-	if err != nil || !ok {
-		if err != nil {
-			return user, err
-		}
+func AdjustUserCredits(id string, credits int, reason string, operator model.AuthUser) (model.User, error) {
+	if credits < 0 {
+		return model.User{}, safeMessageError{message: "算力点不能小于 0"}
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return model.User{}, safeMessageError{message: "请填写调整原因"}
+	}
+	extra, err := json.Marshal(map[string]string{
+		"operatorId":       operator.ID,
+		"operatorUsername": operator.Username,
+		"reason":           reason,
+	})
+	if err != nil {
+		return model.User{}, err
+	}
+	user, ok, err := repository.AdjustUserCredits(id, credits, model.CreditLog{
+		ID:     newID("credit"),
+		Type:   model.CreditLogTypeAdminAdjust,
+		Remark: "后台手动调整：" + reason,
+		Extra:  string(extra),
+	}, now())
+	if err != nil {
+		return user, err
+	}
+	if !ok {
 		return user, safeMessageError{message: "用户不存在"}
 	}
-	oldCredits := user.Credits
-	user.Credits = credits
-	user.UpdatedAt = now()
-	user, err = repository.SaveUser(user)
-	if err == nil && oldCredits != credits {
-		_, err = repository.SaveCreditLog(model.CreditLog{
-			ID:        newID("credit"),
-			UserID:    user.ID,
-			Type:      model.CreditLogTypeAdminAdjust,
-			Amount:    credits - oldCredits,
-			Balance:   credits,
-			Remark:    "后台手动调整",
-			CreatedAt: now(),
-		})
-	}
 	user.Password = ""
-	return user, err
+	return user, nil
 }
 
 func ConsumeUserCredits(userID string, modelName string, credits int, path string) error {
@@ -396,18 +401,6 @@ func ListUserCreditLogs(userID string, q model.Query) (model.CreditLogList, erro
 		return model.CreditLogList{}, err
 	}
 	return model.CreditLogList{Items: logs, Total: int(total), Stats: stats}, nil
-}
-
-func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
-	if log.ID == "" {
-		log.ID = newID("credit")
-		log.CreatedAt = now()
-	}
-	return repository.SaveCreditLog(log)
-}
-
-func DeleteCreditLog(id string) error {
-	return repository.DeleteCreditLog(id)
 }
 
 func attachCreditLogUsers(logs []model.CreditLog) error {

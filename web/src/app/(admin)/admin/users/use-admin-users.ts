@@ -44,7 +44,7 @@ export function useAdminUsers() {
     });
 
     const creditMutation = useMutation({
-        mutationFn: ({ id, credits }: { id: string; credits: number }) => adjustAdminUserCredits(token, id, credits),
+        mutationFn: ({ id, credits, reason }: { id: string; credits: number; reason: string }) => adjustAdminUserCredits(token, id, credits, reason),
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
             message.success("算力点已调整");
@@ -83,7 +83,7 @@ export function useAdminUsers() {
         resetFilters: () => updateFilters({ keyword: "", page: 1, pageSize: defaultPageSize }),
         refreshUsers: () => query.refetch(),
         saveUser: (user: Partial<AdminUser> & { password?: string }) => saveMutation.mutateAsync(user),
-        adjustCredits: (id: string, credits: number) => creditMutation.mutateAsync({ id, credits }),
+        adjustCredits: (id: string, credits: number, reason: string) => creditMutation.mutateAsync({ id, credits, reason }),
         deleteUser: (id: string) => deleteMutation.mutateAsync(id),
     };
 }
