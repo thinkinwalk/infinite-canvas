@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, DeleteOutlined, EditOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
@@ -54,6 +54,7 @@ export default function AdminSettingsPage() {
     const [editorMode, setEditorMode] = useState<Record<SettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
     const [jsonText, setJsonText] = useState<Record<SettingsTabKey, string>>({ public: "", private: "" });
     const [channels, setChannels] = useState<AdminModelChannel[]>([]);
+    const [groupEditor, setGroupEditor] = useState<{ originalKey?: string; key: string; name: string; creditRatio: number; enabled: boolean } | null>(null);
     const [channelForm] = Form.useForm<AdminModelChannel>();
     const [editingChannelIndex, setEditingChannelIndex] = useState<number | null>(null);
     const [isChannelDrawerOpen, setIsChannelDrawerOpen] = useState(false);
@@ -357,6 +358,26 @@ export default function AdminSettingsPage() {
         message.success("已保存");
     }
 
+    const groups = (form.getFieldValue(["private", "groups"]) || {}) as AdminSettings["private"]["groups"];
+    const groupRows = Object.entries(groups).map(([key, value]) => ({ key, ...value }));
+    const saveGroup = () => {
+        if (!groupEditor?.key.trim() || !groupEditor.name.trim()) {
+            message.error("请输入分组标识和显示名称");
+            return;
+        }
+        const key = groupEditor.key.trim();
+        if (groups[key] && key !== groupEditor.originalKey) {
+            message.error("分组标识已存在");
+            return;
+        }
+        const nextGroups = { ...groups };
+        if (groupEditor.originalKey && groupEditor.originalKey !== key) delete nextGroups[groupEditor.originalKey];
+        nextGroups[key] = { name: groupEditor.name.trim(), creditRatio: Math.max(0, Number(groupEditor.creditRatio) || 0), enabled: groupEditor.enabled };
+        form.setFieldsValue({ private: { ...form.getFieldValue("private"), groups: nextGroups } });
+        setJsonText((current) => ({ ...current, private: JSON.stringify({ ...form.getFieldsValue(true).private, groups: nextGroups }, null, 2) }));
+        setGroupEditor(null);
+    };
+
     return (
         <main style={{ padding: 24 }}>
             <Flex vertical gap={16}>
@@ -508,7 +529,7 @@ export default function AdminSettingsPage() {
                                         </Space>
                                     }
                                 >
-                                    <Flex vertical gap={14}>
+                            <Flex vertical gap={14}>
                                         <Typography.Text type="secondary">
                                             本项目接口回调地址是 /api/auth/linux-do/callback，请在 Linux.do 应用后台自行拼接站点前缀。
                                             <Typography.Link href="https://connect.linux.do" target="_blank" rel="noreferrer">
@@ -533,6 +554,43 @@ export default function AdminSettingsPage() {
                                             </Col>
                                         </Row>
                                     </Flex>
+                                </Card>
+                                <Card
+                                    size="small"
+                                    title="用户分组"
+                                    extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setGroupEditor({ key: "", name: "", creditRatio: 1, enabled: true })}>新增分组</Button>}
+                                >
+                                    <Table
+                                        size="small"
+                                        pagination={false}
+                                        rowKey="key"
+                                        dataSource={groupRows}
+                                        locale={{ emptyText: "暂无分组" }}
+                                        columns={[
+                                            { title: "标识", dataIndex: "key", width: 180 },
+                                            { title: "名称", dataIndex: "name" },
+                                            { title: "扣除比例", dataIndex: "creditRatio", width: 120, render: (value) => `${value}x` },
+                                            { title: "状态", dataIndex: "enabled", width: 90, render: (value) => <Tag color={value ? "success" : "default"}>{value ? "启用" : "停用"}</Tag> },
+                                            {
+                                                title: "操作",
+                                                key: "actions",
+                                                width: 150,
+                                                align: "right",
+                                                render: (_, item) => (
+                                                    <Space size={4}>
+                                                        <Button size="small" icon={<EditOutlined />} onClick={() => setGroupEditor({ originalKey: item.key, ...item })}>编辑</Button>
+                                                        <Button size="small" danger disabled={item.key === "default"} icon={<DeleteOutlined />} onClick={() => {
+                                                            const nextGroups = { ...groups };
+                                                            delete nextGroups[item.key];
+                                                            form.setFieldsValue({ private: { ...form.getFieldValue("private"), groups: nextGroups } });
+                                                            setJsonText((current) => ({ ...current, private: JSON.stringify({ ...form.getFieldsValue(true).private, groups: nextGroups }, null, 2) }));
+                                                        }} />
+                                                    </Space>
+                                                ),
+                                            },
+                                        ]}
+                                    />
+                                    <Typography.Text type="secondary">分组倍率会应用于算力点扣除；default 分组不可删除。</Typography.Text>
                                 </Card>
                                 <Card size="small" title="提示词定时同步">
                                     <Row gutter={16} align="middle">
@@ -683,6 +741,22 @@ export default function AdminSettingsPage() {
                         </Row>
                     </Form>
                 </Drawer>
+                <Modal title={groupEditor?.originalKey ? "编辑分组" : "新增分组"} open={Boolean(groupEditor)} onCancel={() => setGroupEditor(null)} onOk={saveGroup} okText="保存" cancelText="取消">
+                    <Form layout="vertical">
+                        <Form.Item label="分组标识" required extra="用于用户和渠道匹配，建议使用英文、数字或下划线">
+                            <Input value={groupEditor?.key || ""} disabled={Boolean(groupEditor?.originalKey === "default")} onChange={(event) => setGroupEditor((current) => current ? { ...current, key: event.target.value } : current)} />
+                        </Form.Item>
+                        <Form.Item label="显示名称" required>
+                            <Input value={groupEditor?.name || ""} onChange={(event) => setGroupEditor((current) => current ? { ...current, name: event.target.value } : current)} />
+                        </Form.Item>
+                        <Form.Item label="算力点扣除比例" extra="1 为原价，0.5 为五折">
+                            <InputNumber min={0} step={0.1} value={groupEditor?.creditRatio} onChange={(value) => setGroupEditor((current) => current ? { ...current, creditRatio: Number(value) || 0 } : current)} />
+                        </Form.Item>
+                        <Form.Item label="状态">
+                            <Switch checked={groupEditor?.enabled} onChange={(enabled) => setGroupEditor((current) => current ? { ...current, enabled } : current)} />
+                        </Form.Item>
+                    </Form>
+                </Modal>
                 <Modal
                     title={
                         <Space size={12}>
