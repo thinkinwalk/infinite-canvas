@@ -6,7 +6,8 @@ import { Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Mod
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
-import type { AdminUser } from "@/services/api/admin";
+import { fetchAdminSettings, type AdminUser } from "@/services/api/admin";
+import { useUserStore } from "@/stores/use-user-store";
 import { useAdminUsers } from "./use-admin-users";
 
 type UserFormValues = Partial<AdminUser> & { password?: string; creditReason?: string };
@@ -23,19 +24,29 @@ const statusOptions = [
 
 export default function AdminUsersPage() {
     const { users, keyword, page, pageSize, total, isLoading, searchUsers, changePage, changePageSize, resetFilters, refreshUsers, saveUser: saveAdminUser, adjustCredits, deleteUser } = useAdminUsers();
+    const token = useUserStore((state) => state.token);
     const [form] = Form.useForm<UserFormValues>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingUser, setEditingUser] = useState<Partial<AdminUser> | null>(null);
     const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
+    const [groups, setGroups] = useState<Record<string, { name: string; enabled: boolean }>>({ default: { name: "普通用户", enabled: true } });
 
     useEffect(() => setKeywordText(keyword), [keyword]);
+
+    useEffect(() => {
+        if (!token) return;
+        void fetchAdminSettings(token).then((settings) => {
+            const configured = settings.private?.groups || {};
+            setGroups(Object.keys(configured).length ? configured : { default: { name: "普通用户", enabled: true } });
+        }).catch(() => undefined);
+    }, [token]);
 
     useEffect(() => {
         if (editingUser) form.setFieldsValue({ role: "user", status: "active", ...editingUser, password: "", creditReason: "" });
     }, [editingUser, form]);
 
     const saveUser = async () => {
-        const value = await form.validateFields(["username", "password", "displayName", "email", "role", "status"]);
+        const value = await form.validateFields(["username", "password", "displayName", "email", "role", "status", "group"]);
         await saveAdminUser({ ...editingUser, ...value, password: value.password || undefined });
         setEditingUser(null);
     };
@@ -227,7 +238,10 @@ export default function AdminUsersPage() {
                         </Col>
                         <Col span={12}>
                             <Form.Item name="group" label="用户分组">
-                                <Input placeholder="default / vip / svip" />
+                                <Select
+                                    options={Object.entries(groups).map(([key, value]) => ({ label: `${value.name || key} (${key})`, value: key, disabled: value.enabled === false }))}
+                                    placeholder="请选择用户分组"
+                                />
                             </Form.Item>
                         </Col>
                     </Row>
