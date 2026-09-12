@@ -73,6 +73,12 @@ export default function AdminUsersPage() {
             render: (_, item) => <Tag color={item.role === "admin" ? "gold" : "default"}>{item.role === "admin" ? "管理员" : "用户"}</Tag>,
         },
         {
+            title: "分组",
+            dataIndex: "group",
+            width: 100,
+            render: (_, item) => <Tag>{item.group || "default"}</Tag>,
+        },
+        {
             title: "状态",
             dataIndex: "status",
             width: 90,
@@ -217,6 +223,11 @@ export default function AdminUsersPage() {
                         <Col span={12}>
                             <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
                                 <Select options={statusOptions} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="group" label="用户分组">
+                                <Input placeholder="default / vip / svip" />
                             </Form.Item>
                         </Col>
                     </Row>

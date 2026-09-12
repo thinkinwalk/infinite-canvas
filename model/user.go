@@ -24,6 +24,7 @@ type User struct {
 	DisplayName string     `json:"displayName"`
 	AvatarURL   string     `json:"avatarUrl"`
 	Role        UserRole   `json:"role"`
+	Group       string     `json:"group" gorm:"index"`
 	Credits     int        `json:"credits"`
 	AffCode     string     `json:"affCode" gorm:"uniqueIndex"`
 	AffCount    int        `json:"affCount"`
@@ -51,6 +52,7 @@ type AuthUser struct {
 	DisplayName string   `json:"displayName"`
 	AvatarURL   string   `json:"avatarUrl"`
 	Role        UserRole `json:"role"`
+	Group       string   `json:"group"`
 	Credits     int      `json:"credits"`
 	CreatedAt   string   `json:"createdAt"`
 	UpdatedAt   string   `json:"updatedAt"`
@@ -63,12 +65,16 @@ type AuthSession struct {
 }
 
 func PublicUser(user User) AuthUser {
+	if user.Group == "" {
+		user.Group = "default"
+	}
 	return AuthUser{
 		ID:          user.ID,
 		Username:    user.Username,
 		DisplayName: user.DisplayName,
 		AvatarURL:   user.AvatarURL,
 		Role:        user.Role,
+		Group:       user.Group,
 		Credits:     user.Credits,
 		CreatedAt:   user.CreatedAt,
 		UpdatedAt:   user.UpdatedAt,

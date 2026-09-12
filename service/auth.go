@@ -89,6 +89,7 @@ func Register(username string, password string) (model.AuthSession, error) {
 		Username:  username,
 		Password:  hash,
 		Role:      model.UserRoleUser,
+		Group:     "default",
 		AffCode:   newAffCode(),
 		Status:    model.UserStatusActive,
 		CreatedAt: now(),
@@ -257,6 +258,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	if user.Status == "" {
 		user.Status = model.UserStatusActive
 	}
+	if strings.TrimSpace(user.Group) == "" {
+		user.Group = "default"
+	}
 	if saved, ok, err := repository.GetUserByUsername(user.Username); err != nil {
 		return user, err
 	} else if ok && saved.ID != user.ID {
@@ -283,6 +287,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		}
 		if user.LinuxDoID == "" {
 			user.LinuxDoID = saved.LinuxDoID
+		}
+		if strings.TrimSpace(user.Group) == "" {
+			user.Group = saved.Group
 		}
 		user.LastLoginAt = saved.LastLoginAt
 	}
@@ -345,7 +352,9 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 	if !ok {
 		return safeMessageError{message: "算力点不足"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	group := user.Group
+	ratio, _ := UserGroupRatio(group)
+	extra, _ := json.Marshal(map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits})
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -370,7 +379,9 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 	if !ok {
 		return safeMessageError{message: "用户不存在"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	group := user.Group
+	ratio, _ := UserGroupRatio(group)
+	extra, _ := json.Marshal(map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits})
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -606,6 +617,9 @@ func normalizeUserDefaults(user *model.User) {
 	}
 	if user.AffCode == "" {
 		user.AffCode = newAffCode()
+	}
+	if strings.TrimSpace(user.Group) == "" {
+		user.Group = "default"
 	}
 }
 

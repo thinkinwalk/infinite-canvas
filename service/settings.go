@@ -127,6 +127,21 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	if setting.Channels == nil {
 		setting.Channels = []model.ModelChannel{}
 	}
+	if setting.Groups == nil {
+		setting.Groups = map[string]model.UserGroup{}
+	}
+	if _, ok := setting.Groups["default"]; !ok {
+		setting.Groups["default"] = model.UserGroup{Name: "普通用户", CreditRatio: 1, Enabled: true}
+	}
+	for key, group := range setting.Groups {
+		if strings.TrimSpace(group.Name) == "" {
+			group.Name = key
+		}
+		if group.CreditRatio < 0 {
+			group.CreditRatio = 0
+		}
+		setting.Groups[key] = group
+	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	for i := range setting.Channels {
 		if setting.Channels[i].Protocol == "" {
@@ -135,6 +150,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		if setting.Channels[i].Models == nil {
 			setting.Channels[i].Models = []string{}
 		}
+		setting.Channels[i].AllowedGroups = uniqueModelNames(setting.Channels[i].AllowedGroups)
 		if setting.Channels[i].Weight <= 0 {
 			setting.Channels[i].Weight = 1
 		}
@@ -180,11 +196,15 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 }
 
 func SelectModelChannel(modelName string) (model.ModelChannel, error) {
+	return SelectModelChannelForGroup(modelName, "")
+}
+
+func SelectModelChannelForGroup(modelName string, userGroup string) (model.ModelChannel, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
-	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
+	channels := modelChannelsForGroup(normalizePrivateSetting(settings.Private).Channels, modelName, userGroup)
 	if len(channels) == 0 {
 		return model.ModelChannel{}, errors.New("没有可用模型渠道")
 	}
@@ -488,9 +508,16 @@ func (err safeMessageError) SafeMessage() string {
 }
 
 func modelChannelsForModel(channels []model.ModelChannel, modelName string) []model.ModelChannel {
+	return modelChannelsForGroup(channels, modelName, "")
+}
+
+func modelChannelsForGroup(channels []model.ModelChannel, modelName string, userGroup string) []model.ModelChannel {
 	result := []model.ModelChannel{}
 	for _, channel := range channels {
 		if !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
+			continue
+		}
+		if userGroup != "" && len(channel.AllowedGroups) > 0 && !containsString(channel.AllowedGroups, userGroup) {
 			continue
 		}
 		for _, item := range channel.Models {
@@ -501,4 +528,29 @@ func modelChannelsForModel(channels []model.ModelChannel, modelName string) []mo
 		}
 	}
 	return result
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if strings.TrimSpace(item) == strings.TrimSpace(target) {
+			return true
+		}
+	}
+	return false
+}
+
+func UserGroupRatio(userGroup string) (float64, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return 0, err
+	}
+	group := strings.TrimSpace(userGroup)
+	if group == "" {
+		group = "default"
+	}
+	item, ok := normalizePrivateSetting(settings.Private).Groups[group]
+	if !ok || !item.Enabled {
+		return 0, safeMessageError{message: "用户分组不可用"}
+	}
+	return item.CreditRatio, nil
 }

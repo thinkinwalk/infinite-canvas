@@ -17,6 +17,7 @@ export type AdminUser = {
     displayName: string;
     avatarUrl: string;
     role: "user" | "admin";
+    group: string;
     credits: number;
     affCode: string;
     affCount: number;
@@ -48,6 +49,7 @@ export type AdminCreditLog = {
     balance: number;
     relatedId: string;
     remark: string;
+    allowedGroups: string[];
     extra: string;
     createdAt: string;
 };
@@ -236,6 +238,7 @@ export type AdminModelChannel = {
     weight: number;
     enabled: boolean;
     remark: string;
+    allowedGroups: string[];
 };
 
 export type AdminPublicModelChannelSettings = {
@@ -266,6 +269,7 @@ export type AdminPublicSettings = {
 
 export type AdminPrivateSettings = {
     channels: AdminModelChannel[];
+    groups: Record<string, { name: string; creditRatio: number; enabled: boolean }>;
     promptSync: {
         enabled: boolean;
         cron: string;

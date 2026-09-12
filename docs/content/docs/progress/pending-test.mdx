@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 用户分组计费与渠道访问：管理员应能在用户编辑中设置 `default` / `vip` 等分组，在私有设置 JSON 或渠道编辑器中配置分组倍率及允许访问分组；用户调用模型时应只选择其分组允许的渠道，并按倍率向上取整扣除算力点，失败退款和使用日志应保留实际扣除值、分组与倍率快照。
+
 The current release needs manual verification in these areas:
 
 - Local proxy: Settings should show a dedicated Local proxy tab between Providers and Preferences, with a switch that is off by default. Turning it on should reveal the `npx @basketikun/canvas-proxy@latest` command (with `--port` appended when a non-default port is configured), a copy action, and an address field defaulting to `http://127.0.0.1:23210` that normalizes a missing scheme and trailing slashes on blur. Test connection should succeed only while the command is running. With the proxy on, fetching model lists, generating images, videos, text (including streamed output), and audio, running custom call scripts, polling video tasks, downloading generated images and videos, and WebDAV connection tests plus sync should all route through the proxy and keep working; turning it off should restore direct requests. The proxy itself should forward request methods, headers, query strings, and bodies unchanged, stream SSE responses without buffering, and keep `data:` and `blob:` URLs untouched.

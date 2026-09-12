@@ -38,9 +38,9 @@ const emptySettings: AdminSettings = {
         },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
+    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
 };
-const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
+const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
 
 type SettingsTabKey = "public" | "private";
 type EditorMode = "visual" | "json";
@@ -651,6 +651,11 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
+                                <Form.Item name="allowedGroups" label="允许访问的用户分组" extra="留空表示所有分组可用">
+                                    <Select mode="multiple" allowClear options={Object.entries(form.getFieldValue(["private", "groups"]) || {}).map(([key, value]) => ({ label: `${(value as { name?: string }).name || key} (${key})`, value: key }))} />
+                                </Form.Item>
+                            </Col>
+                            <Col span={24}>
                                 <Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}>
                                     <Input />
                                 </Form.Item>
@@ -856,6 +861,7 @@ function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChanne
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
     return {
         channels: (setting.channels || []).map(normalizeChannel),
+        groups: setting.groups || { default: { name: "普通用户", creditRatio: 1, enabled: true } },
         promptSync: {
             enabled: setting.promptSync?.enabled !== false,
             cron: setting.promptSync?.cron || "*/5 * * * *",
@@ -879,6 +885,7 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         weight: Math.max(1, Number(item.weight) || 1),
         enabled: item.enabled !== false,
         remark: item.remark || "",
+        allowedGroups: item.allowedGroups || [],
     };
 }
 

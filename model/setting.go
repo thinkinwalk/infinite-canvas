@@ -11,14 +11,21 @@ const (
 
 // ModelChannel 模型渠道配置。
 type ModelChannel struct {
-	Protocol string   `json:"protocol"`
-	Name     string   `json:"name"`
-	BaseURL  string   `json:"baseUrl"`
-	APIKey   string   `json:"apiKey"`
-	Models   []string `json:"models"`
-	Weight   int      `json:"weight"`
-	Enabled  bool     `json:"enabled"`
-	Remark   string   `json:"remark"`
+	Protocol      string   `json:"protocol"`
+	Name          string   `json:"name"`
+	BaseURL       string   `json:"baseUrl"`
+	APIKey        string   `json:"apiKey"`
+	Models        []string `json:"models"`
+	Weight        int      `json:"weight"`
+	Enabled       bool     `json:"enabled"`
+	Remark        string   `json:"remark"`
+	AllowedGroups []string `json:"allowedGroups"`
+}
+
+type UserGroup struct {
+	Name        string  `json:"name"`
+	CreditRatio float64 `json:"creditRatio"`
+	Enabled     bool    `json:"enabled"`
 }
 
 // ModelCost 模型算力点配置。
@@ -56,9 +63,10 @@ type PublicLinuxDoAuthSetting struct {
 
 // PrivateSetting 私有配置。
 type PrivateSetting struct {
-	Channels   []ModelChannel     `json:"channels"`
-	PromptSync PromptSyncSetting  `json:"promptSync"`
-	Auth       PrivateAuthSetting `json:"auth"`
+	Channels   []ModelChannel       `json:"channels"`
+	Groups     map[string]UserGroup `json:"groups"`
+	PromptSync PromptSyncSetting    `json:"promptSync"`
+	Auth       PrivateAuthSetting   `json:"auth"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。

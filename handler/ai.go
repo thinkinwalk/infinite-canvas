@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -48,11 +49,16 @@ func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
 }
 
 func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "未登录或权限不足")
+		return
+	}
 	modelName := r.URL.Query().Get("model")
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-1.0-video"
 	}
-	channel, err := service.SelectModelChannel(modelName)
+	channel, err := service.SelectModelChannelForGroup(modelName, user.Group)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
@@ -85,14 +91,19 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	credits, err := service.ModelCost(modelName)
+	baseCredits, err := service.ModelCost(modelName)
 	if err != nil {
 		log.Printf("AI proxy read model cost failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	credits *= readAIRequestCount(body, contentType)
-	channel, err := service.SelectModelChannel(modelName)
+	ratio, err := service.UserGroupRatio(user.Group)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	credits := int(math.Ceil(float64(baseCredits)*ratio)) * readAIRequestCount(body, contentType)
+	channel, err := service.SelectModelChannelForGroup(modelName, user.Group)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
