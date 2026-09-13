@@ -2,6 +2,7 @@ import axios from "axios";
 import { nanoid } from "nanoid";
 
 import { dataUrlToFile } from "@/lib/image-utils";
+import { inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
@@ -186,6 +187,9 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    if (isPidoiGrokPreviewModel(modelOptionName(model))) {
+        return createPidoiGrokPreviewTask(config, model, prompt, references, options);
+    }
     const body = new FormData();
     const modelName = modelOptionName(model);
     const pidoiGrok = isPidoiGrokVideoModel(modelName);
@@ -208,6 +212,32 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
+        const taskID = videoTaskId(created);
+        if (!taskID) throw new Error("视频接口没有返回任务 ID");
+        return { id: taskID, provider: "openai", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "视频任务创建失败"));
+    }
+}
+
+/** Pidoi's public Grok preview endpoint uses JSON, unlike stock OpenAI video multipart requests. */
+async function createPidoiGrokPreviewTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const seconds = normalizeVideoSeconds(config.videoSeconds);
+    const imageUrls = await resolvePidoiReferenceUrls(references, options);
+    const payload: Record<string, unknown> = {
+        model: modelOptionName(model),
+        prompt,
+        seconds,
+        aspect_ratio: inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size),
+        resolution: normalizeVideoResolution(config.vquality),
+    };
+    if (imageUrls[0]) payload.image_url = imageUrls[0];
+    if (imageUrls.length > 1) payload.reference_image_urls = imageUrls.slice(1, 7);
+    try {
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), payload, {
+            headers: aiHeaders(config, "application/json"),
+            signal: options?.signal,
+        })).data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("视频接口没有返回任务 ID");
         return { id: taskID, provider: "openai", model };
@@ -477,7 +507,11 @@ function videoTaskId(task: { id?: string; task_id?: string }) {
 
 function isPidoiGrokVideoModel(model: string) {
     const name = model.toLowerCase().trim();
-    return name === "grok-imagine-video-1.5-fast" || name === "grok-imagine-1.0-video";
+    return name === "grok-imagine-video-1.5-preview" || name === "grok-imagine-video-1.5-fast" || name === "grok-imagine-1.0-video";
+}
+
+function isPidoiGrokPreviewModel(model: string) {
+    return model.toLowerCase().trim() === "grok-imagine-video-1.5-preview";
 }
 
 function isCompletedVideoStatus(status?: string) {
