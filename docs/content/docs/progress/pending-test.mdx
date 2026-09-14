@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 在线充值：登录用户打开「算力中心」的「在线充值」页，点击 10/50/100 元商品应打开对应云猫商品页；付款获得兑换码后，在「兑换码」页提交应到账并刷新余额与日志，取消或弹窗拦截时应有明确提示。
+
 - 用户分组计费与渠道访问：管理员应能在用户编辑中设置 `default` / `vip` 等分组，在私有设置 JSON 或渠道编辑器中配置分组倍率及允许访问分组；用户调用模型时应只选择其分组允许的渠道，并按倍率向上取整扣除算力点，失败退款和使用日志应保留实际扣除值、分组与倍率快照。
 
 The current release needs manual verification in these areas:

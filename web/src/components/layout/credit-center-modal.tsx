@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Empty, Input, Modal, Space, Table, Tabs, Tag, Typography, type TableProps } from "antd";
+import { ExternalLink } from "lucide-react";
 import dayjs from "dayjs";
 
 import { fetchUserCreditLogs, redeemCode, type CreditLog } from "@/services/api/auth";
@@ -21,6 +22,12 @@ const logTypeLabels: Record<string, { label: string; color?: string }> = {
 };
 
 const numberFormatter = new Intl.NumberFormat("zh-CN");
+
+const rechargeProducts = [
+    { amount: 10, url: "https://catfk.com/item/twszlu" },
+    { amount: 50, url: "https://catfk.com/item/umwucl" },
+    { amount: 100, url: "https://catfk.com/item/lc92r1" },
+];
 
 export function CreditCenterModal({ open, onOpenChange }: CreditCenterModalProps) {
     const { message } = App.useApp();
@@ -138,6 +145,28 @@ export function CreditCenterModal({ open, onOpenChange }: CreditCenterModalProps
                                         },
                                     }}
                                 />
+                            ),
+                        },
+                        {
+                            key: "recharge",
+                            label: "在线充值",
+                            children: (
+                                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                                    <Typography.Text type="secondary">选择充值额度，付款后将收到兑换码，再到“兑换码”中完成充值。</Typography.Text>
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                        {rechargeProducts.map((product) => (
+                                            <Button
+                                                key={product.url}
+                                                type="default"
+                                                size="large"
+                                                icon={<ExternalLink className="size-4" />}
+                                                onClick={() => window.open(product.url, "_blank", "noopener,noreferrer")}
+                                            >
+                                                {product.amount} 元
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </Space>
                             ),
                         },
                         {
