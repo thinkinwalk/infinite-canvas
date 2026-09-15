@@ -78,6 +78,19 @@
 - 提交完成后，给当前提交打最新版本号对应的 tag，例如 `v0.0.5`。
 - 发版本流程中不要执行编译、测试或构建，除非用户明确要求。
 
+## 生产环境与部署
+
+- 当前生产域名是 `https://studio.lingzhouai.com`，不要再使用旧域名 `https://studio.movoflow.com` 做生产验证。
+- 当前生产服务器是 `37.221.196.102`，登录用户 `root`，端口 `22`，主机名 `v2202606374943476754`。
+- SSH 连接使用本机密钥路径 `C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519`；只记录路径，不要把私钥内容写入仓库或文档。
+- 推荐 SSH 命令：`ssh -o BatchMode=yes -o IdentitiesOnly=yes -i C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519 root@37.221.196.102`。
+- 当前生产项目目录是 `/opt/infinite-canvas`，这是从 Docker labels 排查确认的目录；不要使用 `/opt/chatgpt2api`。
+- 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
+- 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
+- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.18.6`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
+- 旧服务器 `47.104.6.6` 已迁移，不要向其部署或以其状态判断当前生产。
+
 ## PR 审查与处理
 
 - 审查 PR 时必须把“需求价值”和“实现质量”分开判断，分别给出结论；实现差不等于需求不需要，需求有价值也不等于当前代码可以合并。

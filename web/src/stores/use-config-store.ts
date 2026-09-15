@@ -151,7 +151,7 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-const VIDEO_KEYWORDS = ["video", "seedance", "doubao-seedance", "sora", "veo", "kling", "wan", "hailuo"];
+const VIDEO_KEYWORDS = ["video", "seedance", "doubao-seedance", "sora", "veo", "kling", "wan", "hailuo", "tejiasd"];
 
 export function boolConfig(value: string, fallback: boolean) {
     return value ? value === "true" : fallback;
@@ -163,7 +163,7 @@ function knownModelCapability(name: string): ModelCapability | undefined {
     const value = name.toLowerCase();
     if (["gpt-image", "dall-e", "dalle", "seedream", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"].some((keyword) => value.includes(keyword))) return "image";
     if (["seedance", "doubao-seedance"].some((keyword) => value.includes(keyword))) return "video";
-    if (["seedance", "grok-imagine", "sora", "veo", "kling", "hailuo"].some((keyword) => value.includes(keyword)) && value.includes("video")) return "video";
+    if (["seedance", "grok-imagine", "sora", "veo", "kling", "hailuo", "tejiasd"].some((keyword) => value.includes(keyword)) && (value.includes("video") || value.includes("720p") || value.includes("1080p") || value.includes("480p"))) return "video";
     return undefined;
 }
 

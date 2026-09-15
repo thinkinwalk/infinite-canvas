@@ -145,3 +145,26 @@ func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *tes
 		t.Fatalf("default video model = %q, want seedance", channel.DefaultVideoModel)
 	}
 }
+
+func TestNormalizeSettingsRecognizesNamedVideoModels(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{
+				DefaultVideoModel: "missing-video",
+			},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{Enabled: true, Models: []string{"gpt-5.5", "tejiasd-mini-720p"}},
+			},
+		},
+	})
+
+	channel := settings.Public.ModelChannel
+	if channel.DefaultVideoModel != "tejiasd-mini-720p" {
+		t.Fatalf("default video model = %q, want tejiasd-mini-720p", channel.DefaultVideoModel)
+	}
+	if channel.DefaultTextModel != "gpt-5.5" {
+		t.Fatalf("default text model = %q, want gpt-5.5", channel.DefaultTextModel)
+	}
+}

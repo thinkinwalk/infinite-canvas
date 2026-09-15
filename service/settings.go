@@ -303,7 +303,13 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video")
+	return strings.Contains(name, "seedance") ||
+		strings.Contains(name, "video") ||
+		strings.Contains(name, "sora") ||
+		strings.Contains(name, "veo") ||
+		strings.Contains(name, "kling") ||
+		strings.Contains(name, "hailuo") ||
+		strings.Contains(name, "tejiasd")
 }
 
 func isImageModelName(modelName string) bool {

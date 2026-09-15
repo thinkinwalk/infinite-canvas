@@ -694,8 +694,8 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
-                                <Form.Item name="protocol" label="协议">
-                                    <Select options={[{ label: "OpenAI", value: "openai" }]} />
+                                <Form.Item name="protocol" label="协议" extra="这里选择接口调用格式；Sora、Seedance、Grok、Tejiasd 等属于模型名称，OpenAI 兼容接口统一选择 OpenAI。">
+                                    <Select options={[{ label: "OpenAI 兼容", value: "openai" }]} />
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
