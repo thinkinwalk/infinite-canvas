@@ -187,8 +187,8 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    if (isPidoiGrokPreviewModel(modelOptionName(model))) {
-        return createPidoiGrokPreviewTask(config, model, prompt, references, options);
+    if (isPidoiJsonVideoModel(modelOptionName(model))) {
+        return createPidoiJsonVideoTask(config, model, prompt, references, options);
     }
     const body = new FormData();
     const modelName = modelOptionName(model);
@@ -220,16 +220,18 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
 }
 
-/** Pidoi's public Grok preview endpoint uses JSON, unlike stock OpenAI video multipart requests. */
-async function createPidoiGrokPreviewTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    const seconds = normalizeVideoSeconds(config.videoSeconds);
+/** Pidoi video endpoints use JSON, unlike stock OpenAI video multipart requests. */
+async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const modelName = modelOptionName(model);
+    const resolution = normalizeVideoResolution(config.vquality);
+    const seconds = normalizePidoiVideoSeconds(modelName, config.videoSeconds, resolution);
     const imageUrls = await resolvePidoiReferenceUrls(references, options);
     const payload: Record<string, unknown> = {
-        model: modelOptionName(model),
+        model: modelName,
         prompt,
         seconds,
         aspect_ratio: inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size),
-        resolution: normalizeVideoResolution(config.vquality),
+        resolution,
     };
     if (imageUrls[0]) payload.image_url = imageUrls[0];
     if (imageUrls.length > 1) payload.reference_image_urls = imageUrls.slice(1, 7);
@@ -510,13 +512,20 @@ function isPidoiGrokVideoModel(model: string) {
     return name === "grok-imagine-video-1.5-preview" || name === "grok-imagine-video-1.5-fast" || name === "grok-imagine-1.0-video";
 }
 
-function isPidoiGrokPreviewModel(model: string) {
-    return model.toLowerCase().trim() === "grok-imagine-video-1.5-preview";
+function isPidoiJsonVideoModel(model: string) {
+    const name = model.toLowerCase().trim();
+    return name === "grok-imagine-video-1.5-preview" || name.startsWith("tejiasd-");
+}
+
+function normalizePidoiVideoSeconds(model: string, value: string, resolution: string) {
+    const seconds = Number(normalizeVideoSeconds(value));
+    if (!model.toLowerCase().trim().startsWith("tejiasd-")) return String(seconds);
+    return String(Math.min(seconds, resolution === "480p" ? 15 : 12));
 }
 
 function isCompletedVideoStatus(status?: string) {
     const value = String(status || "").toLowerCase();
-    return value === "completed" || value === "succeeded";
+    return value === "completed" || value === "succeeded" || value === "success";
 }
 
 function isFailedVideoStatus(status?: string) {
