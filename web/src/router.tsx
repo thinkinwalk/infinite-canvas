@@ -11,6 +11,7 @@ import HomePage from "@/pages/home";
 import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
+import RegisterPage from "@/pages/register";
 import VideoPage from "@/pages/video";
 
 export const router = createBrowserRouter([
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
             { path: "/canvas", element: <CanvasPage /> },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
             { path: "/config", element: <ConfigPage /> },
+            { path: "/register", element: <RegisterPage /> },
         ],
     },
     { path: "/admin/*", element: <AdminPage /> },

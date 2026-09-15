@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { App, Form, Input, Modal, Segmented, Tooltip } from "antd";
 import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, Shield, UserRound, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -22,11 +22,13 @@ type UserStatusActionsProps = {
     variant?: "default" | "canvas";
     onOpenShortcuts?: () => void;
     onOpenPlugins?: () => void;
+    initialAuthMode?: AuthMode;
+    autoOpenAuth?: boolean;
 };
 
 type AuthMode = "login" | "register" | "admin";
 
-export function UserStatusActions({ showConfig = true, showGitHub = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
+export function UserStatusActions({ showConfig = true, showGitHub = true, variant = "default", onOpenShortcuts, onOpenPlugins, initialAuthMode = "login", autoOpenAuth = false }: UserStatusActionsProps) {
     const { message } = App.useApp();
     const { i18n, t } = useTranslation();
     const [authOpen, setAuthOpen] = useState(false);
@@ -68,6 +70,13 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
         ...(allowRegister ? [{ label: "注册", value: "register" as const }] : []),
         { label: "后台", value: "admin" },
     ];
+
+    useEffect(() => {
+        if (autoOpenAuth && !user) {
+            setAuthMode(initialAuthMode);
+            setAuthOpen(true);
+        }
+    }, [autoOpenAuth, initialAuthMode, user]);
 
     async function handleAuth(values: AuthPayload) {
         setSubmitting(true);
