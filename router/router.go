@@ -115,6 +115,7 @@ func staticAppFallback() gin.HandlerFunc {
 				return
 			}
 		}
+		c.Header("Cache-Control", "no-cache")
 		c.File(indexPath)
 	}
 }
