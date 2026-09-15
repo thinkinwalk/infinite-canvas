@@ -23,6 +23,7 @@ export type AuthSession = {
 export type AuthPayload = {
     username: string;
     password: string;
+    ref?: string;
 };
 
 export type CreditLog = {

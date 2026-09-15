@@ -6,7 +6,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
+	"github.com/basketikun/infinite-canvas/repository"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -18,6 +20,7 @@ type loginRequest struct {
 type registerRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Ref      string `json:"ref"`
 }
 
 type saveUserRequest struct {
@@ -55,12 +58,34 @@ type updateRedemptionCodeStatusRequest struct {
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Register(request.Username, request.Password)
+	session, err := service.Register(request.Username, request.Password, request.Ref)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
 	OK(w, session)
+}
+
+func InviteUsers(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(config.Cfg.InfiniteCanvasSyncToken) == "" || r.Header.Get("Authorization") != "Bearer "+config.Cfg.InfiniteCanvasSyncToken {
+		Fail(w, "未登录或权限不足")
+		return
+	}
+	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
+	if ref == "" {
+		Fail(w, "缺少邀请 Token")
+		return
+	}
+	users, err := repository.ListUsersByInviteRef(ref)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	rows := make([]map[string]any, 0, len(users))
+	for _, user := range users {
+		rows = append(rows, map[string]any{"external_user_id": user.ID, "username": user.Username, "display_name": user.DisplayName, "email": user.Email, "registered_at": user.CreatedAt, "ref": ref})
+	}
+	OK(w, map[string]any{"users": rows})
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {

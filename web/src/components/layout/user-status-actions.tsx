@@ -76,7 +76,8 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                 const session = await adminLogin(values);
                 setSession(session.token, session.user);
             } else if (authMode === "register") {
-                await register(values);
+                const ref = new URLSearchParams(window.location.search).get("ref")?.trim();
+                await register(ref ? { ...values, ref } : values);
             } else {
                 await login(values);
             }

@@ -28,6 +28,7 @@ func New() *gin.Engine {
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.GET("/credit-logs", middleware.UserAuth, gin.WrapF(handler.UserCreditLogs))
 	api.POST("/redeem", middleware.UserAuth, gin.WrapF(handler.UserRedeemCode))
+	api.GET("/ops/invite-users", gin.WrapF(handler.InviteUsers))
 	api.GET("/settings", gin.WrapF(handler.Settings))
 	api.GET("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))

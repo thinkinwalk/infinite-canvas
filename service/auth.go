@@ -2,7 +2,10 @@ package service
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +35,15 @@ type userExtra struct {
 	LinuxDo any `json:"linuxDo,omitempty"`
 }
 
+type registrationCallbackPayload struct {
+	ExternalUserID string `json:"external_user_id"`
+	Username       string `json:"username"`
+	DisplayName    string `json:"display_name"`
+	Email          string `json:"email"`
+	RegisteredAt   string `json:"registered_at"`
+	Ref            string `json:"ref"`
+}
+
 func EnsureDefaultAdmin() error {
 	if strings.TrimSpace(config.Cfg.AdminUsername) == "" || strings.TrimSpace(config.Cfg.AdminPassword) == "" {
 		return nil
@@ -58,7 +70,7 @@ func EnsureDefaultAdmin() error {
 	return err
 }
 
-func Register(username string, password string) (model.AuthSession, error) {
+func Register(username string, password string, refs ...string) (model.AuthSession, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.AuthSession{}, err
@@ -84,6 +96,10 @@ func Register(username string, password string) (model.AuthSession, error) {
 	if err != nil {
 		return model.AuthSession{}, err
 	}
+	ref := ""
+	if len(refs) > 0 {
+		ref = strings.TrimSpace(refs[0])
+	}
 	user, err := repository.SaveUser(model.User{
 		ID:        newID("user"),
 		Username:  username,
@@ -92,13 +108,55 @@ func Register(username string, password string) (model.AuthSession, error) {
 		Group:     "default",
 		AffCode:   newAffCode(),
 		Status:    model.UserStatusActive,
+		InviteRef: ref,
+		InviteSource: func() string {
+			if ref != "" {
+				return "invite_link"
+			}
+			return ""
+		}(),
 		CreatedAt: now(),
 		UpdatedAt: now(),
 	})
 	if err != nil {
 		return model.AuthSession{}, err
 	}
+	if ref != "" {
+		if err := notifyCanvasRegistration(user, ref); err != nil {
+			log.Printf("canvas registration callback failed for %s: %v", user.ID, err)
+		}
+	}
 	return newSession(user)
+}
+
+func notifyCanvasRegistration(user model.User, ref string) error {
+	endpoint, secret := strings.TrimSpace(config.Cfg.InfiniteCanvasOpsURL), strings.TrimSpace(config.Cfg.InfiniteCanvasCallbackSecret)
+	if endpoint == "" || secret == "" {
+		return nil
+	}
+	payload := registrationCallbackPayload{ExternalUserID: user.ID, Username: user.Username, DisplayName: user.DisplayName, Email: user.Email, RegisteredAt: user.CreatedAt, Ref: ref}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(endpoint, "/")+"/admin-tools/api/infinite-canvas/register-callback", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Canvas-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("callback status %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	return nil
 }
 
 func Login(username string, password string) (model.AuthSession, error) {
