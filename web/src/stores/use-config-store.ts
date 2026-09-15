@@ -319,9 +319,13 @@ export function useEffectiveConfig() {
 function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
     const modelChannel = publicSettings?.modelChannel;
     if (!modelChannel) return config;
-    const channelMode = modelChannel.allowCustomChannel ? config.channelMode : "remote";
+    const channelMode = modelChannel.allowCustomChannel && hasUsableLocalChannel(config) ? config.channelMode : "remote";
     if (channelMode === "local") return { ...config, channelMode };
     return remoteConfigFromPublicSettings(config, modelChannel);
+}
+
+function hasUsableLocalChannel(config: AiConfig) {
+    return config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
 }
 
 function remoteConfigFromPublicSettings(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"]): AiConfig {
