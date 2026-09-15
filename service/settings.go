@@ -56,7 +56,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
-	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
+	if isArkAgentPlanChannel(resolved) {
 		return testArkSeedanceChannelModel(resolved, modelName)
 	}
 	if isVideoModelName(modelName) {
@@ -254,11 +254,6 @@ func normalizeModelChannelBaseURL(baseURL string) string {
 func isArkAgentPlanChannel(channel model.ModelChannel) bool {
 	baseURL := strings.ToLower(normalizeModelChannelBaseURL(channel.BaseURL))
 	return strings.HasSuffix(baseURL, "/api/plan/v3")
-}
-
-func isSeedanceModelName(modelName string) bool {
-	modelName = strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(modelName, "seedance") || strings.Contains(modelName, "doubao-seedance")
 }
 
 func enabledChannelModels(channels []model.ModelChannel) []string {

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +19,70 @@ func TestBuildAIProxyGetURLPreservesQuery(t *testing.T) {
 	}
 	if upstreamURL != "https://new.dszyym.com/v1/videos/task_123?model=grok-imagine-1.0-video" {
 		t.Fatalf("url = %q", upstreamURL)
+	}
+}
+
+func TestResolveAIProxyPathKeepsOpenAICompatibleSeedanceVideos(t *testing.T) {
+	if got := resolveAIProxyPath("https://api.lingzhouai.com", "/videos"); got != "/videos" {
+		t.Fatalf("create path = %q, want /videos", got)
+	}
+	if got := resolveAIProxyPath("https://api.lingzhouai.com", "/videos/task_123"); got != "/videos/task_123" {
+		t.Fatalf("status path = %q, want /videos/task_123", got)
+	}
+}
+
+func TestResolveAIProxyPathMapsArkAgentPlanVideos(t *testing.T) {
+	baseURL := "https://ark.cn-beijing.volces.com/api/plan/v3"
+	if got := resolveAIProxyPath(baseURL, "/videos"); got != "/contents/generations/tasks" {
+		t.Fatalf("create path = %q, want /contents/generations/tasks", got)
+	}
+	if got := resolveAIProxyPath(baseURL, "/videos/task_123"); got != "/contents/generations/tasks/task_123" {
+		t.Fatalf("status path = %q, want /contents/generations/tasks/task_123", got)
+	}
+}
+
+func TestNormalizeAIProxyVideoBodyConvertsSeedanceContentForOpenAICompatibleChannel(t *testing.T) {
+	body := []byte(`{"model":"seedance-2.0-mini","content":[{"type":"text","text":"火箭发射"},{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}],"ratio":"16:9","resolution":"720p","duration":12,"generate_audio":true,"watermark":false}`)
+	got, contentType := normalizeAIProxyVideoBody("https://api.lingzhouai.com", "/videos", body, "application/json")
+	if contentType != "application/json" {
+		t.Fatalf("content type = %q", contentType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatalf("unmarshal converted body: %v", err)
+	}
+	if _, ok := payload["content"]; ok {
+		t.Fatalf("converted OpenAI-compatible body should not include content: %s", got)
+	}
+	if payload["model"] != "seedance-2.0-mini" || payload["prompt"] != "火箭发射" || payload["aspect_ratio"] != "16:9" || payload["resolution"] != "720p" || payload["image_url"] != "https://example.com/a.png" {
+		t.Fatalf("converted payload = %#v", payload)
+	}
+	if fmt.Sprint(payload["seconds"]) != "12" || payload["generate_audio"] != true || payload["watermark"] != false {
+		t.Fatalf("converted scalar payload = %#v", payload)
+	}
+}
+
+func TestNormalizeAIProxyVideoBodyConvertsOpenAIJSONForArkAgentPlan(t *testing.T) {
+	body := []byte(`{"model":"doubao-seedance-2.0-fast","prompt":"火箭发射","seconds":"8","aspect_ratio":"16:9","resolution":"720p","image_url":"https://example.com/a.png"}`)
+	got, contentType := normalizeAIProxyVideoBody("https://ark.cn-beijing.volces.com/api/plan/v3", "/contents/generations/tasks", body, "application/json")
+	if contentType != "application/json" {
+		t.Fatalf("content type = %q", contentType)
+	}
+	var payload struct {
+		Model      string           `json:"model"`
+		Content    []map[string]any `json:"content"`
+		Ratio      string           `json:"ratio"`
+		Resolution string           `json:"resolution"`
+		Duration   string           `json:"duration"`
+	}
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatalf("unmarshal converted body: %v", err)
+	}
+	if payload.Model != "doubao-seedance-2.0-fast" || payload.Ratio != "16:9" || payload.Resolution != "720p" || payload.Duration != "8" {
+		t.Fatalf("converted payload = %#v", payload)
+	}
+	if len(payload.Content) != 2 || payload.Content[0]["type"] != "text" || payload.Content[0]["text"] != "火箭发射" || payload.Content[1]["type"] != "image_url" {
+		t.Fatalf("converted content = %#v", payload.Content)
 	}
 }
 

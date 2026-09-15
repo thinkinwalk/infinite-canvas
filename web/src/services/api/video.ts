@@ -220,7 +220,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
 }
 
-/** Pidoi video endpoints use JSON, unlike stock OpenAI video multipart requests. */
+/** Pidoi and compatible video relay endpoints use JSON, unlike stock OpenAI video multipart requests. */
 async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     const modelName = modelOptionName(model);
     const resolution = normalizeVideoResolution(config.vquality);
@@ -514,12 +514,14 @@ function isPidoiGrokVideoModel(model: string) {
 
 function isPidoiJsonVideoModel(model: string) {
     const name = model.toLowerCase().trim();
-    return name === "grok-imagine-video-1.5-preview" || name.startsWith("tejiasd-");
+    return name === "grok-imagine-video-1.5-preview" || name.startsWith("tejiasd-") || name.includes("seedance") || name.includes("seedace");
 }
 
 function normalizePidoiVideoSeconds(model: string, value: string, resolution: string) {
     const seconds = Number(normalizeVideoSeconds(value));
-    if (!model.toLowerCase().trim().startsWith("tejiasd-")) return String(seconds);
+    const name = model.toLowerCase().trim();
+    if (name.includes("seedance") || name.includes("seedace")) return String(Math.max(4, Math.min(seconds, 15)));
+    if (!name.startsWith("tejiasd-")) return String(seconds);
     return String(Math.min(seconds, resolution === "480p" ? 15 : 12));
 }
 

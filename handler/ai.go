@@ -64,7 +64,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel.BaseURL, path)
 	upstreamURL, err := buildAIProxyGetURL(channel, path, r.URL.Query())
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
@@ -109,7 +109,8 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel.BaseURL, path)
+	body, contentType = normalizeAIProxyVideoBody(channel.BaseURL, path, body, contentType)
 	if useLingzhouResponsesImageProxy(channel, modelName, path, contentType) {
 		responsesBody, err := buildLingzhouImageResponsesBody(body)
 		if err != nil {
@@ -461,8 +462,8 @@ func buildAIProxyGetURL(channel model.ModelChannel, path string, query url.Value
 	return parsed.String(), nil
 }
 
-func resolveAIProxyPath(baseURL string, modelName string, path string) string {
-	if !isArkSeedanceVideo(baseURL, modelName) {
+func resolveAIProxyPath(baseURL string, path string) string {
+	if !isArkAgentPlanVideo(baseURL) {
 		return path
 	}
 	if path == "/videos" {
@@ -474,10 +475,225 @@ func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 	return path
 }
 
-func isArkSeedanceVideo(baseURL string, modelName string) bool {
+func isArkAgentPlanVideo(baseURL string) bool {
 	base := strings.ToLower(baseURL)
-	model := strings.ToLower(modelName)
-	return strings.Contains(model, "seedance") || strings.Contains(model, "doubao-seedance") || strings.Contains(base, "/api/plan/v3")
+	return strings.Contains(base, "/api/plan/v3")
+}
+
+func normalizeAIProxyVideoBody(baseURL string, path string, body []byte, contentType string) ([]byte, string) {
+	if strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data") {
+		return body, contentType
+	}
+	if path != "/videos" && path != "/contents/generations/tasks" {
+		return body, contentType
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body, contentType
+	}
+	if isArkAgentPlanVideo(baseURL) && path == "/contents/generations/tasks" {
+		if converted, ok := buildArkAgentPlanVideoBody(payload); ok {
+			return converted, "application/json"
+		}
+	}
+	if !isArkAgentPlanVideo(baseURL) && path == "/videos" {
+		if converted, ok := buildOpenAICompatibleVideoBody(payload); ok {
+			return converted, "application/json"
+		}
+	}
+	return body, contentType
+}
+
+func buildArkAgentPlanVideoBody(payload map[string]any) ([]byte, bool) {
+	if _, ok := payload["content"]; ok {
+		return nil, false
+	}
+	content := []map[string]any{}
+	if prompt := jsonStringValue(payload["prompt"]); prompt != "" {
+		content = append(content, map[string]any{"type": "text", "text": prompt})
+	}
+	imageURLs := []string{}
+	if imageURL := jsonURLValue(payload["image_url"]); imageURL != "" {
+		imageURLs = append(imageURLs, imageURL)
+	}
+	imageURLs = append(imageURLs, jsonURLValues(payload["reference_image_urls"])...)
+	for _, imageURL := range imageURLs {
+		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}, "role": "reference_image"})
+	}
+	if len(content) == 0 {
+		return nil, false
+	}
+	converted := map[string]any{
+		"model":   jsonStringValue(payload["model"]),
+		"content": content,
+	}
+	if ratio := jsonStringValue(payload["ratio"]); ratio != "" {
+		converted["ratio"] = ratio
+	} else if ratio := jsonStringValue(payload["aspect_ratio"]); ratio != "" {
+		converted["ratio"] = ratio
+	} else if ratio := videoRatioFromSize(jsonStringValue(payload["size"])); ratio != "" {
+		converted["ratio"] = ratio
+	}
+	if resolution := jsonStringValue(payload["resolution"]); resolution != "" {
+		converted["resolution"] = resolution
+	}
+	if duration, ok := jsonScalarValue(payload["duration"]); ok {
+		converted["duration"] = duration
+	} else if seconds, ok := jsonScalarValue(payload["seconds"]); ok {
+		converted["duration"] = seconds
+	}
+	copyJSONScalar(payload, converted, "generate_audio")
+	copyJSONScalar(payload, converted, "watermark")
+	body, err := json.Marshal(converted)
+	return body, err == nil
+}
+
+func buildOpenAICompatibleVideoBody(payload map[string]any) ([]byte, bool) {
+	content, ok := payload["content"].([]any)
+	if !ok {
+		return nil, false
+	}
+	promptParts := []string{}
+	imageURLs := []string{}
+	for _, raw := range content {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(jsonStringValue(item["type"])) {
+		case "text":
+			if text := jsonStringValue(item["text"]); text != "" {
+				promptParts = append(promptParts, text)
+			}
+		case "image_url":
+			if imageURL := jsonURLValue(item["image_url"]); imageURL != "" {
+				imageURLs = append(imageURLs, imageURL)
+			}
+		}
+	}
+	converted := map[string]any{"model": jsonStringValue(payload["model"])}
+	if prompt := strings.TrimSpace(strings.Join(promptParts, "\n\n")); prompt != "" {
+		converted["prompt"] = prompt
+	} else if prompt := jsonStringValue(payload["prompt"]); prompt != "" {
+		converted["prompt"] = prompt
+	}
+	if len(imageURLs) > 0 {
+		converted["image_url"] = imageURLs[0]
+	}
+	if len(imageURLs) > 1 {
+		converted["reference_image_urls"] = imageURLs[1:]
+	}
+	if seconds, ok := jsonScalarValue(payload["seconds"]); ok {
+		converted["seconds"] = seconds
+	} else if duration, ok := jsonScalarValue(payload["duration"]); ok {
+		converted["seconds"] = duration
+	}
+	if aspectRatio := jsonStringValue(payload["aspect_ratio"]); aspectRatio != "" && aspectRatio != "adaptive" {
+		converted["aspect_ratio"] = aspectRatio
+	} else if ratio := jsonStringValue(payload["ratio"]); ratio != "" && ratio != "adaptive" {
+		converted["aspect_ratio"] = ratio
+	} else if ratio := videoRatioFromSize(jsonStringValue(payload["size"])); ratio != "" {
+		converted["aspect_ratio"] = ratio
+	}
+	if _, ok := converted["aspect_ratio"]; !ok {
+		converted["aspect_ratio"] = "16:9"
+	}
+	if resolution := jsonStringValue(payload["resolution"]); resolution != "" {
+		converted["resolution"] = resolution
+	}
+	copyJSONScalar(payload, converted, "generate_audio")
+	copyJSONScalar(payload, converted, "watermark")
+	if _, ok := converted["prompt"]; !ok {
+		return nil, false
+	}
+	body, err := json.Marshal(converted)
+	return body, err == nil
+}
+
+func jsonStringValue(value any) string {
+	switch item := value.(type) {
+	case string:
+		return strings.TrimSpace(item)
+	case fmt.Stringer:
+		return strings.TrimSpace(item.String())
+	default:
+		return ""
+	}
+}
+
+func jsonScalarValue(value any) (any, bool) {
+	switch item := value.(type) {
+	case string:
+		item = strings.TrimSpace(item)
+		if item == "" {
+			return nil, false
+		}
+		return item, true
+	case float64, bool, int, int64:
+		return item, true
+	default:
+		return nil, false
+	}
+}
+
+func jsonURLValue(value any) string {
+	if url := jsonStringValue(value); url != "" {
+		return url
+	}
+	if item, ok := value.(map[string]any); ok {
+		return jsonStringValue(item["url"])
+	}
+	return ""
+}
+
+func jsonURLValues(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	urls := []string{}
+	for _, item := range items {
+		if url := jsonURLValue(item); url != "" {
+			urls = append(urls, url)
+		}
+	}
+	return urls
+}
+
+func copyJSONScalar(from map[string]any, to map[string]any, key string) {
+	if value, ok := jsonScalarValue(from[key]); ok {
+		to[key] = value
+	}
+}
+
+func videoRatioFromSize(size string) string {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(size)), "x")
+	if len(parts) != 2 {
+		return ""
+	}
+	var width int
+	var height int
+	if _, err := fmt.Sscan(parts[0], &width); err != nil {
+		return ""
+	}
+	if _, err := fmt.Sscan(parts[1], &height); err != nil {
+		return ""
+	}
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	divisor := gcd(width, height)
+	return fmt.Sprintf("%d:%d", width/divisor, height/divisor)
+}
+
+func gcd(a int, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	if a < 0 {
+		return -a
+	}
+	return a
 }
 
 func aiStatusMessage(statusCode int) string {

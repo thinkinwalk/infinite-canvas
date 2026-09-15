@@ -78,6 +78,31 @@ func TestTestVideoChannelModelUsesModelsEndpoint(t *testing.T) {
 	}
 }
 
+func TestAdminTestSeedanceOpenAICompatibleUsesModelsEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/chat/completions" {
+			t.Fatal("Seedance OpenAI-compatible model test should not call chat completions")
+		}
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"seedance-2.0-mini"}]}`))
+	}))
+	defer server.Close()
+
+	result, err := AdminTestChannelModel(nil, model.ModelChannel{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+	}, "seedance-2.0-mini")
+	if err != nil {
+		t.Fatalf("AdminTestChannelModel returned error: %v", err)
+	}
+	if !strings.Contains(result, "/models") || !strings.Contains(result, "不会消耗额度") {
+		t.Fatalf("result = %q", result)
+	}
+}
+
 func TestTestVideoChannelModelReportsMissingModel(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {

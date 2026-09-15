@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.18.8 - 2026-09-16
+
+- [修复] 修复灵舟中转 `seedance-2.0-mini` 被误判为火山方舟 Agent Plan 协议，导致上游返回 `Invalid URL (POST /v1/contents/generations/tasks)` 的问题。
+- [优化] Seedance 视频模型仅在渠道 Base URL 为 `/api/plan/v3` 时使用火山方舟专用路径；OpenAI 兼容渠道统一走 JSON `/v1/videos` 请求。
+
 ## v0.18.7 - 2026-09-15
 
 - [修复] Pidoi `tejiasd-mini-720p` 视频生成改用 JSON 请求格式，并按 480p 最多 15 秒、720p/1080p 最多 12 秒限制时长。
