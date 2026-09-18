@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.18.9 - 2026-09-18
+
+- [修复] 增加平台 `/responses` 文本代理并兼容仅支持 `/chat/completions` 的渠道，修复画布文本生成提示接口不存在的问题。
+- [优化] 后台文本模型测试改为优先验证实际使用的 Responses 接口，并区分兼容模式、超时、双接口 404 和上游错误。
+
 ## v0.18.8 - 2026-09-16
 
 - [修复] 修复灵舟中转 `seedance-2.0-mini` 被误判为火山方舟 Agent Plan 协议，导致上游返回 `Invalid URL (POST /v1/contents/generations/tasks)` 的问题。

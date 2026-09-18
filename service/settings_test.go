@@ -53,6 +53,48 @@ func TestFetchAdminChannelModelsReportsArkPlanModelsUnsupported(t *testing.T) {
 	}
 }
 
+func TestAdminTextModelUsesResponsesEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}]}`))
+	}))
+	defer server.Close()
+
+	result, err := testAdminChannelModel(model.ModelChannel{BaseURL: server.URL, APIKey: "test-key"}, "gpt-test")
+	if err != nil {
+		t.Fatalf("testAdminChannelModel returned error: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("result = %q", result)
+	}
+}
+
+func TestAdminTextModelFallsBackToChatCompletions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/responses":
+			http.NotFound(w, r)
+		case "/v1/chat/completions":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	result, err := testAdminChannelModel(model.ModelChannel{BaseURL: server.URL, APIKey: "test-key"}, "gpt-test")
+	if err != nil {
+		t.Fatalf("testAdminChannelModel returned error: %v", err)
+	}
+	if !strings.Contains(result, "/chat/completions 兼容测试") || !strings.Contains(result, "自动转换") {
+		t.Fatalf("result = %q", result)
+	}
+}
+
 func TestTestVideoChannelModelUsesModelsEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/chat/completions" {

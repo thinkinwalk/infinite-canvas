@@ -32,6 +32,10 @@ func AIChatCompletions(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/chat/completions")
 }
 
+func AIResponses(w http.ResponseWriter, r *http.Request) {
+	proxyAIRequest(w, r, "/responses")
+}
+
 func AIAudioSpeech(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/audio/speech")
 }
@@ -130,6 +134,18 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	logAIImageUpstreamParams(channel, path, modelName, body, contentType)
+	if path == "/responses" {
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+			FailError(w, err)
+			return
+		}
+		copyAIResponses(w, channel, body, contentType, func() {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
+				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+			}
+		})
+		return
+	}
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)

@@ -1,11 +1,13 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -402,6 +404,57 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 		return "", errors.New("缺少模型名称")
 	}
 	body, _ := json.Marshal(map[string]any{
+		"model":  modelName,
+		"input":  "hi",
+		"stream": false,
+	})
+	request, err := http.NewRequest(http.MethodPost, BuildModelChannelURL(channel, "/responses"), strings.NewReader(string(body)))
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := adminModelHTTPClient.Do(request)
+	if err != nil {
+		return "", adminTextRequestError("/responses", err)
+	}
+	responseBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		_, statusCode, fallbackErr := testAdminChatCompletions(channel, modelName)
+		if fallbackErr != nil {
+			if statusCode == http.StatusNotFound {
+				return "", safeMessageError{message: "测试失败：渠道同时缺少 /responses 和 /chat/completions 接口（404）"}
+			}
+			return "", fallbackErr
+		}
+		return "渠道未提供 /responses，已通过 /chat/completions 兼容测试；画布文本生成会自动转换请求。", nil
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		return "", readAdminChannelError(responseBody, response.StatusCode, "/responses 测试失败")
+	}
+	var payload struct {
+		Output []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	_ = json.Unmarshal(responseBody, &payload)
+	for _, item := range payload.Output {
+		for _, content := range item.Content {
+			if content.Type == "output_text" && strings.TrimSpace(content.Text) != "" {
+				return content.Text, nil
+			}
+		}
+	}
+	return "Responses API 测试通过", nil
+}
+
+func testAdminChatCompletions(channel model.ModelChannel, modelName string) (string, int, error) {
+	body, _ := json.Marshal(map[string]any{
 		"model": modelName,
 		"messages": []map[string]string{{
 			"role":    "user",
@@ -410,18 +463,18 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	})
 	request, err := http.NewRequest(http.MethodPost, BuildModelChannelURL(channel, "/chat/completions"), strings.NewReader(string(body)))
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
 	request.Header.Set("Content-Type", "application/json")
 	response, err := adminModelHTTPClient.Do(request)
 	if err != nil {
-		return "", safeMessageError{message: "测试失败：上游接口无响应或网络不可达"}
+		return "", 0, adminTextRequestError("/chat/completions", err)
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode >= http.StatusBadRequest {
-		return "", readAdminChannelError(responseBody, response.StatusCode, "测试失败")
+		return "", response.StatusCode, readAdminChannelError(responseBody, response.StatusCode, "/chat/completions 兼容测试失败")
 	}
 	var payload struct {
 		Choices []struct {
@@ -432,9 +485,17 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	}
 	_ = json.Unmarshal(responseBody, &payload)
 	if len(payload.Choices) > 0 && strings.TrimSpace(payload.Choices[0].Message.Content) != "" {
-		return payload.Choices[0].Message.Content, nil
+		return payload.Choices[0].Message.Content, response.StatusCode, nil
 	}
-	return "ok", nil
+	return "ok", response.StatusCode, nil
+}
+
+func adminTextRequestError(endpoint string, err error) error {
+	var networkError net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &networkError) && networkError.Timeout() {
+		return safeMessageError{message: fmt.Sprintf("测试失败：%s 请求超时", endpoint)}
+	}
+	return safeMessageError{message: fmt.Sprintf("测试失败：%s 上游接口无响应或网络不可达", endpoint)}
 }
 
 func testVideoChannelModel(channel model.ModelChannel, modelName string) (string, error) {
