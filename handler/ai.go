@@ -45,31 +45,60 @@ func AIVideos(w http.ResponseWriter, r *http.Request) {
 }
 
 func AIVideo(w http.ResponseWriter, r *http.Request, id string) {
-	proxyAIGetRequest(w, r, "/videos/"+id)
+	proxyAIVideoGetRequest(w, r, id, false)
 }
 
 func AIVideoContent(w http.ResponseWriter, r *http.Request, id string) {
-	proxyAIGetRequest(w, r, "/videos/"+id+"/content")
+	proxyAIVideoGetRequest(w, r, id, true)
 }
 
-func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
+func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, content bool) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
+	task, tracked, err := service.GetVideoTask(id)
+	if err != nil {
+		log.Printf("AI proxy read video task failed: task=%s err=%v", id, err)
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	if tracked && task.UserID != user.ID {
+		Fail(w, "视频任务不存在")
+		return
+	}
 	modelName := r.URL.Query().Get("model")
+	if tracked {
+		modelName = task.Model
+	}
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-1.0-video"
 	}
-	channel, err := service.SelectModelChannelForGroup(modelName, user.Group)
+	var channel model.ModelChannel
+	if tracked {
+		channel, err = service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL)
+	} else {
+		channel, err = service.SelectModelChannelForGroup(modelName, user.Group)
+	}
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
+	path := "/videos/" + url.PathEscape(id)
+	if content {
+		path += "/content"
+	}
 	path = resolveAIProxyPath(channel.BaseURL, path)
-	upstreamURL, err := buildAIProxyGetURL(channel, path, r.URL.Query())
+	query := url.Values{}
+	for key, values := range r.URL.Query() {
+		query[key] = append([]string(nil), values...)
+	}
+	if tracked {
+		query.Set("model", task.Model)
+	}
+	upstreamURL, err := buildAIProxyGetURL(channel, path, query)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
 		return
@@ -80,10 +109,12 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	copyAIResponse(w, request, nil)
+	copyAIVideoGetResponse(w, request, task, tracked, content)
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
+	videoCreate := path == "/videos"
+	billingPath := path
 	body, contentType, modelName, err := readAIRequest(r)
 	if err != nil {
 		log.Printf("AI proxy request read failed: %v", err)
@@ -160,6 +191,17 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
+	if videoCreate {
+		copyAIVideoCreateResponse(w, request, model.VideoTask{
+			UserID: user.ID, Model: modelName, Credits: credits, Path: billingPath,
+			ChannelName: channel.Name, ChannelBaseURL: channel.BaseURL,
+		}, func() {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, billingPath); err != nil {
+				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+			}
+		})
+		return
+	}
 	copyAIResponse(w, request, func() {
 		if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
 			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
@@ -181,7 +223,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 
 	if response.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		if fallbackOpenAIVideoStatus(w, request, response.StatusCode) {
+		if handled, _ := fallbackOpenAIVideoStatus(w, request, response.StatusCode); handled {
 			return
 		}
 		log.Printf("AI upstream error: url=%s status=%d body=%s", request.URL.String(), response.StatusCode, safeUpstreamText(string(body)))
@@ -202,6 +244,129 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = io.Copy(w, response.Body)
+}
+
+func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, task model.VideoTask, onFailure func()) {
+	response, err := aiHTTPClient.Do(request)
+	if err != nil {
+		log.Printf("AI proxy video create failed: url=%s err=%v", request.URL.String(), err)
+		onFailure()
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	defer response.Body.Close()
+	body, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		onFailure()
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		log.Printf("AI upstream error: url=%s status=%d body=%s", request.URL.String(), response.StatusCode, safeUpstreamText(string(body)))
+		onFailure()
+		Fail(w, aiUpstreamStatusMessage(response.StatusCode, body))
+		return
+	}
+	task.ID = videoResponseString(body, "id", "task_id")
+	if task.ID == "" {
+		onFailure()
+		Fail(w, "视频接口没有返回任务 ID")
+		return
+	}
+	task.Status = videoResponseString(body, "status")
+	if err := service.SaveVideoTask(task); err != nil {
+		log.Printf("AI proxy save video task failed: task=%s user=%s err=%v", task.ID, task.UserID, err)
+		onFailure()
+		Fail(w, "视频任务记录失败")
+		return
+	}
+	if err := service.UpdateVideoTaskStatus(task, task.Status); err != nil {
+		log.Printf("AI proxy update created video task failed: task=%s status=%s err=%v", task.ID, task.Status, err)
+	}
+	copyAIResponseHeaders(w, response)
+	w.WriteHeader(response.StatusCode)
+	_, _ = w.Write(body)
+}
+
+func copyAIVideoGetResponse(w http.ResponseWriter, request *http.Request, task model.VideoTask, tracked bool, content bool) {
+	response, err := aiHTTPClient.Do(request)
+	if err != nil {
+		log.Printf("AI proxy video query failed: url=%s err=%v", request.URL.String(), err)
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		if handled, status := fallbackOpenAIVideoStatus(w, request, response.StatusCode); handled {
+			if tracked {
+				if err := service.UpdateVideoTaskStatus(task, status); err != nil {
+					log.Printf("AI proxy update fallback video task failed: task=%s status=%s err=%v", task.ID, status, err)
+				}
+			}
+			return
+		}
+		log.Printf("AI upstream error: url=%s status=%d body=%s", request.URL.String(), response.StatusCode, safeUpstreamText(string(body)))
+		Fail(w, aiUpstreamStatusMessage(response.StatusCode, body))
+		return
+	}
+	if content {
+		if tracked {
+			if err := service.UpdateVideoTaskStatus(task, "completed"); err != nil {
+				log.Printf("AI proxy complete video task failed: task=%s err=%v", task.ID, err)
+			}
+		}
+		copyAIResponseHeaders(w, response)
+		w.WriteHeader(response.StatusCode)
+		_, _ = io.Copy(w, response.Body)
+		return
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		Fail(w, "AI 接口请求失败")
+		return
+	}
+	if tracked {
+		if status := videoResponseString(body, "status"); status != "" {
+			if err := service.UpdateVideoTaskStatus(task, status); err != nil {
+				log.Printf("AI proxy update video task failed: task=%s status=%s err=%v", task.ID, status, err)
+			}
+		}
+	}
+	copyAIResponseHeaders(w, response)
+	w.WriteHeader(response.StatusCode)
+	_, _ = w.Write(body)
+}
+
+func copyAIResponseHeaders(w http.ResponseWriter, response *http.Response) {
+	for key, values := range response.Header {
+		if strings.EqualFold(key, "Content-Length") {
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+}
+
+func videoResponseString(body []byte, keys ...string) string {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	for _, key := range keys {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	if data, ok := payload["data"].(map[string]any); ok {
+		for _, key := range keys {
+			if value, ok := data[key].(string); ok && strings.TrimSpace(value) != "" {
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	return ""
 }
 
 func useLingzhouResponsesImageProxy(channel model.ModelChannel, modelName string, path string, contentType string) bool {
@@ -349,28 +514,28 @@ func readLingzhouResponsesImage(body []byte) (string, error) {
 	return "", fmt.Errorf("missing image result")
 }
 
-func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, statusCode int) bool {
+func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, statusCode int) (bool, string) {
 	if statusCode != http.StatusUnauthorized && statusCode != http.StatusForbidden {
-		return false
+		return false, ""
 	}
 	path := request.URL.Path
 	if !strings.Contains(path, "/videos/") || strings.HasSuffix(path, "/content") {
-		return false
+		return false, ""
 	}
 	taskID := path[strings.LastIndex(path, "/videos/")+len("/videos/"):]
 	if taskID == "" || strings.Contains(taskID, "/") {
-		return false
+		return false, ""
 	}
 	contentURL := *request.URL
 	contentURL.Path = strings.TrimRight(request.URL.Path, "/") + "/content"
 	contentRequest, err := http.NewRequest(http.MethodGet, contentURL.String(), nil)
 	if err != nil {
-		return false
+		return false, ""
 	}
 	contentRequest.Header.Set("Authorization", request.Header.Get("Authorization"))
 	contentResponse, err := aiHTTPClient.Do(contentRequest)
 	if err != nil {
-		return false
+		return false, ""
 	}
 	defer contentResponse.Body.Close()
 	if contentResponse.StatusCode >= http.StatusOK && contentResponse.StatusCode < http.StatusBadRequest {
@@ -378,16 +543,16 @@ func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, sta
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintf(w, `{"id":%q,"status":"completed"}`, taskID)
-		return true
+		return true, "completed"
 	}
 	if contentResponse.StatusCode >= http.StatusBadRequest {
 		_, _ = io.Copy(io.Discard, contentResponse.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintf(w, `{"id":%q,"status":"running"}`, taskID)
-		return true
+		return true, "running"
 	}
-	return false
+	return false, ""
 }
 
 func readAIRequest(r *http.Request) ([]byte, string, string, error) {

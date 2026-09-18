@@ -83,6 +83,8 @@ export type CanvasNodeMetadata = {
     durationMs?: number;
     videoTaskId?: string;
     videoTaskProvider?: "openai" | "seedance" | "gemini";
+    videoTaskCreatedAt?: number;
+    videoTaskState?: "processing" | "background" | "query_interrupted";
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
 };

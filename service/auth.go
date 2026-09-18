@@ -453,6 +453,55 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 	return err
 }
 
+func SaveVideoTask(task model.VideoTask) error {
+	task.Status = normalizeVideoTaskStatus(task.Status)
+	if task.Status == "" {
+		task.Status = "pending"
+	}
+	task.CreatedAt = now()
+	task.UpdatedAt = task.CreatedAt
+	return repository.SaveVideoTask(task)
+}
+
+func GetVideoTask(id string) (model.VideoTask, bool, error) {
+	return repository.GetVideoTask(id)
+}
+
+func UpdateVideoTaskStatus(task model.VideoTask, status string) error {
+	status = normalizeVideoTaskStatus(status)
+	if status == "" {
+		return nil
+	}
+	if status != "failed" && status != "cancelled" && status != "expired" {
+		return repository.UpdateVideoTaskStatus(task.ID, task.UserID, status, now())
+	}
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "path": task.Path, "chargedCredits": task.Credits, "videoTaskId": task.ID, "terminalStatus": status})
+	_, err := repository.RefundFailedVideoTask(task.ID, task.UserID, status, model.CreditLog{
+		ID:     newID("credit"),
+		Remark: "视频任务失败返还 " + task.Model,
+		Extra:  string(extra),
+	}, now())
+	return err
+}
+
+func normalizeVideoTaskStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "queued", "pending", "created", "submitted":
+		return "pending"
+	case "running", "processing", "in_progress":
+		return "running"
+	case "completed", "succeeded", "success":
+		return "completed"
+	case "failed", "cancelled", "canceled", "expired":
+		if strings.EqualFold(status, "canceled") {
+			return "cancelled"
+		}
+		return strings.ToLower(strings.TrimSpace(status))
+	default:
+		return ""
+	}
+}
+
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 	logs, total, stats, err := repository.ListCreditLogs(q)
 	if err != nil {

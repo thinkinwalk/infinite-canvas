@@ -195,3 +195,15 @@ func TestSafeUpstreamTextTruncates(t *testing.T) {
 		t.Fatalf("truncated rune length = %d", len([]rune(got)))
 	}
 }
+
+func TestVideoResponseStringReadsTopLevelAndEnvelope(t *testing.T) {
+	if got := videoResponseString([]byte(`{"id":"task-top"}`), "id", "task_id"); got != "task-top" {
+		t.Fatalf("top-level task id = %q", got)
+	}
+	if got := videoResponseString([]byte(`{"data":{"task_id":"task-envelope","status":"queued"}}`), "id", "task_id"); got != "task-envelope" {
+		t.Fatalf("enveloped task id = %q", got)
+	}
+	if got := videoResponseString([]byte(`{"data":{"status":"failed"}}`), "status"); got != "failed" {
+		t.Fatalf("enveloped status = %q", got)
+	}
+}

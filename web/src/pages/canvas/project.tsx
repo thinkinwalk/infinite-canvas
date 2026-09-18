@@ -139,7 +139,7 @@ function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: C
         width: videoSize.width,
         height: videoSize.height,
         position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 },
-        metadata: { ...item.metadata, ...videoMetadata(video), ...extra },
+        metadata: { ...item.metadata, ...videoMetadata(video), ...extra, videoTaskId: undefined, videoTaskProvider: undefined, videoTaskCreatedAt: undefined, videoTaskState: undefined },
     };
 }
 
@@ -302,13 +302,27 @@ function InfiniteCanvasPage() {
         if (request?.controller === controller) generationRequestsRef.current.delete(targetNodeId);
     }, []);
 
+    useEffect(
+        () => () => {
+            generationRequestsRef.current.forEach((request) => request.controller.abort());
+            generationRequestsRef.current.clear();
+            videoPollIdsRef.current.clear();
+        },
+        [projectId],
+    );
+
     const completeVideoNodeTask = useCallback(
         async (nodeId: string, config: Parameters<typeof buildGenerationConfig>[0], prompt: string, images: Parameters<typeof createVideoGenerationTask>[2], signal: AbortSignal, extra: CanvasNodeData["metadata"] = {}, videos: ReferenceVideo[] = [], audios: ReferenceAudio[] = []) => {
             const task = await createVideoGenerationTask(config, prompt, images, videos, audios, { signal });
             if (task.provider !== "plugin") {
-                setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider === "seedance" ? "seedance" : "openai", model: config.model } } : item)));
+                setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider === "seedance" ? "seedance" : "openai", videoTaskCreatedAt: task.createdAt, videoTaskState: "processing", model: config.model } } : item)));
             }
-            const video = await storeGeneratedVideo(await waitForVideoGenerationTask(config, task, { signal }));
+            const video = await storeGeneratedVideo(
+                await waitForVideoGenerationTask(config, task, {
+                    signal,
+                    onWaitState: (videoTaskState) => setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, videoTaskState } } : item))),
+                }),
+            );
             setNodes((prev) => prev.map((item) => (item.id === nodeId ? applyGeneratedVideo(item, video, { prompt, model: config.model, ...extra }) : item)));
         },
         [],
@@ -331,9 +345,18 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 setRunningNodeId(node.id);
-                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
+                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, videoTaskState: "processing" } } : item)));
                 controller = startGenerationRequest(node.id, node.id, node.id);
-                const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "seedance" ? "seedance" : "openai", model: generationConfig.model }, { signal: controller.signal }));
+                const video = await storeGeneratedVideo(
+                    await waitForVideoGenerationTask(
+                        generationConfig,
+                        { id: taskId, provider: node.metadata?.videoTaskProvider === "seedance" ? "seedance" : "openai", model: generationConfig.model, createdAt: node.metadata?.videoTaskCreatedAt },
+                        {
+                            signal: controller.signal,
+                            onWaitState: (videoTaskState) => setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, videoTaskState } } : item))),
+                        },
+                    ),
+                );
                 setNodes((prev) =>
                     prev.map((item) =>
                         item.id === node.id
@@ -363,7 +386,7 @@ function InfiniteCanvasPage() {
                                       ...item.metadata,
                                       status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
                                       errorDetails: item.metadata?.content ? undefined : errorDetails,
-                                      ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
+                                      ...(isVideoTaskFailed(error) ? { videoTaskId: undefined, videoTaskProvider: undefined, videoTaskCreatedAt: undefined, videoTaskState: undefined } : {}),
                                   },
                               }
                             : item,
@@ -832,6 +855,11 @@ function InfiniteCanvasPage() {
         (ids: Set<string>) => {
             if (!ids.size) return;
             const allIds = new Set(ids);
+            allIds.forEach((id) => {
+                generationRequestsRef.current.get(id)?.controller.abort();
+                generationRequestsRef.current.delete(id);
+                videoPollIdsRef.current.delete(id);
+            });
             setNodes((prev) => {
                 const next = prev.filter((node) => !allIds.has(node.id));
                 return next.map((node) => {
@@ -2693,7 +2721,7 @@ function InfiniteCanvasPage() {
                                           ...node.metadata,
                                           status: NODE_STATUS_ERROR,
                                           errorDetails,
-                                          ...(isVideoTaskFailed(error) && node.type === CanvasNodeType.Video ? { videoTaskId: undefined } : {}),
+                                          ...(isVideoTaskFailed(error) && node.type === CanvasNodeType.Video ? { videoTaskId: undefined, videoTaskProvider: undefined, videoTaskCreatedAt: undefined, videoTaskState: undefined } : {}),
                                       },
                                   }
                             : node,
@@ -2850,7 +2878,7 @@ function InfiniteCanvasPage() {
                                       status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
                                       errorDetails: item.metadata?.content ? undefined : errorDetails,
                                       images: item.metadata?.images?.map((image) => (image.id === imageId ? { ...image, status: NODE_STATUS_ERROR, errorDetails } : image)),
-                                      ...(isVideoTaskFailed(error) && item.type === CanvasNodeType.Video ? { videoTaskId: undefined } : {}),
+                                      ...(isVideoTaskFailed(error) && item.type === CanvasNodeType.Video ? { videoTaskId: undefined, videoTaskProvider: undefined, videoTaskCreatedAt: undefined, videoTaskState: undefined } : {}),
                                   },
                               }
                             : item,

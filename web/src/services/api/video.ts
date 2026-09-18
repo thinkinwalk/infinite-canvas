@@ -36,16 +36,16 @@ type SeedanceTask = {
 };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; onWaitState?: (state: VideoTaskWaitState) => void };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "gemini" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "gemini" | "plugin"; model: string; createdAt?: number };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
+export type VideoTaskWaitState = "processing" | "background" | "query_interrupted";
 
-export function videoPollInterval(task: VideoGenerationTask) {
-    if (task.provider === "seedance") return 5000;
-    return isPidoiGrokVideoModel(modelOptionName(task.model)) ? 4000 : 2500;
-}
+export const VIDEO_ACTIVE_POLL_WINDOW_MS = 15 * 60 * 1000;
+export const VIDEO_ACTIVE_POLL_INTERVAL_MS = 5000;
+export const VIDEO_BACKGROUND_POLL_INTERVAL_MS = 30000;
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
 const pluginVideoResults = new Map<string, VideoGenerationResult>();
@@ -75,29 +75,32 @@ function refreshRemoteUser(config: AiConfig) {
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const task = await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options);
-    const delayMs = videoPollInterval(task);
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-        if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const state = await pollVideoGenerationTask(config, task, options);
-        if (state.status === "completed") return state.result;
-        if (state.status === "failed") throw new Error(state.error);
-        if (attempt === 119) throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
-        await delay(delayMs, options?.signal);
-    }
-    throw new Error("视频生成超时，请稍后重试");
+    return waitForVideoGenerationTask(config, task, options);
 }
 
 export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationResult> {
-    const delayMs = videoPollInterval(task);
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    const startedAt = task.createdAt || Date.now();
+    let waitState: VideoTaskWaitState | undefined;
+    const updateWaitState = (state: VideoTaskWaitState) => {
+        if (waitState === state) return;
+        waitState = state;
+        options?.onWaitState?.(state);
+    };
+    for (;;) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const state = await pollVideoGenerationTask(config, task, options);
-        if (state.status === "completed") return state.result;
-        if (state.status === "failed") throw videoTaskFailed(state.error);
-        if (attempt === 119) throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
-        await delay(delayMs, options?.signal);
+        try {
+            const state = await pollVideoGenerationTask(config, task, options);
+            if (state.status === "completed") return state.result;
+            if (state.status === "failed") throw videoTaskFailed(state.error);
+            updateWaitState(Date.now() - startedAt >= VIDEO_ACTIVE_POLL_WINDOW_MS ? "background" : "processing");
+        } catch (error) {
+            if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+            if (isAbortError(error) || isVideoTaskFailed(error)) throw error;
+            updateWaitState("query_interrupted");
+        }
+        const interval = Date.now() - startedAt >= VIDEO_ACTIVE_POLL_WINDOW_MS ? VIDEO_BACKGROUND_POLL_INTERVAL_MS : VIDEO_ACTIVE_POLL_INTERVAL_MS;
+        await waitForNextVideoPoll(interval, options?.signal);
     }
-    throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
 }
 
 export function isVideoTaskFailed(error: unknown) {
@@ -159,7 +162,7 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
     );
     const id = nanoid();
     pluginVideoResults.set(id, result);
-    return { id, provider: "plugin", model };
+    return { id, provider: "plugin", model, createdAt: Date.now() };
 }
 
 function videoPluginResult(result: unknown): VideoGenerationResult {
@@ -214,7 +217,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("视频接口没有返回任务 ID");
-        return { id: taskID, provider: "openai", model };
+        return { id: taskID, provider: "openai", model, createdAt: Date.now() };
     } catch (error) {
         throw new Error(readAxiosError(error, "视频任务创建失败"));
     }
@@ -242,7 +245,7 @@ async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt:
         })).data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("视频接口没有返回任务 ID");
-        return { id: taskID, provider: "openai", model };
+        return { id: taskID, provider: "openai", model, createdAt: Date.now() };
     } catch (error) {
         throw new Error(readAxiosError(error, "视频任务创建失败"));
     }
@@ -275,7 +278,10 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
             }
             return { status: "pending" };
         }
-        if (isFailedVideoStatus(video.status)) return { status: "failed", error: readApiErrorMessage(video.error?.message) || "视频生成失败" };
+        if (isFailedVideoStatus(video.status)) {
+            refreshRemoteUser(config);
+            return { status: "failed", error: readApiErrorMessage(video.error?.message) || "视频生成失败" };
+        }
         return { status: "pending" };
     } catch (error) {
         throw new Error(readAxiosError(error, "视频任务查询失败"));
@@ -304,7 +310,7 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
         const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("Seedance 接口没有返回任务 ID");
-        return { id: taskID, provider: "seedance", model };
+        return { id: taskID, provider: "seedance", model, createdAt: Date.now() };
     } catch (error) {
         throw new Error(readAxiosError(error, "Seedance 任务创建失败"));
     }
@@ -324,7 +330,10 @@ async function pollSeedanceTask(config: AiConfig, task: VideoGenerationTask, opt
             }
             return { status: "pending" };
         }
-        if (isFailedVideoStatus(state.status)) return { status: "failed", error: readApiErrorMessage(state.error?.message) || `Seedance 视频生成${state.status === "expired" ? "超时" : "失败"}` };
+        if (isFailedVideoStatus(state.status)) {
+            refreshRemoteUser(config);
+            return { status: "failed", error: readApiErrorMessage(state.error?.message) || `Seedance 视频生成${state.status === "expired" ? "超时" : "失败"}` };
+        }
         return { status: "pending" };
     } catch (error) {
         throw new Error(readAxiosError(error, "Seedance 任务查询失败"));
@@ -532,7 +541,7 @@ function isCompletedVideoStatus(status?: string) {
 
 function isFailedVideoStatus(status?: string) {
     const value = String(status || "").toLowerCase();
-    return value === "failed" || value === "cancelled" || value === "expired";
+    return value === "failed" || value === "cancelled" || value === "canceled" || value === "expired";
 }
 
 function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
@@ -603,21 +612,40 @@ function isPublicMediaUrl(value: string) {
     return /^https?:\/\//i.test(value || "");
 }
 
-function delay(ms: number, signal?: AbortSignal) {
+function isAbortError(error: unknown) {
+    return error instanceof Error && error.name === "AbortError";
+}
+
+function waitForNextVideoPoll(ms: number, signal?: AbortSignal) {
     return new Promise<void>((resolve, reject) => {
         if (signal?.aborted) {
             reject(new DOMException("Aborted", "AbortError"));
             return;
         }
-        const timer = setTimeout(resolve, ms);
-        signal?.addEventListener(
-            "abort",
-            () => {
-                clearTimeout(timer);
-                reject(new DOMException("Aborted", "AbortError"));
-            },
-            { once: true },
-        );
+        const finish = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", abort);
+            window.removeEventListener("focus", wake);
+            window.removeEventListener("online", wake);
+            document.removeEventListener("visibilitychange", visible);
+            resolve();
+        };
+        const abort = () => {
+            clearTimeout(timer);
+            window.removeEventListener("focus", wake);
+            window.removeEventListener("online", wake);
+            document.removeEventListener("visibilitychange", visible);
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        const wake = () => finish();
+        const visible = () => {
+            if (document.visibilityState === "visible") finish();
+        };
+        const timer = window.setTimeout(finish, ms);
+        signal?.addEventListener("abort", abort, { once: true });
+        window.addEventListener("focus", wake, { once: true });
+        window.addEventListener("online", wake, { once: true });
+        document.addEventListener("visibilitychange", visible);
     });
 }
 

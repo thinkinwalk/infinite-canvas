@@ -224,6 +224,21 @@ func SelectModelChannelForGroup(modelName string, userGroup string) (model.Model
 	return channels[0], nil
 }
 
+// ResolveModelChannelForTask returns the same configured channel that created an asynchronous task.
+func ResolveModelChannelForTask(channelName string, channelBaseURL string) (model.ModelChannel, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return model.ModelChannel{}, err
+	}
+	baseURL := normalizeModelChannelBaseURL(channelBaseURL)
+	for _, channel := range normalizePrivateSetting(settings.Private).Channels {
+		if normalizeModelChannelBaseURL(channel.BaseURL) == baseURL && (channelName == "" || channel.Name == channelName) {
+			return channel, nil
+		}
+	}
+	return model.ModelChannel{}, errors.New("视频任务原渠道不存在或配置已变更")
+}
+
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
 	baseURL := normalizeModelChannelBaseURL(channel.BaseURL)
 	lowerBaseURL := strings.ToLower(baseURL)
