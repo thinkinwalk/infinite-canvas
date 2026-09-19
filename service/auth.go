@@ -731,7 +731,7 @@ func hashPassword(password string) (string, error) {
 }
 
 func now() string {
-	return time.Now().Format(time.RFC3339)
+	return time.Now().UTC().Format(time.RFC3339)
 }
 
 func newID(prefix string) string {

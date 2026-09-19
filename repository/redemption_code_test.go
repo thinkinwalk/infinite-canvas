@@ -153,9 +153,9 @@ func TestListCreditLogsSearchesUserProfile(t *testing.T) {
 func TestListCreditLogsFiltersTimeAndStats(t *testing.T) {
 	setupRedemptionTestDB(t)
 	logs := []model.CreditLog{
-		{ID: "credit-old", UserID: "user-1", Type: model.CreditLogTypeAIConsume, Amount: -99, Balance: 901, CreatedAt: "2026-07-29T23:59:59+08:00"},
-		{ID: "credit-1", UserID: "user-1", Type: model.CreditLogTypeAIConsume, Amount: -10, Balance: 890, Remark: "调用模型 gpt-image-2", CreatedAt: "2026-07-30T09:00:00+08:00"},
-		{ID: "credit-2", UserID: "user-1", Type: model.CreditLogTypeAIRefund, Amount: 3, Balance: 893, Remark: "模型调用失败返还 gpt-image-2", CreatedAt: "2026-07-30T10:00:00+08:00"},
+		{ID: "credit-old", UserID: "user-1", Type: model.CreditLogTypeAIConsume, Amount: -99, Balance: 901, CreatedAt: "2026-07-29T15:59:59Z"},
+		{ID: "credit-1", UserID: "user-1", Type: model.CreditLogTypeAIConsume, Amount: -10, Balance: 890, Remark: "调用模型 gpt-image-2", CreatedAt: "2026-07-30T01:00:00Z"},
+		{ID: "credit-2", UserID: "user-1", Type: model.CreditLogTypeAIRefund, Amount: 3, Balance: 893, Remark: "模型调用失败返还 gpt-image-2", CreatedAt: "2026-07-30T02:00:00Z"},
 	}
 	for _, log := range logs {
 		if _, err := SaveCreditLog(log); err != nil {

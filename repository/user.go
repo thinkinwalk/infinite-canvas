@@ -282,13 +282,22 @@ func applyCreditLogFilters(tx *gorm.DB, q model.Query) *gorm.DB {
 		like := "%" + modelName + "%"
 		tx = tx.Where("credit_logs.remark LIKE ? OR credit_logs.extra LIKE ?", like, like)
 	}
-	if startTime := strings.TrimSpace(q.Start); startTime != "" {
+	if startTime := normalizeCreditLogFilterTime(q.Start); startTime != "" {
 		tx = tx.Where("credit_logs.created_at >= ?", startTime)
 	}
-	if endTime := strings.TrimSpace(q.End); endTime != "" {
+	if endTime := normalizeCreditLogFilterTime(q.End); endTime != "" {
 		tx = tx.Where("credit_logs.created_at <= ?", endTime)
 	}
 	return tx
+}
+
+func normalizeCreditLogFilterTime(value string) string {
+	value = strings.TrimSpace(value)
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	return parsed.UTC().Format(time.RFC3339)
 }
 
 type creditLogStatsRow struct {
