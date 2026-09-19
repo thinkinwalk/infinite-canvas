@@ -17,28 +17,29 @@ const (
 
 // User 系统用户。
 type User struct {
-	ID           string     `json:"id" gorm:"primaryKey"`
-	Username     string     `json:"username" gorm:"uniqueIndex"`
-	Password     string     `json:"password,omitempty"`
-	Email        string     `json:"email"`
-	DisplayName  string     `json:"displayName"`
-	AvatarURL    string     `json:"avatarUrl"`
-	Role         UserRole   `json:"role"`
-	Group        string     `json:"group" gorm:"index"`
-	Credits      int        `json:"credits"`
-	AffCode      string     `json:"affCode" gorm:"uniqueIndex"`
-	AffCount     int        `json:"affCount"`
-	InviterID    string     `json:"inviterId"`
-	InviteRef    string     `json:"inviteRef" gorm:"index"`
-	InviteSource string     `json:"inviteSource"`
-	GithubID     string     `json:"githubId"`
-	LinuxDoID    string     `json:"linuxDoId" gorm:"index"`
-	WechatID     string     `json:"wechatId"`
-	Status       UserStatus `json:"status"`
-	LastLoginAt  string     `json:"lastLoginAt"`
-	Extra        string     `json:"extra" gorm:"type:text"`
-	CreatedAt    string     `json:"createdAt"`
-	UpdatedAt    string     `json:"updatedAt"`
+	ID                 string     `json:"id" gorm:"primaryKey"`
+	Username           string     `json:"username" gorm:"uniqueIndex"`
+	Password           string     `json:"password,omitempty"`
+	Email              string     `json:"email"`
+	DisplayName        string     `json:"displayName"`
+	AvatarURL          string     `json:"avatarUrl"`
+	Role               UserRole   `json:"role"`
+	Group              string     `json:"group" gorm:"index"`
+	Credits            int        `json:"credits"`
+	AffCode            string     `json:"affCode" gorm:"uniqueIndex"`
+	AffCount           int        `json:"affCount"`
+	InviterID          string     `json:"inviterId"`
+	InviteRef          string     `json:"inviteRef" gorm:"index"`
+	InviteSource       string     `json:"inviteSource"`
+	InviteTrialCredits int        `json:"inviteTrialCredits"`
+	GithubID           string     `json:"githubId"`
+	LinuxDoID          string     `json:"linuxDoId" gorm:"index"`
+	WechatID           string     `json:"wechatId"`
+	Status             UserStatus `json:"status"`
+	LastLoginAt        string     `json:"lastLoginAt"`
+	Extra              string     `json:"extra" gorm:"type:text"`
+	CreatedAt          string     `json:"createdAt"`
+	UpdatedAt          string     `json:"updatedAt"`
 }
 
 // UserList 用户分页结果。
@@ -90,6 +91,7 @@ const (
 	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
 	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
 	CreditLogTypeRedeemTopup CreditLogType = "redeem_topup"
+	CreditLogTypeInviteTrial CreditLogType = "invite_trial"
 )
 
 // CreditLog 用户算力点变更流水。

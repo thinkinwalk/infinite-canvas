@@ -121,6 +121,28 @@ func SaveUser(user model.User) (model.User, error) {
 	return user, db.Save(&user).Error
 }
 
+// CreateRegisteredUser writes the new account and its optional invitation grant atomically.
+func CreateRegisteredUser(user model.User, trialLog *model.CreditLog) (model.User, error) {
+	db, err := DB()
+	if err != nil {
+		return user, err
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if trialLog == nil {
+			return nil
+		}
+		trialLog.UserID = user.ID
+		trialLog.Amount = user.InviteTrialCredits
+		trialLog.Balance = user.Credits
+		trialLog.CreatedAt = user.CreatedAt
+		return tx.Create(trialLog).Error
+	})
+	return user, err
+}
+
 func ConsumeUserCredits(id string, credits int, now string) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {

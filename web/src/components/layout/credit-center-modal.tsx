@@ -19,6 +19,7 @@ const logTypeLabels: Record<string, { label: string; color?: string }> = {
     ai_consume: { label: "模型消费", color: "red" },
     ai_refund: { label: "失败返还", color: "green" },
     redeem_topup: { label: "兑换充值", color: "cyan" },
+    invite_trial: { label: "邀请赠送", color: "purple" },
 };
 
 const numberFormatter = new Intl.NumberFormat("zh-CN");

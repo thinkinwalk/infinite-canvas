@@ -23,6 +23,7 @@ const creditLogTypeLabels: Record<string, string> = {
     ai_consume: "模型消费",
     ai_refund: "失败返还",
     redeem_topup: "兑换充值",
+    invite_trial: "邀请赠送",
 };
 
 const creditLogTypeColors: Record<string, string> = {
@@ -30,6 +31,7 @@ const creditLogTypeColors: Record<string, string> = {
     ai_consume: "orange",
     ai_refund: "green",
     redeem_topup: "cyan",
+    invite_trial: "purple",
 };
 
 const creditLogTypeOptions = [{ label: "全部类型", value: "" }, ...Object.entries(creditLogTypeLabels).map(([value, label]) => ({ value, label }))];

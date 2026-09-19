@@ -83,7 +83,7 @@ func InviteUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := make([]map[string]any, 0, len(users))
 	for _, user := range users {
-		rows = append(rows, map[string]any{"external_user_id": user.ID, "username": user.Username, "display_name": user.DisplayName, "email": user.Email, "registered_at": user.CreatedAt, "ref": ref})
+		rows = append(rows, map[string]any{"external_user_id": user.ID, "username": user.Username, "display_name": user.DisplayName, "email": user.Email, "registered_at": user.CreatedAt, "ref": ref, "trial_compute_points_granted": user.InviteTrialCredits})
 	}
 	OK(w, map[string]any{"users": rows})
 }

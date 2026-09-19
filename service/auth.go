@@ -36,13 +36,21 @@ type userExtra struct {
 }
 
 type registrationCallbackPayload struct {
-	ExternalUserID string `json:"external_user_id"`
-	Username       string `json:"username"`
-	DisplayName    string `json:"display_name"`
-	Email          string `json:"email"`
-	RegisteredAt   string `json:"registered_at"`
-	Ref            string `json:"ref"`
+	ExternalUserID            string `json:"external_user_id"`
+	Username                  string `json:"username"`
+	DisplayName               string `json:"display_name"`
+	Email                     string `json:"email"`
+	RegisteredAt              string `json:"registered_at"`
+	Ref                       string `json:"ref"`
+	TrialComputePointsGranted int    `json:"trial_compute_points_granted"`
 }
+
+type invitationValidationResponse struct {
+	OK                 bool `json:"ok"`
+	TrialComputePoints int  `json:"trial_compute_points"`
+}
+
+const maxInvitationTrialCredits = 100
 
 func EnsureDefaultAdmin() error {
 	if strings.TrimSpace(config.Cfg.AdminUsername) == "" || strings.TrimSpace(config.Cfg.AdminPassword) == "" {
@@ -100,15 +108,21 @@ func Register(username string, password string, refs ...string) (model.AuthSessi
 	if len(refs) > 0 {
 		ref = strings.TrimSpace(refs[0])
 	}
-	user, err := repository.SaveUser(model.User{
-		ID:        newID("user"),
-		Username:  username,
-		Password:  hash,
-		Role:      model.UserRoleUser,
-		Group:     "default",
-		AffCode:   newAffCode(),
-		Status:    model.UserStatusActive,
-		InviteRef: ref,
+	trialCredits, err := invitationTrialCredits(ref)
+	if err != nil {
+		return model.AuthSession{}, err
+	}
+	user := model.User{
+		ID:                 newID("user"),
+		Username:           username,
+		Password:           hash,
+		Role:               model.UserRoleUser,
+		Group:              "default",
+		Credits:            trialCredits,
+		AffCode:            newAffCode(),
+		Status:             model.UserStatusActive,
+		InviteRef:          ref,
+		InviteTrialCredits: trialCredits,
 		InviteSource: func() string {
 			if ref != "" {
 				return "invite_link"
@@ -117,7 +131,19 @@ func Register(username string, password string, refs ...string) (model.AuthSessi
 		}(),
 		CreatedAt: now(),
 		UpdatedAt: now(),
-	})
+	}
+	var trialLog *model.CreditLog
+	if trialCredits > 0 {
+		extra, _ := json.Marshal(map[string]any{"source": "invite_link"})
+		trialLog = &model.CreditLog{
+			ID:        newID("credit-log"),
+			Type:      model.CreditLogTypeInviteTrial,
+			RelatedID: user.ID,
+			Remark:    "邀请注册赠送算力点",
+			Extra:     string(extra),
+		}
+	}
+	user, err = repository.CreateRegisteredUser(user, trialLog)
 	if err != nil {
 		return model.AuthSession{}, err
 	}
@@ -129,12 +155,37 @@ func Register(username string, password string, refs ...string) (model.AuthSessi
 	return newSession(user)
 }
 
+func invitationTrialCredits(ref string) (int, error) {
+	ref = strings.TrimSpace(ref)
+	endpoint := strings.TrimSpace(config.Cfg.InfiniteCanvasOpsURL)
+	if ref == "" || endpoint == "" {
+		return 0, nil
+	}
+	validationURL := strings.TrimRight(endpoint, "/") + "/admin-tools/api/infinite-canvas/invitation/validate?ref=" + url.QueryEscape(ref)
+	resp, err := http.Get(validationURL)
+	if err != nil {
+		return 0, safeMessageError{message: "邀请链接暂时无法验证，请稍后重试"}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, safeMessageError{message: "邀请链接无效或已过期"}
+	}
+	var result invitationValidationResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&result); err != nil || !result.OK {
+		return 0, safeMessageError{message: "邀请链接无效或已过期"}
+	}
+	if result.TrialComputePoints < 0 || result.TrialComputePoints > maxInvitationTrialCredits {
+		return 0, errors.New("invitation trial credits exceed the supported range")
+	}
+	return result.TrialComputePoints, nil
+}
+
 func notifyCanvasRegistration(user model.User, ref string) error {
 	endpoint, secret := strings.TrimSpace(config.Cfg.InfiniteCanvasOpsURL), strings.TrimSpace(config.Cfg.InfiniteCanvasCallbackSecret)
 	if endpoint == "" || secret == "" {
 		return nil
 	}
-	payload := registrationCallbackPayload{ExternalUserID: user.ID, Username: user.Username, DisplayName: user.DisplayName, Email: user.Email, RegisteredAt: user.CreatedAt, Ref: ref}
+	payload := registrationCallbackPayload{ExternalUserID: user.ID, Username: user.Username, DisplayName: user.DisplayName, Email: user.Email, RegisteredAt: user.CreatedAt, Ref: ref, TrialComputePointsGranted: user.InviteTrialCredits}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
