@@ -9,6 +9,7 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
 import { DOCS_URL } from "@/constant/env";
 import { changeAppLocale, type AppLocale } from "@/i18n";
+import { clearInvitationRef, resolveInvitationRef } from "@/lib/invitation-ref";
 import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { adminLogin, type AuthPayload } from "@/services/api/auth";
@@ -85,8 +86,9 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                 const session = await adminLogin(values);
                 setSession(session.token, session.user);
             } else if (authMode === "register") {
-                const ref = new URLSearchParams(window.location.search).get("ref")?.trim();
+                const ref = resolveInvitationRef(window.location.search, window.sessionStorage);
                 await register(ref ? { ...values, ref } : values);
+                clearInvitationRef(window.sessionStorage);
             } else {
                 await login(values);
             }

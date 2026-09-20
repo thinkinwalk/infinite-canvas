@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { rememberInvitationRef } from "@/lib/invitation-ref";
 import { useUserStore } from "@/stores/use-user-store";
 
 export default function RegisterPage() {
@@ -8,6 +9,7 @@ export default function RegisterPage() {
     const user = useUserStore((state) => state.user);
 
     useEffect(() => {
+        rememberInvitationRef(window.location.search, window.sessionStorage);
         if (user) navigate("/", { replace: true });
     }, [navigate, user]);
 
