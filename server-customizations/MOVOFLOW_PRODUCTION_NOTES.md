@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.4
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.5
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -43,7 +43,7 @@ server-customizations/deploy_infinite_canvas_image.sh
 Example production deploy command:
 
 ```bash
-/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.4
+/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.5
 ```
 
 The helper backs up data and docker-compose.deploy.yml, pulls the image, restarts only the app service, checks /api/health, and restores the previous compose file if the health check fails.
@@ -84,8 +84,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
-- Release tag deployed for the current production fixes: v0.19.4
-- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.4
+- Release tag deployed for the current production fixes: v0.19.5
+- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.5
 - Expected settings response includes seedance-2.0-mini and tejiasd-mini-720p in availableModels when enabled in channels.
 - Expected platform settings have allowCustomChannel=false so frontend should prefer platform models when no usable local channel is configured.
 - seedance-2.0-mini is configured on the Lingzhou relay channel with Base URL https://api.lingzhouai.com and protocol openai. It must use JSON POST /v1/videos, not Fireworks/Ark Agent Plan POST /v1/contents/generations/tasks.
@@ -95,8 +95,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 - DNS: studio.lingzhouai.com resolves to 37.221.196.102.
 - External health check: https://studio.lingzhouai.com/api/health returns ok.
-- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.4.
-- Production container /app/VERSION: v0.19.4.
+- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.5.
+- Production container /app/VERSION: v0.19.5.
 
 ## Recent backups on production
 

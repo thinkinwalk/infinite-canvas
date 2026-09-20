@@ -112,6 +112,55 @@ func ListUsersByInviteRef(ref string) ([]model.User, error) {
 	return users, err
 }
 
+func ListInviteUserSummaries(ref string, startTime string, endTime string) ([]model.InviteUserSummary, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]model.InviteUserSummary, 0)
+	err = db.Raw(`
+SELECT
+  users.id AS external_user_id,
+  users.username AS username,
+  users.display_name AS display_name,
+  users.email AS email,
+  users.created_at AS registered_at,
+  users.invite_ref AS ref,
+  users.credits AS current_balance,
+  users.invite_trial_credits AS trial_compute_points_granted,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.amount > 0 AND credit_logs.created_at >= ? AND credit_logs.created_at <= ? THEN credit_logs.amount ELSE 0 END), 0) AS period_recharge_amount,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.amount > 0 AND credit_logs.created_at >= ? AND credit_logs.created_at <= ? THEN 1 ELSE 0 END), 0) AS period_recharge_count,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.amount > 0 THEN credit_logs.amount ELSE 0 END), 0) AS total_recharge_amount,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.amount > 0 THEN 1 ELSE 0 END), 0) AS total_recharge_count,
+  COALESCE(MAX(CASE WHEN credit_logs.type = ? AND credit_logs.amount > 0 THEN credit_logs.created_at ELSE '' END), '') AS last_recharge_at,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.amount < 0 AND credit_logs.created_at >= ? AND credit_logs.created_at <= ? THEN -credit_logs.amount ELSE 0 END), 0) AS period_consume_amount,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.amount > 0 AND credit_logs.created_at >= ? AND credit_logs.created_at <= ? THEN credit_logs.amount ELSE 0 END), 0) AS period_refund_amount,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.created_at >= ? AND credit_logs.created_at <= ? THEN 1 ELSE 0 END), 0) AS period_request_count,
+  COALESCE(SUM(CASE WHEN credit_logs.type = ? AND credit_logs.created_at >= ? AND credit_logs.created_at <= ? THEN credit_logs.amount ELSE 0 END), 0) AS period_admin_adjustment,
+  COALESCE(MAX(CASE WHEN credit_logs.type IN (?, ?, ?) THEN credit_logs.created_at ELSE '' END), '') AS last_activity_at
+FROM users
+LEFT JOIN credit_logs ON credit_logs.user_id = users.id
+WHERE users.invite_ref = ?
+GROUP BY users.id, users.username, users.display_name, users.email, users.created_at, users.invite_ref, users.credits, users.invite_trial_credits
+ORDER BY users.created_at DESC`,
+		model.CreditLogTypeRedeemTopup, startTime, endTime,
+		model.CreditLogTypeRedeemTopup, startTime, endTime,
+		model.CreditLogTypeRedeemTopup,
+		model.CreditLogTypeRedeemTopup,
+		model.CreditLogTypeRedeemTopup,
+		model.CreditLogTypeAIConsume, startTime, endTime,
+		model.CreditLogTypeAIRefund, startTime, endTime,
+		model.CreditLogTypeAIConsume, startTime, endTime,
+		model.CreditLogTypeAdminAdjust, startTime, endTime,
+		model.CreditLogTypeAIConsume, model.CreditLogTypeAIRefund, model.CreditLogTypeRedeemTopup,
+		strings.TrimSpace(ref),
+	).Scan(&rows).Error
+	for index := range rows {
+		rows[index].PeriodNetConsumption = rows[index].PeriodConsumeAmount - rows[index].PeriodRefundAmount
+	}
+	return rows, err
+}
+
 // SaveUser 保存用户信息。
 func SaveUser(user model.User) (model.User, error) {
 	db, err := DB()

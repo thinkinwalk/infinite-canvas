@@ -48,6 +48,30 @@ type UserList struct {
 	Total int    `json:"total"`
 }
 
+// InviteUserSummary is the read-only operating snapshot shared with the
+// invitation owner through the protected ops endpoint.
+type InviteUserSummary struct {
+	ExternalUserID            string `json:"external_user_id" gorm:"column:external_user_id"`
+	Username                  string `json:"username" gorm:"column:username"`
+	DisplayName               string `json:"display_name" gorm:"column:display_name"`
+	Email                     string `json:"email" gorm:"column:email"`
+	RegisteredAt              string `json:"registered_at" gorm:"column:registered_at"`
+	Ref                       string `json:"ref" gorm:"column:ref"`
+	CurrentBalance            int    `json:"current_balance" gorm:"column:current_balance"`
+	TrialComputePointsGranted int    `json:"trial_compute_points_granted" gorm:"column:trial_compute_points_granted"`
+	PeriodRechargeAmount      int    `json:"period_recharge_amount" gorm:"column:period_recharge_amount"`
+	PeriodRechargeCount       int    `json:"period_recharge_count" gorm:"column:period_recharge_count"`
+	TotalRechargeAmount       int    `json:"total_recharge_amount" gorm:"column:total_recharge_amount"`
+	TotalRechargeCount        int    `json:"total_recharge_count" gorm:"column:total_recharge_count"`
+	LastRechargeAt            string `json:"last_recharge_at" gorm:"column:last_recharge_at"`
+	PeriodConsumeAmount       int    `json:"period_consume_amount" gorm:"column:period_consume_amount"`
+	PeriodRefundAmount        int    `json:"period_refund_amount" gorm:"column:period_refund_amount"`
+	PeriodNetConsumption      int    `json:"period_net_consumption" gorm:"-"`
+	PeriodRequestCount        int    `json:"period_request_count" gorm:"column:period_request_count"`
+	PeriodAdminAdjustment     int    `json:"period_admin_adjustment" gorm:"column:period_admin_adjustment"`
+	LastActivityAt            string `json:"last_activity_at" gorm:"column:last_activity_at"`
+}
+
 // AuthUser 用户公开信息。
 type AuthUser struct {
 	ID          string   `json:"id"`

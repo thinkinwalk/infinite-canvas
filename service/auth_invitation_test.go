@@ -5,10 +5,30 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
 )
+
+func TestInviteUserSummaryRangeParsesRFC3339(t *testing.T) {
+	start, end, err := inviteUserSummaryRange("2026-09-01T00:00:00+08:00", "2026-09-20T23:59:59+08:00")
+	if err != nil {
+		t.Fatalf("inviteUserSummaryRange(): %v", err)
+	}
+	if start.UTC().Format(time.RFC3339) != "2026-08-31T16:00:00Z" || end.UTC().Format(time.RFC3339) != "2026-09-20T15:59:59Z" {
+		t.Fatalf("range = %s to %s", start, end)
+	}
+}
+
+func TestInviteUserSummaryRangeRejectsIncompleteOrReversedRange(t *testing.T) {
+	if _, _, err := inviteUserSummaryRange("2026-09-01T00:00:00Z", ""); err == nil {
+		t.Fatal("inviteUserSummaryRange() accepted an incomplete range")
+	}
+	if _, _, err := inviteUserSummaryRange("2026-09-20T00:00:00Z", "2026-09-01T00:00:00Z"); err == nil {
+		t.Fatal("inviteUserSummaryRange() accepted a reversed range")
+	}
+}
 
 func TestInvitationTrialCreditsReadsValidatedGrant(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

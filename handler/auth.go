@@ -8,7 +8,6 @@ import (
 
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -71,21 +70,16 @@ func InviteUsers(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	ref := strings.TrimSpace(r.URL.Query().Get("ref"))
-	if ref == "" {
-		Fail(w, "缺少邀请 Token")
-		return
-	}
-	users, err := repository.ListUsersByInviteRef(ref)
+	users, startTime, endTime, err := service.ListInviteUserSummaries(
+		r.URL.Query().Get("ref"),
+		r.URL.Query().Get("startTime"),
+		r.URL.Query().Get("endTime"),
+	)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	rows := make([]map[string]any, 0, len(users))
-	for _, user := range users {
-		rows = append(rows, map[string]any{"external_user_id": user.ID, "username": user.Username, "display_name": user.DisplayName, "email": user.Email, "registered_at": user.CreatedAt, "ref": ref, "trial_compute_points_granted": user.InviteTrialCredits})
-	}
-	OK(w, map[string]any{"users": rows})
+	OK(w, map[string]any{"users": users, "period_start": startTime, "period_end": endTime})
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {

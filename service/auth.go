@@ -353,6 +353,40 @@ func ListUsers(q model.Query) (model.UserList, error) {
 	return model.UserList{Items: users, Total: int(total)}, nil
 }
 
+func ListInviteUserSummaries(ref string, startText string, endText string) ([]model.InviteUserSummary, string, string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, "", "", safeMessageError{message: "缺少邀请 Token"}
+	}
+	start, end, err := inviteUserSummaryRange(startText, endText)
+	if err != nil {
+		return nil, "", "", err
+	}
+	startText = start.UTC().Format(time.RFC3339)
+	endText = end.UTC().Format(time.RFC3339)
+	rows, err := repository.ListInviteUserSummaries(ref, startText, endText)
+	return rows, startText, endText, err
+}
+
+func inviteUserSummaryRange(startText string, endText string) (time.Time, time.Time, error) {
+	startText = strings.TrimSpace(startText)
+	endText = strings.TrimSpace(endText)
+	if startText == "" && endText == "" {
+		china := time.FixedZone("Asia/Shanghai", 8*60*60)
+		now := time.Now().In(china)
+		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, china), now, nil
+	}
+	if startText == "" || endText == "" {
+		return time.Time{}, time.Time{}, safeMessageError{message: "统计开始和结束时间必须同时提供"}
+	}
+	start, startErr := time.Parse(time.RFC3339, startText)
+	end, endErr := time.Parse(time.RFC3339, endText)
+	if startErr != nil || endErr != nil || end.Before(start) {
+		return time.Time{}, time.Time{}, safeMessageError{message: "统计时间范围无效"}
+	}
+	return start, end, nil
+}
+
 func SaveUser(user model.User, password string) (model.User, error) {
 	user.Username = strings.TrimSpace(user.Username)
 	if strings.ContainsAny(user.Username, " \t\r\n") {
