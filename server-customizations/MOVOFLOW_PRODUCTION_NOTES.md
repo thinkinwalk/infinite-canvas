@@ -100,6 +100,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Recent backups on production
 
+- /opt/infinite-canvas/backups/docker-compose.deploy.yml.20260921-055610.bak
+- /opt/infinite-canvas/backups/data-before-deploy-20260921-055610.tgz
 - /opt/infinite-canvas/backups/docker-compose.deploy.yml.20260921-053418.bak
 - /opt/infinite-canvas/backups/data-before-deploy-20260921-053418.tgz
 - /opt/infinite-canvas/backups/docker-compose.deploy.yml.20260921-051249.bak
