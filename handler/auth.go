@@ -90,6 +90,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	if session.User.Role == model.UserRoleAdmin {
+		Fail(w, "管理员请前往 /admin 登录")
+		return
+	}
 	OK(w, session)
 }
 

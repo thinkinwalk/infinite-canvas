@@ -1,18 +1,17 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { App, Form, Input, Modal, Segmented, Tooltip } from "antd";
-import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, Shield, UserRound, Zap } from "lucide-react";
+import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, UserRound, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CreditCenterModal } from "@/components/layout/credit-center-modal";
 import { GitHubLink } from "@/components/layout/github-link";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
-import { VersionReleaseModal } from "@/components/layout/version-release-modal";
 import { DOCS_URL } from "@/constant/env";
 import { changeAppLocale, type AppLocale } from "@/i18n";
 import { clearInvitationRef, resolveInvitationRef } from "@/lib/invitation-ref";
 import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { adminLogin, type AuthPayload } from "@/services/api/auth";
+import type { AuthPayload } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -27,7 +26,7 @@ type UserStatusActionsProps = {
     autoOpenAuth?: boolean;
 };
 
-type AuthMode = "login" | "register" | "admin";
+type AuthMode = "login" | "register";
 
 export function UserStatusActions({ showConfig = true, showGitHub = true, variant = "default", onOpenShortcuts, onOpenPlugins, initialAuthMode = "login", autoOpenAuth = false }: UserStatusActionsProps) {
     const { message } = App.useApp();
@@ -44,12 +43,10 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
     const user = useUserStore((state) => state.user);
     const login = useUserStore((state) => state.login);
     const register = useUserStore((state) => state.register);
-    const setSession = useUserStore((state) => state.setSession);
     const clearSession = useUserStore((state) => state.clearSession);
     const canvasTheme = canvasThemes[theme];
     const naturalIconClass = "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-black/5 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
-    const versionStyle = iconStyle;
     const gitHubClassName = "size-7 text-base";
     const gitHubStyle = iconStyle;
     const locale = i18n.resolvedLanguage as AppLocale;
@@ -69,7 +66,6 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
     const authOptions: Array<{ label: string; value: AuthMode }> = [
         { label: "登录", value: "login" },
         ...(allowRegister ? [{ label: "注册", value: "register" as const }] : []),
-        { label: "后台", value: "admin" },
     ];
 
     useEffect(() => {
@@ -82,10 +78,7 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
     async function handleAuth(values: AuthPayload) {
         setSubmitting(true);
         try {
-            if (authMode === "admin") {
-                const session = await adminLogin(values);
-                setSession(session.token, session.user);
-            } else if (authMode === "register") {
+            if (authMode === "register") {
                 const ref = resolveInvitationRef(window.location.search, window.sessionStorage);
                 await register(ref ? { ...values, ref } : values);
                 clearInvitationRef(window.sessionStorage);
@@ -94,7 +87,7 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
             }
             setAuthOpen(false);
             form.resetFields();
-            message.success(authMode === "admin" ? "管理员登录成功" : "登录成功");
+            message.success(authMode === "register" ? "注册成功" : "登录成功");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "登录失败");
         } finally {
@@ -118,11 +111,6 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
         <div className="inline-flex shrink-0 items-center gap-1">
             {user ? (
                 <>
-                    {user.role === "admin" ? (
-                        <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => window.location.assign("/admin")} aria-label="后台" title="后台">
-                            <Shield className="size-4" />
-                        </button>
-                    ) : null}
                     {hasCredits ? (
                         <button
                             type="button"
@@ -146,7 +134,7 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                     </button>
                 </>
             ) : (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openAuth("login")} aria-label="登录" title="登录 / 后台">
+                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openAuth("login")} aria-label="登录" title="登录">
                     <LogIn className="size-4" />
                 </button>
             )}
@@ -169,7 +157,6 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                 </button>
             </Tooltip>
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
-            <VersionReleaseModal style={versionStyle} />
             {showGitHub ? <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} /> : null}
             {onOpenShortcuts ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
@@ -177,7 +164,7 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                 </button>
             ) : null}
             <CreditCenterModal open={creditCenterOpen} onOpenChange={setCreditCenterOpen} />
-            <Modal title={authMode === "admin" ? "后台登录" : authMode === "register" ? "注册账号" : "登录账号"} open={authOpen} onCancel={() => setAuthOpen(false)} onOk={() => form.submit()} okText={authMode === "register" ? "注册" : "登录"} cancelText="取消" confirmLoading={submitting} destroyOnHidden>
+            <Modal title={authMode === "register" ? "注册账号" : "登录账号"} open={authOpen} onCancel={() => setAuthOpen(false)} onOk={() => form.submit()} okText={authMode === "register" ? "注册" : "登录"} cancelText="取消" confirmLoading={submitting} destroyOnHidden>
                 <div className="mb-4">
                     <Segmented<AuthMode> options={authOptions} value={authMode} onChange={(value) => setAuthMode(value)} />
                 </div>

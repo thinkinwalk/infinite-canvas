@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`，这是从 Docker labels 排查确认的目录；不要使用 `/opt/chatgpt2api`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.4`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.8`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
 - 旧服务器 `47.104.6.6` 已迁移，不要向其部署或以其状态判断当前生产。
 

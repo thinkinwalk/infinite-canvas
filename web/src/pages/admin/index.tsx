@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 
 import AdminLayout from "@/app/(admin)/admin/layout";
 import AdminAssetsPage from "@/app/(admin)/admin/assets/page";
@@ -11,11 +10,6 @@ import AdminUsersPage from "@/app/(admin)/admin/users/page";
 
 export default function AdminPage() {
     const location = useLocation();
-    const navigate = useNavigate();
-
-    useEffect(() => {
-        if (location.pathname === "/admin") navigate("/admin/users", { replace: true });
-    }, [location.pathname, navigate]);
 
     return <AdminLayout>{adminChild(location.pathname)}</AdminLayout>;
 }
