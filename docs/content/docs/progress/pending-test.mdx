@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Lingzhou AI platform landing page: opening `docs.canvas.best` from the Infinite Canvas documentation entry should present the Lingzhou AI model service platform. Create account, Documentation, and Models & Pricing must open their matching `api.lingzhouai.com` destinations, while desktop/mobile layouts and light/dark themes remain readable without overlapping the capability diagram.
+
 - 后台使用日志时间筛选：在北京时间当天产生模型消费、失败返还、后台调整或兑换充值流水后，“今天”应显示对应记录和正确统计；“昨天”“近 7 天”及自定义跨日范围应按北京时间边界查询，不应把当天凌晨记录归入前一天或遗漏 UTC 存储的流水。
 
 - 视频异步任务：创建任务后前 15 分钟应每 5 秒查询，超过 15 分钟节点和视频工作台仍保持生成中并改为每 30 秒查询，不显示“生成超时”；窗口重新聚焦、网络恢复、页面刷新或重新打开画布时应立即恢复查询，且同一任务不会启动重复轮询。上游完成后视频应自动保存并回填原节点；普通查询错误应显示“状态查询暂时中断，正在重试”并保留任务 ID，只有 `failed` / `cancelled` / `expired` 才进入失败状态。创建只扣费一次，所有状态查询均不扣费；终态失败应只退款一次并写一条退款流水，重复查询不得重复退款。同一模型配置多个渠道时，状态查询应继续使用创建任务的原渠道。

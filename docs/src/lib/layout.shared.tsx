@@ -6,6 +6,10 @@ import { uiTranslations } from 'fumadocs-ui/i18n';
 
 const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
 const qqUrl = 'https://qm.qq.com/q/DFnKzZ807u';
+const platformUrl = 'https://api.lingzhouai.com/';
+const registerUrl = 'https://api.lingzhouai.com/register';
+const platformDocsUrl = 'https://api.lingzhouai.com/docs/';
+const pricingUrl = 'https://api.lingzhouai.com/pricing';
 
 export const translations = i18n.translations().extend(uiTranslations()).add('ui', {
   en: {
@@ -90,6 +94,52 @@ export function baseOptions(locale: string): BaseLayoutProps {
         external: true,
         on: 'menu',
         icon: <img src="/qq.svg" alt="" className="size-4" />,
+      },
+    ],
+  };
+}
+
+export function homeOptions(locale: string): BaseLayoutProps {
+  const chinese = locale === 'zh-CN';
+
+  return {
+    nav: {
+      title: (
+        <span className="inline-flex items-center gap-2 font-semibold">
+          <img src="/lingzhou-logo.png" alt="Lingzhou AI" className="h-6 w-6 rounded-full object-cover" />
+          <span>{chinese ? '灵舟 AI' : 'Lingzhou AI'}</span>
+        </span>
+      ),
+    },
+    links: [
+      {
+        text: chinese ? '平台首页' : 'Platform',
+        url: platformUrl,
+        external: true,
+        on: 'nav',
+      },
+      {
+        text: chinese ? '模型与价格' : 'Models & Pricing',
+        url: pricingUrl,
+        external: true,
+        on: 'nav',
+      },
+      {
+        text: chinese ? '使用文档' : 'Documentation',
+        url: platformDocsUrl,
+        external: true,
+        on: 'nav',
+      },
+      {
+        text: (
+          <span className="inline-flex items-center gap-1.5">
+            <span>{chinese ? '立即注册' : 'Create account'}</span>
+            <ArrowUpRight className="size-4" />
+          </span>
+        ),
+        url: registerUrl,
+        external: true,
+        on: 'menu',
       },
     ],
   };
