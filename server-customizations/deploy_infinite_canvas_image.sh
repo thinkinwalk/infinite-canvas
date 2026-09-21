@@ -10,7 +10,7 @@ COMPOSE=(docker compose)
 
 if [[ -z "$IMAGE" ]]; then
   echo "Usage: $0 <image>" >&2
-  echo "Example: $0 ghcr.io/thinkinwalk/infinite-canvas:v0.19.8" >&2
+  echo "Example: $0 ghcr.io/thinkinwalk/infinite-canvas:v0.19.9" >&2
   exit 2
 fi
 

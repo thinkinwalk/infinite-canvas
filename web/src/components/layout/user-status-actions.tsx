@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { App, Form, Input, Modal, Segmented, Tooltip } from "antd";
-import { BookOpen, Keyboard, LogIn, LogOut, Puzzle, Settings2, UserRound, Zap } from "lucide-react";
+import { BookOpen, Keyboard, LogOut, Puzzle, Settings2, UserRound, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CreditCenterModal } from "@/components/layout/credit-center-modal";
@@ -133,11 +133,7 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                         <LogOut className="size-4" />
                     </button>
                 </>
-            ) : (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openAuth("login")} aria-label="登录" title="登录">
-                    <LogIn className="size-4" />
-                </button>
-            )}
+            ) : null}
             {onOpenPlugins ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenPlugins} aria-label={t("topNav.plugins")} title={t("topNav.plugins")}>
                     <Puzzle className="size-4" />
@@ -162,6 +158,18 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
                     <Keyboard className="size-4" />
                 </button>
+            ) : null}
+            {!user ? (
+                <div className="ml-1 inline-flex shrink-0 items-center gap-1">
+                    <button type="button" className="inline-flex h-8 items-center rounded-md px-2.5 text-sm font-medium text-stone-600 transition hover:bg-black/5 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white" onClick={() => openAuth("login")}>
+                        登录
+                    </button>
+                    {allowRegister ? (
+                        <button type="button" className="inline-flex h-8 items-center rounded-md bg-stone-950 px-3 text-sm font-medium text-white transition hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-white" onClick={() => openAuth("register")}>
+                            注册
+                        </button>
+                    ) : null}
+                </div>
             ) : null}
             <CreditCenterModal open={creditCenterOpen} onOpenChange={setCreditCenterOpen} />
             <Modal title={authMode === "register" ? "注册账号" : "登录账号"} open={authOpen} onCancel={() => setAuthOpen(false)} onOk={() => form.submit()} okText={authMode === "register" ? "注册" : "登录"} cancelText="取消" confirmLoading={submitting} destroyOnHidden>
