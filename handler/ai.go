@@ -83,7 +83,7 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 	}
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
+		FailError(w, err)
 		return
 	}
 	path := "/videos/" + url.PathEscape(id)
@@ -141,7 +141,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	channel, err := service.SelectModelChannelForGroup(modelName, user.Group)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
+		FailError(w, err)
 		return
 	}
 	path = resolveAIProxyPath(channel.BaseURL, path)

@@ -50,6 +50,12 @@ type PublicModelChannelSetting struct {
 type PublicSetting struct {
 	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
 	Auth         PublicAuthSetting         `json:"auth"`
+	AdminContact AdminContactSetting       `json:"adminContact"`
+}
+
+type AdminContactSetting struct {
+	QQ   string `json:"qq"`
+	Note string `json:"note"`
 }
 
 type PublicAuthSetting struct {

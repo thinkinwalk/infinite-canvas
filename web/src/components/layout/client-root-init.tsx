@@ -15,13 +15,14 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const hydrateUser = useUserStore((state) => state.hydrateUser);
+    const token = useUserStore((state) => state.token);
 
     usePromptSourceScheduler();
 
     useEffect(() => {
         void loadPublicSettings();
         void hydrateUser();
-    }, [hydrateUser, loadPublicSettings]);
+    }, [hydrateUser, loadPublicSettings, token]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;

@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
+import { useUserStore } from "@/stores/use-user-store";
 
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -252,13 +253,16 @@ export const useConfigStore = create<ConfigStore>()(
                 })),
             loadPublicSettings: async () => {
                 if (get().isPublicSettingsLoading) return;
+                const token = useUserStore.getState().token;
                 set({ isPublicSettingsLoading: true });
                 try {
-                    set({ publicSettings: await apiGet<AdminPublicSettings>("/api/settings") });
+                    const publicSettings = await apiGet<AdminPublicSettings>("/api/settings", undefined, token);
+                    if (useUserStore.getState().token === token) set({ publicSettings });
                 } catch {
-                    set({ publicSettings: null });
+                    if (useUserStore.getState().token === token) set({ publicSettings: null });
                 } finally {
                     set({ isPublicSettingsLoading: false });
+                    if (useUserStore.getState().token !== token) void get().loadPublicSettings();
                 }
             },
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),

@@ -259,6 +259,10 @@ export type AdminModelCost = {
 
 export type AdminPublicSettings = {
     modelChannel: AdminPublicModelChannelSettings;
+    adminContact: {
+        qq: string;
+        note: string;
+    };
     auth: {
         allowRegister: boolean;
         linuxDo: {

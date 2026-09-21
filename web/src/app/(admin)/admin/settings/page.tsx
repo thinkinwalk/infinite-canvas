@@ -36,6 +36,7 @@ const emptySettings: AdminSettings = {
             systemPrompt: "",
             allowCustomChannel: true,
         },
+        adminContact: { qq: "", note: "" },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
     },
     private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
@@ -462,6 +463,16 @@ export default function AdminSettingsPage() {
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "systemPrompt"]} label="系统提示词">
                                             <Input.TextArea rows={4} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item name={["public", "adminContact", "qq"]} label="管理员 QQ" extra="用户遇到模型分组权限限制时显示">
+                                            <Input placeholder="例如 123456789" />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={16}>
+                                        <Form.Item name={["public", "adminContact", "note"]} label="管理员联系说明" extra="可填写服务时间或其他联系方式">
+                                            <Input placeholder="例如：工作日 9:00-18:00 在线" />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -918,6 +929,10 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             ...(setting.modelChannel || {}),
             availableModels: setting.modelChannel?.availableModels || [],
             modelCosts: normalizeModelCosts(setting.modelChannel?.modelCosts || []),
+        },
+        adminContact: {
+            qq: setting.adminContact?.qq || "",
+            note: setting.adminContact?.note || "",
         },
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,

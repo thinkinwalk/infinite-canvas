@@ -21,8 +21,22 @@ import (
 var adminModelHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 func PublicSettings() (model.PublicSetting, error) {
+	return PublicSettingsForGroup("default")
+}
+
+func PublicSettingsForGroup(userGroup string) (model.PublicSetting, error) {
 	settings, err := repository.GetSettings()
-	return normalizeSettings(settings).Public, err
+	if err != nil {
+		return model.PublicSetting{}, err
+	}
+	normalized := normalizeSettings(settings)
+	channels := modelChannelsForGroup(normalized.Private.Channels, "", userGroup)
+	normalized.Public.ModelChannel.AvailableModels = enabledChannelModels(channels)
+	normalized.Public.ModelChannel.DefaultTextModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultTextModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
+	normalized.Public.ModelChannel.DefaultImageModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultImageModel, normalized.Public.ModelChannel.AvailableModels, isImageModelName)
+	normalized.Public.ModelChannel.DefaultVideoModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultVideoModel, normalized.Public.ModelChannel.AvailableModels, isVideoModelName)
+	normalized.Public.ModelChannel.DefaultModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
+	return normalized.Public, nil
 }
 
 func AdminSettings() (model.Settings, error) {
@@ -206,8 +220,12 @@ func SelectModelChannelForGroup(modelName string, userGroup string) (model.Model
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
-	channels := modelChannelsForGroup(normalizePrivateSetting(settings.Private).Channels, modelName, userGroup)
+	private := normalizePrivateSetting(settings.Private)
+	channels := modelChannelsForGroup(private.Channels, modelName, userGroup)
 	if len(channels) == 0 {
+		if len(modelChannelsForGroup(private.Channels, modelName, "")) > 0 {
+			return model.ModelChannel{}, modelGroupAccessError(modelName, userGroup, private.Groups, settings.Public.AdminContact)
+		}
 		return model.ModelChannel{}, errors.New("没有可用模型渠道")
 	}
 	total := 0
@@ -598,13 +616,32 @@ func modelChannelsForGroup(channels []model.ModelChannel, modelName string, user
 			continue
 		}
 		for _, item := range channel.Models {
-			if strings.TrimSpace(item) == modelName {
+			if modelName == "" || strings.TrimSpace(item) == modelName {
 				result = append(result, channel)
 				break
 			}
 		}
 	}
 	return result
+}
+
+func modelGroupAccessError(modelName string, userGroup string, groups map[string]model.UserGroup, contact model.AdminContactSetting) error {
+	groupKey := strings.TrimSpace(userGroup)
+	if groupKey == "" {
+		groupKey = "default"
+	}
+	groupName := groupKey
+	if group, ok := groups[groupKey]; ok && strings.TrimSpace(group.Name) != "" {
+		groupName = strings.TrimSpace(group.Name)
+	}
+	message := fmt.Sprintf("当前模型 %s 未向你所在的「%s（%s）」分组开放，请联系管理员开通该模型的访问权限", modelName, groupName, groupKey)
+	if note := strings.TrimSpace(contact.Note); note != "" {
+		message += "。" + note
+	}
+	if qq := strings.TrimSpace(contact.QQ); qq != "" {
+		message += "。管理员 QQ：" + qq
+	}
+	return safeMessageError{message: message}
 }
 
 func containsString(items []string, target string) bool {

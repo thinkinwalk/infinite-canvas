@@ -235,3 +235,36 @@ func TestNormalizeSettingsRecognizesNamedVideoModels(t *testing.T) {
 		t.Fatalf("default text model = %q, want gpt-5.5", channel.DefaultTextModel)
 	}
 }
+
+func TestModelChannelsForGroupFiltersRestrictedChannels(t *testing.T) {
+	channels := []model.ModelChannel{
+		{Enabled: true, BaseURL: "https://default.example.com", APIKey: "key", Models: []string{"video-model"}, AllowedGroups: []string{"default"}},
+		{Enabled: true, BaseURL: "https://vip.example.com", APIKey: "key", Models: []string{"video-model", "vip-only"}, AllowedGroups: []string{"vip"}},
+		{Enabled: true, BaseURL: "https://shared.example.com", APIKey: "key", Models: []string{"shared-model"}},
+	}
+
+	if got := modelChannelsForGroup(channels, "video-model", "vip"); len(got) != 1 || got[0].BaseURL != "https://vip.example.com" {
+		t.Fatalf("VIP channels = %#v", got)
+	}
+	if got := enabledChannelModels(modelChannelsForGroup(channels, "", "vip")); !reflect.DeepEqual(got, []string{"video-model", "vip-only", "shared-model"}) {
+		t.Fatalf("VIP models = %#v", got)
+	}
+}
+
+func TestModelGroupAccessErrorIncludesGroupAndContact(t *testing.T) {
+	err := modelGroupAccessError(
+		"grok-imagine-video-1.5-preview",
+		"vip",
+		map[string]model.UserGroup{"vip": {Name: "VIP 用户", Enabled: true}},
+		model.AdminContactSetting{QQ: "123456", Note: "工作日在线"},
+	)
+	message := err.Error()
+	for _, expected := range []string{"grok-imagine-video-1.5-preview", "VIP 用户（vip）", "工作日在线", "管理员 QQ：123456"} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("error %q does not include %q", message, expected)
+		}
+	}
+	if _, ok := err.(interface{ SafeMessage() string }); !ok {
+		t.Fatalf("error does not expose a safe message: %T", err)
+	}
+}

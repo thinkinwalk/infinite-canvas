@@ -15,7 +15,11 @@ type adminChannelActionRequest struct {
 }
 
 func Settings(w http.ResponseWriter, r *http.Request) {
-	settings, err := service.PublicSettings()
+	group := "default"
+	if user, ok := service.UserFromContext(r.Context()); ok {
+		group = user.Group
+	}
+	settings, err := service.PublicSettingsForGroup(group)
 	if err != nil {
 		FailError(w, err)
 		return
