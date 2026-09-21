@@ -5,14 +5,16 @@ description: 打开 Infinite Canvas 在线或本地画布，并自动连接本�
 
 # Open Infinite Canvas
 
-默认打开在线版。只有用户明确要求使用本地项目时，才启动本地前端。
+默认打开生产在线版 `https://studio.lingzhouai.com`。只有用户明确要求使用公共演示站时，才打开 `https://canvas.best`；只有用户明确要求使用本地项目时，才启动本地前端。如果用户已经打开 `studio.lingzhouai.com` 的画布，优先操作当前页面，不要重复跳转。
 
 ## 在线版
+
+默认站点是 `https://studio.lingzhouai.com`。公共演示站 `https://canvas.best` 只在用户明确要求时使用。
 
 1. 启动本地 Canvas Agent 并保持运行：
 
 ```bash
-npx -y @basketikun/canvas-agent@latest
+npx -y @basketikun/canvas-agent@0.6.0
 ```
 
 2. 从启动输出取得 `Local URL` 和 `Connect token`。
@@ -20,7 +22,7 @@ npx -y @basketikun/canvas-agent@latest
 3. 在 Codex 右侧浏览器打开：
 
 ```text
-https://canvas.best/canvas?mode=new#agentUrl=<Local URL>&agentToken=<Connect token>
+https://studio.lingzhouai.com/canvas?mode=new#agentUrl=<Local URL>&agentToken=<Connect token>
 ```
 
 ## 本地版
@@ -36,7 +38,7 @@ bun run dev
 2. 启动本地 Canvas Agent：
 
 ```bash
-npx -y @basketikun/canvas-agent@latest
+npx -y @basketikun/canvas-agent@0.6.0
 ```
 
 3. 从启动输出取得 `Local URL` 和 `Connect token`，在 Codex 右侧浏览器打开：
@@ -47,7 +49,7 @@ npx -y @basketikun/canvas-agent@latest
 
 ## MCP 与连接地址
 
-插件在新的 Codex 任务中加载时会自动启动 `npx -y @basketikun/canvas-agent@latest mcp`。这个 MCP 进程负责提供画布工具，不提供网页连接服务；
+插件在新的 Codex 任务中加载时会自动启动 `npx -y @basketikun/canvas-agent@0.6.0 mcp`。这个 MCP 进程负责提供画布工具，不提供网页连接服务；
 上面启动的普通 Canvas Agent 负责提供 `Local URL` 和 `Connect token`。两个进程读取同一份本地配置，因此不需要用户手动填写地址或 token。
 
 ## 打开模式
