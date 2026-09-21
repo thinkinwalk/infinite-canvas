@@ -160,12 +160,12 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                 </button>
             ) : null}
             {!user ? (
-                <div className="ml-1 inline-flex shrink-0 items-center gap-1">
-                    <button type="button" className="inline-flex h-8 items-center rounded-md px-2.5 text-sm font-medium text-stone-600 transition hover:bg-black/5 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white" onClick={() => openAuth("login")}>
+                <div className="ml-1 inline-flex shrink-0 overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700">
+                    <button type="button" className="inline-flex h-8 items-center bg-stone-100 px-3 text-sm font-medium text-stone-800 transition hover:bg-stone-200 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 dark:bg-stone-800 dark:text-stone-100 dark:hover:bg-stone-700" onClick={() => openAuth("login")}>
                         登录
                     </button>
                     {allowRegister ? (
-                        <button type="button" className="inline-flex h-8 items-center rounded-md bg-stone-950 px-3 text-sm font-medium text-white transition hover:bg-stone-700 dark:bg-stone-100 dark:text-stone-950 dark:hover:bg-white" onClick={() => openAuth("register")}>
+                        <button type="button" className="inline-flex h-8 items-center bg-blue-600 px-3 text-sm font-medium text-white transition hover:bg-blue-500 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300" onClick={() => openAuth("register")}>
                             注册
                         </button>
                     ) : null}
