@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.19.13 - 2026-09-22
+
+- [修复] 官方节点插件注册表改用灵舟仓库的 GitHub Raw 分发地址，避免 jsDelivr 不可达时插件列表显示 `Failed to fetch`。
 - [调整] Infinite Canvas 插件默认打开生产站点 `studio.lingzhouai.com`，仅在用户明确要求时打开公共演示站 `canvas.best`，并优先复用已打开的生产画布。
 
 ## v0.19.12 - 2026-09-21

@@ -5,6 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Official node plugins: opening the canvas Node plugins dialog should load the registry from the `thinkinwalk/infinite-canvas` `plugins-dist` branch without showing `Failed to fetch`; Markdown, SVG, HTML, 3D panorama, and sticky-note plugins should all install and create their matching nodes.
 - 用户分组模型权限：后台公共设置可配置管理员 QQ 和联系说明；登录 `vip` 用户后，模型下拉只显示至少一个启用渠道允许 `vip` 访问的模型，不再显示仅允许 `default` 的模型。使用旧页面缓存或直接请求受限模型时，应提示模型未向当前分组开放，并显示当前分组名称、标识和已配置的管理员联系方式；未配置联系方式时不应出现空的 QQ 文案。切换登录账号后模型列表应自动刷新。
 
 - 配置入口去重：桌面顶部导航和移动端导航抽屉不再显示“配置”，右侧滑杆配置按钮仍能正常打开完整配置面板；直接访问旧 `/config` 地址仍可使用。
