@@ -326,6 +326,9 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 	if item.ID == "official-garment-extract" {
 		runtime.Quality = garmentExtractQuality(stringInput(input.Inputs, "detail"))
 	}
+	if item.ID == "official-garment-3d" {
+		runtime.Size = garment3DOutputSize(stringInput(input.Inputs, "imageResolution"))
+	}
 	if runtime.Operation == "print-file" {
 		payload, printErr := runPrintFile(input.Inputs)
 		if printErr != nil {
@@ -539,6 +542,17 @@ func printExtractOutputSettings(ratio string, quality string) (string, string) {
 		outputQuality = qualities["标准"]
 	}
 	return size, outputQuality
+}
+
+func garment3DOutputSize(resolution string) string {
+	switch resolution {
+	case "2K":
+		return "1360x2048"
+	case "4K":
+		return "2336x3520"
+	default:
+		return "1024x1536"
+	}
 }
 
 func garmentExtractQuality(detail string) string {

@@ -1,0 +1,7 @@
+{
+  "kind": "user-provided-garment-3d-preview",
+  "caseId": "official-garment-3d",
+  "source": "../garment-extract/result.png",
+  "result": "result.png",
+  "note": "The result image was supplied by the user for the 3D garment preview. The source is the existing garment-extract sample of the same jacket. This pair has not been independently verified as a run of the local 3D garment tool."
+}

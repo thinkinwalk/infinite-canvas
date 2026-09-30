@@ -32,6 +32,11 @@ function readFields(item: CaseApp): CaseField[] {
             const imageIndex = fields.findIndex((field) => field.key === "imageUrl");
             return imageIndex < 0 ? [detail, ...fields] : [...fields.slice(0, imageIndex + 1), detail, ...fields.slice(imageIndex + 1)];
         }
+        if (item.id === "official-garment-3d" && !fields.some((field) => field.key === "imageResolution")) {
+            const resolution: CaseField = { key: "imageResolution", label: "分辨率", type: "select", display: "buttons", required: true, options: ["1K", "2K", "4K"], defaultValue: "1K" };
+            const promptIndex = fields.findIndex((field) => field.key === "prompt");
+            return promptIndex < 0 ? [...fields, resolution] : [...fields.slice(0, promptIndex), resolution, ...fields.slice(promptIndex)];
+        }
         return fields;
     } catch {
         return [];
@@ -570,7 +575,7 @@ function CaseResult({ value, title, sources, compare = false }: { value: unknown
                 <div>
                     {!compare ? <h3 className="mb-2 text-sm font-medium text-stone-500 dark:text-stone-400">处理结果</h3> : null}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        {compare && sources[0] ? <figure className="min-w-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-700"><img src={sources[0]} alt="本次上传的模特服装原图" className="aspect-[4/5] w-full bg-stone-50 object-contain dark:bg-stone-900" /><figcaption className="p-2 text-center text-xs text-stone-500">原图</figcaption></figure> : null}
+                        {compare && sources[0] ? <figure className="min-w-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-700"><img src={sources[0]} alt="本次上传的原图" className="aspect-[4/5] w-full bg-stone-50 object-contain dark:bg-stone-900" /><figcaption className="p-2 text-center text-xs text-stone-500">原图</figcaption></figure> : null}
                         {media.map((url, index) => (
                             <a key={index} href={url} target="_blank" rel="noreferrer" title={`查看结果 ${index + 1}`} className="overflow-hidden rounded-md border border-stone-200 dark:border-stone-700">
                                 <img src={url} alt={`处理结果 ${index + 1}`} className={`${compare ? "aspect-[4/5]" : "aspect-square"} w-full bg-stone-50 object-contain dark:bg-stone-900`} />
@@ -708,6 +713,38 @@ function GarmentExtractGuide({ source }: { source?: string }) {
                 </figure>
             </div>
             <p className="mt-5 text-center text-xs text-stone-400">本站真实运行示例；上传图片后会替换为本次原图和结果</p>
+        </div>
+    );
+}
+
+function Garment3DGuide({ source }: { source?: string }) {
+    const hasUpload = Boolean(source);
+    return (
+        <div className="w-full max-w-3xl">
+            <h2 className="mb-5 text-base font-semibold">处理结果</h2>
+            <div className="grid items-center gap-4 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                <figure className="min-w-0">
+                    <div className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-md border border-stone-200 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
+                        <img src={source || "/examples/garment-extract/result.png"} alt={hasUpload ? "本次上传的服装图" : "示例服装图"} className="size-full object-contain" />
+                    </div>
+                    <figcaption className="mt-2 text-center text-xs text-stone-500">{hasUpload ? "本次原图" : "示例服装图"}</figcaption>
+                </figure>
+                <ArrowRight className="mx-auto size-6 text-blue-600" aria-hidden="true" />
+                <div className="min-w-0">
+                    {hasUpload ? (
+                        <div className="flex aspect-[4/5] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-stone-300 bg-stone-50 text-stone-400 dark:border-stone-700 dark:bg-stone-900">
+                            <ImagePlus className="size-9" aria-hidden="true" />
+                            <span className="text-sm">生成后显示效果</span>
+                        </div>
+                    ) : (
+                        <div className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-md border border-blue-500 bg-stone-50 dark:bg-stone-900">
+                            <img src="/examples/garment-3d/result.png" alt="用户提供的 3D 服装图效果示例" className="size-full object-contain" />
+                        </div>
+                    )}
+                    <p className="mt-2 text-center text-xs text-stone-500">{hasUpload ? "3D 服装图" : "示例效果"}</p>
+                </div>
+            </div>
+            {!hasUpload ? <p className="mt-5 text-center text-xs text-stone-400">效果图由用户提供；上传服装图后将显示本次生成结果</p> : null}
         </div>
     );
 }
@@ -1004,7 +1041,7 @@ export default function CasesPage() {
                                         ) : field.type === "number" ? (
                                             <InputNumber className="w-full" min={1} max={2000} disabled={running} value={typeof values[field.key] === "string" ? Number(values[field.key]) : undefined} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value == null ? "" : String(value) }))} />
                                         ) : field.type === "image" || field.type === "images" ? (
-                                            <CaseImageInput field={field} value={values[field.key]} disabled={running} onChange={(value) => { setValues((current) => ({ ...current, [field.key]: value, ...(field.key === "imageUrl" ? { maskUrl: "" } : {}) })); if (selected.id === "official-garment-extract" && field.key === "imageUrl") setResult(null); }} />
+                                            <CaseImageInput field={field} value={values[field.key]} disabled={running} onChange={(value) => { setValues((current) => ({ ...current, [field.key]: value, ...(field.key === "imageUrl" ? { maskUrl: "" } : {}) })); if ((selected.id === "official-garment-extract" || selected.id === "official-garment-3d") && field.key === "imageUrl") setResult(null); }} />
                                         ) : field.type === "text" ? (
                                             <Input disabled={running} placeholder={field.placeholder || "请输入"} value={typeof values[field.key] === "string" ? values[field.key] : ""} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} />
                                         ) : (
@@ -1053,7 +1090,7 @@ export default function CasesPage() {
                                     <CaseMaskInput source={String(values.imageUrl)} value={values.maskUrl} disabled={running} large onChange={(value) => setValues((current) => ({ ...current, maskUrl: value }))} />
                                 </div>
                             ) : result !== null ? (
-                                <CaseResult value={result} title={selected.title} sources={sourceImages} compare={selected.id === "official-garment-extract"} />
+                                <CaseResult value={result} title={selected.title} sources={sourceImages} compare={selected.id === "official-garment-extract" || selected.id === "official-garment-3d"} />
                             ) : (
                                 <div className="flex min-h-80 items-center justify-center">
                                     {running ? (
@@ -1070,6 +1107,8 @@ export default function CasesPage() {
                                         <TitleGenerationGuide />
                                     ) : selected.id === "official-garment-extract" ? (
                                         <GarmentExtractGuide source={typeof values.imageUrl === "string" ? values.imageUrl : undefined} />
+                                    ) : selected.id === "official-garment-3d" ? (
+                                        <Garment3DGuide source={typeof values.imageUrl === "string" ? values.imageUrl : undefined} />
                                     ) : (
                                         <Empty image={<ImagePlus className="mx-auto size-10 text-stone-400" />} description="处理后将在这里对照原图和结果" />
                                     )}
