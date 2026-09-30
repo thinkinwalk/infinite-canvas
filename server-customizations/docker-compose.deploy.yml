@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.15
+    image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.16
     container_name: infinite-canvas
     env_file:
       - .env
