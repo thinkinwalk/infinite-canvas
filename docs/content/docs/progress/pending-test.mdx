@@ -5,6 +5,10 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 创意灵感页面：打开 `/prompts`，确认页面标题、场景导航、搜索和更多筛选在桌面与移动端均可用；卡片保留原图比例并展示场景、问题与预期结果，点击“开始使用”可复制提示词，收藏到我的资产和详情弹窗操作正常。使用旧提示词源时应继续加载，补充 `scenario`、`problem`、`inputHint`、`output`、`featured` 等字段的源应正确展示并优先排序。检查浅色/深色主题、无封面占位、图片加载失败和长提示词滚动表现。
+
+- 画布主页入口：打开任意 `/canvas/:id`，桌面左上角标题前应显示主页图标和“主页”；点击进入主页，菜单中的“我的画布”仍进入画布列表，画布标题仍可双击重命名。手机宽度保留可点击的主页图标，并检查明暗主题下的顶部布局。
+
 - 3D 服装图：打开 `/cases?case=official-garment-3d`，左侧应显示默认 1K 的 1K/2K/4K 分辨率选项；选择后分别向图片编辑接口请求 1024×1536、1360×2048、2336×3520。右侧空态展示现有服装输入图及用户提供的同款效果图，素材来源记录于 `web/public/examples/garment-3d/provenance.json`，不称为本站已验证的运行结果。上传应替换示例并清除旧结果，生成后应展示同次上传原图与结果并可下载。需用实际模型验证示例来源、2K/4K 尺寸支持、输出像素和画面质量。
 
 - Try-on local debug page: after starting the project frontend and opening `/cases?case=official-tryon`, React should mount the complete workspace instead of showing a blank page; the browser console should not report `__APP_VERSION__ is not defined`.

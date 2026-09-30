@@ -13,6 +13,10 @@ export type Prompt = RawPrompt & {
 
 export const ALL_PROMPTS_OPTION = "all";
 
+export function getPromptScenario(prompt: Pick<Prompt, "scenario" | "category" | "tags">) {
+    return prompt.scenario || prompt.tags[0] || prompt.category;
+}
+
 export type PromptListResponse = {
     items: Prompt[];
     tags: string[];
@@ -143,7 +147,7 @@ export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROM
     const normalizedPageSize = Math.max(1, Math.min(100, pageSize));
     const withoutTagFilter = filterPrompts(items, { keyword: normalizedKeyword, category, tags: [] });
     const filtered = filterPrompts(items, { keyword: normalizedKeyword, category, tags: tag });
-    const categories = enabledSources().map((source) => source.name);
+    const categories = Array.from(new Set(items.map(getPromptScenario).filter(Boolean)));
 
     return {
         items: filtered.slice((normalizedPage - 1) * normalizedPageSize, normalizedPage * normalizedPageSize),
@@ -205,10 +209,10 @@ function summarizeRefresh(results: PromptSourceRefreshResult[]): PromptSourceRef
 
 function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags: string[] }) {
     return items.filter((item) => {
-        if (isActiveOption(options.category) && item.category !== options.category) return false;
+        if (isActiveOption(options.category) && getPromptScenario(item) !== options.category && item.category !== options.category) return false;
         if (options.tags.length && !options.tags.some((tag) => item.tags.includes(tag))) return false;
         if (!options.keyword) return true;
-        return [item.title, item.prompt, item.description, item.category, ...item.tags].join(" ").toLowerCase().includes(options.keyword);
+        return [item.title, item.prompt, item.description, item.category, item.scenario, item.problem, item.inputHint, item.output, ...item.tags].join(" ").toLowerCase().includes(options.keyword);
     });
 }
 

@@ -113,6 +113,18 @@ export function CanvasTopBar({
                         </button>
                     </Dropdown>
 
+                    <button
+                        type="button"
+                        onClick={onHome}
+                        aria-label={t("canvas.home")}
+                        title={t("canvas.home")}
+                        className="flex h-8 shrink-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium transition hover:bg-black/5 dark:hover:bg-white/10"
+                        style={{ color: theme.node.text }}
+                    >
+                        <Home className="size-4" />
+                        <span className="hidden sm:inline">{t("canvas.home")}</span>
+                    </button>
+                    <span className="hidden shrink-0 text-sm opacity-40 sm:inline" style={{ color: theme.node.text }}>/</span>
                     <div ref={titleRef} className="flex min-w-0 items-center gap-2">
                         {isTitleEditing ? (
                             <input
@@ -138,7 +150,9 @@ export function CanvasTopBar({
                             </button>
                         )}
                     </div>
-                    <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} />
+                    <div className="hidden lg:block">
+                        <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} />
+                    </div>
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">

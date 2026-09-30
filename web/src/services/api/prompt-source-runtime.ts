@@ -18,6 +18,15 @@ export type RawPrompt = {
     imageModel?: string;
     imageSize?: string;
     imageCount?: number;
+    scenario?: string;
+    problem?: string;
+    inputHint?: string;
+    output?: string;
+    difficulty?: string;
+    model?: string;
+    requiresRef?: boolean;
+    qualityScore?: number;
+    featured?: boolean;
 };
 
 type RunOptions = { signal?: AbortSignal };
@@ -78,6 +87,15 @@ function normalizeItems(values: unknown[], source: PromptSource) {
             imageModel: optionalString(record.imageModel),
             imageSize: optionalString(record.imageSize),
             imageCount: optionalNumber(record.imageCount),
+            scenario: optionalString(record.scenario),
+            problem: optionalString(record.problem),
+            inputHint: optionalString(record.inputHint),
+            output: optionalString(record.output),
+            difficulty: optionalString(record.difficulty),
+            model: optionalString(record.model),
+            requiresRef: optionalBoolean(record.requiresRef),
+            qualityScore: optionalNumber(record.qualityScore),
+            featured: optionalBoolean(record.featured),
         });
     });
     return items;
@@ -103,6 +121,15 @@ function optionalString(value: unknown) {
 function optionalNumber(value: unknown) {
     const result = Number(value);
     return Number.isFinite(result) && result > 0 ? result : undefined;
+}
+
+function optionalBoolean(value: unknown) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+        if (value.toLowerCase() === "true") return true;
+        if (value.toLowerCase() === "false") return false;
+    }
+    return undefined;
 }
 
 function absoluteUrl(baseUrl: string, path: string) {
