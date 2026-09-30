@@ -1,7 +1,7 @@
 export default {
     meta: {
-        title: "无限画布",
-        description: "一个无限画布创作工具",
+        title: "灵图画布",
+        description: "一个灵图画布创作工具",
     },
     theme: { toggle: "切换主题" },
     common: {
@@ -74,7 +74,9 @@ export default {
     },
     assets: {
         title: "我的资产",
-        description: "收藏常用文本和图片，按类型、标题和标签快速查找。",
+        description: "统一管理收藏素材与自己封装的案例。",
+        materialsTab: "素材",
+        casesTab: "案例",
         search: "搜索标题、内容、标签或来源",
         type: "类型",
         export: "导出资产",
@@ -239,6 +241,7 @@ export default {
         deleteCurrent: "删除当前画布",
         importAsset: "导入资产",
         exportCurrent: "导出当前画布",
+        packageCase: "封装为案例",
         undo: "撤销",
         redo: "重做",
         openMenu: "打开画布菜单",
@@ -326,7 +329,9 @@ export default {
         },
     },
     navigation: {
+        creator: "我的案例",
         canvas: "我的画布",
+        cases: "案例市场",
         image: "生图工作台",
         video: "视频创作台",
         prompts: "提示词库",

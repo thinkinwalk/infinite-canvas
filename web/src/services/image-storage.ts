@@ -68,7 +68,7 @@ async function storeImage(blob: Blob, options?: ImageReadOptions): Promise<Uploa
     }
 }
 
-async function fetchImageBlob(url: string, options?: ImageReadOptions) {
+export async function fetchImageBlob(url: string, options?: ImageReadOptions) {
     const controller = new AbortController();
     let timedOut = false;
     const abort = () => controller.abort();

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextOutlined, GiftOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, FileTextOutlined, GiftOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { App, Button, Card, Flex, Form, Input, Layout, Menu, Spin, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +19,7 @@ const adminMenus = [
     { key: "/admin/redemption-codes", icon: <GiftOutlined />, label: "兑换码" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
+    { key: "/admin/cases", icon: <AppstoreOutlined />, label: "案例审核" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
 ];
 
@@ -47,7 +48,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 <Flex align="center" gap={12} style={{ height: adminLayoutStyle.brandHeight, padding: "0 20px", borderBottom: `1px solid ${antToken.colorBorderSecondary}` }}>
                     <span aria-hidden style={{ display: "inline-block", width: 30, height: 30, background: antToken.colorText, WebkitMask: "url(/logo.svg) center / contain no-repeat", mask: "url(/logo.svg) center / contain no-repeat" }} />
                     <Typography.Text strong style={{ fontSize: 18, letterSpacing: 0 }}>
-                        无限画布
+                        灵图画布
                     </Typography.Text>
                 </Flex>
                 <Menu

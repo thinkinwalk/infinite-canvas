@@ -172,7 +172,7 @@ export default async function HomePage({ params }: PageProps<'/[lang]'>) {
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{text.clientsDescription}</p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-          {['Claude Code', 'OpenAI Codex', 'RooCode', locale === 'zh-CN' ? '无限画布' : 'Infinite Canvas'].map((client) => (
+          {['Claude Code', 'OpenAI Codex', 'RooCode', locale === 'zh-CN' ? '灵图画布' : 'Infinite Canvas'].map((client) => (
             <span key={client} className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900">
               {client}
             </span>

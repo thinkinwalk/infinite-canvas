@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
@@ -67,4 +68,39 @@ func AdminTestChannelModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, result)
+}
+
+func AdminTestReplicate(w http.ResponseWriter, r *http.Request) {
+	key, err := service.ReplicateAPIKey()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	if key == "" {
+		Fail(w, "请先保存 Replicate API Token")
+		return
+	}
+	for _, name := range []string{"men1scus/birefnet", "nightmareai/real-esrgan"} {
+		request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.replicate.com/v1/models/"+name, nil)
+		if err != nil {
+			FailError(w, err)
+			return
+		}
+		request.Header.Set("Authorization", "Bearer "+key)
+		response, err := aiHTTPClient.Do(request)
+		if err != nil {
+			Fail(w, "Replicate 连接失败")
+			return
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+				Fail(w, "Replicate 令牌无效或无权限")
+			} else {
+				Fail(w, "Replicate 模型访问失败："+strings.TrimSpace(response.Status))
+			}
+			return
+		}
+	}
+	OK(w, "令牌有效，抠图和超分模型可访问；尚未执行付费生成")
 }

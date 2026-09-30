@@ -1,0 +1,15 @@
+{
+  "kind": "verified-local-garment-extract-example",
+  "caseId": "official-garment-extract",
+  "generatedAt": "2026-09-30T00:00:00+08:00",
+  "source": "source.jpg",
+  "result": "result.png",
+  "sourcePage": "https://commons.wikimedia.org/wiki/File:Fashion_Time,_Modeling_Photography_in_Tbilisi_-_Iranian_Model_-_Jorj_Barber_20.jpg",
+  "sourceLicense": "CC0",
+  "inputs": {
+    "detail": "精细",
+    "shape": "平铺",
+    "prompt": "正面平铺，浅灰白底，去除人物、帽子、内搭和背景，只保留整件黑色羽绒夹克；保留衣领、拉链、绗缝、袖口、口袋、缝线和面料纹理。"
+  },
+  "note": "Both images were produced from one local official-garment-extract run. The source photograph is CC0 from Wikimedia Commons; the output is the corresponding local model result."
+}

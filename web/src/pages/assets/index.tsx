@@ -11,6 +11,7 @@ import { getImageBlob, getImagePreviewRevision, subscribeImagePreviews, uploadIm
 import { cn } from "@/lib/utils";
 import { assetCoverUrl, useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
+import { AssetsHeader } from "./assets-header";
 
 type AssetFormValues = {
     kind: AssetKind;
@@ -197,10 +198,7 @@ export default function AssetsPage() {
         <div className="flex h-full flex-col overflow-hidden bg-background text-stone-900 dark:text-stone-100">
             <main className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.14)_1px,transparent_1px)]">
                 <div className="pb-8">
-                    <div className="mx-auto max-w-5xl text-center">
-                        <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">{t("assets.title")}</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">{t("assets.description")}</p>
-                    </div>
+                    <AssetsHeader active="materials" />
 
                     <div className="mx-auto mt-8 w-full max-w-2xl">
                         <Input.Search

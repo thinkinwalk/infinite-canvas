@@ -1,0 +1,81 @@
+.product-listing-set-workspace .product-set-primary-action {
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+}
+
+.product-listing-set-workspace .product-set-primary-action:disabled {
+    background-color: #6b7280;
+    opacity: 1;
+}
+
+.dark .product-listing-set-workspace {
+    background-color: var(--background);
+    color: var(--foreground);
+    color-scheme: dark;
+}
+
+.dark .product-listing-set-workspace :is([class~="bg-white"], [class~="bg-white/95"], [class~="bg-white/80"]) {
+    background-color: var(--card);
+}
+
+.dark .product-listing-set-workspace :is([class~="bg-gray-50"], [class~="bg-gray-100"], [class~="bg-[#f5f5f5]"]) {
+    background-color: var(--muted);
+}
+
+.dark .product-listing-set-workspace [class~="bg-blue-50"] {
+    background-color: #172b43;
+}
+
+.dark .product-listing-set-workspace [class~="bg-gradient-to-b"] {
+    background-image: linear-gradient(to bottom, var(--card), var(--muted));
+}
+
+.dark .product-listing-set-workspace :is([class~="border-gray-200"], [class~="border-gray-300"], [class~="border-[#c8c8c8]"], [class~="border-black"]) {
+    border-color: var(--border);
+}
+
+.dark .product-listing-set-workspace :is([class~="text-[#111827]"], [class~="text-[#050505]"], [class~="text-[#374151]"]) {
+    color: var(--foreground);
+}
+
+.dark .product-listing-set-workspace :is([class~="text-[#4b5563]"], [class~="text-[#6b7280]"], [class~="text-[#b0b0b0]"]) {
+    color: var(--muted-foreground);
+}
+
+.dark .product-listing-set-workspace [class~="text-[#3155b5]"] {
+    color: #a9c5ff;
+}
+
+.dark .product-listing-set-workspace :is([class~="hover:bg-gray-50"], [class~="hover:bg-gray-100"]):hover {
+    background-color: var(--accent);
+}
+
+.dark .product-listing-set-workspace [class~="hover:text-[#111827]"]:hover {
+    color: var(--foreground);
+}
+
+.dark .product-listing-set-workspace :is(input, select, textarea) {
+    color: var(--foreground);
+    caret-color: var(--foreground);
+}
+
+.dark .product-listing-set-workspace :is(input, textarea)::placeholder {
+    color: var(--muted-foreground);
+}
+
+.dark .product-listing-set-workspace select option {
+    background-color: var(--card);
+    color: var(--foreground);
+}
+
+.dark .product-listing-set-workspace [class~="bg-[#111827]"] {
+    background-color: #424242;
+}
+
+.dark .product-listing-set-workspace [class~="bg-[#111827]"]:hover {
+    background-color: #555;
+}
+
+.dark .product-listing-set-workspace [class~="bg-[#111827]"]:disabled {
+    background-color: #555;
+}

@@ -10,6 +10,17 @@ import (
 	"github.com/basketikun/infinite-canvas/model"
 )
 
+func TestReplicateKeyHiddenFromAdminSettings(t *testing.T) {
+	settings := model.Settings{Private: model.PrivateSetting{Replicate: model.ReplicateSetting{APIKey: "secret-token"}}}
+	hidden := hidePrivateAPIKeys(settings)
+	if hidden.Private.Replicate.APIKey != "" || !hidden.Private.Replicate.APIKeyConfigured {
+		t.Fatalf("Replicate key was exposed or configuration status was lost: %+v", hidden.Private.Replicate)
+	}
+	if settings.Private.Replicate.APIKey != "secret-token" {
+		t.Fatal("hiding the key mutated the stored settings")
+	}
+}
+
 func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {

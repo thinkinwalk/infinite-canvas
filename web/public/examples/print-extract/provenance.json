@@ -1,0 +1,22 @@
+{
+  "kind": "verified-local-print-extract-example",
+  "caseId": "official-print-extract",
+  "caseRunId": "case-run-1790702763919812200",
+  "generatedAt": "2026-09-30T01:26:03+08:00",
+  "source": "source.jpg",
+  "result": "result.png",
+  "sourcePage": "https://commons.wikimedia.org/wiki/File:Floral_pillow_(6226885571).jpg",
+  "sourceAuthor": "in pastel",
+  "sourceLicense": "CC BY 2.0",
+  "sourceLicenseUrl": "https://creativecommons.org/licenses/by/2.0/",
+  "inputs": {
+    "mode": "高阶",
+    "category": "家纺",
+    "aspectRatio": "1:1",
+    "edgeCompletion": "智能补全",
+    "quality": "高清",
+    "background": "白底",
+    "prompt": "仅提取靠垫正面的彩色花卉印花，去掉靠垫外形、绿色布艺滚边和背景，保留花朵、叶片及颜色关系，将图案展平为一张干净的独立平面素材。"
+  },
+  "note": "Both images belong to one actual local official-print-extract run. The model returned an RGBA PNG with transparency despite the white-background request; the page displays it over white."
+}

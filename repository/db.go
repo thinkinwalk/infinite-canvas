@@ -70,8 +70,13 @@ func DB() (*gorm.DB, error) {
 			&model.RedemptionCode{},
 			&model.Prompt{},
 			&model.Asset{},
+			&model.CaseApp{},
+			&model.CaseRun{},
 			&model.Setting{},
 		)
+		if dbErr == nil {
+			dbErr = seedOfficialCases(db)
+		}
 	})
 	return db, dbErr
 }

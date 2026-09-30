@@ -172,6 +172,33 @@ func TestBuildLingzhouImageResponsesBody(t *testing.T) {
 	}
 }
 
+func TestBuildLingzhouImageResponsesPreservesReferences(t *testing.T) {
+	body, err := buildLingzhouImageResponsesBody([]byte(`{"model":"gpt-image-1.5","prompt":"preserve this product","image_url":"data:image/png;base64,product","reference_image_urls":["data:image/png;base64,product","https://example.com/style.png"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Input []struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				ImageURL string `json:"image_url"`
+			} `json:"content"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Input) != 1 || payload.Input[0].Role != "user" || len(payload.Input[0].Content) != 3 {
+		t.Fatalf("reference input not preserved or deduplicated: %s", body)
+	}
+	content := payload.Input[0].Content
+	if content[0].Type != "input_text" || content[1].Type != "input_image" || content[1].ImageURL != "data:image/png;base64,product" || content[2].ImageURL != "https://example.com/style.png" {
+		t.Fatalf("product/style reference order changed: %s", body)
+	}
+}
+
 func TestReadLingzhouResponsesImage(t *testing.T) {
 	got, err := readLingzhouResponsesImage([]byte(`{"output":[{"type":"message","content":[]},{"type":"image_generation_call","result":"abc123"}]}`))
 	if err != nil {

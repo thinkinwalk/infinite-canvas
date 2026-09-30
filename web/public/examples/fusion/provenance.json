@@ -1,0 +1,10 @@
+{
+  "kind": "verified-local-fusion-example",
+  "caseId": "official-fusion",
+  "generatedAt": "2026-09-29T22:35:54+08:00",
+  "subject": "subject.jpg",
+  "reference": "reference.jpg",
+  "result": "result.png",
+  "prompt": "保留番茄酱瓶身、瓶盖和标签文字，将商品自然融入参考图的清透水彩画风，使用蓝白色调、纸张纹理和充足留白，统一场景光影，只输出一张完整商业海报。",
+  "note": "The three files come from one actual local official-fusion run."
+}

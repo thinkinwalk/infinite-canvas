@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`，这是从 Docker labels 排查确认的目录；不要使用 `/opt/chatgpt2api`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.12`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.13`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
 - 旧服务器 `47.104.6.6` 已迁移，不要向其部署或以其状态判断当前生产。
 
@@ -102,6 +102,7 @@
 
 ## 项目注意事项
 
+- 官方创作工具的前后对比示例必须来自该工具实际处理同一输入得到的结果，并核对所选模式、输出格式与页面文案一致；没有验收通过的真实样例时不得复用其他工具的图片或对标项目素材冒充本站效果。
 - 新增或调整超时、重试次数、大小限制、并发上限等会改变实际行为的边界值前，必须先向用户说明适用环节、默认值和失败后的处理方式，并取得确认；不要把经验值当成纯内部实现静默加入。
 - 当前画布项目和“我的素材”主要保存在浏览器本地，不要在文档中误写成已支持云同步。
 - 当前 AI API Key 存在浏览器本地，并由前端直接请求 OpenAI 兼容接口；涉及安全说明时要写清楚。

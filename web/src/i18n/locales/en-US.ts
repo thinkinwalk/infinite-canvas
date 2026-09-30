@@ -74,7 +74,9 @@ export default {
     },
     assets: {
         title: "My Assets",
-        description: "Save frequently used text and images, then find them quickly by type, title, or tag.",
+        description: "Manage saved materials and the cases you package in one place.",
+        materialsTab: "Materials",
+        casesTab: "Cases",
         search: "Search titles, content, tags, or sources",
         type: "Type",
         export: "Export assets",
@@ -239,6 +241,7 @@ export default {
         deleteCurrent: "Delete current canvas",
         importAsset: "Import asset",
         exportCurrent: "Export current canvas",
+        packageCase: "Package as case",
         undo: "Undo",
         redo: "Redo",
         openMenu: "Open canvas menu",
@@ -326,7 +329,9 @@ export default {
         },
     },
     navigation: {
+        creator: "My Cases",
         canvas: "My Canvases",
+        cases: "Case Market",
         image: "Image Studio",
         video: "Video Studio",
         prompts: "Prompt Library",

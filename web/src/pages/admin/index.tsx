@@ -2,6 +2,7 @@ import { useLocation } from "react-router-dom";
 
 import AdminLayout from "@/app/(admin)/admin/layout";
 import AdminAssetsPage from "@/app/(admin)/admin/assets/page";
+import AdminCasesPage from "@/app/(admin)/admin/cases/page";
 import AdminCreditLogsPage from "@/app/(admin)/admin/credit-logs/page";
 import AdminPromptsPage from "@/app/(admin)/admin/prompts/page";
 import AdminRedemptionCodesPage from "@/app/(admin)/admin/redemption-codes/page";
@@ -17,6 +18,7 @@ export default function AdminPage() {
 function adminChild(pathname: string) {
     if (pathname.startsWith("/admin/settings")) return <AdminSettingsPage />;
     if (pathname.startsWith("/admin/assets")) return <AdminAssetsPage />;
+    if (pathname.startsWith("/admin/cases")) return <AdminCasesPage />;
     if (pathname.startsWith("/admin/prompts")) return <AdminPromptsPage />;
     if (pathname.startsWith("/admin/redemption-codes")) return <AdminRedemptionCodesPage />;
     if (pathname.startsWith("/admin/credit-logs")) return <AdminCreditLogsPage />;

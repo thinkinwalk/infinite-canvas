@@ -223,7 +223,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 
 	if response.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		if handled, _ := fallbackOpenAIVideoStatus(w, request, response.StatusCode); handled {
+		if handled, _ := fallbackOpenAIVideoStatusWithState(w, request, response.StatusCode); handled {
 			return
 		}
 		log.Printf("AI upstream error: url=%s status=%d body=%s", request.URL.String(), response.StatusCode, safeUpstreamText(string(body)))
@@ -298,7 +298,7 @@ func copyAIVideoGetResponse(w http.ResponseWriter, request *http.Request, task m
 	defer response.Body.Close()
 	if response.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		if handled, status := fallbackOpenAIVideoStatus(w, request, response.StatusCode); handled {
+		if handled, status := fallbackOpenAIVideoStatusWithState(w, request, response.StatusCode); handled {
 			if tracked {
 				if err := service.UpdateVideoTaskStatus(task, status); err != nil {
 					log.Printf("AI proxy update fallback video task failed: task=%s status=%s err=%v", task.ID, status, err)
@@ -416,10 +416,14 @@ func logAIImageUpstreamParams(channel model.ModelChannel, path string, modelName
 
 func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 	var payload struct {
-		Model   string `json:"model"`
-		Prompt  string `json:"prompt"`
-		Size    string `json:"size"`
-		Quality string `json:"quality"`
+		Model              string   `json:"model"`
+		Prompt             string   `json:"prompt"`
+		Size               string   `json:"size"`
+		Quality            string   `json:"quality"`
+		ImageURL           string   `json:"image_url"`
+		ReferenceImageURLs []string `json:"reference_image_urls"`
+		Background         string   `json:"background"`
+		OutputFormat       string   `json:"output_format"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
@@ -428,6 +432,12 @@ func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 		return nil, errMissingModel
 	}
 	tool := map[string]any{"type": "image_generation"}
+	if payload.Background != "" {
+		tool["background"] = payload.Background
+	}
+	if payload.OutputFormat != "" {
+		tool["output_format"] = payload.OutputFormat
+	}
 	if strings.TrimSpace(payload.Size) != "" {
 		tool["size"] = strings.TrimSpace(payload.Size)
 	}
@@ -435,9 +445,23 @@ func buildLingzhouImageResponsesBody(body []byte) ([]byte, error) {
 		tool["quality"] = strings.TrimSpace(payload.Quality)
 	}
 	log.Printf("AI Lingzhou responses request params: model=%s size=%s quality=%s", payload.Model, payload.Size, payload.Quality)
+	var input any = payload.Prompt
+	content := []map[string]any{{"type": "input_text", "text": payload.Prompt}}
+	seen := map[string]bool{}
+	for _, reference := range append([]string{payload.ImageURL}, payload.ReferenceImageURLs...) {
+		reference = strings.TrimSpace(reference)
+		if reference == "" || seen[reference] {
+			continue
+		}
+		seen[reference] = true
+		content = append(content, map[string]any{"type": "input_image", "image_url": reference})
+	}
+	if len(content) > 1 {
+		input = []map[string]any{{"role": "user", "content": content}}
+	}
 	return json.Marshal(map[string]any{
 		"model": payload.Model,
-		"input": payload.Prompt,
+		"input": input,
 		"tools": []map[string]any{tool},
 	})
 }
@@ -514,7 +538,12 @@ func readLingzhouResponsesImage(body []byte) (string, error) {
 	return "", fmt.Errorf("missing image result")
 }
 
-func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, statusCode int) (bool, string) {
+func fallbackOpenAIVideoStatus(w http.ResponseWriter, request *http.Request, statusCode int) bool {
+	handled, _ := fallbackOpenAIVideoStatusWithState(w, request, statusCode)
+	return handled
+}
+
+func fallbackOpenAIVideoStatusWithState(w http.ResponseWriter, request *http.Request, statusCode int) (bool, string) {
 	if statusCode != http.StatusUnauthorized && statusCode != http.StatusForbidden {
 		return false, ""
 	}

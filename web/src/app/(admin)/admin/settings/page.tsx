@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, testReplicate, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -39,7 +39,7 @@ const emptySettings: AdminSettings = {
         adminContact: { qq: "", note: "" },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
     },
-    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
+    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { apiKey: "", apiKeyConfigured: false, clearApiKey: false } },
 };
 const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
 
@@ -74,6 +74,8 @@ export default function AdminSettingsPage() {
     const [isFetchingChannelModels, setIsFetchingChannelModels] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [replicateConfigured, setReplicateConfigured] = useState(false);
+    const [isTestingReplicate, setIsTestingReplicate] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
@@ -95,6 +97,7 @@ export default function AdminSettingsPage() {
         try {
             const data = normalizeSettings(await fetchAdminSettings(token));
             form.setFieldsValue(data);
+            setReplicateConfigured(data.private.replicate.apiKeyConfigured);
             setChannels(data.private.channels);
             setModelCosts(data.public.modelChannel.modelCosts);
             setKnownModels(collectKnownModels(data));
@@ -128,6 +131,7 @@ export default function AdminSettingsPage() {
             const saved = normalizeSettings(await saveAdminSettings(token, values));
             const merged = mergeChannelApiKeys(values.private.channels, saved);
             form.setFieldsValue(merged);
+            setReplicateConfigured(merged.private.replicate.apiKeyConfigured);
             setChannels(merged.private.channels);
             setModelCosts(merged.public.modelChannel.modelCosts);
             rememberKnownModels(merged);
@@ -162,6 +166,18 @@ export default function AdminSettingsPage() {
         if (tab === "public") setModelCosts((parsed as AdminSettings["public"]).modelChannel.modelCosts);
         rememberKnownModels({ ...normalizeSettings(form.getFieldsValue(true) as AdminSettings), [tab]: parsed });
         setEditorMode((current) => ({ ...current, [tab]: nextMode }));
+    };
+
+    const testReplicateConnection = async () => {
+        if (!token) return;
+        setIsTestingReplicate(true);
+        try {
+            message.success(await testReplicate(token));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "连接测试失败");
+        } finally {
+            setIsTestingReplicate(false);
+        }
     };
 
     const formatJson = (tab: SettingsTabKey) => {
@@ -566,6 +582,20 @@ export default function AdminSettingsPage() {
                                         </Row>
                                     </Flex>
                                 </Card>
+                                <Card size="small" title="Replicate 图像处理">
+                                    <Flex vertical gap={12}>
+                                        <Typography.Text type="secondary">用于 AI 抠图（BiRefNet）和 AI 变清晰（Real-ESRGAN）。令牌只保存在后台，留空保存会沿用已有令牌。</Typography.Text>
+                                        <Tag color={replicateConfigured ? "success" : "default"} style={{ alignSelf: "flex-start" }}>{replicateConfigured ? "令牌已配置" : "未配置令牌"}</Tag>
+                                        <Form.Item name={["private", "replicate", "apiKey"]} label="Replicate API Token" style={{ marginBottom: 0 }}>
+                                            <Input.Password autoComplete="new-password" placeholder={replicateConfigured ? "留空则沿用已保存的令牌" : "输入 Replicate API Token"} />
+                                        </Form.Item>
+                                        <Form.Item name={["private", "replicate", "clearApiKey"]} valuePropName="checked" style={{ marginBottom: 0 }}>
+                                            <Checkbox>保存时移除后台令牌</Checkbox>
+                                        </Form.Item>
+                                        <Typography.Text type="secondary">若服务器仍设置 REPLICATE_API_TOKEN 环境变量，移除后台令牌后会继续使用环境变量。</Typography.Text>
+                                        <Button style={{ alignSelf: "flex-start" }} loading={isTestingReplicate} disabled={!replicateConfigured} onClick={() => void testReplicateConnection()}>测试连接</Button>
+                                    </Flex>
+                                </Card>
                                 <Card
                                     size="small"
                                     title="用户分组"
@@ -960,6 +990,11 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
                 clientId: setting.auth?.linuxDo?.clientId || "",
                 clientSecret: setting.auth?.linuxDo?.clientSecret || "",
             },
+        },
+        replicate: {
+            apiKey: setting.replicate?.apiKey || "",
+            apiKeyConfigured: setting.replicate?.apiKeyConfigured === true,
+            clearApiKey: setting.replicate?.clearApiKey === true,
         },
     };
 }

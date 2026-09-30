@@ -52,6 +52,51 @@ func New() *gin.Engine {
 	})
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
+	api.GET("/cases", gin.WrapF(handler.Cases))
+	api.GET("/tryon/library", gin.WrapF(handler.TryonLibrary))
+	api.GET("/cases/:id", func(c *gin.Context) {
+		handler.CaseDetail(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/cases/:id/run", middleware.UserAuth, func(c *gin.Context) {
+		handler.RunCase(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/cases/:id/run-price", middleware.UserAuth, func(c *gin.Context) {
+		handler.CaseRunPrice(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/cases/:id/variations/assist-price", middleware.UserAuth, func(c *gin.Context) {
+		handler.VariationAssistPrice(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/cases/:id/variations/assist", middleware.UserAuth, func(c *gin.Context) {
+		handler.VariationAssist(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/cases/:id/product-set/plan", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetPlan(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/cases/:id/product-set/plan-price", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetPlanPrice(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/cases/:id/product-set/image-price", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetImagePrice(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/cases/:id/product-set/config", gin.WrapF(handler.ProductSetConfig))
+	api.POST("/cases/:id/product-set/analyze", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetAnalyze(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/cases/:id/product-set/parse", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetParse(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/cases/:id/product-set/recommend-style", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetRecommendStyle(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/cases/:id/product-set/run", middleware.UserAuth, func(c *gin.Context) {
+		handler.ProductSetRun(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/creator/cases", middleware.UserAuth, gin.WrapF(handler.OwnedCases))
+	api.POST("/creator/cases", middleware.UserAuth, gin.WrapF(handler.CreateCase))
+	api.POST("/creator/cases/:id/submit", middleware.UserAuth, func(c *gin.Context) {
+		handler.SubmitCase(c.Writer, c.Request, c.Param("id"))
+	})
+	api.GET("/creator/case-runs", middleware.UserAuth, gin.WrapF(handler.CaseRuns))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 
 	admin := api.Group("/admin", middleware.AdminAuth)
@@ -77,6 +122,7 @@ func New() *gin.Engine {
 	admin.POST("/settings", gin.WrapF(handler.AdminSaveSettings))
 	admin.POST("/settings/channel-models", gin.WrapF(handler.AdminChannelModels))
 	admin.POST("/settings/channel-test", gin.WrapF(handler.AdminTestChannelModel))
+	admin.POST("/settings/replicate-test", gin.WrapF(handler.AdminTestReplicate))
 	admin.GET("/prompt-categories", gin.WrapF(handler.AdminPromptCategories))
 	admin.POST("/prompt-categories/sync", gin.WrapF(handler.AdminSyncPromptCategories))
 	admin.GET("/prompts", gin.WrapF(handler.AdminPrompts))
@@ -89,6 +135,11 @@ func New() *gin.Engine {
 	admin.POST("/assets", gin.WrapF(handler.AdminSaveAsset))
 	admin.DELETE("/assets/:id", func(c *gin.Context) {
 		handler.AdminDeleteAsset(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/cases", gin.WrapF(handler.AdminCases))
+	admin.POST("/cases", gin.WrapF(handler.AdminCreateCase))
+	admin.POST("/cases/:id/review", func(c *gin.Context) {
+		handler.AdminReviewCase(c.Writer, c.Request, c.Param("id"))
 	})
 
 	router.NoRoute(staticAppFallback())

@@ -12,6 +12,10 @@ web/dist
 
 **/dist
 web/public/plugins
+
+# Local verification artifacts and machine-specific debug configuration
+.codex_tmp/
+web/tryon-vite.config.mts
 plugins/canvas/*/dist
 plugins/canvas/*/node_modules
 web/public/plugins

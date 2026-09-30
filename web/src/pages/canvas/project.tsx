@@ -74,6 +74,7 @@ import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
+import { CasePackageModal } from "@/components/canvas/case-package-modal";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
 import {
     CanvasNodeType,
@@ -260,6 +261,7 @@ function InfiniteCanvasPage() {
     const [isNodeResizing, setIsNodeResizing] = useState(false);
     const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null);
     const [referencePickerNodeId, setReferencePickerNodeId] = useState<string | null>(null);
+    const [casePackageOpen, setCasePackageOpen] = useState(false);
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
@@ -3153,6 +3155,7 @@ function InfiniteCanvasPage() {
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onExportProject={exportCurrentProject}
+                    onPackageCase={() => setCasePackageOpen(true)}
                     onImportImage={() => handleUploadRequest()}
                     onOpenPlugins={() => setPluginManagerOpen(true)}
                     onUndo={undoCanvas}
@@ -3379,6 +3382,7 @@ function InfiniteCanvasPage() {
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
+                <CasePackageModal open={casePackageOpen} project={currentProject} nodes={nodes} connections={connections} onClose={() => setCasePackageOpen(false)} />
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 

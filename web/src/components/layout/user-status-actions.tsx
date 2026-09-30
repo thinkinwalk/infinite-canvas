@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { App, Form, Input, Modal, Segmented, Tooltip } from "antd";
+import { App, Dropdown, Form, Input, Modal, Segmented, Tooltip } from "antd";
 import { BookOpen, Keyboard, LogOut, Puzzle, Settings2, UserRound, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -17,6 +17,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type UserStatusActionsProps = {
+    accountOnly?: boolean;
     showConfig?: boolean;
     showGitHub?: boolean;
     variant?: "default" | "canvas";
@@ -28,7 +29,7 @@ type UserStatusActionsProps = {
 
 type AuthMode = "login" | "register";
 
-export function UserStatusActions({ showConfig = true, showGitHub = true, variant = "default", onOpenShortcuts, onOpenPlugins, initialAuthMode = "login", autoOpenAuth = false }: UserStatusActionsProps) {
+export function UserStatusActions({ accountOnly = false, showConfig = true, showGitHub = false, variant = "default", onOpenShortcuts, onOpenPlugins, initialAuthMode = "login", autoOpenAuth = false }: UserStatusActionsProps) {
     const { message } = App.useApp();
     const { i18n, t } = useTranslation();
     const [authOpen, setAuthOpen] = useState(false);
@@ -126,12 +127,11 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                             <span className="font-medium opacity-75">点</span>
                         </button>
                     ) : null}
-                    <button type="button" className={naturalIconClass} style={iconStyle} aria-label={userName} title={userName}>
-                        <UserRound className="size-4" />
-                    </button>
-                    <button type="button" className={naturalIconClass} style={iconStyle} onClick={clearSession} aria-label="退出登录" title="退出登录">
-                        <LogOut className="size-4" />
-                    </button>
+                    <Dropdown menu={{ items: [{ key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: clearSession }] }} trigger={["click"]} placement="bottomRight">
+                        <button type="button" className={naturalIconClass} style={iconStyle} aria-label={`${userName}，打开账户菜单`} title={`${userName} · 账户菜单`}>
+                            <UserRound className="size-4" />
+                        </button>
+                    </Dropdown>
                 </>
             ) : null}
             {onOpenPlugins ? (
@@ -139,21 +139,21 @@ export function UserStatusActions({ showConfig = true, showGitHub = true, varian
                     <Puzzle className="size-4" />
                 </button>
             ) : null}
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label={t("topNav.docs")} title={t("topNav.docs")}>
+            {!accountOnly ? <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label={t("topNav.docs")} title={t("topNav.docs")}>
                 <BookOpen className="size-4" />
-            </a>
-            {showConfig ? (
+            </a> : null}
+            {!accountOnly && showConfig ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label={t("navigation.config")} title={t("navigation.config")}>
                     <Settings2 className="size-4" />
                 </button>
             ) : null}
-            <Tooltip title={languageLabel} mouseEnterDelay={0.2}>
+            {!accountOnly ? <Tooltip title={languageLabel} mouseEnterDelay={0.2}>
                 <button type="button" className={`${naturalIconClass} text-[11px] font-semibold tracking-tight`} style={iconStyle} onClick={() => void changeAppLocale(nextLocale)} aria-label={languageLabel}>
                     {locale === "zh-CN" ? "中" : "EN"}
                 </button>
-            </Tooltip>
-            <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
-            {showGitHub ? <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} /> : null}
+            </Tooltip> : null}
+            {!accountOnly ? <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} /> : null}
+            {!accountOnly && showGitHub ? <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} /> : null}
             {onOpenShortcuts ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
                     <Keyboard className="size-4" />

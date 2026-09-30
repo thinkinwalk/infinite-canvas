@@ -1,0 +1,7 @@
+{
+  "tool": "服装上身",
+  "source": "https://github.com/usscottli-ctrl/novaryns",
+  "input": "public/demos/tryon-before.webp",
+  "output": "public/demos/tryon-after.webp",
+  "note": "对标项目公开的同一次服装上身示例，用于本站空态演示；真实生成后替换为当前请求结果。"
+}

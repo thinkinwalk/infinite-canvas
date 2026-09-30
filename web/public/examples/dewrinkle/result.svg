@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" role="img" aria-label="平整的橄榄绿色夹克示意图">
+  <defs>
+    <linearGradient id="fabric" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#565e31"/><stop offset=".48" stop-color="#454e27"/><stop offset="1" stop-color="#333c1e"/>
+    </linearGradient>
+    <linearGradient id="sleeve" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#333c1e"/><stop offset=".5" stop-color="#4d572b"/><stop offset="1" stop-color="#343d1f"/>
+    </linearGradient>
+    <linearGradient id="collar" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#66703b"/><stop offset="1" stop-color="#30381b"/>
+    </linearGradient>
+    <filter id="shadow"><feGaussianBlur stdDeviation="7"/></filter>
+    <pattern id="weave" width="5" height="5" patternUnits="userSpaceOnUse">
+      <path d="M0 2.5h5M2.5 0v5" stroke="#edf0d2" stroke-opacity=".045" stroke-width=".55"/>
+    </pattern>
+    <clipPath id="garment">
+      <path d="M224 128 194 145 151 173 116 345 88 474 142 486 184 348 190 498 410 498 416 348 458 486 512 474 484 345 449 173 406 145 376 128 348 116 252 116Z"/>
+    </clipPath>
+  </defs>
+  <rect width="600" height="600" fill="#fff"/>
+  <ellipse cx="300" cy="507" rx="200" ry="14" fill="#000" opacity=".11" filter="url(#shadow)"/>
+  <path d="M224 128 194 145 151 173 116 345 88 474 142 486 184 348 190 498 410 498 416 348 458 486 512 474 484 345 449 173 406 145 376 128 348 116 252 116Z" fill="url(#fabric)" stroke="#30391c" stroke-width="3"/>
+  <path d="M194 145 151 173 116 345 88 474 142 486 184 348 190 498 219 497 214 156Z" fill="url(#sleeve)" opacity=".75"/>
+  <path d="M406 145 449 173 484 345 512 474 458 486 416 348 410 498 381 497 386 156Z" fill="url(#sleeve)" opacity=".67"/>
+  <path d="M224 128 194 145 190 498 410 498 406 145 376 128 348 116 252 116Z" fill="url(#fabric)"/>
+  <path d="M224 128 194 145 151 173 116 345 88 474 142 486 184 348 190 498 410 498 416 348 458 486 512 474 484 345 449 173 406 145 376 128 348 116 252 116Z" fill="url(#weave)"/>
+  <g fill="none" stroke="#252d17" stroke-opacity=".55" stroke-width="2">
+    <path d="M194 145 184 348 190 498M406 145 416 348 410 498M149 177l-30 164m332-164 30 164"/>
+    <path d="M191 439h218M190 483h220"/>
+  </g>
+  <path d="M238 117 253 108 300 122 347 108 362 117 348 156 300 184 252 156Z" fill="#283018"/>
+  <path d="M224 128 253 108 300 122 276 174 245 163Z" fill="url(#collar)" stroke="#30391c" stroke-width="2"/>
+  <path d="M376 128 347 108 300 122 324 174 355 163Z" fill="url(#collar)" stroke="#30391c" stroke-width="2"/>
+  <path d="M300 182v315" stroke="#242b17" stroke-width="9"/>
+  <path d="M301 185v308" stroke="#8b9560" stroke-width="2.5" stroke-dasharray="2 3"/>
+  <rect x="293" y="182" width="14" height="21" rx="3" fill="#a5a992" stroke="#252b20" stroke-width="2"/>
+  <g fill="#3f4824" stroke="#252d18" stroke-width="2">
+    <path d="M220 259h61l-5 61h-52Z"/><path d="M319 259h61l-4 61h-52Z"/>
+    <path d="M216 253h69v16h-69Z"/><path d="M315 253h69v16h-69Z"/>
+  </g>
+  <g fill="none" stroke="#798454" stroke-opacity=".65" stroke-width="1.5">
+    <path d="M226 273v39h42m61-39v39h39M219 261h62m38 0h62"/>
+    <path d="M222 357h59m38 0h59m-159 6h59m44 0h59"/>
+  </g>
+  <path d="M89 463 143 475 141 493 86 481ZM457 475l54-12 3 18-55 12Z" fill="#252e19" stroke="#586339" stroke-width="2"/>
+  <path d="M190 482h220v23H190Z" fill="#30391e" stroke="#586339" stroke-width="2"/>
+  <g fill="none" stroke="#7d8855" stroke-opacity=".55" stroke-width="1.5"><path d="M97 477 138 486m324 0 41-9M203 495h194"/></g>
+</svg>

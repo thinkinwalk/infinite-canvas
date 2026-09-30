@@ -73,6 +73,13 @@ type PrivateSetting struct {
 	Groups     map[string]UserGroup `json:"groups"`
 	PromptSync PromptSyncSetting    `json:"promptSync"`
 	Auth       PrivateAuthSetting   `json:"auth"`
+	Replicate  ReplicateSetting     `json:"replicate"`
+}
+
+type ReplicateSetting struct {
+	APIKey           string `json:"apiKey"`
+	APIKeyConfigured bool   `json:"apiKeyConfigured"`
+	ClearAPIKey      bool   `json:"clearApiKey"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。

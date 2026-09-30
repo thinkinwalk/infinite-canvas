@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -52,6 +53,13 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	settings = normalizeSettings(settings)
 	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
 	keepPrivateAuthSecrets(&settings, normalizeSettings(saved))
+	if settings.Private.Replicate.ClearAPIKey {
+		settings.Private.Replicate.APIKey = ""
+	} else if strings.TrimSpace(settings.Private.Replicate.APIKey) == "" {
+		settings.Private.Replicate.APIKey = saved.Private.Replicate.APIKey
+	}
+	settings.Private.Replicate.ClearAPIKey = false
+	settings.Private.Replicate.APIKeyConfigured = false
 	result, err := repository.SaveSettings(settings, now())
 	if err == nil {
 		RefreshPromptSyncScheduler()
@@ -179,7 +187,21 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 		settings.Private.Channels[i].APIKey = ""
 	}
 	settings.Private.Auth.LinuxDo.ClientSecret = ""
+	settings.Private.Replicate.APIKeyConfigured = strings.TrimSpace(settings.Private.Replicate.APIKey) != "" || strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN")) != ""
+	settings.Private.Replicate.APIKey = ""
+	settings.Private.Replicate.ClearAPIKey = false
 	return settings
+}
+
+func ReplicateAPIKey() (string, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return "", err
+	}
+	if key := strings.TrimSpace(settings.Private.Replicate.APIKey); key != "" {
+		return key, nil
+	}
+	return strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN")), nil
 }
 
 func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {

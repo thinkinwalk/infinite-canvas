@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
+import type { CaseApp, CaseStatus } from "@/services/api/cases";
 
 export type AdminPromptCategory = {
     category: string;
@@ -284,6 +285,11 @@ export type AdminPrivateSettings = {
             clientSecret: string;
         };
     };
+    replicate: {
+        apiKey: string;
+        apiKeyConfigured: boolean;
+        clearApiKey: boolean;
+    };
 };
 
 export type AdminSettings = {
@@ -299,6 +305,10 @@ export async function saveAdminSettings(token: string, settings: AdminSettings) 
     return apiPost<AdminSettings>("/api/admin/settings", settings, token);
 }
 
+export async function testReplicate(token: string) {
+    return apiPost<string>("/api/admin/settings/replicate-test", {}, token);
+}
+
 export type AdminChannelActionRequest = {
     index?: number;
     channel: AdminModelChannel;
@@ -311,4 +321,12 @@ export async function fetchChannelModels(token: string, payload: AdminChannelAct
 
 export async function testChannelModel(token: string, payload: AdminChannelActionRequest) {
     return apiPost<string>("/api/admin/settings/channel-test", payload, token);
+}
+
+export async function fetchAdminCases(token: string, query: { keyword?: string; type?: CaseStatus; page?: number; pageSize?: number } = {}) {
+    return apiGet<{ items: CaseApp[]; total: number }>("/api/admin/cases", compactApiParams(query), token);
+}
+
+export async function reviewAdminCase(token: string, id: string, status: "published" | "rejected" | "offline", note = "") {
+    return apiPost<CaseApp>(`/api/admin/cases/${encodeURIComponent(id)}/review`, { status, note }, token);
 }

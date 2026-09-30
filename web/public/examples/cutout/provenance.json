@@ -1,0 +1,13 @@
+{
+  "background": "透明",
+  "feather": "关",
+  "height": 1200,
+  "model": "men1scus/birefnet",
+  "processor": "handler.runReplicateTool / finishCutout",
+  "result": "result.png",
+  "source": "source.jpg",
+  "sourceLicense": "CC0-1.0",
+  "sourcePath": "images/portrait_case321/output.jpg",
+  "sourceRepository": "https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts",
+  "width": 675
+}
