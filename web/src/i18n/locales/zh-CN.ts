@@ -31,7 +31,7 @@ export default {
     settingsPanels: {
         common: { auto: "自动", low: "低", medium: "中", high: "高", xhigh: "极高" },
         image: { title: "图像设置", quality: "质量", size: "尺寸", align16: "16 倍数对齐", align16Hint: "输入完成后自动向上补成 16 的倍数", resolution: "分辨率", aspectRatio: "宽高比", transparent: "透明背景", transparentHint: "开启后生成无背景的透明图像（仅部分模型可用）", count: "生成张数", images: "{{count}} 张" },
-        video: { title: "视频设置", quality: "清晰度", size: "尺寸", seconds: "秒数", mode: "模式", modes: { frames: "首尾帧模式", reference: "全能参考模式" }, resolution: "分辨率", ratio: "比例", duration: "时长", smart: "智能", output: "输出", generateAudio: "生成声音", watermark: "添加水印", adaptive: "自适应", sizes: { landscape: "横屏", portrait: "竖屏", square: "方形", widescreen: "宽屏", tall: "长图", auto: "自动" }, ratios: { landscape: "横屏", portrait: "竖屏", square: "方形", standardLandscape: "标准横屏", standardPortrait: "标准竖屏", cinematic: "宽银幕", adaptive: "自适应" } },
+        video: { title: "视频设置", quality: "清晰度", size: "尺寸", seconds: "秒数", mode: "模式", inputMode: "输入方式", modes: { frames: "首尾帧模式", reference: "全能参考模式" }, inputModes: { firstFrame: "标准图生视频需要1张首帧图片；可选第2张尾帧图片控制结束画面。", firstFrameOptional: "快速视频服务可不上传图片进行文生视频；上传1张图片时作为首帧参考。", reference: "当前模型使用全能参考方式：图片（以及渠道允许的视频、音频）作为参考素材。", generic: "首尾帧模式用图片1控制开始画面、图片2控制结束画面；全能参考模式会综合所有参考图片。" }, resolution: "分辨率", ratio: "比例", duration: "时长", smart: "智能", output: "输出", generateAudio: "生成声音", watermark: "添加水印", adaptive: "自适应", sizes: { landscape: "横屏", portrait: "竖屏", square: "方形", widescreen: "宽屏", tall: "长图", auto: "自动" }, ratios: { landscape: "横屏", portrait: "竖屏", square: "方形", standardLandscape: "标准横屏", standardPortrait: "标准竖屏", cinematic: "宽银幕", adaptive: "自适应" } },
         audio: { title: "音频设置", voice: "声音", format: "格式", speed: "语速", instructions: "声音指令", instructionsPlaceholder: "例如：自然、温暖、适合旁白。" },
         text: { title: "文本设置", reasoning: "推理强度", count: "生成次数" },
         model: { select: "选择模型", assign: "请先在渠道里为{{capability}}指定模型", noMatch: "暂无匹配的{{capability}}模型", addFirst: "请先到配置里添加渠道和模型", capabilities: { image: "生图", video: "视频", text: "文本", audio: "音频" } },
@@ -59,7 +59,7 @@ export default {
     prompts: {
         title: "创意灵感",
         library: "提示词库",
-        total: "精选 {{count}} 条可直接使用的灵感",
+        total: "共 {{count}} 条灵感",
         subtitle: "从真实使用场景出发，找到能解决问题的创作方法",
         category: "使用场景",
         tags: "标签",
@@ -221,7 +221,7 @@ export default {
         referenceError: "{{error}}。{{hint}}",
         invalidParams: "视频生成参数无效",
         busy: "视频工作台已有任务正在运行",
-        backgroundGenerating: "上游仍在生成，后台持续查询",
+            backgroundGenerating: "平台仍在生成，后台持续查询",
         queryInterrupted: "状态查询暂时中断，正在重试",
         generated: "视频已生成",
         timeout: "视频生成超时，请稍后重试",
@@ -283,7 +283,7 @@ export default {
         },
         node: {
             node: "节点",
-            untitled: "未命名节点", renameHint: "双击修改节点名称", group: "组", nodeCount: "{{count}} 个节点", generating: "生成中", videoBackground: "上游仍在生成，后台持续查询", videoQueryInterrupted: "状态查询暂时中断，正在重试", failed: "生成失败", retry: "重试", missingPlugin: "缺少插件", missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用", generateImage: "用文本生图", generate: "生图", editText: "双击编辑文字", emptyImage: "空图片节点", emptyVideo: "空视频节点", emptyAudio: "空音频节点", audio: "音频", batchExpanded: "图片组已展开", batchCollapsed: "图片组已收起", textBatchExpanded: "备选文本已展开", textBatchCollapsed: "备选文本已收起", createCopy: "创建副本", setPrimary: "设为主图", setPrimaryText: "设为主文本",
+            untitled: "未命名节点", renameHint: "双击修改节点名称", group: "组", nodeCount: "{{count}} 个节点", generating: "生成中", videoBackground: "平台仍在生成，后台持续查询", videoQueryInterrupted: "状态查询暂时中断，正在重试", failed: "生成失败", retry: "重试", missingPlugin: "缺少插件", missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用", generateImage: "用文本生图", generate: "生图", editText: "双击编辑文字", emptyImage: "空图片节点", emptyVideo: "空视频节点", emptyAudio: "空音频节点", audio: "音频", batchExpanded: "图片组已展开", batchCollapsed: "图片组已收起", textBatchExpanded: "备选文本已展开", textBatchCollapsed: "备选文本已收起", createCopy: "创建副本", setPrimary: "设为主图", setPrimaryText: "设为主文本",
         },
         videoFrames: { first: "截取首帧", last: "截取尾帧", current: "截取当前帧", firstTitle: "{{name}} 首帧", lastTitle: "{{name}} 尾帧", currentTitle: "{{name}} 当前帧", captured: "已生成图片节点", failed: "无法截取该画面，请重试" },
         sidePanel: {
@@ -557,13 +557,13 @@ export default {
             modelName: "输入模型名称",
             add: "增加模型",
             fetch: "拉取模型列表",
-            description: "如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。",
+            description: "如果当前服务不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。",
             fetchedTab: "新获取的模型 ({{count}})",
             existingTab: "已有的模型 ({{count}})",
             visibleSelected: "当前列表已选择 {{selected}} / {{total}}",
             selectVisible: "全选当前列表",
             clearVisible: "取消当前列表",
-            fetchedEmpty: "点击「拉取模型列表」获取上游模型，或手动增加模型名称。",
+            fetchedEmpty: "点击「拉取模型列表」获取当前服务模型，或手动增加模型名称。",
             existingEmpty: "暂无已选择的模型。",
         },
         scriptEditor: {
@@ -673,3 +673,4 @@ export default {
         enUS: "English",
     },
 };
+

@@ -1,0 +1,23 @@
+# Preparation only: merge with the existing production Compose after review.
+# Confirm its website service is named app before using this override.
+services:
+  app:
+    environment:
+      PUBLIC_BASE_URL: https://studio.lingzhouai.com
+      VIDEO_WORKER_URL: http://video-worker:8767
+      VIDEO_WORKER_TOKEN: ${VIDEO_WORKER_TOKEN:?Set the same server-only token for app and worker}
+  video-worker:
+    build:
+      context: /opt/infinite-canvas/video-worker
+    restart: unless-stopped
+    environment:
+      VIDEO_WORKER_TOKEN: ${VIDEO_WORKER_TOKEN:?Set the same server-only token for app and worker}
+      VIDEO_WORKER_DATA: /data
+      VIDEO_WORKER_ORIGINS: https://studio.lingzhouai.com
+      WHISPER_MODEL: /models/whisper-small
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE_TYPE: int8
+    volumes:
+      - /opt/infinite-canvas/video-worker-data:/data
+      - /opt/infinite-canvas/video-worker-models:/models:ro
+    # Internal Docker network only. No host port mapping.

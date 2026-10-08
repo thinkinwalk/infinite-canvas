@@ -1,0 +1,106 @@
+Fast Whisper: High-Speed Transcription on Replicate
+vaibhavs10/incredibly-fast-whisper
+vaibhavs10
+/
+incredibly-fast-whisper
+whisper-large-v3, incredibly fast, powered by Hugging Face Transformers! 🤗
+Public
+40.5M
+            runs
+License
+GitHub
+Playground
+API
+Examples
+README
+Versions
+Run time and cost
+This model costs approximately $0.0044 to run on Replicate, or 227 runs per $1, but this varies depending on your inputs. It is also open source and you can
+run it on your own computer with Docker
+.
+This model runs on
+Nvidia L40S GPU hardware
+.
+      
+      
+
+      
+        Predictions typically complete within 5 seconds.
+Readme
+Incredibly Fast Whisper
+Powered by 🤗
+Transformers
+,
+Optimum
+&
+flash-attn
+TL;DR
+- Transcribe 150 minutes of audio in 100 seconds - with
+OpenAI’s Whisper Large v3
+. Blazingly fast transcription is now a reality!⚡️
+Optimisation type
+Time to Transcribe (150 mins of Audio)
+Transformers (
+fp32
+)
+~31 (
+31 min 1 sec
+)
+Transformers (
+fp16
++
+batching [24]
++
+bettertransformer
+)
+~5 (
+5 min 2 sec
+)
+Transformers (
+fp16
++
+batching [24]
++
+Flash Attention 2
+)
+~2 (
+1 min 38 sec
+)
+distil-whisper (
+fp16
++
+batching [24]
++
+bettertransformer
+)
+~3 (
+3 min 16 sec
+)
+distil-whisper (
+fp16
++
+batching [24]
++
+Flash Attention 2
+)
+~1 (
+1 min 18 sec
+)
+Faster Whisper (
+fp16
++
+beam_size [1]
+)
+~9.23 (
+9 min 23 sec
+)
+Faster Whisper (
+8-bit
++
+beam_size [1]
+)
+~8 (
+8 min 15 sec
+)
+Model created
+over 1 year ago

@@ -90,7 +90,7 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 	if content {
 		path += "/content"
 	}
-	path = resolveAIProxyPath(channel.BaseURL, path)
+	path = videoChannelPath(channel, modelName, path)
 	query := url.Values{}
 	for key, values := range r.URL.Query() {
 		query[key] = append([]string(nil), values...)
@@ -144,8 +144,24 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		FailError(w, err)
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, path)
-	body, contentType = normalizeAIProxyVideoBody(channel.BaseURL, path, body, contentType)
+	if videoCreate {
+		if err := checkExpectedVideoCredits(r, credits); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+		profile := service.VideoProfile(channel, modelName)
+		if err := validateVideoProfileRequest(profile, body, contentType); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+		body = stripVideoInputMode(body, contentType)
+		path = videoChannelPath(channel, modelName, path)
+		formatBase := ""
+		if profile.Interface == "ark" {
+			formatBase = "/api/plan/v3"
+		}
+		body, contentType = normalizeAIProxyVideoBody(formatBase, path, body, contentType)
+	}
 	if useLingzhouResponsesImageProxy(channel, modelName, path, contentType) {
 		responsesBody, err := buildLingzhouImageResponsesBody(body)
 		if err != nil {
@@ -730,6 +746,16 @@ func buildArkAgentPlanVideoBody(payload map[string]any) ([]byte, bool) {
 	for _, imageURL := range imageURLs {
 		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": imageURL}, "role": "reference_image"})
 	}
+	for _, videoURL := range append(jsonURLValues(payload["reference_videos"]), jsonURLValue(payload["reference_video"])) {
+		if videoURL != "" {
+			content = append(content, map[string]any{"type": "video_url", "video_url": map[string]any{"url": videoURL}, "role": "reference_video"})
+		}
+	}
+	for _, audioURL := range append(jsonURLValues(payload["audio_urls"]), jsonURLValue(payload["audio_url"])) {
+		if audioURL != "" {
+			content = append(content, map[string]any{"type": "audio_url", "audio_url": map[string]any{"url": audioURL}, "role": "reference_audio"})
+		}
+	}
 	if len(content) == 0 {
 		return nil, false
 	}
@@ -765,6 +791,8 @@ func buildOpenAICompatibleVideoBody(payload map[string]any) ([]byte, bool) {
 	}
 	promptParts := []string{}
 	imageURLs := []string{}
+	videoURLs := []string{}
+	audioURLs := []string{}
 	for _, raw := range content {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -779,6 +807,14 @@ func buildOpenAICompatibleVideoBody(payload map[string]any) ([]byte, bool) {
 			if imageURL := jsonURLValue(item["image_url"]); imageURL != "" {
 				imageURLs = append(imageURLs, imageURL)
 			}
+		case "video_url":
+			if value := jsonURLValue(item["video_url"]); value != "" {
+				videoURLs = append(videoURLs, value)
+			}
+		case "audio_url":
+			if value := jsonURLValue(item["audio_url"]); value != "" {
+				audioURLs = append(audioURLs, value)
+			}
 		}
 	}
 	converted := map[string]any{"model": jsonStringValue(payload["model"])}
@@ -792,6 +828,12 @@ func buildOpenAICompatibleVideoBody(payload map[string]any) ([]byte, bool) {
 	}
 	if len(imageURLs) > 1 {
 		converted["reference_image_urls"] = imageURLs[1:]
+	}
+	if len(videoURLs) > 0 {
+		converted["reference_videos"] = videoURLs
+	}
+	if len(audioURLs) > 0 {
+		converted["audio_urls"] = audioURLs
 	}
 	if seconds, ok := jsonScalarValue(payload["seconds"]); ok {
 		converted["seconds"] = seconds

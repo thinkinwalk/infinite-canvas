@@ -1,0 +1,88 @@
+{
+  "checks": {
+    "unavailableBlockedBeforeUpload": true,
+    "quoteVisible": true,
+    "cancelDoesNotCreateTask": true,
+    "cloudTextApplied": true,
+    "audioPreparationPurpose": true,
+    "preparedAudioSubmitted": true,
+    "confirmedCreditsSubmitted": true,
+    "textSurvivesReload": true,
+    "subtitleTimelineApplied": true,
+    "resumeWithoutNewPaidTask": true,
+    "localRouteSurvivesReload": true,
+    "insufficientBalanceDoesNotLeavePendingTask": true,
+    "mobileNoHorizontalOverflow": true,
+    "pageErrors": []
+  },
+  "calls": [
+    {
+      "kind": "prepare",
+      "purpose": true
+    },
+    {
+      "kind": "quote",
+      "operation": "transcribe",
+      "input": {
+        "task": "transcribe",
+        "timestamp": "word",
+        "language": "None",
+        "audio": "https://review.example/api/media/references/prepared.mp3"
+      }
+    },
+    {
+      "kind": "quote",
+      "operation": "transcribe",
+      "input": {
+        "task": "transcribe",
+        "timestamp": "word",
+        "language": "None",
+        "audio": "https://review.example/api/media/references/prepared.mp3"
+      }
+    },
+    {
+      "kind": "create",
+      "operation": "transcribe",
+      "expectedCredits": 42
+    },
+    {
+      "kind": "prepare",
+      "purpose": true
+    },
+    {
+      "kind": "quote",
+      "operation": "transcribe",
+      "input": {
+        "task": "transcribe",
+        "timestamp": "chunk",
+        "language": "None",
+        "audio": "https://review.example/api/media/references/prepared.mp3"
+      }
+    },
+    {
+      "kind": "create",
+      "operation": "transcribe",
+      "expectedCredits": 42
+    },
+    {
+      "kind": "prepare",
+      "purpose": true
+    },
+    {
+      "kind": "quote",
+      "operation": "transcribe",
+      "input": {
+        "task": "transcribe",
+        "timestamp": "word",
+        "language": "None",
+        "audio": "https://review.example/api/media/references/prepared.mp3"
+      }
+    },
+    {
+      "kind": "create",
+      "operation": "transcribe",
+      "expectedCredits": 42
+    }
+  ],
+  "note": "独立浏览器与模拟 API 验证，未提交真实付费预测"
+}

@@ -127,6 +127,50 @@ func TestSelectedProductSetCardsUsePreviewDescriptions(t *testing.T) {
 	}
 }
 
+func TestDetailPageCardsKeepOrderAndEditedPlan(t *testing.T) {
+	input := productSetInput{
+		Images: []string{"product"}, StyleReferenceImages: []string{"layout"},
+		ProductBrief: "已确认卖点", CardIDs: []string{"detail-hero", "detail-spec"},
+		PlanCards: []productSetCard{{ID: "detail-hero", Title: "主视觉", Description: "完整呈现商品", AspectRatio: "1:1"}, {ID: "detail-spec", Title: "参数与适配", Description: "仅列出已提供的尺寸", AspectRatio: "2:3"}},
+	}
+	cards := selectedDetailPageCards(input)
+	if len(detailPageCards) != 8 || len(cards) != 2 || cards[0].ID != "detail-hero" || cards[1].ID != "detail-spec" || cards[1].Title != "参数与适配" || cards[1].AspectRatio != "2:3" {
+		t.Fatalf("detail page cards have wrong structure: %+v", cards)
+	}
+	prompt := detailPagePrompt(cards[1], input)
+	for _, expected := range []string{"无字底图", "仅列出已提供的尺寸", "前1张是本次商品", "其后的1张仅供风格与排版参考", "禁止添加标题"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("detail page prompt missing %q: %s", expected, prompt)
+		}
+	}
+}
+
+func TestDetailPageCustomOrderAndPhotoStrategy(t *testing.T) {
+	input := productSetInput{CardIDs: []string{"a", "b"}, PlanCards: []productSetCard{
+		{ID: "b", Title: "工艺", Description: "真实工艺", AspectRatio: "1:1"},
+		{ID: "a", Title: "包装", Description: "实际包装", AspectRatio: "3:1"},
+	}}
+	cards := selectedDetailPageCards(input)
+	if len(cards) != 2 || cards[0].ID != "b" || cards[1].AspectRatio != "3:1" {
+		t.Fatalf("custom module order/ratio lost: %+v", cards)
+	}
+	if validateDetailPageCards(append(cards, cards[0])) == nil {
+		t.Fatal("duplicate module IDs must be rejected")
+	}
+	for _, name := range []string{"Etsy", "TikTok Shop", "ebay"} {
+		if !detailPagePhotoOnly(name) {
+			t.Fatalf("%s must use photos", name)
+		}
+	}
+	if detailPagePhotoOnly("淘宝 / 天猫") || detailPagePhotoOnly("Amazon A+") {
+		t.Fatal("synthetic detail backgrounds should be available")
+	}
+	parsed, err := parseProductSetPlan(`{"cards":[{"title":"工艺","body":"已确认的正文","description":"无字细节"},{"title":"包装","body":"","description":"真实包装"}]}`, cards)
+	if err != nil || parsed[0].Body != "已确认的正文" {
+		t.Fatalf("separate copy lost: %+v %v", parsed, err)
+	}
+}
+
 func TestProductSetPromptKeepsCategoryAndReferenceRoles(t *testing.T) {
 	input := productSetInput{Images: []string{"product"}, StyleReferenceImages: []string{"style"}, ProductBrief: "商品资料", StyleText: "自然光", CustomLayout: `{"scene":3}`, CardIDs: []string{"material-structure"}, PlanCards: []productSetCard{{ID: "material-structure", Title: "外观解读", Description: "局部细节放大"}}}
 	card := selectedProductSetCards(input)[0]

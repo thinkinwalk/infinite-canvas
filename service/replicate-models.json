@@ -1,0 +1,970 @@
+[
+  {
+    "operation": "transcribe",
+    "label": "参考语音识别",
+    "model": "vaibhavs10/incredibly-fast-whisper",
+    "version": "3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "audio"
+      ],
+      "properties": {
+        "task": {
+          "enum": [
+            "transcribe",
+            "translate"
+          ],
+          "type": "string",
+          "title": "task",
+          "description": "Task to perform: transcribe or translate to another language.",
+          "default": "transcribe",
+          "x-order": 1
+        },
+        "audio": {
+          "type": "string",
+          "title": "Audio",
+          "format": "uri",
+          "x-order": 0,
+          "description": "Audio file"
+        },
+        "language": {
+          "enum": [
+            "None",
+            "afrikaans",
+            "albanian",
+            "amharic",
+            "arabic",
+            "armenian",
+            "assamese",
+            "azerbaijani",
+            "bashkir",
+            "basque",
+            "belarusian",
+            "bengali",
+            "bosnian",
+            "breton",
+            "bulgarian",
+            "cantonese",
+            "catalan",
+            "chinese",
+            "croatian",
+            "czech",
+            "danish",
+            "dutch",
+            "english",
+            "estonian",
+            "faroese",
+            "finnish",
+            "french",
+            "galician",
+            "georgian",
+            "german",
+            "greek",
+            "gujarati",
+            "haitian creole",
+            "hausa",
+            "hawaiian",
+            "hebrew",
+            "hindi",
+            "hungarian",
+            "icelandic",
+            "indonesian",
+            "italian",
+            "japanese",
+            "javanese",
+            "kannada",
+            "kazakh",
+            "khmer",
+            "korean",
+            "lao",
+            "latin",
+            "latvian",
+            "lingala",
+            "lithuanian",
+            "luxembourgish",
+            "macedonian",
+            "malagasy",
+            "malay",
+            "malayalam",
+            "maltese",
+            "maori",
+            "marathi",
+            "mongolian",
+            "myanmar",
+            "nepali",
+            "norwegian",
+            "nynorsk",
+            "occitan",
+            "pashto",
+            "persian",
+            "polish",
+            "portuguese",
+            "punjabi",
+            "romanian",
+            "russian",
+            "sanskrit",
+            "serbian",
+            "shona",
+            "sindhi",
+            "sinhala",
+            "slovak",
+            "slovenian",
+            "somali",
+            "spanish",
+            "sundanese",
+            "swahili",
+            "swedish",
+            "tagalog",
+            "tajik",
+            "tamil",
+            "tatar",
+            "telugu",
+            "thai",
+            "tibetan",
+            "turkish",
+            "turkmen",
+            "ukrainian",
+            "urdu",
+            "uzbek",
+            "vietnamese",
+            "welsh",
+            "yiddish",
+            "yoruba"
+          ],
+          "type": "string",
+          "title": "language",
+          "description": "Language spoken in the audio, specify 'None' to perform language detection.",
+          "default": "None",
+          "x-order": 2
+        },
+        "timestamp": {
+          "enum": [
+            "chunk",
+            "word"
+          ],
+          "type": "string",
+          "title": "timestamp",
+          "description": "Whisper supports both chunked as well as word level timestamps.",
+          "default": "chunk",
+          "x-order": 4
+        }
+      }
+    },
+    "enums": {}
+  },
+  {
+    "operation": "speech",
+    "label": "中文配音与声音克隆",
+    "model": "qwen/qwen3-tts",
+    "version": "d490a561cf1171a8dc3d96d1e57efffea7dd34607148bb641f3d9de4e38c472e",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/mode"
+            }
+          ],
+          "default": "custom_voice",
+          "x-order": 1,
+          "description": "TTS mode: 'custom_voice' uses preset speakers, 'voice_clone' clones from reference audio, 'voice_design' creates voice from description"
+        },
+        "text": {
+          "type": "string",
+          "title": "Text",
+          "x-order": 0,
+          "description": "Text to synthesize into speech"
+        },
+        "speaker": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/speaker"
+            }
+          ],
+          "default": "Serena",
+          "x-order": 3,
+          "description": "Preset speaker voice (only for 'custom_voice' mode)"
+        },
+        "language": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/language"
+            }
+          ],
+          "default": "auto",
+          "x-order": 2,
+          "description": "Language of the text (use 'auto' for automatic detection)"
+        },
+        "reference_text": {
+          "type": "string",
+          "title": "Reference Text",
+          "default": null,
+          "x-order": 6,
+          "nullable": true,
+          "description": "Transcript of the reference audio (recommended for 'voice_clone' mode)"
+        },
+        "reference_audio": {
+          "type": "string",
+          "title": "Reference Audio",
+          "format": "uri",
+          "default": null,
+          "x-order": 5,
+          "nullable": true,
+          "description": "Reference audio file for voice cloning (only for 'voice_clone' mode)"
+        },
+        "style_instruction": {
+          "type": "string",
+          "title": "Style Instruction",
+          "default": null,
+          "x-order": 7,
+          "nullable": true,
+          "description": "Optional style/emotion instruction (e.g., 'speak slowly and calmly', 'excited tone')"
+        },
+        "voice_description": {
+          "type": "string",
+          "title": "Voice Description",
+          "default": null,
+          "x-order": 4,
+          "nullable": true,
+          "description": "Natural language description of desired voice (only for 'voice_design' mode). Example: 'A warm, friendly female voice with a slight British accent'"
+        }
+      }
+    },
+    "enums": {
+      "mode": [
+        "custom_voice",
+        "voice_clone",
+        "voice_design"
+      ],
+      "speaker": [
+        "Aiden",
+        "Dylan",
+        "Eric",
+        "Ono_anna",
+        "Ryan",
+        "Serena",
+        "Sohee",
+        "Uncle_fu",
+        "Vivian"
+      ],
+      "language": [
+        "auto",
+        "Chinese",
+        "English",
+        "Japanese",
+        "Korean",
+        "French",
+        "German",
+        "Italian",
+        "Spanish",
+        "Portuguese",
+        "Russian"
+      ]
+    }
+  },
+  {
+    "operation": "digital-human",
+    "label": "照片数字人",
+    "model": "wan-video/wan-2.2-s2v",
+    "version": "09607e6e761d2f015b0d740f938ec59199f54aa623384465a5054b230405acf4",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "prompt",
+        "image",
+        "audio"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "title": "Seed",
+          "x-order": 4,
+          "nullable": true,
+          "description": "Random seed. Leave blank for random"
+        },
+        "audio": {
+          "type": "string",
+          "title": "Audio",
+          "format": "uri",
+          "x-order": 2,
+          "description": "Audio file to synchronize the video with"
+        },
+        "image": {
+          "type": "string",
+          "title": "Image",
+          "format": "uri",
+          "x-order": 1,
+          "description": "First frame image to start the video from"
+        },
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "x-order": 0,
+          "description": "Prompt for video generation"
+        },
+        "num_frames_per_chunk": {
+          "type": "integer",
+          "title": "Num Frames Per Chunk",
+          "default": 81,
+          "maximum": 121,
+          "minimum": 1,
+          "x-order": 3,
+          "description": "Number of frames per video chunk"
+        }
+      }
+    },
+    "enums": {}
+  },
+  {
+    "operation": "lipsync",
+    "label": "视频对口型",
+    "model": "sync/lipsync-2",
+    "version": "4f8dc3cfda4ff844a6158ac347d21fcd025210f6dad4b16265fc53074ee4f77f",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "video",
+        "audio"
+      ],
+      "properties": {
+        "audio": {
+          "type": "string",
+          "title": "Audio",
+          "format": "uri",
+          "x-order": 1,
+          "description": "Input audio file (.wav)"
+        },
+        "video": {
+          "type": "string",
+          "title": "Video",
+          "format": "uri",
+          "x-order": 0,
+          "description": "Input video file (.mp4)"
+        },
+        "sync_mode": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/sync_mode"
+            }
+          ],
+          "default": "loop",
+          "x-order": 2,
+          "description": "Lipsync mode when audio and video durations are out of sync"
+        },
+        "temperature": {
+          "type": "number",
+          "title": "Temperature",
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "x-order": 3,
+          "description": "How expressive lipsync can be (0-1)"
+        },
+        "active_speaker": {
+          "type": "boolean",
+          "title": "Active Speaker",
+          "default": false,
+          "x-order": 4,
+          "description": "Whether to detect active speaker (i.e. whoever is speaking in the clip will be used for lipsync)"
+        }
+      }
+    },
+    "enums": {
+      "sync_mode": [
+        "loop",
+        "bounce",
+        "cut_off",
+        "silence",
+        "remap"
+      ]
+    }
+  },
+  {
+    "operation": "replace-person",
+    "label": "视频人物替换",
+    "model": "wan-video/wan-2.2-animate-replace",
+    "version": "33ec6b986ba9010eee4cd812be67d25e72150fad7d2b11d3abed66a9c7ac1ba1",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "video",
+        "character_image"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "title": "Seed",
+          "x-order": 4,
+          "nullable": true,
+          "description": "Random seed. Leave blank for random."
+        },
+        "video": {
+          "type": "string",
+          "title": "Video",
+          "format": "uri",
+          "x-order": 0,
+          "description": "Input video containing the character to be replaced."
+        },
+        "go_fast": {
+          "type": "boolean",
+          "title": "Go Fast",
+          "default": false,
+          "x-order": 3,
+          "description": "Apply additional optimizations for faster generation."
+        },
+        "refert_num": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/refert_num"
+            }
+          ],
+          "default": 1,
+          "x-order": 6,
+          "description": "Number of reference frames to use (must be 1 or 5. Deprecated, will always be set to 1."
+        },
+        "resolution": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/resolution"
+            }
+          ],
+          "default": "720",
+          "x-order": 2,
+          "description": "Resolution for processing."
+        },
+        "merge_audio": {
+          "type": "boolean",
+          "title": "Merge Audio",
+          "default": true,
+          "x-order": 5,
+          "description": "Merge audio from input video into output."
+        },
+        "character_image": {
+          "type": "string",
+          "title": "Character Image",
+          "format": "uri",
+          "x-order": 1,
+          "description": "New character image to replace the original character."
+        },
+        "frames_per_second": {
+          "type": "integer",
+          "title": "Frames Per Second",
+          "default": 30,
+          "maximum": 60,
+          "minimum": 5,
+          "x-order": 7,
+          "description": "Frames per second for output video. Deprecated, will always be set to 30."
+        }
+      }
+    },
+    "enums": {
+      "refert_num": [
+        1,
+        5
+      ],
+      "resolution": [
+        "720",
+        "480"
+      ]
+    }
+  },
+  {
+    "operation": "upscale",
+    "label": "视频高清与超分",
+    "model": "topazlabs/video-upscale",
+    "version": "99765d47291823f1f67033267c955ba103a9ce2338ec28e0cbef96a4fc8baa01",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "video"
+      ],
+      "properties": {
+        "video": {
+          "type": "string",
+          "title": "Video",
+          "format": "uri",
+          "x-order": 0,
+          "description": "Video file to upscale"
+        },
+        "target_fps": {
+          "type": "integer",
+          "title": "Target Fps",
+          "default": 30,
+          "maximum": 60,
+          "minimum": 15,
+          "x-order": 2,
+          "description": "Target FPS (choose from 15-60fps)"
+        },
+        "target_resolution": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/target_resolution"
+            }
+          ],
+          "default": "1080p",
+          "x-order": 1,
+          "description": "Target resolution"
+        }
+      }
+    },
+    "enums": {
+      "target_resolution": [
+        "720p",
+        "1080p",
+        "4k"
+      ]
+    }
+  },
+  {
+    "operation": "image-to-video",
+    "label": "图片生成视频",
+    "model": "wan-video/wan-2.2-i2v-fast",
+    "version": "4eaf2b01d3bf70d8a2e00b219efeb7cb415855ad18b7dacdc4cae664a73a6eea",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "prompt",
+        "image"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "title": "Seed",
+          "x-order": 9,
+          "nullable": true,
+          "description": "Random seed. Leave blank for random"
+        },
+        "image": {
+          "type": "string",
+          "title": "Image",
+          "format": "uri",
+          "x-order": 1,
+          "description": "Input image to generate video from."
+        },
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "x-order": 0,
+          "description": "Prompt for video generation"
+        },
+        "go_fast": {
+          "type": "boolean",
+          "title": "Go Fast",
+          "default": true,
+          "x-order": 7,
+          "description": "Go fast"
+        },
+        "last_image": {
+          "type": "string",
+          "title": "Last Image",
+          "format": "uri",
+          "x-order": 2,
+          "nullable": true,
+          "description": "Optional last image to condition the video generation. If provided, creates smoother transitions between frames."
+        },
+        "num_frames": {
+          "type": "integer",
+          "title": "Num Frames",
+          "default": 81,
+          "maximum": 121,
+          "minimum": 81,
+          "x-order": 3,
+          "description": "Number of video frames. 81 frames give the best results"
+        },
+        "resolution": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/resolution"
+            }
+          ],
+          "default": "480p",
+          "x-order": 4,
+          "description": "Resolution of video. 16:9 corresponds to 832x480px, and 9:16 is 480x832px"
+        },
+        "sample_shift": {
+          "type": "number",
+          "title": "Sample Shift",
+          "default": 12,
+          "maximum": 20,
+          "minimum": 1,
+          "x-order": 8,
+          "description": "Sample shift factor"
+        },
+        "frames_per_second": {
+          "type": "integer",
+          "title": "Frames Per Second",
+          "default": 16,
+          "maximum": 30,
+          "minimum": 5,
+          "x-order": 5,
+          "description": "Frames per second. Note that the pricing of this model is based on the video duration at 16 fps"
+        },
+        "interpolate_output": {
+          "type": "boolean",
+          "title": "Interpolate Output",
+          "default": false,
+          "x-order": 6,
+          "description": "Interpolate the generated video to 30 FPS using ffmpeg"
+        },
+        "disable_safety_checker": {
+          "type": "boolean",
+          "title": "Disable Safety Checker",
+          "default": false,
+          "x-order": 10,
+          "description": "Disable safety checker for generated video."
+        },
+        "lora_scale_transformer": {
+          "type": "number",
+          "title": "Lora Scale Transformer",
+          "default": 1,
+          "x-order": 12,
+          "description": "Determines how strongly the transformer LoRA should be applied."
+        },
+        "lora_scale_transformer_2": {
+          "type": "number",
+          "title": "Lora Scale Transformer 2",
+          "default": 1,
+          "x-order": 14,
+          "description": "Determines how strongly the transformer_2 LoRA should be applied."
+        },
+        "lora_weights_transformer": {
+          "type": "string",
+          "title": "Lora Weights Transformer",
+          "x-order": 11,
+          "nullable": true,
+          "description": "Load LoRA weights for the HIGH transformer. Supports arbitrary .safetensors URLs from the Internet (for example, 'https://huggingface.co/TheRaf7/instagirl-v2/resolve/main/Instagirlv2.0_hinoise.safetensors')"
+        },
+        "lora_weights_transformer_2": {
+          "type": "string",
+          "title": "Lora Weights Transformer 2",
+          "x-order": 13,
+          "nullable": true,
+          "description": "Load LoRA weights for the LOW transformer_2. Supports arbitrary .safetensors URLs from the Internet. Can be different from transformer LoRA. (for example, 'https://huggingface.co/TheRaf7/instagirl-v2/resolve/main/Instagirlv2.0_lownoise.safetensors')"
+        }
+      }
+    },
+    "enums": {
+      "resolution": [
+        "480p",
+        "720p"
+      ]
+    }
+  },
+  {
+    "operation": "video-edit",
+    "label": "视频智能编辑",
+    "model": "wan-video/wan-2.7-videoedit",
+    "version": "e1825a94300a0a887079a54c2e27b26a6e03184a031f03d989829ed5ec9145b3",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "video",
+        "prompt"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "title": "Seed",
+          "x-order": 7,
+          "nullable": true,
+          "description": "Random seed for reproducible generation. Range: 0-2147483647"
+        },
+        "video": {
+          "type": "string",
+          "title": "Video",
+          "format": "uri",
+          "x-order": 0,
+          "description": "Input video to edit (mp4/mov, 2-10s)"
+        },
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "x-order": 1,
+          "description": "Editing instructions or style transfer description"
+        },
+        "duration": {
+          "type": "integer",
+          "title": "Duration",
+          "maximum": 10,
+          "minimum": 2,
+          "x-order": 5,
+          "nullable": true,
+          "description": "Duration of the output video in seconds. If not set, matches input video duration. Use this to truncate."
+        },
+        "resolution": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/resolution"
+            }
+          ],
+          "default": "1080p",
+          "x-order": 3,
+          "description": "Output video resolution"
+        },
+        "aspect_ratio": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/aspect_ratio"
+            }
+          ],
+          "default": "auto",
+          "x-order": 4,
+          "description": "Aspect ratio of the output video. 'auto' uses the input video's aspect ratio."
+        },
+        "audio_setting": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/audio_setting"
+            }
+          ],
+          "default": "auto",
+          "x-order": 6,
+          "description": "Audio behavior for edited video. 'auto': model decides whether to regenerate audio. 'origin': keep the original audio."
+        },
+        "reference_image": {
+          "type": "string",
+          "title": "Reference Image",
+          "format": "uri",
+          "x-order": 2,
+          "nullable": true,
+          "description": "Reference image for reference-based editing (jpg/png/bmp/webp)"
+        }
+      }
+    },
+    "enums": {
+      "resolution": [
+        "720p",
+        "1080p"
+      ],
+      "aspect_ratio": [
+        "auto",
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "audio_setting": [
+        "auto",
+        "origin"
+      ]
+    }
+  },
+  {
+    "operation": "masked-edit",
+    "label": "局部视频编辑",
+    "model": "prunaai/vace-14b",
+    "version": "51299232dc3d0946d5f5ed74935d85243e172698f747d291460db1e6ef3669fb",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "prompt"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "title": "Seed",
+          "default": -1,
+          "x-order": 7,
+          "description": "Random seed (-1 for random)"
+        },
+        "size": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/size"
+            }
+          ],
+          "default": "832*480",
+          "x-order": 6,
+          "description": "Output resolution"
+        },
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "x-order": 0,
+          "description": "Prompt"
+        },
+        "src_mask": {
+          "type": "string",
+          "title": "Src Mask",
+          "format": "uri",
+          "x-order": 2,
+          "description": "Input mask video or image to edit."
+        },
+        "frame_num": {
+          "type": "integer",
+          "title": "Frame Num",
+          "default": 81,
+          "x-order": 5,
+          "description": "Number of frames to generate."
+        },
+        "src_video": {
+          "type": "string",
+          "title": "Src Video",
+          "format": "uri",
+          "x-order": 1,
+          "description": "Input video to edit."
+        },
+        "speed_mode": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/speed_mode"
+            }
+          ],
+          "default": "Lightly Juiced 🍊 (more consistent)",
+          "x-order": 4,
+          "description": "Speed optimization level"
+        },
+        "sample_shift": {
+          "type": "integer",
+          "title": "Sample Shift",
+          "default": 16,
+          "x-order": 8,
+          "description": "Sample shift"
+        },
+        "sample_steps": {
+          "type": "integer",
+          "title": "Sample Steps",
+          "default": 50,
+          "x-order": 10,
+          "description": "Sample steps"
+        },
+        "sample_solver": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/sample_solver"
+            }
+          ],
+          "default": "unipc",
+          "x-order": 9,
+          "description": "Sample solver"
+        },
+        "src_ref_images": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": "Src Ref Images",
+          "x-order": 3,
+          "description": "Input reference images to edit."
+        },
+        "sample_guide_scale": {
+          "type": "number",
+          "title": "Sample Guide Scale",
+          "default": 5,
+          "x-order": 11,
+          "description": "Sample guide scale"
+        }
+      }
+    },
+    "enums": {
+      "size": [
+        "720*1280",
+        "1280*720",
+        "480*832",
+        "832*480"
+      ],
+      "speed_mode": [
+        "Lightly Juiced 🍊 (more consistent)",
+        "Juiced 🔥 (more speed)",
+        "Extra Juiced 🚀 (even more speed)"
+      ],
+      "sample_solver": [
+        "unipc",
+        "dpm++"
+      ]
+    }
+  },
+  {
+    "operation": "hailuo-video",
+    "label": "Hailuo 2.3 · 文生视频与图生视频",
+    "model": "minimax/hailuo-2.3",
+    "version": "23a02633b5a44780345a59d4d43f8bd510efa239c56f08f29639ff24fa6615e1",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "prompt"
+      ],
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "title": "Prompt",
+          "description": "Text prompt for generation"
+        },
+        "duration": {
+          "enum": [
+            6,
+            10
+          ],
+          "type": "integer",
+          "title": "duration",
+          "description": "Duration of the video in seconds. 10 seconds is only available for 768p resolution.",
+          "default": 6,
+          "x-order": 2
+        },
+        "resolution": {
+          "enum": [
+            "768p",
+            "1080p"
+          ],
+          "type": "string",
+          "title": "resolution",
+          "description": "Pick between 768p or 1080p resolution. 1080p supports only 6-second duration.",
+          "default": "768p",
+          "x-order": 3
+        },
+        "prompt_optimizer": {
+          "type": "boolean",
+          "title": "Prompt Optimizer",
+          "default": true,
+          "description": "Use prompt optimizer"
+        },
+        "first_frame_image": {
+          "type": "string",
+          "title": "First Frame Image",
+          "format": "uri",
+          "description": "First frame image for video generation. The output video will have the same aspect ratio as this image."
+        }
+      }
+    },
+    "enums": {
+      "Status": [
+        "starting",
+        "processing",
+        "succeeded",
+        "canceled",
+        "failed"
+      ],
+      "duration": [
+        6,
+        10
+      ],
+      "resolution": [
+        "768p",
+        "1080p"
+      ],
+      "WebhookEvent": [
+        "start",
+        "output",
+        "logs",
+        "completed"
+      ]
+    }
+  }
+]

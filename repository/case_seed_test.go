@@ -30,6 +30,21 @@ func TestOfficialProductSetSeedRemovesBatchFee(t *testing.T) {
 	}
 }
 
+func TestOfficialDetailPageSeedIsPublished(t *testing.T) {
+	setupRedemptionTestDB(t)
+	database, err := DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seedOfficialCases(database); err != nil {
+		t.Fatal(err)
+	}
+	item, ok, err := GetCaseByID("official-detail-page")
+	if err != nil || !ok || item.Status != model.CaseStatusPublished || item.RuntimeConfig == "" || item.PriceCredits != 0 {
+		t.Fatalf("detail page seed is unavailable: case=%+v found=%v err=%v", item, ok, err)
+	}
+}
+
 func TestOfficialImageCaseIsRetired(t *testing.T) {
 	setupRedemptionTestDB(t)
 	database, err := DB()

@@ -373,7 +373,8 @@ function InfiniteCanvasPage() {
                                   vquality: generationConfig.vquality,
                                   generateAudio: generationConfig.videoGenerateAudio,
                                   watermark: generationConfig.videoWatermark,
-                                  videoMode: generationConfig.videoMode,
+                                  videoInputMode: generationConfig.videoInputMode,
+                                  videoInterpolate: generationConfig.videoInterpolate,
                               })
                             : item,
                     ),
@@ -2563,7 +2564,8 @@ function InfiniteCanvasPage() {
                             vquality: generationConfig.vquality,
                             generateAudio: generationConfig.videoGenerateAudio,
                             watermark: generationConfig.videoWatermark,
-                            videoMode: generationConfig.videoMode,
+                            videoInputMode: generationConfig.videoInputMode,
+                                  videoInterpolate: generationConfig.videoInterpolate,
                             references: generationReferenceUrls(generationContext),
                         },
                     };
@@ -2582,7 +2584,8 @@ function InfiniteCanvasPage() {
                             vquality: generationConfig.vquality,
                             generateAudio: generationConfig.videoGenerateAudio,
                             watermark: generationConfig.videoWatermark,
-                            videoMode: generationConfig.videoMode,
+                            videoInputMode: generationConfig.videoInputMode,
+                                  videoInterpolate: generationConfig.videoInterpolate,
                             references: generationReferenceUrls(generationContext),
                         }, generationContext.referenceVideos, generationContext.referenceAudios);
                     } finally {
@@ -2837,7 +2840,8 @@ function InfiniteCanvasPage() {
                         vquality: generationConfig.vquality,
                         generateAudio: generationConfig.videoGenerateAudio,
                         watermark: generationConfig.videoWatermark,
-                        videoMode: generationConfig.videoMode,
+                        videoInputMode: generationConfig.videoInputMode,
+                                  videoInterpolate: generationConfig.videoInterpolate,
                     }, context?.referenceVideos || [], context?.referenceAudios || []);
                     return;
                 }

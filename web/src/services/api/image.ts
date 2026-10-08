@@ -522,10 +522,12 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
         signal: options?.signal,
     });
     if (!response.ok) throw new Error(await readFetchError(response, apiText("requestFailed")));
-    if (!response.body) {
+    if (!response.body || response.headers.get("content-type")?.includes("application/json")) {
         const payload = (await response.json()) as ResponseApiPayload;
         validateResponsePayload(payload);
-        return parseToolResponse(payload);
+        const result = parseToolResponse(payload);
+        if (result.content) onDelta?.(result.content);
+        return result;
     }
 
     const reader = response.body.getReader();

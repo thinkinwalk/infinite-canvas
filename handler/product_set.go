@@ -48,6 +48,7 @@ type productSetCard struct {
 	ID          string `json:"id"`
 	Category    string `json:"category,omitempty"`
 	Title       string `json:"title"`
+	Body        string `json:"body,omitempty"`
 	Description string `json:"description"`
 	AspectRatio string `json:"aspectRatio"`
 }
@@ -78,6 +79,22 @@ var productSetCards = []productSetCard{
 	{ID: "brand-story", Title: "品牌故事图", Description: "补充品牌理念和产品价值，增强记忆与信任。", AspectRatio: "1:1"},
 	{ID: "campaign-banner", Title: "活动转化海报", Description: "突出优惠或活动信息，引导用户完成购买。", AspectRatio: "1:1"},
 	{ID: "final-call-to-action", Title: "最终购买引导图", Description: "收束卖点并给出简洁明确的行动提示。", AspectRatio: "1:1"},
+}
+
+var detailPageCards = []productSetCard{
+	{ID: "detail-hero", Title: "首屏主视觉", Description: "展示商品本体、商品名称和已确认的核心价值。", AspectRatio: "2:3"},
+	{ID: "detail-benefit", Title: "核心卖点", Description: "突出最重要的购买理由和对应的商品细节。", AspectRatio: "2:3"},
+	{ID: "detail-scene", Title: "使用场景", Description: "展示商品在真实场景中的用途与尺度。", AspectRatio: "2:3"},
+	{ID: "detail-feature", Title: "功能细节", Description: "以局部特写说明可见的结构、工艺或使用方式。", AspectRatio: "2:3"},
+	{ID: "detail-material", Title: "材质工艺", Description: "展示已确认的材质、纹理和制作细节。", AspectRatio: "2:3"},
+	{ID: "detail-howto", Title: "使用说明", Description: "按已确认的操作方式展示使用步骤。", AspectRatio: "2:3"},
+	{ID: "detail-spec", Title: "规格信息", Description: "清楚呈现用户提供的尺寸、适配或包装信息。", AspectRatio: "2:3"},
+	{ID: "detail-close", Title: "价值收尾", Description: "总结真实卖点，以统一视觉结束详情页。", AspectRatio: "2:3"},
+}
+
+func isDetailPage(id string) bool { return id == "official-detail-page" }
+func isProductImageWorkspace(id string) bool {
+	return id == "official-product-grid" || isDetailPage(id)
 }
 
 type productSetStyle struct {
@@ -114,7 +131,7 @@ func ProductSetConfig(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -153,6 +170,24 @@ func ProductSetConfig(w http.ResponseWriter, r *http.Request) {
 		{Title: "07 真实使用场景图", Src: "/examples/product-set/07-lifestyle.png"},
 		{Title: "08 收官价值视觉图", Src: "/examples/product-set/08-gift.png"},
 	}
+	if isDetailPage(item.ID) {
+		platforms = []productSetOption{
+			{Label: "淘宝", Value: "淘宝", IsDefault: true, MarketValues: []string{"中国"}},
+			{Label: "抖音", Value: "抖音", MarketValues: []string{"中国"}},
+			{Label: "小红书", Value: "小红书", MarketValues: []string{"中国"}},
+			{Label: "京东", Value: "京东", MarketValues: []string{"中国"}},
+			{Label: "拼多多", Value: "拼多多", MarketValues: []string{"中国"}},
+			{Label: "Amazon A+", Value: "Amazon A+", MarketValues: []string{"us", "eu", "日本"}},
+			{Label: "AliExpress", Value: "AliExpress", MarketValues: []string{"us", "eu", "sea", "日本", "韩国", "俄罗斯"}},
+			{Label: "Temu", Value: "Temu"}, {Label: "TikTok Shop", Value: "TikTok Shop"},
+			{Label: "eBay", Value: "eBay"}, {Label: "Etsy", Value: "Etsy"}, {Label: "Shopify", Value: "Shopify"},
+		}
+		examples = nil
+	}
+	imageCounts := []int{7, 8}
+	if isDetailPage(item.ID) {
+		imageCounts = nil // Detail modules follow the selected platform and the user's edited plan.
+	}
 	OK(w, map[string]any{
 		"entry":             map[string]any{"title": item.Title, "description": item.Description, "cover": item.CoverURL},
 		"platforms":         platforms,
@@ -160,7 +195,7 @@ func ProductSetConfig(w http.ResponseWriter, r *http.Request) {
 		"languages":         languages,
 		"examples":          examples,
 		"styles":            productSetStyles,
-		"targetImageCounts": []int{7, 8},
+		"targetImageCounts": imageCounts,
 	})
 }
 
@@ -175,7 +210,7 @@ func ProductSetAnalyze(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -192,7 +227,11 @@ func ProductSetAnalyze(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, "请选择目标平台、市场和语言")
 		return
 	}
-	text, err := productSetTextCompletion(r, item, user, fmt.Sprintf("请分析这些商品参考图，为%s平台、%s市场、%s文案语言生成一段适合电商套图的产品卖点说明。只输出可直接编辑的中文商品信息，包含产品名称、核心卖点、适用人群、使用场景和材质/规格；不要虚构图片中无法确认的参数。", request.Inputs.Platform, request.Inputs.Market, request.Inputs.Language), request.Inputs.Images)
+	useCase := "电商套图"
+	if isDetailPage(item.ID) {
+		useCase = "电商详情页"
+	}
+	text, err := productSetTextCompletion(r, item, user, fmt.Sprintf("请分析这些商品参考图，为%s平台、%s市场、%s文案语言生成一段适合%s的产品卖点说明。只输出可直接编辑的中文商品信息，包含产品名称、核心卖点、适用人群、使用场景和材质/规格；不要虚构图片中无法确认的参数。", request.Inputs.Platform, request.Inputs.Market, request.Inputs.Language, useCase), request.Inputs.Images)
 	if err != nil {
 		Fail(w, err.Error())
 		return
@@ -211,7 +250,7 @@ func ProductSetParse(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -228,7 +267,11 @@ func ProductSetParse(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, "请选择目标平台、市场和语言")
 		return
 	}
-	prompt := fmt.Sprintf("你是电商商品分析与视觉设计师。分析参考商品图片，为%s市场的%s平台、%s文案语言生成可编辑的产品信息和3种不同的商品套图设计风格。只返回JSON对象，格式为{\"productBrief\":\"产品名称、核心卖点、适用人群、使用场景和材质规格的说明\",\"styles\":[{\"title\":\"风格名称\",\"description\":\"可直接用于图片生成的详细视觉风格描述\"}]}。不要添加Markdown代码块，不要虚构图片中无法确认的功能和参数。", request.Inputs.Market, request.Inputs.Platform, request.Inputs.Language)
+	useCase := "商品套图"
+	if isDetailPage(item.ID) {
+		useCase = "详情页"
+	}
+	prompt := fmt.Sprintf("你是电商商品分析与视觉设计师。分析参考商品图片，为%s市场的%s平台、%s文案语言生成可编辑的产品信息和3种不同的%s设计风格。只返回JSON对象，格式为{\"productBrief\":\"产品名称、核心卖点、适用人群、使用场景和材质规格的说明\",\"styles\":[{\"title\":\"风格名称\",\"description\":\"可直接用于图片生成的详细视觉风格描述\"}]}。不要添加Markdown代码块，不要虚构图片中无法确认的功能和参数。", request.Inputs.Market, request.Inputs.Platform, request.Inputs.Language, useCase)
 	text, err := productSetTextCompletion(r, item, user, prompt, request.Inputs.Images)
 	if err != nil {
 		Fail(w, err.Error())
@@ -253,7 +296,7 @@ func ProductSetRecommendStyle(w http.ResponseWriter, r *http.Request, id string)
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -270,7 +313,11 @@ func ProductSetRecommendStyle(w http.ResponseWriter, r *http.Request, id string)
 		Fail(w, "最多上传 6 张商品图片")
 		return
 	}
-	text, err := productSetTextCompletion(r, item, user, fmt.Sprintf("你是电商视觉设计师。根据产品信息为%s市场的%s平台推荐3种不同的商品套图设计风格，文案语言为%s。产品信息：%s。只返回JSON对象，格式为{\"styles\":[{\"title\":\"风格名称\",\"description\":\"可直接用于图片生成的详细视觉风格描述\"}]}。不要解释，不要添加Markdown代码块，不要编造商品参数。", request.Inputs.Market, request.Inputs.Platform, request.Inputs.Language, strings.TrimSpace(request.Inputs.ProductBrief)), request.Inputs.Images)
+	useCase := "商品套图"
+	if isDetailPage(item.ID) {
+		useCase = "详情页"
+	}
+	text, err := productSetTextCompletion(r, item, user, fmt.Sprintf("你是电商视觉设计师。根据产品信息为%s市场的%s平台推荐3种不同的%s设计风格，文案语言为%s。产品信息：%s。只返回JSON对象，格式为{\"styles\":[{\"title\":\"风格名称\",\"description\":\"可直接用于图片生成的详细视觉风格描述\"}]}。不要解释，不要添加Markdown代码块，不要编造商品参数。", request.Inputs.Market, request.Inputs.Platform, useCase, request.Inputs.Language, strings.TrimSpace(request.Inputs.ProductBrief)), request.Inputs.Images)
 	if err != nil {
 		Fail(w, err.Error())
 		return
@@ -375,7 +422,7 @@ func ProductSetPlan(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -389,11 +436,25 @@ func ProductSetPlan(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	baseCards := plannedProductSetCards(request.Inputs)
+	if isDetailPage(item.ID) {
+		baseCards = plannedDetailPageCards(request.Inputs)
+		if err := validateDetailPageCards(baseCards); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+	}
 	structure := make([]map[string]string, 0, len(baseCards))
 	for _, card := range baseCards {
-		structure = append(structure, map[string]string{"id": card.ID, "category": card.Title, "requirements": productSetCategoryRequirements(card.ID)})
+		requirements := productSetCategoryRequirements(card.ID)
+		if isDetailPage(item.ID) {
+			requirements = card.Description
+		}
+		structure = append(structure, map[string]string{"id": card.ID, "category": card.Title, "requirements": requirements})
 	}
 	prompt := fmt.Sprintf("你是电商商品套图策划师。基于商品图片和已确认商品信息，为%s市场的%s平台设计%d张同一商品的完整套图，文案语言为%s。产品信息：%s。整套共享设计风格：%s。按以下图类顺序逐张规划，不可把结构说明、规格、细节等图类改成重复的氛围照片：%s。每张描述应明确商品视角与位置、背景、信息排版、要展示的真实卖点和画面内标题；白底主图不得加文字。所有图片必须保持同一商品和一致的色彩、字体、光线，只改变图类要求的构图。如果上传素材只有动物、人物或景物，且用户未确认售卖的商品，不得擅自当作宠物用品，也不能编造其材质、结构、尺寸或品牌。只返回JSON对象，格式为{\"cards\":[{\"title\":\"该图类的简短商品图名\",\"description\":\"具体构图、信息排版和画面内文案\"}]}，cards数量必须是%d。不输出图片、内部提示词模板或Markdown。", request.Inputs.Market, request.Inputs.Platform, len(baseCards), request.Inputs.Language, strings.TrimSpace(request.Inputs.ProductBrief), strings.TrimSpace(request.Inputs.StyleText), mustJSON(structure), len(baseCards))
+	if isDetailPage(item.ID) {
+		prompt = fmt.Sprintf("你是电商详情页策划师。为%s市场的%s平台规划%d个模块，输出方式：%s，文案语言：%s。商品资料：%s。统一风格与平台策略：%s。严格按以下结构及顺序：%s。平台为Etsy、TikTok Shop或eBay时，只规划真实商品照片的拍摄要求，不规划合成图或图片叠字。其他平台把无字画面说明与最终排版文字分开，图片模型只制作无字底图，前端负责准确排字。每个模块只讲一个重点，title是简短成品标题，body是简短正文，description只描述商品角度、构图和场景，不包含需要画进图片的文字。没有证据的尺寸、认证、功效、优惠和承诺必须省略；缺失信息不可推测。只返回JSON对象：{\"cards\":[{\"title\":\"标题\",\"body\":\"正文\",\"description\":\"无字画面或拍摄说明\"}]}，恰好%d项，不输出Markdown。", request.Inputs.Market, request.Inputs.Platform, len(baseCards), request.Inputs.CustomLayout, request.Inputs.Language, strings.TrimSpace(request.Inputs.ProductBrief), strings.TrimSpace(request.Inputs.StyleText), mustJSON(structure), len(baseCards))
+	}
 	references := append(append([]string{}, request.Inputs.Images...), request.Inputs.StyleReferenceImages...)
 	prompt += fmt.Sprintf("参考图前%d张为商品实拍，用来锁定商品；其后的%d张仅参考配色与排版，禁止把后面图片的商品当作本次主体。", len(request.Inputs.Images), len(request.Inputs.StyleReferenceImages))
 	text, err := productSetTextCompletion(r, item, user, prompt, references)
@@ -420,7 +481,7 @@ func ProductSetPlanPrice(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -458,7 +519,7 @@ func ProductSetImagePrice(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -499,6 +560,7 @@ func parseProductSetPlan(text string, baseCards []productSetCard) ([]productSetC
 	for index, base := range baseCards {
 		base.Category = base.Title
 		base.Title = strings.TrimSpace(result.Cards[index].Title)
+		base.Body = strings.TrimSpace(result.Cards[index].Body)
 		base.Description = strings.TrimSpace(result.Cards[index].Description)
 		if base.Title == "" || base.Description == "" {
 			return nil, errors.New("empty card content")
@@ -519,7 +581,7 @@ func ProductSetRun(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	if !ok || item.ID != "official-product-grid" {
+	if !ok || !isProductImageWorkspace(item.ID) {
 		Fail(w, "商品套图案例不存在")
 		return
 	}
@@ -532,6 +594,16 @@ func ProductSetRun(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, err.Error())
 		return
 	}
+	if isDetailPage(item.ID) {
+		if detailPagePhotoOnly(request.Inputs.Platform) {
+			Fail(w, "此平台采用实拍图库策略，请使用上传照片，不调用图片生成")
+			return
+		}
+		if err := validateDetailPageCards(plannedDetailPageCards(request.Inputs)); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+	}
 	var runtime caseRuntimeConfig
 	if err := json.Unmarshal([]byte(item.RuntimeConfig), &runtime); err != nil {
 		Fail(w, "商品套图运行配置无效")
@@ -543,6 +615,9 @@ func ProductSetRun(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	selected := selectedProductSetCards(request.Inputs)
+	if isDetailPage(item.ID) {
+		selected = selectedDetailPageCards(request.Inputs)
+	}
 	if len(selected) == 0 {
 		Fail(w, "请选择有效的套图方案后再生成")
 		return
@@ -576,12 +651,22 @@ func ProductSetRun(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	for _, card := range selected {
 		prompt := productSetPrompt(card, request.Inputs)
+		size := "1024x1024"
+		if isDetailPage(item.ID) {
+			prompt = detailPagePrompt(card, request.Inputs)
+			size = "1024x1536"
+			if card.AspectRatio == "1:1" {
+				size = "1024x1024"
+			} else if card.AspectRatio == "3:1" {
+				size = "1536x1024"
+			}
+		}
 		references := append([]string{}, request.Inputs.Images...)
 		references = append(references, request.Inputs.StyleReferenceImages...)
 		body, err := json.Marshal(map[string]any{
 			"model":                modelName,
 			"prompt":               prompt,
-			"size":                 "1024x1024",
+			"size":                 size,
 			"quality":              "high",
 			"image_url":            request.Inputs.Images[0],
 			"reference_image_urls": references,
@@ -707,6 +792,37 @@ func plannedProductSetCards(input productSetInput) []productSetCard {
 }
 
 func selectedProductSetCards(input productSetInput) []productSetCard {
+	return selectProductImageCards(input, plannedProductSetCards(input))
+}
+
+func selectedDetailPageCards(input productSetInput) []productSetCard {
+	return selectProductImageCards(input, plannedDetailPageCards(input))
+}
+
+func plannedDetailPageCards(input productSetInput) []productSetCard {
+	if len(input.PlanCards) > 0 {
+		return input.PlanCards
+	}
+	return detailPageCards
+}
+
+func validateDetailPageCards(cards []productSetCard) error {
+	seen := map[string]bool{}
+	for _, card := range cards {
+		if strings.TrimSpace(card.ID) == "" || seen[card.ID] || strings.TrimSpace(card.Title) == "" || strings.TrimSpace(card.Description) == "" {
+			return errors.New("详情页模块标识需唯一，标题与画面说明不能为空")
+		}
+		seen[card.ID] = true
+	}
+	return nil
+}
+
+func detailPagePhotoOnly(platform string) bool {
+	value := strings.ToLower(strings.TrimSpace(platform))
+	return strings.Contains(value, "etsy") || strings.Contains(value, "tiktok") || value == "ebay"
+}
+
+func selectProductImageCards(input productSetInput, baseCards []productSetCard) []productSetCard {
 	wanted := map[string]bool{}
 	for _, id := range input.CardIDs {
 		wanted[strings.TrimSpace(id)] = true
@@ -716,7 +832,7 @@ func selectedProductSetCards(input productSetInput) []productSetCard {
 	for _, card := range input.PlanCards {
 		planByID[card.ID] = card
 	}
-	for _, card := range plannedProductSetCards(input) {
+	for _, card := range baseCards {
 		if len(wanted) == 0 || wanted[card.ID] {
 			card.Category = card.Title
 			if planned, ok := planByID[card.ID]; ok && strings.TrimSpace(planned.Title) != "" && strings.TrimSpace(planned.Description) != "" {
@@ -727,6 +843,14 @@ func selectedProductSetCards(input productSetInput) []productSetCard {
 		}
 	}
 	return result
+}
+
+func detailPagePrompt(card productSetCard, input productSetInput) string {
+	style := strings.TrimSpace(input.StyleText)
+	if style == "" {
+		style = "商品优先、清晰易读、克制的电商视觉"
+	}
+	return fmt.Sprintf("为电商详情页制作一个独立模块的无字底图。模块：%s；画面说明：%s。商品事实：%s。目标平台：%s；市场：%s。整页视觉规范：%s。所有模块保持一致的商品身份、背景色和光线。主体完整展示，四周留白，不裁断商品。参考图前%d张是本次商品，保持外形、颜色、材质、Logo和结构；其后的%d张仅供风格与排版参考，不能带入其他商品。只使用用户明确提供或图片可见的信息，没有证据的尺寸、认证、功效、价格、承诺或配件必须省略。禁止添加标题、正文、字母、数字、营销贴纸、水印或标注；排版文字由程序另行绘制，即使画面说明要求加字也不要绘制。不要改变商品原本存在的标识。只输出单张无字底图，不输出拼贴、解释或其他模块。", card.Title, card.Description, strings.TrimSpace(input.ProductBrief), strings.TrimSpace(input.Platform), strings.TrimSpace(input.Market), style, len(input.Images), len(input.StyleReferenceImages))
 }
 
 func productSetPrompt(card productSetCard, input productSetInput) string {

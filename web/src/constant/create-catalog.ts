@@ -1,4 +1,4 @@
-import { Blend, Clapperboard, Copy, Eraser, FileText, ImagePlus, Layers3, Maximize2, Palette, Scissors, ShieldCheck, Shirt, Stamp, Type, Wand2, Wind, type LucideIcon } from "lucide-react";
+import { Blend, Captions, Clapperboard, Copy, Eraser, FileText, ImagePlus, Layers3, Maximize2, Palette, Replace, Scissors, ShieldCheck, Shirt, Sparkles, Stamp, Type, Wand2, Wind, type LucideIcon } from "lucide-react";
 
 export type CatalogItem = {
     id: string;
@@ -76,6 +76,7 @@ const officialCase = (id: string, title: string, category: string, icon: LucideI
 
 export const officialCaseItems: CatalogItem[] = [
     { ...productSetItem, category: "常用工具" },
+    { ...officialCase("official-detail-page", "详情页", "常用工具", FileText), description: "按平台制作详情长图、切片、A+ 模块和实拍图库。", href: "/cases/detail-page" },
     { ...officialCase("official-image-variations", "图裂变", "常用工具", Copy), href: "/cases/image-variations" },
     officialCase("official-cutout", "AI 抠图", "图像处理", Scissors),
     officialCase("official-upscale", "AI 变清晰", "图像处理", Wand2),
@@ -97,4 +98,18 @@ export const createToolGroups = [
     { label: "图像处理", items: officialCaseItems.filter((item) => item.category === "图像处理") },
     { label: "服装电商", items: officialCaseItems.filter((item) => item.category === "服装电商") },
     { label: "营销工具", items: officialCaseItems.filter((item) => item.category === "营销工具") },
+];
+
+export const videoToolGroups = [
+    { label: "视频创作", items: [
+        { id: "video-photo-talk", title: "照片说话", description: "上传人物照片和音频，让照片中的人物开口说话。", category: "视频创作", medium: "video", source: "official", price: "按音频时长报价", href: "/video/photo-talk", icon: ImagePlus },
+        { id: "video-replace", title: "内容替换", description: "替换视频中的人物或内容。", category: "视频创作", medium: "video", source: "official", price: "按模型报价", href: "/video/content-replace", icon: Replace },
+        { id: "video-explore", title: "探店视频", description: "把门店素材整理成可发布的探店视频。", category: "视频创作", medium: "video", source: "official", price: "按任务报价", href: "/video/store-explore", icon: Sparkles },
+        { id: "video-recreate", title: "爆款复刻", description: "参考热门视频复刻脚本、动作和节奏。", category: "视频创作", medium: "video", source: "official", price: "按任务报价", href: "/video/viral-recreate", icon: Clapperboard },
+    ] satisfies CatalogItem[] },
+    { label: "视频处理", items: [
+        { id: "video-lipsync", title: "视频对口型", description: "上传人物视频和新音频，保留画面动作并匹配新口型。", category: "视频处理", medium: "video", source: "official", price: "按音频时长报价", href: "/video/lipsync", icon: Replace },
+        { id: "video-upscale", title: "视频高清", description: "提升视频清晰度并补帧。", category: "视频处理", medium: "video", source: "official", price: "按任务报价", href: "/video/upscale", icon: Wand2 },
+        { id: "video-subtitle-remove", title: "字幕去除", description: "识别并修复视频中的硬字幕区域。", category: "视频处理", medium: "video", source: "official", price: "按任务报价", href: "/video/subtitle-remove", icon: Captions },
+    ] satisfies CatalogItem[] },
 ];

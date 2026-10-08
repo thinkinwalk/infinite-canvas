@@ -1,9 +1,9 @@
-import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 export const SEEDANCE_REFERENCE_LIMITS = {
-    images: 9,
+    images: 7,
     videos: 3,
     audios: 3,
     imageMaxBytes: 30 * 1024 * 1024,
@@ -58,7 +58,8 @@ const seedancePixels = {
 
 export function isSeedanceVideoConfig(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "baseUrl">) {
     const requestConfig = "channels" in config ? resolveModelRequestConfig(config, config.model || config.videoModel) : config;
-    return isArkPlanBaseUrl(requestConfig.baseUrl);
+    const profiles = (requestConfig as AiConfig).videoModels || {};
+    return isArkPlanBaseUrl(requestConfig.baseUrl) || profiles[modelOptionName(requestConfig.model || requestConfig.videoModel)]?.interface === "ark";
 }
 
 export function isSeedanceVideoModel(model: string) {

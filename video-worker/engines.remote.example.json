@@ -1,0 +1,14 @@
+{
+  "musetalk": {
+    "required_env": ["GPU_WORKER_URL"],
+    "command": ["{python}", "{adapter_dir}/gpu_worker.py", "--operation", "digital-human", "--avatar", "{avatar}", "--audio", "{audio}", "--output", "{output}"]
+  },
+  "wan-animate": {
+    "required_env": ["GPU_WORKER_URL"],
+    "command": ["{python}", "{adapter_dir}/gpu_worker.py", "--operation", "replace", "--replacement", "person", "--video", "{video}", "--image", "{image}", "--prompt", "{prompt}", "--output", "{output}"]
+  },
+  "vace": {
+    "required_env": ["GPU_WORKER_URL"],
+    "command": ["{python}", "{adapter_dir}/gpu_worker.py", "--operation", "replace", "--replacement", "{replacement}", "--video", "{video}", "--image", "{image}", "--mask", "{mask}", "--background", "{background}", "--prompt", "{prompt}", "--output", "{output}"]
+  }
+}

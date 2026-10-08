@@ -48,7 +48,7 @@ export type ProductSetInput = {
     planCards?: ProductSetCard[];
 };
 
-export type ProductSetCard = { id: string; category?: string; title: string; description: string; aspectRatio: string };
+export type ProductSetCard = { id: string; category?: string; title: string; body?: string; description: string; aspectRatio: string };
 export type ProductSetStyle = { id: string; title: string; description: string };
 export type ProductSetPlan = { cards: ProductSetCard[]; styles: ProductSetStyle[]; targetImageCount: number };
 export type ProductSetRunResult = { items: Array<{ cardId: string; category?: string; title: string; description?: string; data?: unknown; error?: string }>; failed: number; total: number };

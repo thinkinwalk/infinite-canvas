@@ -6,16 +6,18 @@ import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
-import { type AiConfig } from "@/stores/use-config-store";
+import { modelCapabilityOf, type AiConfig } from "@/stores/use-config-store";
+import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription } from "@/lib/video-capabilities";
 
 const resolutionOptions = [
     { value: "480", label: "480p" },
     { value: "720", label: "720p" },
     { value: "1080", label: "1080p" },
 ];
-const videoModeOptions = [
-    { value: "frames", labelKey: "frames" },
-    { value: "reference", labelKey: "reference" },
+const videoInputModeOptions = [
+    { value: "first_last", label: "首尾帧" },
+    { value: "reference", label: "参考" },
+    { value: "first_frame_only", label: "文生 / 单首帧" },
 ];
 
 export const videoResolutionOptions = resolutionOptions.map((item) => ({ value: item.value, label: item.label }));
@@ -24,7 +26,7 @@ export const videoSecondsRange = { min: VIDEO_SECONDS_MIN, max: VIDEO_SECONDS_MA
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoInputMode" | "videoInterpolate", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -33,7 +35,10 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
-    const videoMode = normalizeVideoModeValue(config.videoMode);
+    const selectedModel = config.model && modelCapabilityOf(config, config.model) === "video" ? config.model : config.videoModel || config.model;
+    const profile = videoProfile(config, selectedModel);
+    const availableModes = supportedVideoInputModes(profile);
+    const inputMode = resolveVideoInputMode({ ...config, videoInputMode: config.videoInputMode }, selectedModel);
     const resolution = parseVideoResolution(config.vquality);
     const selectedRatio = inferVideoRatio(config.size || "auto");
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
@@ -91,14 +96,14 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
                     </div>
                 </SettingGroup>
-                <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
-                    <div className="grid grid-cols-2 gap-2.5">
-                        {videoModeOptions.map((item) => (
-                            <OptionPill key={item.value} selected={videoMode === item.value} theme={theme} onClick={() => onConfigChange("videoMode", item.value)}>
-                                {t(`settingsPanels.video.modes.${item.labelKey}`)}
-                            </OptionPill>
-                        ))}
+                <SettingGroup title={t("settingsPanels.video.inputMode")} color={theme.node.muted}>
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {videoInputModeOptions.map((item) => {
+                            const enabled = availableModes.includes(item.value);
+                            return <OptionPill key={item.value} selected={inputMode === item.value} disabled={!enabled} theme={theme} onClick={() => onConfigChange("videoInputMode", item.value)}>{item.label}</OptionPill>;
+                        })}
                     </div>
+                    <p className="text-xs leading-5" style={{ color: theme.node.muted }}>{videoInputDescription(profile, inputMode)}</p>
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
@@ -119,12 +124,12 @@ export function videoSecondsLabel(value: string) {
     return `${value || "6"}s`;
 }
 
-export function videoModeLabel(value: string) {
-    return i18n.t(`settingsPanels.video.modes.${normalizeVideoModeValue(value)}`);
+export function videoInputModeLabel(value: string) {
+    return videoInputModeOptions.find((item) => item.value === value)?.label || "参考";
 }
 
 export function normalizeVideoModeValue(value: string | undefined) {
-    return value === "reference" ? "reference" : "frames";
+    return value === "first_last" || value === "first_frame_only" ? value : "reference";
 }
 
 export function normalizeVideoSizeValue(value: string, resolution = "720") {
@@ -217,3 +222,5 @@ function SizePreview({ width, height, color }: { width: number; height: number; 
     const previewHeight = Math.max(10, Math.round((height / longSide) * 26));
     return <span className="rounded-[3px] border-2" style={{ width: previewWidth, height: previewHeight, borderColor: color }} />;
 }
+
+

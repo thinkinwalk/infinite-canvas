@@ -1,0 +1,4 @@
+-r requirements.txt
+faster-whisper>=1.1,<2
+
+msvc-runtime>=14.42; platform_system == "Windows"

@@ -9,6 +9,7 @@ export type WorkbenchCommand = {
     taskId?: string;
     prompt?: string;
     run: boolean;
+    templateInput?: { title: string; inputHint: string; minReferenceImages: number };
 };
 
 export type WorkbenchGenerationTask = {

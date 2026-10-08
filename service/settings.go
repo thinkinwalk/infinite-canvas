@@ -33,10 +33,20 @@ func PublicSettingsForGroup(userGroup string) (model.PublicSetting, error) {
 	normalized := normalizeSettings(settings)
 	channels := modelChannelsForGroup(normalized.Private.Channels, "", userGroup)
 	normalized.Public.ModelChannel.AvailableModels = enabledChannelModels(channels)
+	normalized.Public.ModelChannel.VideoModels = publicVideoProfiles(channels)
 	normalized.Public.ModelChannel.DefaultTextModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultTextModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
 	normalized.Public.ModelChannel.DefaultImageModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultImageModel, normalized.Public.ModelChannel.AvailableModels, isImageModelName)
 	normalized.Public.ModelChannel.DefaultVideoModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultVideoModel, normalized.Public.ModelChannel.AvailableModels, isVideoModelName)
 	normalized.Public.ModelChannel.DefaultModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
+	normalized.Public.ReplicateVideoModels = nil
+	if normalized.Private.Replicate.APIKey != "" || os.Getenv("REPLICATE_API_TOKEN") != "" {
+		for _, spec := range ReplicateModels() {
+			price := normalized.Private.Replicate.Pricing[spec.Model]
+			if (spec.Operation == "image-to-video" || spec.Operation == "hailuo-video") && price.Enabled && price.Version == spec.Version {
+				normalized.Public.ReplicateVideoModels = append(normalized.Public.ReplicateVideoModels, spec.Model)
+			}
+		}
+	}
 	return normalized.Public, nil
 }
 
@@ -167,6 +177,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Groups[key] = group
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
+	setting.Replicate = normalizeReplicatePricing(setting.Replicate)
 	for i := range setting.Channels {
 		if setting.Channels[i].Protocol == "" {
 			setting.Channels[i].Protocol = "openai"
@@ -178,6 +189,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		if setting.Channels[i].Weight <= 0 {
 			setting.Channels[i].Weight = 1
 		}
+		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
 	return setting
 }
@@ -382,6 +394,22 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	}
 	if channel.Weight <= 0 {
 		channel.Weight = 1
+	}
+	if channel.VideoModels == nil { channel.VideoModels = map[string]model.VideoModelProfile{} }
+	for _, name := range channel.Models {
+		if !isVideoModelName(name) { continue }
+		profile := VideoProfile(channel, name)
+		if profile.DisplayName == "" { profile.DisplayName = name }
+		if profile.Description == "" { profile.Description = "根据文字及支持的参考素材制作视频。" }
+		if profile.Resolutions == nil { profile.Resolutions = []string{"480", "720", "1080"} }
+		if profile.Seconds == nil { profile.Seconds = []string{} }
+		profile.MaxImages = max(0, min(7, profile.MaxImages))
+		profile.MaxVideos = max(0, min(3, profile.MaxVideos))
+		profile.MaxAudios = max(0, min(3, profile.MaxAudios))
+		if profile.Interface != "relay" && profile.Interface != "ark" && profile.Interface != "unavailable" {
+			profile.Interface, profile.MaxVideos, profile.MaxAudios = "openai", 0, 0
+		}
+		channel.VideoModels[name] = profile
 	}
 	return channel
 }

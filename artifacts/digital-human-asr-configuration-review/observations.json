@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "oldBackendExplainedAndBothActionsBlocked": true,
+    "noUploadOrTaskWhenUnavailable": true,
+    "disabledPricingExplained": true,
+    "catalogFailureDistinguished": true,
+    "openTabRecoversAfterRefresh": true,
+    "oldRecordMessageCorrected": true,
+    "mobileNoHorizontalOverflow": true
+  },
+  "pageErrors": [],
+  "uploads": 0,
+  "creates": 0,
+  "simulated": true
+}

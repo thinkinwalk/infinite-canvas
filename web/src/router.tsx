@@ -6,6 +6,7 @@ import AssetsPage from "@/pages/assets";
 import CasesPage from "@/pages/cases";
 import CreatorCasesPage from "@/pages/cases/creator";
 import ProductSetWorkspacePage from "@/pages/cases/product-set-workspace";
+import DetailPageWorkspace from "@/pages/cases/detail-page";
 import ImageVariationsWorkspacePage from "@/pages/cases/image-variations-workspace";
 import AdminPage from "@/pages/admin";
 import CanvasPage from "@/pages/canvas";
@@ -18,6 +19,7 @@ import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import RegisterPage from "@/pages/register";
 import VideoPage from "@/pages/video";
+import VideoToolPage from "@/pages/video-tool";
 
 export const router = createBrowserRouter([
     {
@@ -34,10 +36,13 @@ export const router = createBrowserRouter([
             { path: "/home", element: <HomePage /> },
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
+            { path: "/video/:tool", element: <VideoToolPage /> },
+            { path: "/digital-human", element: <VideoToolPage /> },
             { path: "/assets", element: <AssetsPage /> },
             { path: "/cases", element: <CasesPage /> },
             { path: "/ipcheck", element: <CasesPage /> },
             { path: "/cases/product-listing-set", element: <ProductSetWorkspacePage /> },
+            { path: "/cases/detail-page", element: <DetailPageWorkspace /> },
             { path: "/cases/image-variations", element: <ImageVariationsWorkspacePage /> },
             { path: "/image-creation", element: <ProductSetEntry /> },
             { path: "/assets/cases", element: <CreatorCasesPage /> },
@@ -62,3 +67,4 @@ function CreateRedirect() {
     const { search, hash } = useLocation();
     return <Navigate to={`/create${search}${hash}`} replace />;
 }
+

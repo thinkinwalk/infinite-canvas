@@ -240,9 +240,28 @@ export type AdminModelChannel = {
     enabled: boolean;
     remark: string;
     allowedGroups: string[];
+    videoModels?: Record<string, VideoModelProfile>;
+};
+
+export type VideoModelProfile = {
+    inputModes?: string[];
+    firstFrameRequired?: boolean;
+    lastFrameOptional?: boolean;
+    firstFrameField?: string;
+    lastFrameField?: string;
+    displayName: string;
+    description: string;
+    interface: "openai" | "relay" | "ark" | "unavailable";
+    maxImages: number;
+    maxVideos: number;
+    maxAudios: number;
+    resolutions: string[];
+    seconds: string[];
+    generateAudio: boolean;
 };
 
 export type AdminPublicModelChannelSettings = {
+    videoModels?: Record<string, VideoModelProfile>;
     availableModels: string[];
     modelCosts: AdminModelCost[];
     defaultModel: string;
@@ -258,7 +277,20 @@ export type AdminModelCost = {
     credits: number;
 };
 
+export type AdminReplicatePricing = {
+    model: string;
+    version: string;
+    billingMode: string;
+    unitCredits: number;
+    minimumCredits: number;
+    defaultUnits: number;
+    blockSeconds: number;
+    tiers: Record<string, number>;
+    enabled: boolean;
+};
+
 export type AdminPublicSettings = {
+	replicateVideoModels?: string[];
     modelChannel: AdminPublicModelChannelSettings;
     adminContact: {
         qq: string;
@@ -286,6 +318,8 @@ export type AdminPrivateSettings = {
         };
     };
     replicate: {
+        modelCredits?: Record<string, number | null>;
+        pricing?: Record<string, AdminReplicatePricing>;
         apiKey: string;
         apiKeyConfigured: boolean;
         clearApiKey: boolean;

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Grid2X2, Image as ImageIcon, Video, type LucideIcon } from "lucide-react";
+import { ChevronDown, Grid2X2, Image as ImageIcon, UserRound, Video, type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
-import { createToolGroups, type CatalogItem } from "@/constant/create-catalog";
+import { createToolGroups, videoToolGroups, type CatalogItem } from "@/constant/create-catalog";
 
 type ToolGroup = {
     label: string;
@@ -112,7 +112,7 @@ function WorkbenchMenu({ label, href, icon: Icon, groups = [], active = false }:
                     type="button"
                     aria-expanded={open}
                     aria-controls={`${href.slice(1)}-quick-menu`}
-                    onClick={() => setOpen((value) => !value)}
+                    onClick={() => setOpen(true)}
                     title={`打开${label}工具菜单`}
                     className={`flex items-center border-b-2 pl-1 font-semibold transition ${active ? "border-[#217a65] text-[#176854] dark:text-[#80d1b9]" : "border-transparent text-[#65737a] hover:text-[#182025] dark:text-stone-400 dark:hover:text-white"}`}
                 >
@@ -149,14 +149,20 @@ function WorkbenchMenu({ label, href, icon: Icon, groups = [], active = false }:
 export function CreateMenu({ active = true }: { active?: boolean }) {
     const location = useLocation();
     const imageActive = active && (/^\/cases(\/|$)/.test(location.pathname) || location.pathname === "/image");
-    const videoActive = active && location.pathname === "/video";
+    const videoActive = active && (/^\/video(\/|$)/.test(location.pathname));
+    const digitalHumanActive = active && location.pathname === "/digital-human";
     const canvasActive = active && /^\/canvas(\/|$)/.test(location.pathname);
 
     return (
         <>
             <WorkbenchMenu label="图片制作" href="/image" icon={ImageIcon} groups={createToolGroups} active={imageActive} />
-            <WorkbenchMenu label="视频制作" href="/video" icon={Video} active={videoActive} />
+            <WorkbenchMenu label="视频制作" href="/video" icon={Video} groups={videoToolGroups} active={videoActive} />
+            <WorkbenchMenu label="数字人" href="/digital-human" icon={UserRound} active={digitalHumanActive} />
             <WorkbenchMenu label="无限画布" href="/canvas" icon={Grid2X2} active={canvasActive} />
         </>
     );
 }
+
+
+
+

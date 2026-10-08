@@ -11,15 +11,34 @@ const (
 
 // ModelChannel 模型渠道配置。
 type ModelChannel struct {
-	Protocol      string   `json:"protocol"`
-	Name          string   `json:"name"`
-	BaseURL       string   `json:"baseUrl"`
-	APIKey        string   `json:"apiKey"`
-	Models        []string `json:"models"`
-	Weight        int      `json:"weight"`
-	Enabled       bool     `json:"enabled"`
-	Remark        string   `json:"remark"`
-	AllowedGroups []string `json:"allowedGroups"`
+	Protocol      string                       `json:"protocol"`
+	Name          string                       `json:"name"`
+	BaseURL       string                       `json:"baseUrl"`
+	APIKey        string                       `json:"apiKey"`
+	Models        []string                     `json:"models"`
+	Weight        int                          `json:"weight"`
+	Enabled       bool                         `json:"enabled"`
+	Remark        string                       `json:"remark"`
+	AllowedGroups []string                     `json:"allowedGroups"`
+	VideoModels   map[string]VideoModelProfile `json:"videoModels,omitempty"`
+}
+
+// VideoModelProfile describes the inputs verified for a model on this channel.
+type VideoModelProfile struct {
+	InputModes         []string `json:"inputModes"`
+	FirstFrameRequired bool     `json:"firstFrameRequired"`
+	LastFrameOptional  bool     `json:"lastFrameOptional"`
+	FirstFrameField    string   `json:"firstFrameField"`
+	LastFrameField     string   `json:"lastFrameField"`
+	DisplayName        string   `json:"displayName"`
+	Description        string   `json:"description"`
+	Interface          string   `json:"interface"`
+	MaxImages          int      `json:"maxImages"`
+	MaxVideos          int      `json:"maxVideos"`
+	MaxAudios          int      `json:"maxAudios"`
+	Resolutions        []string `json:"resolutions"`
+	Seconds            []string `json:"seconds"`
+	GenerateAudio      bool     `json:"generateAudio"`
 }
 
 type UserGroup struct {
@@ -36,21 +55,23 @@ type ModelCost struct {
 
 // PublicModelChannelSetting 公开模型渠道配置。
 type PublicModelChannelSetting struct {
-	AvailableModels    []string    `json:"availableModels"`
-	ModelCosts         []ModelCost `json:"modelCosts"`
-	DefaultModel       string      `json:"defaultModel"`
-	DefaultImageModel  string      `json:"defaultImageModel"`
-	DefaultVideoModel  string      `json:"defaultVideoModel"`
-	DefaultTextModel   string      `json:"defaultTextModel"`
-	SystemPrompt       string      `json:"systemPrompt"`
-	AllowCustomChannel *bool       `json:"allowCustomChannel"`
+	AvailableModels    []string                     `json:"availableModels"`
+	ModelCosts         []ModelCost                  `json:"modelCosts"`
+	DefaultModel       string                       `json:"defaultModel"`
+	DefaultImageModel  string                       `json:"defaultImageModel"`
+	DefaultVideoModel  string                       `json:"defaultVideoModel"`
+	DefaultTextModel   string                       `json:"defaultTextModel"`
+	SystemPrompt       string                       `json:"systemPrompt"`
+	AllowCustomChannel *bool                        `json:"allowCustomChannel"`
+	VideoModels        map[string]VideoModelProfile `json:"videoModels,omitempty"`
 }
 
 // PublicSetting 公开配置。
 type PublicSetting struct {
-	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
-	Auth         PublicAuthSetting         `json:"auth"`
-	AdminContact AdminContactSetting       `json:"adminContact"`
+	ModelChannel         PublicModelChannelSetting `json:"modelChannel"`
+	ReplicateVideoModels []string                  `json:"replicateVideoModels,omitempty"`
+	Auth                 PublicAuthSetting         `json:"auth"`
+	AdminContact         AdminContactSetting       `json:"adminContact"`
 }
 
 type AdminContactSetting struct {
@@ -77,9 +98,27 @@ type PrivateSetting struct {
 }
 
 type ReplicateSetting struct {
-	APIKey           string `json:"apiKey"`
-	APIKeyConfigured bool   `json:"apiKeyConfigured"`
-	ClearAPIKey      bool   `json:"clearApiKey"`
+	// ModelCredits is retained as a fallback for settings saved before model-aware pricing.
+	ModelCredits     map[string]*int             `json:"modelCredits"`
+	Pricing          map[string]ReplicatePricing `json:"pricing"`
+	APIKey           string                      `json:"apiKey"`
+	APIKeyConfigured bool                        `json:"apiKeyConfigured"`
+	ClearAPIKey      bool                        `json:"clearApiKey"`
+}
+
+// ReplicatePricing describes the platform price for one pinned Replicate model.
+// UnitCredits is used directly for fixed, per-second, per-character, or per-output prices.
+// Tiers is keyed by the model's user-visible options, for example "base:480p" or "1080p:30".
+type ReplicatePricing struct {
+	Model          string         `json:"model"`
+	Version        string         `json:"version"`
+	BillingMode    string         `json:"billingMode"`
+	UnitCredits    int            `json:"unitCredits"`
+	MinimumCredits int            `json:"minimumCredits"`
+	DefaultUnits   int            `json:"defaultUnits"`
+	BlockSeconds   int            `json:"blockSeconds"`
+	Tiers          map[string]int `json:"tiers"`
+	Enabled        bool           `json:"enabled"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。

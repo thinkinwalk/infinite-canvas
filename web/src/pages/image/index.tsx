@@ -18,7 +18,7 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
+import { useWorkbenchAgentStore, type WorkbenchCommand } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
 
@@ -80,6 +80,7 @@ export default function ImagePage() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
+    const [templateInput, setTemplateInput] = useState<WorkbenchCommand["templateInput"]>();
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
@@ -156,6 +157,12 @@ export default function ImagePage() {
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("imageWorkbench.promptRequired") });
             return;
         }
+        if (templateInput && references.length < templateInput.minReferenceImages) {
+            const error = `此模板需要至少 ${templateInput.minReferenceImages} 张参考图，请先补齐：${templateInput.inputHint}`;
+            message.warning(error);
+            if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error });
+            return;
+        }
         if (!isAiConfigReady(effectiveConfig, model)) {
             message.warning(t("workbench.configFirst"));
             openConfigDialog(true);
@@ -213,6 +220,7 @@ export default function ImagePage() {
         processedCommandRef.current = imageCommand.nonce;
         clearImageCommand();
         if (typeof imageCommand.prompt === "string") setPrompt(imageCommand.prompt);
+        setTemplateInput(imageCommand.templateInput);
         if (imageCommand.run && running) {
             if (imageCommand.taskId) updateAgentTask(imageCommand.taskId, { status: "failed", error: t("imageWorkbench.busy") });
             return;
@@ -256,6 +264,7 @@ export default function ImagePage() {
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
         if (payload.kind === "text") {
             setPrompt(payload.content);
+            setTemplateInput(undefined);
         } else if (payload.kind === "image") {
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
@@ -267,6 +276,7 @@ export default function ImagePage() {
 
     const createSession = () => {
         setPrompt("");
+        setTemplateInput(undefined);
         setReferences([]);
         setResults([]);
         setElapsedMs(0);
@@ -296,6 +306,7 @@ export default function ImagePage() {
         setPreviewLog(log);
         setLogsOpen(false);
         setPrompt(log.prompt);
+        setTemplateInput(undefined);
         setReferences(log.references || []);
         if (log.config.imageModel || log.model) updateConfig("imageModel", log.config.imageModel || log.model);
         if (log.config.quality) updateConfig("quality", log.config.quality);
@@ -408,6 +419,7 @@ export default function ImagePage() {
                                     </div>
                                 </div>
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("imageWorkbench.promptPlaceholder")} />
+                                {templateInput ? <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400"><span className="font-medium">{templateInput.title}</span> · 请准备：{templateInput.inputHint}。{templateInput.minReferenceImages ? `参考图 ${references.length}/${templateInput.minReferenceImages} 张（至少），按资料说明排列。` : "可直接文字生图。"}<Button type="link" size="small" onClick={() => setTemplateInput(undefined)}>取消模板要求</Button></div> : null}
                             </div>
 
                             <div className="min-w-0">
@@ -545,7 +557,7 @@ export default function ImagePage() {
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
-            <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
+            <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={(text, item) => { setPrompt(text); setTemplateInput({ title: item.title, inputHint: item.inputHint || "", minReferenceImages: item.minReferenceImages ?? (item.requiresRef ? 1 : 0) }); }} />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title={t("workbench.deleteLogs")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("workbench.deleteLogsConfirm", { count: selectedLogIds.length })}

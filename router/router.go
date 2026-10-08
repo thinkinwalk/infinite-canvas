@@ -43,7 +43,16 @@ func New() *gin.Engine {
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
+	v1.POST("/models/quote", gin.WrapF(handler.ModelQuote))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
+    v1.Any("/video-worker/*path", func(c *gin.Context) { handler.VideoWorkerGateway(c.Writer,c.Request,c.Param("path")) })
+    v1.GET("/replicate/models", gin.WrapF(handler.ReplicateCatalog))
+    v1.POST("/replicate/quote", gin.WrapF(handler.ReplicatePrice))
+    v1.POST("/replicate/tasks", gin.WrapF(handler.CreateReplicateTask))
+    v1.GET("/replicate/tasks/:id", func(c *gin.Context) { handler.ReadReplicateTask(c.Writer,c.Request,c.Param("id")) })
+    v1.POST("/replicate/tasks/:id/cancel", func(c *gin.Context) { handler.CancelReplicateTask(c.Writer,c.Request,c.Param("id")) })
+    v1.GET("/replicate/tasks/:id/content", func(c *gin.Context) { handler.ReplicateTaskContent(c.Writer,c.Request,c.Param("id")) })
+
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
 	})
@@ -108,6 +117,7 @@ func New() *gin.Engine {
 	admin.DELETE("/users/:id", func(c *gin.Context) {
 		handler.AdminDeleteUser(c.Writer, c.Request, c.Param("id"))
 	})
+	admin.POST("/replicate/tasks/:id/reconcile", func(c *gin.Context) { handler.AdminReconcileReplicateTask(c.Writer,c.Request,c.Param("id")) })
 	admin.GET("/credit-logs", gin.WrapF(handler.AdminCreditLogs))
 	admin.GET("/redemption-codes", gin.WrapF(handler.AdminRedemptionCodes))
 	admin.POST("/redemption-codes", gin.WrapF(handler.AdminCreateRedemptionCodes))

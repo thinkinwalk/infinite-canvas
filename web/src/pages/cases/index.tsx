@@ -787,6 +787,7 @@ export default function CasesPage() {
         setRunning(false);
         try {
             if (id === "official-product-grid") navigate("/cases/product-listing-set", { replace: true });
+            else if (id === "official-detail-page") navigate("/cases/detail-page", { replace: true });
             else if (id === "official-image-variations") navigate("/cases/image-variations", { replace: true });
             else if (id === "official-ai-image") navigate("/image", { replace: true });
             else if (id) {
@@ -1125,7 +1126,7 @@ export default function CasesPage() {
                                 hoverable
                                 className="overflow-hidden"
                                 styles={{ body: { padding: 0 } }}
-                                onClick={() => navigate(item.id === "official-product-grid" ? "/cases/product-listing-set" : item.id === "official-image-variations" ? "/cases/image-variations" : `/cases?case=${encodeURIComponent(item.id)}`)}
+                                onClick={() => navigate(item.id === "official-product-grid" ? "/cases/product-listing-set" : item.id === "official-detail-page" ? "/cases/detail-page" : item.id === "official-image-variations" ? "/cases/image-variations" : `/cases?case=${encodeURIComponent(item.id)}`)}
                             >
                                 {!officialCaseItems.some((tool) => tool.id === item.id) ? (
                                     <div className="aspect-[16/9] bg-stone-100 dark:bg-stone-900">

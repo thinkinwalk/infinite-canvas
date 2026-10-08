@@ -53,6 +53,8 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
 
 export async function cleanupUnusedMedia(usedData: unknown) {
     const usedKeys = collectMediaStorageKeys(usedData);
+    const videoLogs = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
+    await videoLogs.iterate((value) => { collectMediaStorageKeys(value, usedKeys); });
     const unused: string[] = [];
     await store.iterate((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);
@@ -70,7 +72,7 @@ export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()
 function readVideoMeta(url: string) {
     return new Promise<{ width: number; height: number; durationMs?: number }>((resolve) => {
         const video = document.createElement("video");
-        const done = () => resolve({ width: video.videoWidth || 1280, height: video.videoHeight || 720, durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined });
+        const done = () => resolve({ width: video.videoWidth, height: video.videoHeight, durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined });
         video.onloadedmetadata = done;
         video.onerror = done;
         video.src = url;

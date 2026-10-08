@@ -1,9 +1,10 @@
 import { ArrowUpRight, Copy, FileText, ImagePlus } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button, Card, Tag } from "antd";
+import { useState } from "react";
+import { Button, Card } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { formatPromptDate, getPromptScenario, type Prompt } from "@/services/api/prompts";
+import { getPromptScenario, type Prompt } from "@/services/api/prompts";
 
 export function PromptCard({
     item,
@@ -24,9 +25,10 @@ export function PromptCard({
     extraAction?: ReactNode;
     compact?: boolean;
 }) {
-    const { i18n, t } = useTranslation();
+    const { t } = useTranslation();
+    const [imageFailed, setImageFailed] = useState(false);
     const scenario = getPromptScenario(item);
-    const description = item.description || item.problem || t("prompts.noDescription");
+    const description = item.problem || item.description || t("prompts.noDescription");
 
     return (
         <Card
@@ -35,7 +37,7 @@ export function PromptCard({
             styles={{ body: compact ? { padding: 0 } : { display: "flex", flex: 1, flexDirection: "column", padding: 0 } }}
             cover={
                 <button type="button" className="block w-full cursor-pointer overflow-hidden text-left" onClick={onOpen}>
-                    {item.coverUrl ? <img src={item.coverUrl} alt={item.title} className="block h-auto max-h-[22rem] min-h-32 w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" /> : <span className="grid aspect-[4/3] w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"><FileText className="size-8" /></span>}
+                    {item.coverUrl && !imageFailed ? <img src={item.coverUrl} alt={item.title} className="block h-auto w-full transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" onError={() => setImageFailed(true)} /> : <span className="grid aspect-[4/3] w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"><FileText className="size-8" /></span>}
                 </button>
             }
         >
@@ -46,12 +48,11 @@ export function PromptCard({
                             <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-stone-500 dark:text-stone-400"><ImagePlus className="size-3" />{scenario}</div>
                             <h2 className="line-clamp-2 text-sm font-semibold leading-5 text-stone-950 dark:text-stone-100">{item.title}</h2>
                         </div>
-                        {!compact ? <span className="shrink-0 text-xs text-stone-400 dark:text-stone-500">{formatPromptDate(item.updatedAt, i18n.resolvedLanguage)}</span> : null}
                     </div>
                     {!compact ? <>
+                        {item.featured ? <p className="mt-2 text-[11px] text-stone-500 dark:text-stone-400">来源示例 · {item.minReferenceImages ? `需 ${item.minReferenceImages} 张参考图` : "无需参考图"}</p> : null}
                         <p className="mt-2 line-clamp-2 text-xs leading-5 text-stone-600 dark:text-stone-400">{description}</p>
                         {item.output ? <p className="mt-2 line-clamp-1 text-xs text-stone-500 dark:text-stone-400"><span className="font-medium text-stone-700 dark:text-stone-300">{t("prompts.output")}：</span>{item.output}</p> : null}
-                        <div className="mt-3 flex flex-wrap gap-1.5">{item.tags.slice(0, 3).map((tag) => <Tag key={tag} className="m-0 text-[11px]">{tag}</Tag>)}</div>
                     </> : null}
                 </div>
             </button>

@@ -1,0 +1,81 @@
+Whisper AI by Open AI - Run with an API on Replicate
+openai/whisper
+openai
+/
+whisper
+Convert speech in audio to text
+Public
+144.9M
+            runs
+License
+GitHub
+Weights
+Paper
+Playground
+API
+Examples
+README
+Versions
+Run time and cost
+This model costs approximately $0.0040 to run on Replicate, or 250 runs per $1, but this varies depending on your inputs. It is also open source and you can
+run it on your own computer with Docker
+.
+This model runs on
+Nvidia T4 GPU hardware
+.
+      
+      
+
+      
+        Predictions typically complete within 18 seconds.
+
+        
+          The predict time for this model varies significantly based on the inputs.
+Readme
+Whisper Large-v3
+Whisper is a general-purpose speech recognition model. It is trained on a large dataset of diverse audio and is also a multi-task model that can perform multilingual speech recognition, translation, and language identification.
+This version runs only the most recent Whisper model,
+large-v3
+. It’s optimized for high performance and simplicity.
+Model Versions
+Model Size
+Version
+large-v3
+link
+large-v2
+link
+all others
+link
+While this implementation only uses the
+large-v3
+model, we maintain links to previous versions for reference.
+For users who need different model sizes, check out our
+multi-model version
+.
+Model Description
+Whisper uses a Transformer sequence-to-sequence model trained on various speech processing tasks, including multilingual speech recognition, speech translation, spoken language identification, and voice activity detection. All of these tasks are jointly represented as a sequence of tokens to be predicted by the decoder, allowing for a single model to replace many different stages of a traditional speech processing pipeline.
+[Blog]
+[Paper]
+[Model card]
+License
+The code and model weights of Whisper are released under the MIT License. See
+LICENSE
+for further details.
+Citation
+@misc{
+https://doi.org/10.48550/arxiv.2212.04356
+,
+  doi = {10.48550/ARXIV.2212.04356},
+  url = {
+https://arxiv.org/abs/2212.04356
+},
+  author = {Radford, Alec and Kim, Jong Wook and Xu, Tao and Brockman, Greg and McLeavey, Christine and Sutskever, Ilya},
+  title = {Robust Speech Recognition via Large-Scale Weak Supervision},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {
+arXiv.org
+perpetual, non-exclusive license}
+}
+Model created
+over 1 year ago

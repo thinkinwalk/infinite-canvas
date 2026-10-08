@@ -1,0 +1,118 @@
+From ce4b5d56d63a8eb63a664f03792146d2d49d7df0 Mon Sep 17 00:00:00 2001
+From: MovoFlow Ops <ops@movoflow.com>
+Date: Wed, 3 Jun 2026 14:36:25 +0800
+Subject: [PATCH] chore: build movoflow image without frontend github link
+
+---
+ .github/workflows/movoflow-image.yml          | 54 +++++++++++++++++++
+ web/src/app/(admin)/admin/layout.tsx          |  2 +-
+ .../components/layout/user-status-actions.tsx |  5 +-
+ 3 files changed, 58 insertions(+), 3 deletions(-)
+ create mode 100644 .github/workflows/movoflow-image.yml
+
+diff --git a/.github/workflows/movoflow-image.yml b/.github/workflows/movoflow-image.yml
+new file mode 100644
+index 0000000..38d7988
+--- /dev/null
++++ b/.github/workflows/movoflow-image.yml
+@@ -0,0 +1,54 @@
++name: Build MovoFlow Infinite Canvas Image
++
++on:
++  workflow_dispatch:
++    inputs:
++      image_tag:
++        description: Image tag to publish
++        required: true
++        default: v0.2.1-movoflow.1
++  push:
++    branches:
++      - movoflow/v0.2.1-hide-front-github
++
++permissions:
++  contents: read
++  packages: write
++
++jobs:
++  build:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Resolve image tag
++        id: meta
++        shell: bash
++        run: |
++          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
++            tag="${{ inputs.image_tag }}"
++          else
++            tag="v0.2.1-movoflow.1"
++          fi
++          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
++          echo "image=ghcr.io/${owner}/infinite-canvas:${tag}" >> "$GITHUB_OUTPUT"
++
++      - name: Login to GHCR
++        uses: docker/login-action@v3
++        with:
++          registry: ghcr.io
++          username: ${{ github.actor }}
++          password: ${{ secrets.GITHUB_TOKEN }}
++
++      - name: Set up Docker Buildx
++        uses: docker/setup-buildx-action@v3
++
++      - name: Build and push
++        uses: docker/build-push-action@v6
++        with:
++          context: .
++          push: true
++          tags: ${{ steps.meta.outputs.image }}
++          cache-from: type=gha
++          cache-to: type=gha,mode=max
+diff --git a/web/src/app/(admin)/admin/layout.tsx b/web/src/app/(admin)/admin/layout.tsx
+index 415098d..cc6807b 100644
+--- a/web/src/app/(admin)/admin/layout.tsx
++++ b/web/src/app/(admin)/admin/layout.tsx
+@@ -99,7 +99,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
+                         {pageTitle}
+                     </Typography.Title>
+                     <Flex align="center" gap={4}>
+-                        <UserStatusActions showConfig={false} />
++                        <UserStatusActions showConfig={false} showGitHub />
+                     </Flex>
+                 </Layout.Header>
+                 <Layout.Content style={{ minHeight: 0, overflow: "auto" }}>{children}</Layout.Content>
+diff --git a/web/src/components/layout/user-status-actions.tsx b/web/src/components/layout/user-status-actions.tsx
+index a035278..10c210f 100644
+--- a/web/src/components/layout/user-status-actions.tsx
++++ b/web/src/components/layout/user-status-actions.tsx
+@@ -19,6 +19,7 @@ import { useUserStore } from "@/stores/use-user-store";
+ 
+ type UserStatusActionsProps = {
+     showConfig?: boolean;
++    showGitHub?: boolean;
+     variant?: "default" | "canvas";
+     onOpenShortcuts?: () => void;
+     accountOpen?: boolean;
+@@ -27,7 +28,7 @@ type UserStatusActionsProps = {
+     getPopupContainer?: (node: HTMLElement) => HTMLElement;
+ };
+ 
+-export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, accountOpen, onAccountOpenChange, accountRef, getPopupContainer }: UserStatusActionsProps) {
++export function UserStatusActions({ showConfig = true, showGitHub = false, variant = "default", onOpenShortcuts, accountOpen, onAccountOpenChange, accountRef, getPopupContainer }: UserStatusActionsProps) {
+     const theme = useThemeStore((state) => state.theme);
+     const setTheme = useThemeStore((state) => state.setTheme);
+     const user = useUserStore((state) => state.user);
+@@ -64,7 +65,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
+             ) : null}
+             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
+             <VersionReleaseModal style={versionStyle} />
+-            <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
++            {showGitHub ? <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} /> : null}
+             {variant === "canvas" && user ? (
+                 <Tooltip title="当前算力点余额" placement="bottom">
+                     <div className="flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100" style={{ color: canvasTheme.node.text }}>
+-- 
+2.43.0
+

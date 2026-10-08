@@ -29,7 +29,7 @@ COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=api-build /server /app/server
 COPY --from=web-build /app/web/dist /app/web/dist
-RUN apk add --no-cache ca-certificates && mkdir -p /app/data/prompts
+RUN apk add --no-cache ca-certificates ffmpeg && mkdir -p /app/data/prompts
 
 ENV PORT=3000
 ENV STATIC_DIR=/app/web/dist

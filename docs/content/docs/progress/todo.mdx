@@ -5,6 +5,30 @@ description: Planned follow-up work
 
 # TODO
 
+- 数字人云端语音识别及配置状态提示已接入代码并进入待测试：本地旧后端尚不含识别入口，需要启动新版；复用后台已有 Replicate 密钥，单独配置并启用识别单价，验证公开 HTTPS 音频可达性，用真实中文口播验收准确率、字幕时间轴、扣点与退款。评估剪气口复用云端时间轴，进一步去除 worker 内部 Whisper 依赖；当前未发布生产或创建真实收费识别任务。
+
+- 数字人视频学习：无音轨素材及旧失败记录已增加中文提示与可关闭的失败提醒，视频学习和字幕识别增加云端路线；本地识别和剪气口仍需解决电脑可用内存不足后验收。画面字幕 OCR 尚未接入此流程。正式服务器部署仍作为独立事项，当前未部署。
+
+- 硬字幕去除已完成 P0 可达性改动并接入现有 Replicate 云路由；仍需用真实视频验收 Wan VideoEdit 的手动框选去字幕效果、2–10 秒边界、原音轨、真实报价/失败返还、OCR 区域修订、动态字幕跟踪与复杂背景样片，详见[硬字幕去除优化方案](/docs/progress/subtitle-remove-reference)。本轮未创建真实付费任务。
+
+- 视频高清专用工作台 P0/P1 已实现并进入待测试；继续用真实视频验收增强细节、运动闪烁、音轨、输出帧率、实际费用/退款及 HEVC 预览与转码，验收同源样片后再做同步播放、局部放大和官方示例，详见[视频高清优化方案](/docs/progress/upscale-reference)。本轮仅进行浏览器与模拟接口检查，未创建真实付费任务。
+
+- 数字人三区工作台、费用预估、阶段版本、恢复流程及口播资料/视频学习/预设/试听已进入待测试；照片说话/视频对口型新增视频制作独立入口，数字人在音视频步骤自动选择人物生成方式。继续用真实人物照片/视频与音频验收三个入口的口型、音质、独立草稿/任务恢复、参考转写改编、预设刷新恢复、试听独立计费、字幕时间轴、后期处理、扣点退款，以及手机触摸与键盘弹起。波形、真实同输入样片、云端归档与生产构建性能评估后续单独推进；详见[数字人工作台优化方案](/docs/progress/digital-human-reference)。
+- 数字人口播后续扩展：口播段落与真实商品/门店素材混剪、段落级重做、固定主播预处理复用及 MuseTalk/LatentSync 同输入质量和合格成片成本评估；经济引擎尚未部署，当前上游生成价格没有降低。真正多角色剧情需要独立的角色、分场分镜和时间线流程，不把故事式口播文案当成完整短剧能力。
+
+- 精品案例已扩充并进入待测试：用真实商品、人物与知识资料评估不同生图模型的文字、主体一致性和多视图质量，根据实际使用反馈持续维护精选清单与外部示例图。
+
+- 爆款复刻专用工作台已进入待测试；用同一原视频、新商品与可选人物素材验收结构改编、商品/人物一致性、真实扣费退款及已确认通道的视频参考。合成首帧、镜头检测、多镜头成片与独立配音字幕作为后续扩展；不把均匀采样或单首帧片段当作逐镜头精准复刻，详见[爆款复刻优化方案](/docs/progress/viral-recreate-reference)。
+
+- 探店视频专用工作台已进入待测试；继续用真实门店、商品与人物素材验收 Seedance 多图参考、Wan/Hailuo 首帧的一致性和效果。多镜头合成、独立配音字幕、门店人物合成首帧与无人在线归档作为独立后续扩展，不复制对标站价格或素材边界；方案见[探店视频优化方案](/docs/progress/store-explore-reference)。
+
+- 视频内容替换专用布局已进入待测试；继续用本站真实业务素材验收人物/商品/背景的边缘、动作与主体一致性，并补充同一输入实际处理所得的官方对照示例，具体设计见[视频内容替换优化方案](/docs/progress/content-replace-reference)。
+
+- 用同一真实商品与人物素材验收 Seedance Mini、Wan 和 Hailuo 2.3 的动作、商品一致性与出片速度，再决定是否扩展 Hailuo Fast 或 Wan T2V；当前 Hailuo 标准版已完成文生/图生参数适配与规格计价，效果排名需以实际样片为准。
+
+- 完成新版 Replicate Go 接口付费生成/取消/退款及 CPU 登录网关的端到端验收、正式服务器部署；本地模型目录、报价、可信素材时长及 HTTPS 提交拦截已验证，正式环境还需核对公开 HTTPS 素材可达性和 FFprobe。新增并发与排队、文件保留/清理边界须先审批，当前生产未发布。
+- 增加无人打开页面时的云任务结果归档及跨浏览器作品列表；补充 Replicate 上游价格自动同步和运行时间模型的结算对账。当前结果归档由查询触发，素材库和阶段记录仍是浏览器本地持久化。
+- 已有八次 Replicate 新预测成功，继续用真实业务素材验收口型、人物/商品/背景一致性、高清细节、运动画面硬字幕修复和中文转写；核对模型长度限制、掩膜质量与许可。部署后验证反向代理、取消、失败恢复和资源占用；需要跨浏览器作品访问时另做云素材持久化。
 - Complete production-grade processors for the new platform tools: admin-configurable BiRefNet/Real-ESRGAN calls and local print dimensions/DPI plus masked edits are now wired; production still needs real-material validation for transparency edges, super-resolution detail, CMYK/color output, and IP-search evidence. Prompt-based cutout/enhancement does not guarantee pixel fidelity.
 - Continue aligning the remaining Novaryns tools with verified local input/output examples, meaningful defaults, and suitable result views. Fusion has real ratio, output-mode, and count controls plus a verified local three-image example; print extraction now has dedicated controls and one real local source/output pair, but still needs validation across product categories and reliable white-background output. The 3D garment page now shows a user-provided result preview but still needs a verified output from the same official tool run. Prioritize super-resolution, masked edits, and print dimensions/DPI next, then watermark removal, garment tools, titles, and IP screening. Cutout history restoration and free adjustments to an existing mask remain follow-up work. Do not present benchmark images as locally generated results.
 - Improve generic case execution with uploaded reference URLs, full persisted output/history, quote/charge consistency, cancellation, and idempotency. The dedicated variation workspace still needs failed-image retry and durable background jobs. The generic adapter uses synchronous calls and inline reference images.
@@ -12,5 +36,7 @@ description: Planned follow-up work
 - Add Skill installation from web search, Skill resource-file management, and controlled local-memory persistence.
 - Extend the case market MVP with immutable workflow revisions, encrypted private snapshots, idempotency keys, unlock entitlements, and an auditable author settlement ledger.
 - Expand case execution from the MVP image/video/text entrypoint adapter to a full DAG executor with node-level retries, cancellation, batch inputs, and result history.
-- Move product-set generation to durable background jobs with per-image progress, restart recovery, cancellation, failed-image retries, and idempotent compute-point settlement.
+- Move product-set and detail-page generation to durable background jobs with per-image progress, restart recovery, cancellation, and idempotent compute-point settlement; the detail workspace currently keeps drafts/versions locally and supports manual retries while the page remains open.
 - Review the official product-set bracelet demo against the real product for brand and charm details, then expand product-identity and image-category quality checks across categories.
+
+- 完成视频素材参考的真实上游验收：在后台确认具体 Seedance 渠道是否开放 `reference_videos` / `audio_urls` 或 Agent Plan `content` 多素材字段，配置允许数量后用真实图片、视频、音频各做一次无误扣费验收；目前页面和后端已按能力阻止未确认的 Seedance 视频/音频参考。

@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { apiGet } from "@/services/api/request";
-import type { AdminPublicSettings } from "@/services/api/admin";
+import type { AdminPublicSettings, VideoModelProfile } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type ApiCallFormat = "openai" | "gemini";
@@ -28,6 +28,7 @@ export type ModelChannel = {
 };
 
 export type AiConfig = {
+    videoModels?: Record<string, VideoModelProfile>;
     channelMode: "remote" | "local";
     baseUrl: string;
     apiKey: string;
@@ -46,7 +47,8 @@ export type AiConfig = {
     vquality: string;
     videoGenerateAudio: string;
     videoWatermark: string;
-    videoMode: string;
+    videoInputMode: string;
+    videoInterpolate: string;
     systemPrompt: string;
     reasoningEffort: ReasoningEffort;
     models: string[];
@@ -113,7 +115,8 @@ export const defaultConfig: AiConfig = {
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
-    videoMode: "frames",
+    videoInputMode: "reference",
+    videoInterpolate: "false",
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-1.0-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
@@ -139,6 +142,7 @@ type ConfigStore = {
     webdav: WebdavSyncConfig;
     publicSettings: AdminPublicSettings | null;
     isPublicSettingsLoading: boolean;
+    publicSettingsError: string;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
@@ -228,6 +232,7 @@ export const useConfigStore = create<ConfigStore>()(
             webdav: defaultWebdavSyncConfig,
             publicSettings: null,
             isPublicSettingsLoading: false,
+            publicSettingsError: "",
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -257,9 +262,9 @@ export const useConfigStore = create<ConfigStore>()(
                 set({ isPublicSettingsLoading: true });
                 try {
                     const publicSettings = await apiGet<AdminPublicSettings>("/api/settings", undefined, token);
-                    if (useUserStore.getState().token === token) set({ publicSettings });
+                    if (useUserStore.getState().token === token) set({ publicSettings, publicSettingsError: "" });
                 } catch {
-                    if (useUserStore.getState().token === token) set({ publicSettings: null });
+                    if (useUserStore.getState().token === token) set({ publicSettings: null, publicSettingsError: "平台模型目录加载失败，请点击“刷新模型 / 报价”重试。" });
                 } finally {
                     set({ isPublicSettingsLoading: false });
                     if (useUserStore.getState().token !== token) void get().loadPublicSettings();
@@ -291,7 +296,7 @@ export const useConfigStore = create<ConfigStore>()(
                         channels,
                         models,
                         imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
-                        videoModel: normalizeModelOptionValue(config.videoModel, channels),
+                        videoModel: /^(remote|replicate)::/.test(config.videoModel) ? config.videoModel : normalizeModelOptionValue(config.videoModel, channels),
                         textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
                         audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
@@ -303,7 +308,8 @@ export const useConfigStore = create<ConfigStore>()(
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
-                        videoMode: config.videoMode === "reference" ? "reference" : "frames",
+                        videoInputMode: ["reference", "first_last", "first_frame_only"].includes(config.videoInputMode) ? config.videoInputMode : "reference",
+                        videoInterpolate: config.videoInterpolate === "true" ? "true" : "false",
                         canvasImageCount: config.canvasImageCount || "3",
                         proxyEnabled: Boolean(config.proxyEnabled),
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,
@@ -322,10 +328,28 @@ export function useEffectiveConfig() {
 
 function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
     const modelChannel = publicSettings?.modelChannel;
-    if (!modelChannel) return config;
+    if (!modelChannel) return appendReplicateVideoChannel(config, publicSettings?.replicateVideoModels);
     const channelMode = modelChannel.allowCustomChannel && hasUsableLocalChannel(config) ? config.channelMode : "remote";
-    if (channelMode === "local") return { ...config, channelMode };
-    return remoteConfigFromPublicSettings(config, modelChannel);
+    if (channelMode === "local") return appendReplicateVideoChannel({ ...config, channelMode }, publicSettings?.replicateVideoModels);
+    const remoteConfig = appendReplicateVideoChannel(remoteConfigFromPublicSettings(config, modelChannel), publicSettings?.replicateVideoModels);
+    // Replicate models are added after the platform channel is normalized. Preserve a
+    // previously selected Replicate video model instead of falling back to the default
+    // platform video model on every render.
+    const selectedVideoModel = config.videoModel;
+    return selectedVideoModel?.startsWith("replicate::") && remoteConfig.models.includes(selectedVideoModel)
+        ? { ...remoteConfig, videoModel: selectedVideoModel }
+        : remoteConfig;
+}
+
+function appendReplicateVideoChannel(config: AiConfig, modelNames: string[] | undefined): AiConfig {
+    const names = Array.from(new Set((modelNames || []).map((name) => name.trim().replace(/^replicate::/i, "")).filter(Boolean)));
+    const existing = config.channels.find((channel) => channel.id === "replicate");
+    const channel = createModelChannel({ id: "replicate", name: "平台提供", baseUrl: "", models: names.map((name) => ({ name, capability: "video" })) });
+    const channels = names.length ? existing ? config.channels.map((item) => item.id === "replicate" ? channel : item) : [...config.channels, channel] : config.channels.filter((item) => item.id !== "replicate");
+    const models = modelOptionsFromChannels(channels);
+    const videoModels = selectableModelsByCapability({ ...config, channels, models }, "video");
+    const videoModel = videoModels.includes(config.videoModel) ? config.videoModel : videoModels[0] || "";
+    return { ...config, channels, models, videoModel };
 }
 
 function hasUsableLocalChannel(config: AiConfig) {
@@ -333,13 +357,15 @@ function hasUsableLocalChannel(config: AiConfig) {
 }
 
 function remoteConfigFromPublicSettings(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"]): AiConfig {
+    const configuredVideoModels = Object.keys(modelChannel.videoModels || {});
+    const availableModels = Array.from(new Set([...modelChannel.availableModels, ...configuredVideoModels]));
     const channel = createModelChannel({
         id: "remote",
         name: "平台提供",
         baseUrl: "",
         apiKey: "",
         apiFormat: "openai",
-        models: modelChannel.availableModels.map((name) => ({ name, capability: guessCapability(name) })),
+        models: availableModels.map((name) => ({ name, capability: configuredVideoModels.includes(name) ? "video" : guessCapability(name) })),
     });
     const channels = [channel];
     const models = modelOptionsFromChannels(channels);
@@ -359,6 +385,7 @@ function remoteConfigFromPublicSettings(config: AiConfig, modelChannel: AdminPub
     return {
         ...config,
         channelMode: "remote",
+        videoModels: modelChannel.videoModels,
         apiFormat: "openai",
         channels,
         models,
@@ -481,6 +508,9 @@ export function modelOptionName(value: string) {
 }
 
 export function modelOptionLabel(config: AiConfig, value: string) {
+    if (value === "replicate::wan-video/wan-2.2-i2v-fast") return "通义万相 Wan 2.2";
+    if (value === "replicate::minimax/hailuo-2.3") return "海螺 Hailuo 2.3";
+    if (/seedance.*mini/i.test(modelOptionName(value))) return "Seedance Mini";
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
     return decoded.model;

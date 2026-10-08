@@ -4,6 +4,7 @@ import { runPromptSource, type RawPrompt } from "./prompt-source-runtime";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import i18n from "@/i18n";
 import type { PromptSource } from "./prompt-source-presets";
+import { loadCuratedPrompts, mergePromptCatalogue } from "./prompt-editorial";
 
 export type Prompt = RawPrompt & {
     sourceId: string;
@@ -12,9 +13,28 @@ export type Prompt = RawPrompt & {
 };
 
 export const ALL_PROMPTS_OPTION = "all";
+export type PromptReferenceFilter = "all" | "none" | "required";
 
-export function getPromptScenario(prompt: Pick<Prompt, "scenario" | "category" | "tags">) {
-    return prompt.scenario || prompt.tags[0] || prompt.category;
+const scenarioMatchers: Array<[string, RegExp]> = [
+    ["UI 与网页视觉", /界面|网页|ui design|landing page|website/i],
+    ["商品详情与套图", /详情|套图|爆炸图|爆炸视图|产品结构|product detail|exploded view/i],
+    ["电商商品图", /电商|商品|产品|带货|commerce|product|packshot/i],
+    ["PPT 与信息图", /ppt|slides?|演示|信息图|图表|infographic|chart|diagram/i],
+    ["教程与知识表达", /教程|学习|知识|思维导图|教育|教学|科普|education|tutorial|mind.?map/i],
+    ["品牌与包装", /品牌|包装|logo|brand|packag/i],
+    ["海报与广告", /海报|广告|poster|advertis/i],
+    ["社交媒体内容", /社媒|小红书|短视频|封面|社交|social|thumbnail/i],
+    ["人像与头像", /人像|头像|肖像|发型|portrait|headshot|profile/i],
+    ["角色与一致性", /角色|人物设定|表情包|character|consistent/i],
+    ["室内与空间", /室内|空间|建筑|家居|interior|architecture/i],
+    ["图片编辑", /改图|换背景|修图|替换|编辑|修复|edit|retouch/i],
+];
+
+export function getPromptScenario(prompt: Pick<Prompt, "title" | "scenario" | "category" | "tags">) {
+    if (prompt.scenario) return prompt.scenario;
+    const fromTitle = scenarioMatchers.find(([, pattern]) => pattern.test(prompt.title));
+    const fromTags = scenarioMatchers.find(([, pattern]) => pattern.test(prompt.tags.join(" ")));
+    return fromTitle?.[0] || fromTags?.[0] || "个人创作";
 }
 
 export type PromptListResponse = {
@@ -71,6 +91,7 @@ function sourceSignature(source: PromptSource) {
 function withSourceMeta(source: PromptSource, items: RawPrompt[]): Prompt[] {
     return items.map((item) => ({
         ...item,
+        featured: false,
         description: item.description || "",
         referenceImageUrls: Array.isArray(item.referenceImageUrls) ? item.referenceImageUrls : [],
         sourceId: source.id,
@@ -140,14 +161,15 @@ async function getAllPrompts(): Promise<Prompt[]> {
     return settled.flat();
 }
 
-export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, page = 1, pageSize = 20 }: { keyword?: string; tag?: string[]; category?: string; page?: number; pageSize?: number } = {}) {
-    const items = await getAllPrompts();
+export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, featuredOnly = false, reference = "all", page = 1, pageSize = 20 }: { keyword?: string; tag?: string[]; category?: string; featuredOnly?: boolean; reference?: PromptReferenceFilter; page?: number; pageSize?: number } = {}) {
+    const curated = await loadCuratedPrompts();
     const normalizedKeyword = keyword.trim().toLowerCase();
     const normalizedPage = Math.max(1, page);
     const normalizedPageSize = Math.max(1, Math.min(100, pageSize));
-    const withoutTagFilter = filterPrompts(items, { keyword: normalizedKeyword, category, tags: [] });
-    const filtered = filterPrompts(items, { keyword: normalizedKeyword, category, tags: tag });
-    const categories = Array.from(new Set(items.map(getPromptScenario).filter(Boolean)));
+    const library = featuredOnly ? curated : mergePromptCatalogue(curated, await getAllPrompts());
+    const withoutTagFilter = filterPrompts(library, { keyword: normalizedKeyword, category, tags: [], reference });
+    const filtered = filterPrompts(library, { keyword: normalizedKeyword, category, tags: tag, reference });
+    const categories = Array.from(new Set(library.map(getPromptScenario).filter(Boolean)));
 
     return {
         items: filtered.slice((normalizedPage - 1) * normalizedPageSize, normalizedPage * normalizedPageSize),
@@ -207,8 +229,11 @@ function summarizeRefresh(results: PromptSourceRefreshResult[]): PromptSourceRef
     };
 }
 
-function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags: string[] }) {
+function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags: string[]; reference: PromptReferenceFilter }) {
     return items.filter((item) => {
+        const needsReference = Boolean(item.minReferenceImages || item.requiresRef);
+        if (options.reference === "none" && item.minReferenceImages !== 0 && item.requiresRef !== false) return false;
+        if (options.reference === "required" && !needsReference) return false;
         if (isActiveOption(options.category) && getPromptScenario(item) !== options.category && item.category !== options.category) return false;
         if (options.tags.length && !options.tags.some((tag) => item.tags.includes(tag))) return false;
         if (!options.keyword) return true;

@@ -1,0 +1,14 @@
+[
+  {
+    "case": "voiced",
+    "exit": 0,
+    "noAudioIdentified": false,
+    "outputBytes": 33483
+  },
+  {
+    "case": "silent",
+    "exit": 4294967274,
+    "noAudioIdentified": true,
+    "outputBytes": 0
+  }
+]

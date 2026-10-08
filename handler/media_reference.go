@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"github.com/basketikun/infinite-canvas/config"
+	"github.com/basketikun/infinite-canvas/model"
+	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/basketikun/infinite-canvas/service"
 	"github.com/google/uuid"
 )
 
@@ -33,7 +36,7 @@ type referenceMediaUploadResult struct {
 func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 	publicBaseURL := strings.TrimRight(strings.TrimSpace(config.Cfg.PublicBaseURL), "/")
 	if publicBaseURL == "" {
-		Fail(w, "未配置 PUBLIC_BASE_URL，无法把本地参考素材提供给火山方舟访问")
+		Fail(w, "未配置 PUBLIC_BASE_URL，无法向云模型提供参考素材")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, referenceMediaMaxBytes+1)
@@ -82,6 +85,49 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 	if limit := referenceMediaTypeMaxBytes(mimeType); limit > 0 && bytes > limit {
 		_ = os.Remove(targetPath)
 		Fail(w, referenceMediaSizeMessage(mimeType))
+		return
+	}
+	user, authenticated := service.UserFromContext(r.Context())
+	if !authenticated {
+		_ = os.Remove(targetPath)
+		Fail(w, "请登录后上传素材")
+		return
+	}
+	duration := 0.0
+	if r.FormValue("purpose") == "transcribe" {
+		if !strings.HasPrefix(mimeType, "video/") && !strings.HasPrefix(mimeType, "audio/") {
+			_ = os.Remove(targetPath)
+			Fail(w, "语音识别需要上传视频或音频")
+			return
+		}
+		audioID := uuid.NewString() + ".mp3"
+		audioPath := filepath.Join(referenceMediaDir(), audioID)
+		err := service.PrepareTranscriptionAudio(r.Context(), targetPath, audioPath)
+		_ = os.Remove(targetPath)
+		if err != nil {
+			_ = os.Remove(audioPath)
+			Fail(w, err.Error())
+			return
+		}
+		info, err := os.Stat(audioPath)
+		if err != nil || info.Size() <= 0 || info.Size() > referenceAudioMaxBytes {
+			_ = os.Remove(audioPath)
+			Fail(w, "识别音频为空或超过现有音频上传大小，请缩短素材后重试")
+			return
+		}
+		id, targetPath, mimeType, bytes = audioID, audioPath, "audio/mpeg", info.Size()
+	}
+	if strings.HasPrefix(mimeType, "video/") || strings.HasPrefix(mimeType, "audio/") {
+		duration = service.ProbeMediaDuration(r.Context(), targetPath)
+	}
+	if r.FormValue("purpose") == "transcribe" && duration <= 0 {
+		_ = os.Remove(targetPath)
+		Fail(w, "无法读取识别音频时长，请管理员检查 FFprobe 配置")
+		return
+	}
+	if err := repository.SaveReferenceMediaOwner(model.ReferenceMediaOwner{ID: id, UserID: user.ID, MimeType: mimeType, Bytes: bytes, DurationSeconds: duration}); err != nil {
+		_ = os.Remove(targetPath)
+		Fail(w, "素材归属保存失败")
 		return
 	}
 	OK(w, referenceMediaUploadResult{

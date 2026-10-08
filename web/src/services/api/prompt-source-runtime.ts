@@ -27,6 +27,10 @@ export type RawPrompt = {
     requiresRef?: boolean;
     qualityScore?: number;
     featured?: boolean;
+    originalPrompt?: string;
+    originalTitle?: string;
+    minReferenceImages?: number;
+    editorialOrder?: number;
 };
 
 type RunOptions = { signal?: AbortSignal };
@@ -96,6 +100,10 @@ function normalizeItems(values: unknown[], source: PromptSource) {
             requiresRef: optionalBoolean(record.requiresRef),
             qualityScore: optionalNumber(record.qualityScore),
             featured: optionalBoolean(record.featured),
+            originalPrompt: optionalString(record.originalPrompt),
+            originalTitle: optionalString(record.originalTitle),
+            minReferenceImages: optionalNumber(record.minReferenceImages),
+            editorialOrder: optionalNumber(record.editorialOrder),
         });
     });
     return items;

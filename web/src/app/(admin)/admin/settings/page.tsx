@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, testReplicate, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
+import { REPLICATE_FEATURES, replicateFeatureUrl } from "@/services/api/replicate";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -39,7 +40,7 @@ const emptySettings: AdminSettings = {
         adminContact: { qq: "", note: "" },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
     },
-    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { apiKey: "", apiKeyConfigured: false, clearApiKey: false } },
+    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { apiKey: "", apiKeyConfigured: false, clearApiKey: false, pricing: {} } },
 };
 const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
 
@@ -77,6 +78,7 @@ export default function AdminSettingsPage() {
     const [replicateConfigured, setReplicateConfigured] = useState(false);
     const [isTestingReplicate, setIsTestingReplicate] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
+    const channelVideoModels = ((Form.useWatch("models", channelForm) || []) as string[]).filter((name) => /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
@@ -582,9 +584,9 @@ export default function AdminSettingsPage() {
                                         </Row>
                                     </Flex>
                                 </Card>
-                                <Card size="small" title="Replicate 图像处理">
+                                <Card size="small" title="Replicate 媒体处理">
                                     <Flex vertical gap={12}>
-                                        <Typography.Text type="secondary">用于 AI 抠图（BiRefNet）和 AI 变清晰（Real-ESRGAN）。令牌只保存在后台，留空保存会沿用已有令牌。</Typography.Text>
+                                        <Typography.Text type="secondary">用于语音识别、配音、数字人、口型，以及图像和视频处理。新增语音识别复用同一个后台令牌，留空保存沿用已有令牌；还需单独设置识别价格、开启模型并保存。新增功能需更新并重启后端，刷新网页不会更新后端程序。</Typography.Text>
                                         <Tag color={replicateConfigured ? "success" : "default"} style={{ alignSelf: "flex-start" }}>{replicateConfigured ? "令牌已配置" : "未配置令牌"}</Tag>
                                         <Form.Item name={["private", "replicate", "apiKey"]} label="Replicate API Token" style={{ marginBottom: 0 }}>
                                             <Input.Password autoComplete="new-password" placeholder={replicateConfigured ? "留空则沿用已保存的令牌" : "输入 Replicate API Token"} />
@@ -592,6 +594,21 @@ export default function AdminSettingsPage() {
                                         <Form.Item name={["private", "replicate", "clearApiKey"]} valuePropName="checked" style={{ marginBottom: 0 }}>
                                             <Checkbox>保存时移除后台令牌</Checkbox>
                                         </Form.Item>
+                                        <Typography.Text type="secondary">这里设置的是平台向用户收取的算力点。不是所有模型都按秒收费：配音按文字量，图生视频按成片条数，视频处理通常按时长和规格。关闭模型后普通用户不可用，管理员仍可查看配置。</Typography.Text>
+                                        <Row gutter={[12, 12]}>{REPLICATE_FEATURES.map((feature) => <Col xs={24} lg={12} key={feature.model}>
+                                            <Card size="small" title={<Space wrap><span>{feature.label}</span><Tag>{feature.model}</Tag></Space>} extra={<Button size="small" href={replicateFeatureUrl(feature.operation)} target="_blank" rel="noopener noreferrer">打开对应功能</Button>}>
+                                                <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>{feature.description}</Typography.Paragraph>
+                                                <Row gutter={12}>
+                                                    <Col span={8}><Form.Item name={["private", "replicate", "pricing", feature.model, "enabled"]} label="启用" valuePropName="checked"><Switch /></Form.Item></Col>
+                                                    <Col span={16}><Form.Item label="收费单位"><Space wrap><Tag color="blue">{replicateBillingModeLabel(feature.billingMode)}</Tag><Typography.Text type="secondary">{replicateBillingUnitHelp(feature.billingMode)}</Typography.Text></Space></Form.Item></Col>
+                                                    {!feature.tierKeys?.length && <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "unitCredits"]} label="计费单价（算力点）" extra={replicateBillingUnitHelp(feature.billingMode)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
+                                                    <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "minimumCredits"]} label="一次任务最低消耗" extra="任务计算结果低于此数值时，按这个数值收取。"><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
+                                                    {(feature.billingMode === "output_seconds" || feature.billingMode === "runtime_seconds" || feature.billingMode === "duration_resolution") && <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "defaultUnits"]} label="无法读取时的安全时长" extra="只有系统无法读取素材时使用，不代表每次固定扣除。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
+                                                    {feature.billingMode === "duration_resolution" && <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "blockSeconds"]} label="每个计费档包含秒数" extra="例如填 5，表示按每 5 秒视频计算一个档位。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
+                                                </Row>
+                                                {feature.tierKeys?.length ? <><Typography.Text strong>不同规格的单价</Typography.Text><Typography.Paragraph type="secondary" style={{ margin: "4px 0 8px" }}>用户选择不同清晰度、帧率或模型版本时，系统会使用对应档位。</Typography.Paragraph><Row gutter={12}>{feature.tierKeys.map((tier) => <Col span={12} key={tier}><Form.Item name={["private", "replicate", "pricing", feature.model, "tiers", tier]} label={replicateTierLabel(tier)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>)}</Row></> : null}
+                                            </Card>
+                                        </Col>)}</Row>
                                         <Typography.Text type="secondary">若服务器仍设置 REPLICATE_API_TOKEN 环境变量，移除后台令牌后会继续使用环境变量。</Typography.Text>
                                         <Button style={{ alignSelf: "flex-start" }} loading={isTestingReplicate} disabled={!replicateConfigured} onClick={() => void testReplicateConnection()}>测试连接</Button>
                                     </Flex>
@@ -779,6 +796,33 @@ export default function AdminSettingsPage() {
                                     <Input.TextArea rows={3} />
                                 </Form.Item>
                             </Col>
+                            {channelVideoModels.map((name) => (
+                                <Col span={24} key={name}>
+                                    <Card size="small" title={`视频能力 · ${name}`}>
+                                        <Typography.Paragraph type="secondary">只开启该渠道已确认支持的素材。接口名称相同也可能能力不同；数量设为0表示不支持。价格仍在公共配置的模型算力点中调整。</Typography.Paragraph>
+                                        <Form.Item name={["videoModels", name, "displayName"]} label="前台展示名称" initialValue={name}><Input /></Form.Item>
+                                        <Form.Item name={["videoModels", name, "description"]} label="一句话用途"><Input.TextArea rows={2} /></Form.Item>
+                                        <Form.Item name={["videoModels", name, "interface"]} label="视频调用方式" initialValue={/seedance|seedace/i.test(name) ? "relay" : "openai"}>
+                                            <Select options={[{ value: "openai", label: "普通视频接口（图片参考）" }, { value: "relay", label: "JSON视频中转（reference_videos / audio_urls）" }, { value: "ark", label: "火山多素材接口（content）" }]} />
+                                        </Form.Item>
+                                        <Form.Item name={["videoModels", name, "inputModes"]} label="支持的输入模式" initialValue={["reference"]} extra="只开启上游文档和实测已确认的模式；首尾帧与普通参考图片独立。">
+                                            <Select mode="multiple" options={[{ value: "reference", label: "参考模式" }, { value: "first_last", label: "首尾帧模式" }, { value: "first_frame_only", label: "文生 / 单首帧模式" }]} />
+                                        </Form.Item>
+                                        <Row gutter={12}>
+                                            <Col span={12}><Form.Item name={["videoModels", name, "firstFrameField"]} label="首帧字段" extra="JSON / 表单参数名；Ark 使用 content.role=first_frame。"><Input placeholder="例如 first_frame 或 image_url" /></Form.Item></Col>
+                                            <Col span={12}><Form.Item name={["videoModels", name, "lastFrameField"]} label="尾帧字段" extra="未填写则不开放首尾帧；Ark 使用 content.role=last_frame。"><Input placeholder="例如 last_frame 或 last_image" /></Form.Item></Col>
+                                            <Col span={12}><Form.Item name={["videoModels", name, "firstFrameRequired"]} label="首帧必填" valuePropName="checked" initialValue={true}><Switch /></Form.Item></Col>
+                                            <Col span={12}><Form.Item name={["videoModels", name, "lastFrameOptional"]} label="尾帧可选" valuePropName="checked" initialValue={true}><Switch /></Form.Item></Col>
+                                        </Row>
+                                        <Row gutter={12}>
+                                            {([['maxImages', '最多参考图片（张）', 7], ['maxVideos', '视频数量', 3], ['maxAudios', '音频数量', 3]] as const).map(([field, label, maximum]) => <Col span={8} key={field}><Form.Item name={["videoModels", name, field]} label={label} initialValue={field === 'maxImages' ? 7 : 0}><InputNumber min={0} max={maximum} precision={0} className="!w-full" /></Form.Item></Col>)}
+                                        </Row>
+                                        <Form.Item name={["videoModels", name, "resolutions"]} label="支持分辨率" initialValue={/seedance|seedace/i.test(name) ? ["480", "720"] : ["480", "720", "1080"]}><Select mode="multiple" options={["480", "720", "1080"].map((value) => ({ value, label: `${value}p` }))} /></Form.Item>
+                                        <Form.Item name={["videoModels", name, "seconds"]} label="支持输出秒数" extra="填写上游支持的档位；留空沿用现有4至30秒设置。" initialValue={/seedance|seedace/i.test(name) ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : []}><Select mode="tags" tokenSeparators={[",", " "]} /></Form.Item>
+                                        <Form.Item name={["videoModels", name, "generateAudio"]} label="支持生成声音开关" valuePropName="checked" initialValue={false}><Switch /></Form.Item>
+                                    </Card>
+                                </Col>
+                            ))}
                         </Row>
                     </Form>
                 </Drawer>
@@ -995,8 +1039,62 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             apiKey: setting.replicate?.apiKey || "",
             apiKeyConfigured: setting.replicate?.apiKeyConfigured === true,
             clearApiKey: setting.replicate?.clearApiKey === true,
+            modelCredits: setting.replicate?.modelCredits || {},
+            pricing: normalizeReplicatePricing(setting.replicate?.pricing || {}),
         },
     };
+}
+
+function normalizeReplicatePricing(items: NonNullable<AdminSettings["private"]["replicate"]["pricing"]>) {
+    return Object.fromEntries(REPLICATE_FEATURES.map((feature) => {
+        const item = items[feature.model] || {};
+        const tiers = Object.fromEntries((feature.tierKeys || []).map((key) => [key, Math.max(0, Number(item.tiers?.[key]) || 0)]));
+        return [feature.model, {
+            model: item.model || feature.model,
+            version: item.version || "",
+            billingMode: item.billingMode || feature.billingMode,
+            unitCredits: Math.max(0, Number(item.unitCredits) || 0),
+            minimumCredits: Math.max(0, Number(item.minimumCredits) || 0),
+            defaultUnits: Math.max(1, Number(item.defaultUnits) || 1),
+            blockSeconds: Math.max(1, Number(item.blockSeconds) || (feature.billingMode === "duration_resolution" ? 1 : 0)),
+            tiers,
+            enabled: item.enabled ?? (feature.operation !== "transcribe"),
+        }];
+    }));
+}
+
+function replicateBillingModeLabel(mode: string) {
+    switch (mode) {
+        case "input_seconds": return "按输入音频时长收费";
+        case "input_characters": return "按文字量收费";
+        case "output_seconds": return "按输出视频时长收费";
+        case "output_count": return "按生成条数收费";
+        case "duration_resolution": return "按时长和视频规格收费";
+        case "runtime_seconds": return "按模型运行时长收费";
+        default: return "按任务收费";
+    }
+}
+
+function replicateBillingUnitHelp(mode: string) {
+    switch (mode) {
+        case "input_seconds": return "每 1 秒输入音频；与上游运行时间费用分别核算";
+        case "input_characters": return "每 1000 个字符";
+        case "output_seconds": return "每 1 秒成片";
+        case "output_count": return "每 1 条成片";
+        case "duration_resolution": return "每个时长/清晰度档位";
+        case "runtime_seconds": return "每 1 秒后台运行时间";
+        default: return "每 1 次任务";
+    }
+}
+
+function replicateTierLabel(tier: string) {
+    const labels: Record<string, string> = {
+        "base:480p": "基础版 · 480p", "base:720p": "基础版 · 720p", "interpolate:480p": "补帧版 · 480p", "interpolate:720p": "补帧版 · 720p",
+        "720p:30": "720p · 30 FPS", "720p:60": "720p · 60 FPS", "1080p:30": "1080p · 30 FPS", "1080p:60": "1080p · 60 FPS", "4k:30": "4K · 30 FPS", "4k:60": "4K · 60 FPS",
+        "480": "480p", "720": "720p",
+        "768p:6": "768p · 6秒 / 条", "768p:10": "768p · 10秒 / 条", "1080p:6": "1080p · 6秒 / 条",
+    };
+    return labels[tier] || tier;
 }
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
@@ -1010,6 +1108,7 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         enabled: item.enabled !== false,
         remark: item.remark || "",
         allowedGroups: item.allowedGroups || [],
+        videoModels: item.videoModels || {},
     };
 }
 

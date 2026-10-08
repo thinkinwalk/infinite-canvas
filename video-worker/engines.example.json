@@ -1,0 +1,29 @@
+{
+  "realesrgan": {
+    "cwd": "/opt/engines/Real-ESRGAN",
+    "required_paths": ["/opt/engines/Real-ESRGAN/.venv/bin/python", "/opt/engines/Real-ESRGAN/inference_realesrgan.py", "/opt/engines/Real-ESRGAN/weights/RealESRGAN_x4plus.pth"],
+    "command": ["/opt/engines/Real-ESRGAN/.venv/bin/python", "inference_realesrgan.py", "-n", "RealESRGAN_x4plus", "--model_path", "/opt/engines/Real-ESRGAN/weights/RealESRGAN_x4plus.pth", "-i", "{frames}", "-o", "{output_dir}", "--outscale", "{scale}", "--suffix", "", "--ext", "png"],
+    "output_glob": "*.png"
+  },
+  "lama": {
+    "cwd": "/opt/engines/lama",
+    "required_paths": ["/opt/engines/lama/.venv/bin/python", "/opt/engines/lama/bin/predict.py", "/opt/engines/lama/big-lama/config.yaml", "/opt/engines/lama/big-lama/models/best.ckpt"],
+    "command": ["/opt/engines/lama/.venv/bin/python", "bin/predict.py", "model.path=/opt/engines/lama/big-lama", "indir={frames}", "outdir={output_dir}", "device=cpu"],
+    "output_glob": "*.png"
+  },
+  "musetalk": {
+    "cwd": "/opt/engines/MuseTalk",
+    "required_paths": ["/opt/engines/MuseTalk/.venv/bin/python", "/opt/engines/MuseTalk/scripts/inference.py", "/opt/engines/MuseTalk/models/musetalkV15/unet.pth", "/opt/engines/MuseTalk/models/whisper", "/opt/engines/MuseTalk/models/sd-vae"],
+    "command": ["/opt/engines/MuseTalk/.venv/bin/python", "-m", "scripts.inference", "--version", "v15", "--inference_config", "{config}", "--result_dir", "{output_dir}", "--output_vid_name", "{output}", "--ffmpeg_path", "{ffmpeg_dir}", "--use_float16"]
+  },
+  "wan-animate": {
+    "cwd": "/opt/engines/Wan2.2",
+    "required_paths": ["/opt/engines/Wan2.2/.venv/bin/python", "/opt/engines/Wan2.2/generate.py", "/opt/models/Wan2.2-Animate-14B", "/opt/models/Wan2.2-Animate-14B/process_checkpoint"],
+    "command": ["/opt/engines/Wan2.2/.venv/bin/python", "{adapter_dir}/wan_animate.py", "--repo", "/opt/engines/Wan2.2", "--weights", "/opt/models/Wan2.2-Animate-14B", "--process-weights", "/opt/models/Wan2.2-Animate-14B/process_checkpoint", "--video", "{video}", "--image", "{image}", "--output", "{output}"]
+  },
+  "vace": {
+    "cwd": "/opt/engines/VACE",
+    "required_paths": ["/opt/engines/VACE/.venv/bin/python", "/opt/engines/VACE/vace/vace_wan_inference.py", "/opt/models/Wan2.1-VACE-1.3B"],
+    "command": ["/opt/engines/VACE/.venv/bin/python", "{adapter_dir}/vace.py", "--repo", "/opt/engines/VACE", "--weights", "/opt/models/Wan2.1-VACE-1.3B", "--video", "{video}", "--mask", "{mask}", "--image", "{image}", "--background", "{background}", "--prompt", "{prompt}", "--frames", "{frame_count}", "--output", "{output}"]
+  }
+}

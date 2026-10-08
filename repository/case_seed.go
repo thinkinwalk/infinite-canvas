@@ -41,6 +41,7 @@ func seedOfficialCases(db *gorm.DB) error {
 			ID: "official-amazon-unboxing", OwnerID: "platform", Title: "亚马逊买家秀开箱", Description: "将商品卖点组织成真实自然的买家秀和开箱内容。", CoverURL: "https://images.unsplash.com/photo-1607082349566-187342175e2f?auto=format&fit=crop&w=1200&q=80", Category: "海外电商", Tags: []string{"亚马逊", "买家秀", "官方"}, Status: model.CaseStatusPublished, IsOfficial: true, PublicSchema: `{"fields":[{"key":"prompt","label":"产品和开箱要求","type":"textarea","required":true,"placeholder":"例如：便携榨汁杯，真实买家口吻，突出易清洗和续航"}]}`, WorkflowSnapshot: `{"schemaVersion":1,"type":"official-template","template":"amazon-unboxing"}`, RuntimeConfig: `{"kind":"text","model":"default","promptTemplate":"请输出一份适合亚马逊买家秀和开箱视频的内容方案，包含自然口吻、镜头顺序、卖点和结尾行动引导。用户要求：{{prompt}}"}`, PriceCredits: 1, MemberPriceCredits: 1, CostCredits: 1, RevenueSharePercent: 0, PublishedVersion: 1, CreatedAt: now, UpdatedAt: now,
 		},
 		officialToolCase(now, "official-ai-image", "AI 生图", "输入创意或参考图，生成适合商品展示和营销投放的视觉素材。", "https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80", "生成创作", []string{"生图", "官方"}, `{"fields":[{"key":"prompt","label":"创作要求","type":"textarea","required":true,"placeholder":"例如：白底高级感护肤品主图，柔和顶光，留出卖点区域"},{"key":"imageUrl","label":"参考图","type":"image","required":false}]}`, `{"schemaVersion":1,"type":"official-template","template":"ai-image"}`, `{"kind":"image","model":"default","promptTemplate":"请生成一张商业级商品视觉图，构图干净，主体清晰，准确执行用户要求：{{prompt}}","size":"1024x1024","quality":"high"}`),
+		officialToolCase(now, "official-detail-page", "详情页", "按平台制作详情长图、切片、A+ 模块及实拍图库，支持独立排字与上传包导出。", "", "电商", []string{"详情页", "长图", "官方"}, `{"kind":"detail-page","imageLimit":6}`, `{"schemaVersion":1,"type":"official-template","template":"detail-page"}`, `{"kind":"product_set","model":"default","templateKey":"detail-page"}`),
 		officialToolCase(now, "official-image-variations", "图裂变", "基于一张商品图生成多种构图、场景和风格变体。", "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1200&q=80", "生成创作", []string{"图裂变", "多图", "官方"}, `{"kind":"image-variations","fields":[{"key":"imageUrl","label":"参考图","type":"image","required":true},{"key":"splitMode","label":"裂变设置","type":"select","required":true},{"key":"prompt","label":"补充描述","type":"textarea","required":false},{"key":"similarity","label":"相似度","type":"number","required":true},{"key":"count","label":"生成数量","type":"number","required":true}]}`, `{"schemaVersion":2,"type":"official-template","template":"image-variations"}`, `{"kind":"image","model":"default","promptTemplate":"","size":"1024x1024","quality":"high","count":1}`),
 		officialToolCase(now, "official-cutout", "AI 抠图", "自动识别主体去背景，支持边缘羽化与透明、白底、纯色 PNG。", "/examples/cutout/result.png", "图像处理", []string{"抠图", "透明底", "官方"}, `{"fields":[{"key":"imageUrl","label":"上传图片","type":"image","required":true},{"key":"feather","label":"边缘羽化","type":"select","options":["关","弱","强"],"defaultValue":"关"},{"key":"background","label":"输出背景","type":"select","required":true,"options":["透明","白底","纯色"],"defaultValue":"透明"},{"key":"backgroundColor","label":"背景颜色","type":"text","defaultValue":"#3b82f6"}]}`, `{"schemaVersion":1,"type":"official-template","template":"cutout"}`, `{"kind":"local","operation":"cutout-replicate"}`),
 		officialToolCase(now, "official-upscale", "AI 变清晰", "使用超分模型按 2x 或 4x 修复并放大图片。", "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80", "图像处理", []string{"高清", "修复", "官方"}, `{"fields":[{"key":"imageUrl","label":"待增强图片","type":"image","required":true},{"key":"scale","label":"放大倍数","type":"select","required":true,"options":["2x","4x"],"defaultValue":"2x"},{"key":"direction","label":"增强方向","type":"select","required":true,"options":["通用","人像","商品"],"defaultValue":"通用"}]}`, `{"schemaVersion":1,"type":"official-template","template":"upscale"}`, `{"kind":"local","operation":"upscale-replicate"}`),
@@ -88,8 +89,8 @@ func seedOfficialCases(db *gorm.DB) error {
 			if err := db.Create(&item).Error; err != nil {
 				return err
 			}
-		} else if item.ID == "official-product-grid" || item.ID == "official-image-variations" || item.ID == "official-inpaint" || item.ID == "official-print-file" || item.ID == "official-upscale" || item.ID == "official-cutout" || item.ID == "official-fusion" || item.ID == "official-dewatermark" || item.ID == "official-tryon" || item.ID == "official-garment-extract" || item.ID == "official-garment-3d" || item.ID == "official-dewrinkle" || item.ID == "official-print-extract" || item.ID == "official-title-gen" || item.ID == "official-ip-check" {
-			if err := db.Model(&model.CaseApp{}).Where("id = ? AND owner_id = ?", item.ID, "platform").Updates(map[string]any{
+		} else if item.ID == "official-product-grid" || item.ID == "official-detail-page" || item.ID == "official-image-variations" || item.ID == "official-inpaint" || item.ID == "official-print-file" || item.ID == "official-upscale" || item.ID == "official-cutout" || item.ID == "official-fusion" || item.ID == "official-dewatermark" || item.ID == "official-tryon" || item.ID == "official-garment-extract" || item.ID == "official-garment-3d" || item.ID == "official-dewrinkle" || item.ID == "official-print-extract" || item.ID == "official-title-gen" || item.ID == "official-ip-check" {
+			updates := map[string]any{
 				"description":          item.Description,
 				"public_schema":        item.PublicSchema,
 				"workflow_snapshot":    item.WorkflowSnapshot,
@@ -98,7 +99,11 @@ func seedOfficialCases(db *gorm.DB) error {
 				"member_price_credits": item.MemberPriceCredits,
 				"published_version":    item.PublishedVersion,
 				"updated_at":           item.UpdatedAt,
-			}).Error; err != nil {
+			}
+			if item.ID == "official-detail-page" {
+				updates["cover_url"] = item.CoverURL
+			}
+			if err := db.Model(&model.CaseApp{}).Where("id = ? AND owner_id = ?", item.ID, "platform").Updates(updates).Error; err != nil {
 				return err
 			}
 		} else if item.ID == "official-ai-image" {

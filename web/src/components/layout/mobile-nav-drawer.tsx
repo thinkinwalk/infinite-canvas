@@ -1,9 +1,9 @@
 import { Drawer } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { FileText, Grid2X2, Image as ImageIcon, Images, Video } from "lucide-react";
+import { FileText, Grid2X2, Image as ImageIcon, Images, UserRound, Video } from "lucide-react";
 
-import { createToolGroups } from "@/constant/create-catalog";
+import { createToolGroups, videoToolGroups } from "@/constant/create-catalog";
 import { cn } from "@/lib/utils";
 
 type MobileNavDrawerProps = {
@@ -26,15 +26,16 @@ export function MobileNavDrawer({ open, pathname, onClose }: MobileNavDrawerProp
                         <ImageIcon className="size-4" />
                         图片制作
                     </Link>
-                    <Link to="/video" onClick={onClose} className={cn(linkClass, pathname === "/video" ? "bg-[#e2f2ed] font-semibold text-[#176854] dark:bg-[#17483b] dark:text-[#a3e2cc]" : "text-stone-600 dark:text-stone-300")}>
+                    <Link to="/video" onClick={onClose} className={cn(linkClass, pathname.startsWith("/video") ? "bg-[#e2f2ed] font-semibold text-[#176854] dark:bg-[#17483b] dark:text-[#a3e2cc]" : "text-stone-600 dark:text-stone-300")}>
                         <Video className="size-4" />
                         视频制作
                     </Link>
+                    <Link to="/digital-human" onClick={onClose} className={cn(linkClass, pathname === "/digital-human" ? "bg-[#e2f2ed] font-semibold text-[#176854] dark:bg-[#17483b] dark:text-[#a3e2cc]" : "text-stone-600 dark:text-stone-300")}><UserRound className="size-4" />数字人</Link>
                     <Link to="/canvas" onClick={onClose} className={cn(linkClass, pathname.startsWith("/canvas") ? "bg-[#e2f2ed] font-semibold text-[#176854] dark:bg-[#17483b] dark:text-[#a3e2cc]" : "text-stone-600 dark:text-stone-300")}>
                         <Grid2X2 className="size-4" />
                         无限画布
                     </Link>
-                    {createToolGroups.map((group) => (
+                    {[...videoToolGroups, ...createToolGroups].map((group) => (
                         <div key={group.label} className="mt-4">
                             <div className="mb-1 px-3 text-xs font-semibold text-[#176854] dark:text-[#a3e2cc]">{group.label}</div>
                             {group.items.map((item) => {
@@ -69,3 +70,4 @@ export function MobileNavDrawer({ open, pathname, onClose }: MobileNavDrawerProp
         </Drawer>
     );
 }
+
