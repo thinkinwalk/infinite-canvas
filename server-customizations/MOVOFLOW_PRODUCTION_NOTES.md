@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.16
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.17
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -43,7 +43,7 @@ server-customizations/deploy_infinite_canvas_image.sh
 Example production deploy command:
 
 ```bash
-/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.16
+/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.17
 ```
 
 The helper backs up data and docker-compose.deploy.yml, pulls the image, restarts only the app service, checks /api/health, and restores the previous compose file if the health check fails.
@@ -53,7 +53,7 @@ The helper backs up data and docker-compose.deploy.yml, pulls the image, restart
 Do not build images on the production host.
 
 1. Build and publish the image from CI or another build machine.
-2. Confirm the image tag exists, for example ghcr.io/thinkinwalk/infinite-canvas:v0.19.16.
+2. Confirm the image tag exists, for example ghcr.io/thinkinwalk/infinite-canvas:v0.19.17.
 3. SSH to production:
 
 ```bash
@@ -84,8 +84,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
-- Release tag deployed for the current production fixes: v0.19.16
-- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.16
+- Release tag deployed for the current production fixes: v0.19.17
+- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.17
 - Expected settings response includes seedance-2.0-mini and tejiasd-mini-720p in availableModels when enabled in channels.
 - Expected platform settings have allowCustomChannel=false so frontend should prefer platform models when no usable local channel is configured.
 - seedance-2.0-mini is configured on the Lingzhou relay channel with Base URL https://api.lingzhouai.com and protocol openai. It must use JSON POST /v1/videos, not Fireworks/Ark Agent Plan POST /v1/contents/generations/tasks.
@@ -95,10 +95,24 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 - DNS: studio.lingzhouai.com resolves to 37.221.196.102.
 - External health check: https://studio.lingzhouai.com/api/health returns ok.
-- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.16.
-- Production container /app/VERSION: v0.19.16.
+- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.17.
+- Production container /app/VERSION: v0.19.17.
+
+## v0.19.17 deployment verification
+
+- Release commit: f0febbe4a66b767a3556feb18187846927c902ce.
+- Image digest: sha256:6e7f3e2e7ae6029ec69dbf048c78c9fd0c2b4986a06f0dd9134a9e596badad70.
+- App and docs image workflows succeeded; official plugins published; GitHub Pages skipped as configured.
+- Public health and all three digital-human/video entry pages returned HTTP 200. Independent browser checks confirmed rendering and no horizontal overflow or page exceptions on desktop/mobile.
+- Container version is v0.19.17; FFmpeg and FFprobe are installed; the ASR model is present in the running binary and result_json exists in the task table.
+- Existing Replicate credential is preserved. ASR pricing remains unset/disabled; no paid transcription was submitted. Runtime bootstrap admin credentials did not authenticate, so the authenticated catalog check remains pending; account credentials were not changed.
+- The independent video worker was not deployed; local development backend was not restarted.
 
 ## Recent backups on production
+
+- /opt/infinite-canvas/backups/database-before-v0.19.17-20261008-142105.sqlite (SQLite online backup).
+- /opt/infinite-canvas/backups/docker-compose.deploy.yml.20261008-142105.bak
+- /opt/infinite-canvas/backups/data-before-deploy-20261008-142105.tgz
 
 - /opt/infinite-canvas/backups/docker-compose.deploy.yml.20260930-111347.bak
 - /opt/infinite-canvas/backups/data-before-deploy-20260930-111347.tgz

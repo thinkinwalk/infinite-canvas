@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "digitalHumanRendered": true,
+    "digitalHumanNoOverflow": true,
+    "photoTalkRendered": true,
+    "photoTalkNoOverflow": true,
+    "lipsyncRendered": true,
+    "lipsyncNoOverflow": true,
+    "mobileNoOverflow": true
+  },
+  "pageErrors": [],
+  "authenticated": false,
+  "paidTasksCreated": false
+}
