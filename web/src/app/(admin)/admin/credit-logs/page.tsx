@@ -83,6 +83,14 @@ function getLogPath(log: AdminCreditLog) {
     return stringValue(readExtra(log)?.path);
 }
 
+function getLogChannel(log: AdminCreditLog) {
+    const extra = readExtra(log);
+    return {
+        id: typeof extra?.channelId === "number" && extra.channelId > 0 ? extra.channelId : 0,
+        name: stringValue(extra?.channelName),
+    };
+}
+
 function getAdjustmentOperator(log: AdminCreditLog) {
     const extra = readExtra(log);
     const username = stringValue(extra?.operatorUsername);
@@ -175,6 +183,23 @@ export default function AdminCreditLogsPage() {
             render: (_, item) => {
                 const model = getLogModel(item);
                 return <Typography.Text type={model ? undefined : "secondary"}>{model || "-"}</Typography.Text>;
+            },
+        },
+        {
+            title: "渠道",
+            key: "channel",
+            width: 200,
+            render: (_, item) => {
+                const channel = getLogChannel(item);
+                if (!channel.id && !channel.name) return <Typography.Text type="secondary">{item.type === "ai_consume" || item.type === "ai_refund" ? "未记录渠道" : "-"}</Typography.Text>;
+                return (
+                    <Flex align="center" gap={4} style={{ minWidth: 0 }}>
+                        {channel.id ? <Tag style={{ flexShrink: 0 }}>#{channel.id}</Tag> : null}
+                        <Typography.Text ellipsis={{ tooltip: channel.name || "未命名渠道" }} style={{ minWidth: 0 }}>
+                            {channel.name || "未命名渠道"}
+                        </Typography.Text>
+                    </Flex>
+                );
             },
         },
         {
@@ -300,6 +325,7 @@ export default function AdminCreditLogsPage() {
                     search={false}
                     defaultSize="middle"
                     tableLayout="fixed"
+                    scroll={{ x: 1440 }}
                     cardProps={{ variant: "borderless" }}
                     headerTitle={
                         <Space>
@@ -337,6 +363,8 @@ export default function AdminCreditLogsPage() {
                             { key: "userId", label: "用户 ID", children: <Typography.Text copyable>{detailLog.userId}</Typography.Text> },
                             { key: "type", label: "类型", children: creditLogTypeLabels[detailLog.type] || detailLog.type || "-" },
                             { key: "model", label: "模型/来源", children: getLogModel(detailLog) || "-" },
+                            { key: "channelId", label: "渠道 ID", children: getLogChannel(detailLog).id || "-" },
+                            { key: "channelName", label: "渠道名称", children: getLogChannel(detailLog).name || "-" },
                             { key: "path", label: "请求路径", children: getLogPath(detailLog) || "-" },
                             { key: "amount", label: "变动", children: <Typography.Text type={detailLog.amount >= 0 ? "success" : "danger"}>{detailLog.amount}</Typography.Text> },
                             { key: "balance", label: "余额", children: detailLog.balance },

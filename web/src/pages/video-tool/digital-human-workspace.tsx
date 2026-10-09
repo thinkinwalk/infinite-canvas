@@ -248,27 +248,34 @@ export default function DigitalHumanWorkspace() {
                         {files.length ? `${files.length} 个` : "未选择"}
                     </span>
                 </div>
-                {files.map((m) => (
-                    <div key={m.id} className="rounded-lg border p-2" style={{ borderColor: token.colorBorderSecondary }}>
-                        {m.kind === "image" ? (
-                            <img src={m.url} alt={m.name} className="max-h-48 w-full rounded object-contain" />
-                        ) : m.kind === "video" ? (
-                            <video src={m.url} controls preload="metadata" className="max-h-48 w-full rounded" />
-                        ) : (
-                            <audio src={m.url} controls className="w-full" />
-                        )}
-                        <div className="mt-1 flex items-center justify-between gap-2">
-                            <span className="truncate text-xs" title={m.name}>
-                                {m.name}
-                            </span>
-                            <Button type="text" size="small" disabled={locked} aria-label={`移除${m.name}`} icon={<X size={13} />} onClick={() => wb.removeMedia(m.id)} />
-                        </div>
-                        <div className="text-xs" style={muted}>
-                            {m.width && m.height ? `${m.width}×${m.height}` : ""}
-                            {m.durationMs ? ` · ${(m.durationMs / 1000).toFixed(2)} 秒` : ""}
-                        </div>
+                {role === "avatar" && files.length > 0 ? (
+                    <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: token.colorBorderSecondary }}>
+                        <span style={muted}>主播已在上方选择，可在那里预览和更换</span>
+                        <Button type="text" size="small" disabled={locked} aria-label="移除当前主播" icon={<X size={13} />} onClick={() => files.forEach((m) => wb.removeMedia(m.id))} />
                     </div>
-                ))}
+                ) : (
+                    files.map((m) => (
+                        <div key={m.id} className="rounded-lg border p-2" style={{ borderColor: token.colorBorderSecondary }}>
+                            {m.kind === "image" ? (
+                                <img src={m.url} alt={m.name} className="max-h-48 w-full rounded object-contain" />
+                            ) : m.kind === "video" ? (
+                                <video src={m.url} controls preload="metadata" className="max-h-48 w-full rounded" />
+                            ) : (
+                                <audio src={m.url} controls className="w-full" />
+                            )}
+                            <div className="mt-1 flex items-center justify-between gap-2">
+                                <span className="truncate text-xs" title={m.name}>
+                                    {m.name}
+                                </span>
+                                <Button type="text" size="small" disabled={locked} aria-label={`移除${m.name}`} icon={<X size={13} />} onClick={() => wb.removeMedia(m.id)} />
+                            </div>
+                            <div className="text-xs" style={muted}>
+                                {m.width && m.height ? `${m.width}×${m.height}` : ""}
+                                {m.durationMs ? ` · ${(m.durationMs / 1000).toFixed(2)} 秒` : ""}
+                            </div>
+                        </div>
+                    ))
+                )}
                 <Upload.Dragger
                     height={88}
                     accept={accept}

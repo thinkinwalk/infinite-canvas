@@ -60,9 +60,11 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if err != nil {
 		return model.Settings{}, err
 	}
+	saved = normalizeSettings(saved)
+	settings.Private.NextChannelID = max(settings.Private.NextChannelID, saved.Private.NextChannelID)
 	settings = normalizeSettings(settings)
-	keepPrivateAPIKeys(&settings, normalizeSettings(saved))
-	keepPrivateAuthSecrets(&settings, normalizeSettings(saved))
+	keepPrivateAPIKeys(&settings, saved)
+	keepPrivateAuthSecrets(&settings, saved)
 	if settings.Private.Replicate.ClearAPIKey {
 		settings.Private.Replicate.APIKey = ""
 	} else if strings.TrimSpace(settings.Private.Replicate.APIKey) == "" {
@@ -178,7 +180,19 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	setting.Replicate = normalizeReplicatePricing(setting.Replicate)
+	setting.NextChannelID = max(1, setting.NextChannelID)
+	for _, channel := range setting.Channels {
+		setting.NextChannelID = max(setting.NextChannelID, channel.ID+1)
+	}
+	channelIDs := map[int]bool{}
 	for i := range setting.Channels {
+		id := setting.Channels[i].ID
+		if id <= 0 || channelIDs[id] {
+			id = setting.NextChannelID
+			setting.NextChannelID++
+			setting.Channels[i].ID = id
+		}
+		channelIDs[id] = true
 		if setting.Channels[i].Protocol == "" {
 			setting.Channels[i].Protocol = "openai"
 		}
@@ -234,12 +248,20 @@ func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
 }
 
 func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, index int) (model.ModelChannel, bool) {
+	if channel.ID > 0 {
+		for _, item := range saved {
+			if item.ID == channel.ID {
+				return item, true
+			}
+		}
+		return model.ModelChannel{}, false
+	}
 	for _, item := range saved {
 		if item.Name == channel.Name && item.BaseURL == channel.BaseURL {
 			return item, true
 		}
 	}
-	if index < len(saved) {
+	if index >= 0 && index < len(saved) {
 		return saved[index], true
 	}
 	return model.ModelChannel{}, false

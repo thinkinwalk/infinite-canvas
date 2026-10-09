@@ -484,7 +484,7 @@ func AdjustUserCredits(id string, credits int, reason string, operator model.Aut
 	return user, nil
 }
 
-func ConsumeUserCredits(userID string, modelName string, credits int, path string) error {
+func ConsumeUserCredits(userID string, modelName string, credits int, path string, channels ...model.ModelChannel) error {
 	if credits <= 0 {
 		return nil
 	}
@@ -497,7 +497,11 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 	}
 	group := user.Group
 	ratio, _ := UserGroupRatio(group)
-	extra, _ := json.Marshal(map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits})
+	details := map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits}
+	if len(channels) > 0 {
+		details["channelId"], details["channelName"] = channels[0].ID, channels[0].Name
+	}
+	extra, _ := json.Marshal(details)
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -511,7 +515,7 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 	return err
 }
 
-func RefundUserCredits(userID string, modelName string, credits int, path string) error {
+func RefundUserCredits(userID string, modelName string, credits int, path string, channels ...model.ModelChannel) error {
 	if credits <= 0 {
 		return nil
 	}
@@ -524,7 +528,11 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 	}
 	group := user.Group
 	ratio, _ := UserGroupRatio(group)
-	extra, _ := json.Marshal(map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits})
+	details := map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits}
+	if len(channels) > 0 {
+		details["channelId"], details["channelName"] = channels[0].ID, channels[0].Name
+	}
+	extra, _ := json.Marshal(details)
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -560,7 +568,7 @@ func UpdateVideoTaskStatus(task model.VideoTask, status string) error {
 	if status != "failed" && status != "cancelled" && status != "expired" {
 		return repository.UpdateVideoTaskStatus(task.ID, task.UserID, status, now())
 	}
-	extra, _ := json.Marshal(map[string]any{"model": task.Model, "path": task.Path, "chargedCredits": task.Credits, "videoTaskId": task.ID, "terminalStatus": status})
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "path": task.Path, "chargedCredits": task.Credits, "videoTaskId": task.ID, "terminalStatus": status, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	_, err := repository.RefundFailedVideoTask(task.ID, task.UserID, status, model.CreditLog{
 		ID:     newID("credit"),
 		Remark: "视频任务失败返还 " + task.Model,

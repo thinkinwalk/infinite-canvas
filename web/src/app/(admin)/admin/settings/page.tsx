@@ -42,7 +42,7 @@ const emptySettings: AdminSettings = {
     },
     private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { apiKey: "", apiKeyConfigured: false, clearApiKey: false, pricing: {} } },
 };
-const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
+const emptyChannel: AdminModelChannel = { id: 0, protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
 
 type SettingsTabKey = "public" | "private";
 type EditorMode = "visual" | "json";
@@ -82,7 +82,7 @@ export default function AdminSettingsPage() {
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
-    const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index, _rowKey: `${index}-${channel.name}-${channel.baseUrl}` })), [channels]);
+    const channelTableData = useMemo(() => channels.map((channel, index) => ({ ...channel, _index: index })), [channels]);
     const activeMode = editorMode[activeTab];
     const activeJsonText = jsonText[activeTab];
     const jsonError = activeMode === "json" ? getJsonError(activeJsonText) : "";
@@ -668,10 +668,11 @@ export default function AdminSettingsPage() {
                                     新增渠道
                                 </Button>
                                 <Table
-                                    rowKey="_rowKey"
+                                    rowKey={(item) => item.id > 0 ? item.id : `unsaved-${item._index}`}
                                     pagination={false}
                                     dataSource={channelTableData}
                                     columns={[
+                                        { title: "ID", dataIndex: "id", width: 80, render: (value: number) => value > 0 ? value : "未分配" },
                                         { title: "名称", dataIndex: "name", render: (value) => value || "未命名渠道" },
                                         { title: "协议", dataIndex: "protocol", width: 96, render: (value) => <Tag>{value || "openai"}</Tag> },
                                         { title: "状态", dataIndex: "enabled", width: 96, render: (value) => <Tag color={value ? "success" : "default"}>{value ? "已启用" : "已停用"}</Tag> },
@@ -745,6 +746,10 @@ export default function AdminSettingsPage() {
                     destroyOnHidden
                 >
                     <Form form={channelForm} layout="vertical" requiredMark={false} initialValues={emptyChannel}>
+                        <Form.Item name="id" hidden>
+                            <InputNumber />
+                        </Form.Item>
+                        {editingChannelIndex !== null ? <Typography.Paragraph type="secondary">渠道 ID：{channels[editingChannelIndex].id}</Typography.Paragraph> : null}
                         <Row gutter={16}>
                             <Col span={12}>
                                 <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: "请输入渠道名称" }]}>
@@ -917,7 +922,7 @@ export default function AdminSettingsPage() {
                 <Modal
                     title={
                         <Space>
-                            {testChannel?.name || "渠道"} 渠道的模型测试<Typography.Text type="secondary">共 {testChannel?.models.length || 0} 个模型</Typography.Text>
+                            #{testChannel?.id} {testChannel?.name || "渠道"} 渠道的模型测试<Typography.Text type="secondary">共 {testChannel?.models.length || 0} 个模型</Typography.Text>
                         </Space>
                     }
                     open={testChannelIndex !== null}
@@ -1023,6 +1028,7 @@ function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChanne
 
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
     return {
+        nextChannelId: setting.nextChannelId,
         channels: (setting.channels || []).map(normalizeChannel),
         groups: setting.groups || { default: { name: "普通用户", creditRatio: 1, enabled: true } },
         promptSync: {
@@ -1099,6 +1105,7 @@ function replicateTierLabel(tier: string) {
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
+        id: item.id || 0,
         protocol: "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",

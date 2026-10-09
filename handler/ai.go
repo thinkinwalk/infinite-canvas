@@ -169,12 +169,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 			return
 		}
-		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path, channel); err != nil {
 			FailError(w, err)
 			return
 		}
 		copyLingzhouImageResponses(w, channel, responsesBody, readAIRequestCount(body, contentType), func() {
-			if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, path, channel); err != nil {
 				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 			}
 		})
@@ -182,12 +182,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	logAIImageUpstreamParams(channel, path, modelName, body, contentType)
 	if path == "/responses" {
-		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path, channel); err != nil {
 			FailError(w, err)
 			return
 		}
 		copyAIResponses(w, channel, body, contentType, func() {
-			if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, path, channel); err != nil {
 				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 			}
 		})
@@ -203,23 +203,23 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	if err := service.ConsumeUserCredits(user.ID, modelName, credits, path); err != nil {
+	if err := service.ConsumeUserCredits(user.ID, modelName, credits, path, channel); err != nil {
 		FailError(w, err)
 		return
 	}
 	if videoCreate {
 		copyAIVideoCreateResponse(w, request, model.VideoTask{
 			UserID: user.ID, Model: modelName, Credits: credits, Path: billingPath,
-			ChannelName: channel.Name, ChannelBaseURL: channel.BaseURL,
+			ChannelID: channel.ID, ChannelName: channel.Name, ChannelBaseURL: channel.BaseURL,
 		}, func() {
-			if err := service.RefundUserCredits(user.ID, modelName, credits, billingPath); err != nil {
+			if err := service.RefundUserCredits(user.ID, modelName, credits, billingPath, channel); err != nil {
 				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 			}
 		})
 		return
 	}
 	copyAIResponse(w, request, func() {
-		if err := service.RefundUserCredits(user.ID, modelName, credits, path); err != nil {
+		if err := service.RefundUserCredits(user.ID, modelName, credits, path, channel); err != nil {
 			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 		}
 	})

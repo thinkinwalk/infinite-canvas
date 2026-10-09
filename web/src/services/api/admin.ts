@@ -231,6 +231,7 @@ export async function deleteAdminAsset(token: string, id: string) {
 }
 
 export type AdminModelChannel = {
+    id: number;
     protocol: "openai";
     name: string;
     baseUrl: string;
@@ -305,6 +306,7 @@ export type AdminPublicSettings = {
 };
 
 export type AdminPrivateSettings = {
+    nextChannelId?: number;
     channels: AdminModelChannel[];
     groups: Record<string, { name: string; creditRatio: number; enabled: boolean }>;
     promptSync: {

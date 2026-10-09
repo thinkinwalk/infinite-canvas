@@ -11,6 +11,7 @@ const (
 
 // ModelChannel 模型渠道配置。
 type ModelChannel struct {
+	ID            int                          `json:"id"`
 	Protocol      string                       `json:"protocol"`
 	Name          string                       `json:"name"`
 	BaseURL       string                       `json:"baseUrl"`
@@ -90,11 +91,12 @@ type PublicLinuxDoAuthSetting struct {
 
 // PrivateSetting 私有配置。
 type PrivateSetting struct {
-	Channels   []ModelChannel       `json:"channels"`
-	Groups     map[string]UserGroup `json:"groups"`
-	PromptSync PromptSyncSetting    `json:"promptSync"`
-	Auth       PrivateAuthSetting   `json:"auth"`
-	Replicate  ReplicateSetting     `json:"replicate"`
+	NextChannelID int                  `json:"nextChannelId"`
+	Channels      []ModelChannel       `json:"channels"`
+	Groups        map[string]UserGroup `json:"groups"`
+	PromptSync    PromptSyncSetting    `json:"promptSync"`
+	Auth          PrivateAuthSetting   `json:"auth"`
+	Replicate     ReplicateSetting     `json:"replicate"`
 }
 
 type ReplicateSetting struct {
