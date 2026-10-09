@@ -272,30 +272,44 @@ func SelectModelChannel(modelName string) (model.ModelChannel, error) {
 }
 
 func SelectModelChannelForGroup(modelName string, userGroup string) (model.ModelChannel, error) {
-	settings, err := repository.GetSettings()
+	channels, err := SelectModelChannelsForGroup(modelName, userGroup)
 	if err != nil {
 		return model.ModelChannel{}, err
+	}
+	return channels[0], nil
+}
+
+// SelectModelChannelsForGroup orders eligible channels by weight without replacement.
+func SelectModelChannelsForGroup(modelName string, userGroup string) ([]model.ModelChannel, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return nil, err
 	}
 	private := normalizePrivateSetting(settings.Private)
 	channels := modelChannelsForGroup(private.Channels, modelName, userGroup)
 	if len(channels) == 0 {
 		if len(modelChannelsForGroup(private.Channels, modelName, "")) > 0 {
-			return model.ModelChannel{}, modelGroupAccessError(modelName, userGroup, private.Groups, settings.Public.AdminContact)
+			return nil, modelGroupAccessError(modelName, userGroup, private.Groups, settings.Public.AdminContact)
 		}
-		return model.ModelChannel{}, errors.New("没有可用模型渠道")
+		return nil, errors.New("没有可用模型渠道")
 	}
-	total := 0
-	for _, channel := range channels {
-		total += channel.Weight
-	}
-	hit := rand.Intn(total)
-	for _, channel := range channels {
-		hit -= channel.Weight
-		if hit < 0 {
-			return channel, nil
+	ordered := make([]model.ModelChannel, 0, len(channels))
+	for len(channels) > 0 {
+		total := 0
+		for _, channel := range channels {
+			total += channel.Weight
+		}
+		hit := rand.Intn(total)
+		for i, channel := range channels {
+			hit -= channel.Weight
+			if hit < 0 {
+				ordered = append(ordered, channel)
+				channels = append(channels[:i], channels[i+1:]...)
+				break
+			}
 		}
 	}
-	return channels[0], nil
+	return ordered, nil
 }
 
 // ResolveModelChannelForTask returns the same configured channel that created an asynchronous task.

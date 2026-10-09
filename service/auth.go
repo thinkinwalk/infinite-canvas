@@ -485,15 +485,20 @@ func AdjustUserCredits(id string, credits int, reason string, operator model.Aut
 }
 
 func ConsumeUserCredits(userID string, modelName string, credits int, path string, channels ...model.ModelChannel) error {
+	_, err := ConsumeUserCreditsWithLog(userID, modelName, credits, path, channels...)
+	return err
+}
+
+func ConsumeUserCreditsWithLog(userID string, modelName string, credits int, path string, channels ...model.ModelChannel) (model.CreditLog, error) {
 	if credits <= 0 {
-		return nil
+		return model.CreditLog{}, nil
 	}
 	user, ok, err := repository.ConsumeUserCredits(userID, credits, now())
 	if err != nil {
-		return err
+		return model.CreditLog{}, err
 	}
 	if !ok {
-		return safeMessageError{message: "算力点不足"}
+		return model.CreditLog{}, safeMessageError{message: "算力点不足"}
 	}
 	group := user.Group
 	ratio, _ := UserGroupRatio(group)
@@ -502,7 +507,7 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 		details["channelId"], details["channelName"] = channels[0].ID, channels[0].Name
 	}
 	extra, _ := json.Marshal(details)
-	_, err = repository.SaveCreditLog(model.CreditLog{
+	return repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
 		Type:      model.CreditLogTypeAIConsume,
@@ -512,6 +517,24 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 		Extra:     string(extra),
 		CreatedAt: now(),
 	})
+}
+
+// UpdateCreditLogChannel keeps the single debit attributed to the final image channel.
+func UpdateCreditLogChannel(entry model.CreditLog, channel model.ModelChannel) error {
+	if entry.ID == "" {
+		return nil
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(entry.Extra), &details); err != nil {
+		return err
+	}
+	details["channelId"], details["channelName"] = channel.ID, channel.Name
+	extra, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	entry.Extra = string(extra)
+	_, err = repository.SaveCreditLog(entry)
 	return err
 }
 
