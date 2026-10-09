@@ -47,6 +47,12 @@ export async function quoteVideoModel(config: AiConfig, model: string, signal?: 
     return unwrapEnvelope(response.data, "视频报价读取失败");
 }
 
+export async function quoteTextModel(config: AiConfig, model: string, signal?: AbortSignal): Promise<VideoPrice> {
+    if (!model || !modelMatchesCapability(config, model, "text")) throw new Error("请选择可用的分析 / 文案模型后重试");
+    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { model: modelOptionName(model) }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
+    return unwrapEnvelope(response.data, "文案报价读取失败");
+}
+
 function videoCreateHeaders(config: AiConfig, options?: RequestOptions, contentType?: string) {
     return { ...aiHeaders(config, contentType), ...(config.channelMode === "remote" && options?.expectedCredits !== undefined ? { "X-Expected-Credits": String(options.expectedCredits) } : {}) };
 }

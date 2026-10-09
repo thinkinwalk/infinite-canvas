@@ -8,7 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
-import { createVideoGenerationTask, isVideoTaskFailed, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
+import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
 import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
 import { remapMaterialMentions } from "@/lib/video-capabilities";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
@@ -266,7 +266,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     const text = async (ctx: Context, instruction: string, imageFiles: UploadedFile[] = []) => {
         if (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && config.channelMode === "remote") {
             const cfg = modelConfig("text");
-            const quote = await quoteVideoModel(cfg, cfg.model, ctx.signal);
+            const quote = await quoteTextModel(cfg, cfg.model, ctx.signal);
             await confirmStorePrice(quote, "文案处理", ctx.signal, "分析 / 撰写按当前文字模型单独计费");
             ctx.signal.throwIfAborted();
         }
