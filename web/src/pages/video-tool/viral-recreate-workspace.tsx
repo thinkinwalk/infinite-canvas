@@ -130,7 +130,7 @@ export default function ViralRecreateWorkspace() {
                     : field === "viralProductAnalysis"
                       ? { viralProductStale: false }
                       : field === "script"
-                        ? { viralScriptStale: false }
+                        ? { viralScriptStale: false, viralScriptSuggestion: d.viralScriptSuggestion }
                         : field === "transcript"
                           ? { viralTranscriptSource: viralSource(d), viralAnalysisStale: true, viralAnalysisSuggestion: "" }
                           : {}),
