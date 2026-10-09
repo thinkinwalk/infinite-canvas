@@ -43,7 +43,7 @@ server-customizations/deploy_infinite_canvas_image.sh
 Example production deploy command:
 
 ```bash
-/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.17
+/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.18
 ```
 
 The helper backs up data and docker-compose.deploy.yml, pulls the image, restarts only the app service, checks /api/health, and restores the previous compose file if the health check fails.
@@ -53,7 +53,7 @@ The helper backs up data and docker-compose.deploy.yml, pulls the image, restart
 Do not build images on the production host.
 
 1. Build and publish the image from CI or another build machine.
-2. Confirm the image tag exists, for example ghcr.io/thinkinwalk/infinite-canvas:v0.19.17.
+2. Confirm the image tag exists, for example ghcr.io/thinkinwalk/infinite-canvas:v0.19.18.
 3. SSH to production:
 
 ```bash
@@ -84,8 +84,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
-- Release tag deployed for the current production fixes: v0.19.17
-- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.17
+- Release tag deployed for the current production fixes: v0.19.18
+- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.18
 - Expected settings response includes seedance-2.0-mini and tejiasd-mini-720p in availableModels when enabled in channels.
 - Expected platform settings have allowCustomChannel=false so frontend should prefer platform models when no usable local channel is configured.
 - seedance-2.0-mini is configured on the Lingzhou relay channel with Base URL https://api.lingzhouai.com and protocol openai. It must use JSON POST /v1/videos, not Fireworks/Ark Agent Plan POST /v1/contents/generations/tasks.
@@ -95,8 +95,16 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 - DNS: studio.lingzhouai.com resolves to 37.221.196.102.
 - External health check: https://studio.lingzhouai.com/api/health returns ok.
-- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.17.
-- Production container /app/VERSION: v0.19.17.
+- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.18.
+- Production container /app/VERSION: v0.19.18.
+
+## v0.19.18 deployment verification
+
+- Release commit: 400b7ee19e2b0252859459cbf987335e7d6efbac; tag `v0.19.18` was pushed to the `thinkinwalk/infinite-canvas` repository.
+- GitHub Actions Docker image workflow succeeded and published `ghcr.io/thinkinwalk/infinite-canvas:v0.19.18`; pulled image digest: `sha256:b27159df1a2974d93cd655ba454f67a537425ca04fa1ef7c000636ee89498cad`.
+- Production deployment helper completed successfully and created `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261009-075319.bak` plus `/opt/infinite-canvas/backups/data-before-deploy-20261009-075319.tgz`.
+- Container reports image `v0.19.18`, `/app/VERSION` is `v0.19.18`, and the container health endpoint returns `ok`.
+- External `https://studio.lingzhouai.com/api/health` returns HTTP 200 with `ok`; `/`, `/digital-human`, `/video`, `/photo-talk`, and `/lipsync` return HTTP 200.
 
 ## v0.19.17 deployment verification
 
