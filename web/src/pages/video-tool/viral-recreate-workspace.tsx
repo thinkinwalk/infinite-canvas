@@ -26,6 +26,12 @@ import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-vide
 type Role = "reference" | "product" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralFacts" | "viralProductAnalysis" | "instructions" | "script";
 const editorNames: Record<Editor, string> = { analysis: "参考结构分析", transcript: "参考音轨文字", viralFacts: "新商品真实资料", viralProductAnalysis: "商品分析", instructions: "改编要求", script: "视频脚本" };
+const suggestionFields = {
+    analysis: { key: "viralAnalysisSuggestion", stale: "viralAnalysisStale" },
+    viralProductAnalysis: { key: "viralProductSuggestion", stale: "viralProductStale" },
+    script: { key: "viralScriptSuggestion", stale: "viralScriptStale" },
+} as const;
+const suggestionInfo = (field: Editor) => (field === "analysis" || field === "viralProductAnalysis" || field === "script" ? suggestionFields[field] : undefined);
 const states = { running: "处理中", completed: "已完成", interrupted: "查询暂停", failed: "失败" };
 
 export default function ViralRecreateWorkspace() {
@@ -46,6 +52,8 @@ export default function ViralRecreateWorkspace() {
         [errors, setErrors] = useState<Partial<Record<Role, string>>>({});
     const [assetRole, setAssetRole] = useState<Role | null>(null),
         [editor, setEditor] = useState<Editor | null>(null),
+        [editingField, setEditingField] = useState<Editor>("analysis"),
+        [suggestionView, setSuggestionView] = useState(false),
         [settingsOpen, setSettingsOpen] = useState(false),
         [serviceOpen, setServiceOpen] = useState(false);
     const [serviceStatus, setServiceStatus] = useState(""),
@@ -118,9 +126,9 @@ export default function ViralRecreateWorkspace() {
             {
                 [field]: value,
                 ...(field === "analysis"
-                    ? { viralAnalysisStale: false, viralAnalysisSuggestion: "" }
+                    ? { viralAnalysisStale: false }
                     : field === "viralProductAnalysis"
-                      ? { viralProductStale: false, viralProductSuggestion: "" }
+                      ? { viralProductStale: false }
                       : field === "script"
                         ? { viralScriptStale: false }
                         : field === "transcript"
@@ -170,7 +178,7 @@ export default function ViralRecreateWorkspace() {
                 payload.kind === "image"
                     ? await (await fetch(await imageToDataUrl({ dataUrl: payload.dataUrl, storageKey: payload.storageKey }))).blob()
                     : payload.kind === "video"
-                      ? await workbenchMediaBlob({ url: payload.url, storageKey: payload.storageKey, mimeType: "video/mp4", bytes: 0, kind: "video" })
+                      ? await workbenchMediaBlob({ url: payload.url || "", storageKey: payload.storageKey || "", mimeType: "video/mp4", bytes: 0, kind: "video" })
                       : null;
             if (blob && (await addFiles([new File([blob], payload.title, { type: blob.type || (assetRole === "reference" ? "video/mp4" : "image/png") })], assetRole))) setAssetRole(null);
         } catch (error) {
@@ -243,20 +251,61 @@ export default function ViralRecreateWorkspace() {
             {label}
         </Button>
     );
+    const openEditor = (field: Editor, showSuggestion = false) => {
+        setEditingField(field);
+        setSuggestionView(showSuggestion);
+        if (window.matchMedia("(min-width: 1024px)").matches) setTab("editor");
+        else setEditor(field);
+    };
+    const textPreview = (field: Editor, placeholder: string) => (
+        <button type="button" aria-label={`查看 / 编辑全文：${editorNames[field]}`} className="block w-full rounded-lg border p-3 text-left" style={surface} onClick={() => openEditor(field)}>
+            <span className="line-clamp-6 whitespace-pre-wrap break-words text-sm leading-6" style={d[field] ? undefined : muted}>
+                {d[field] || placeholder}
+            </span>
+            <span className="mt-2 block text-xs" style={muted}>
+                {Array.from(d[field] || "").length.toLocaleString()} 字 · 点击编辑全文
+            </span>
+        </button>
+    );
     const heading = (field: Editor, action?: ReactNode) => (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <strong className="font-medium">{editorNames[field]}</strong>
             <Space size={4}>
                 {action}
-                <Button type="text" size="small" icon={<Expand size={13} />} onClick={() => setEditor(field)}>
-                    放大
+                <Button type="text" size="small" icon={<Expand size={13} />} onClick={() => openEditor(field)}>
+                    查看 / 编辑全文
                 </Button>
             </Space>
         </div>
     );
+    const suggestionActions = (field: Editor) => {
+        const info = suggestionInfo(field);
+        if (!info || !d[info.key]) return null;
+        return (
+            <Space wrap>
+                <Button
+                    disabled={locked}
+                    onClick={() => {
+                        wb.edit({ [field]: d[info.key], [info.key]: "", [info.stale]: false }, "script");
+                        setSuggestionView(false);
+                    }}
+                >
+                    采用新{field === "script" ? "脚本" : "分析"}
+                </Button>
+                <Button
+                    disabled={locked}
+                    onClick={() => {
+                        wb.patch({ [info.key]: "" });
+                        setSuggestionView(false);
+                    }}
+                >
+                    保留原稿
+                </Button>
+            </Space>
+        );
+    };
     const suggestion = (field: "analysis" | "viralProductAnalysis" | "script") => {
-        const key = field === "analysis" ? "viralAnalysisSuggestion" : field === "script" ? "viralScriptSuggestion" : "viralProductSuggestion",
-            stale = field === "analysis" ? "viralAnalysisStale" : field === "script" ? "viralScriptStale" : "viralProductStale";
+        const { key, stale } = suggestionFields[field];
         return (
             <>
                 {d[stale] && d[field] && (
@@ -266,18 +315,94 @@ export default function ViralRecreateWorkspace() {
                 )}
                 {d[key] && (
                     <div className="mt-2 space-y-2">
-                        <Input.TextArea aria-label={`新${editorNames[field]}预览`} rows={4} value={d[key]} readOnly />
-                        <Space>
-                            <Button size="small" disabled={locked} onClick={() => wb.edit({ [field]: d[key], [key]: "", [stale]: false }, "script")}>
-                                采用新{field === "script" ? "脚本" : "分析"}
-                            </Button>
-                            <Button size="small" disabled={locked} onClick={() => wb.patch({ [key]: "" })}>
-                                保留原稿
-                            </Button>
-                        </Space>
+                        <Button block onClick={() => openEditor(field, true)}>
+                            查看新{field === "script" ? "脚本" : "分析"}建议
+                        </Button>
+                        {suggestionActions(field)}
                     </div>
                 )}
             </>
+        );
+    };
+    const editorBody = (field: Editor, fullscreen = false) => {
+        const info = suggestionInfo(field),
+            suggested = info ? d[info.key] : "",
+            viewingSuggestion = suggestionView && Boolean(suggested),
+            value = (viewingSuggestion ? suggested : d[field]) || "",
+            inputStyle = { height: "100%", fontSize: 16, lineHeight: 1.8, padding: 16, resize: "none" as const },
+            disabled = locked || (field === "transcript" && !reference);
+        return (
+            <div className="flex h-full min-h-0 flex-col gap-3" data-testid={fullscreen ? "viral-fullscreen-editor" : "viral-document-editor"}>
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                    <Select
+                        aria-label="选择编辑文案"
+                        value={field}
+                        className="w-48 max-w-full"
+                        options={(Object.keys(editorNames) as Editor[]).map((key) => ({ value: key, label: editorNames[key] }))}
+                        onChange={(next: Editor) => {
+                            setEditingField(next);
+                            setSuggestionView(false);
+                            if (fullscreen) setEditor(next);
+                        }}
+                    />
+                    <Space wrap>
+                        <Button disabled={!value} onClick={() => copyText(value, "文案已复制")}>
+                            复制全文
+                        </Button>
+                        {!fullscreen && (
+                            <Button icon={<Expand size={14} />} onClick={() => setEditor(field)}>
+                                全屏编辑
+                            </Button>
+                        )}
+                    </Space>
+                </div>
+                {info && d[info.stale] && d[field] && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" />}
+                {suggested && (
+                    <Tabs
+                        className="shrink-0"
+                        activeKey={viewingSuggestion ? "suggestion" : "draft"}
+                        onChange={(key) => setSuggestionView(key === "suggestion")}
+                        items={[
+                            { key: "draft", label: "当前原稿" },
+                            { key: "suggestion", label: "新建议（待采用）" },
+                        ]}
+                    />
+                )}
+                <div className="min-h-0 flex-1">
+                    {!viewingSuggestion && (field === "script" || field === "instructions") ? (
+                        <Mentions
+                            aria-label={`编辑${editorNames[field]}`}
+                            value={value}
+                            disabled={disabled}
+                            options={labels.map((l) => ({ value: l.label, label: `${l.label} · ${l.name}` }))}
+                            onChange={(next) => edit(field, next)}
+                            placeholder="输入文案；输入 @ 引用素材"
+                            style={{ height: "100%" }}
+                            styles={{ textarea: inputStyle }}
+                        />
+                    ) : (
+                        <Input.TextArea
+                            aria-label={`${viewingSuggestion ? "新建议" : "编辑"}${editorNames[field]}`}
+                            value={value}
+                            disabled={disabled}
+                            readOnly={viewingSuggestion}
+                            onChange={(e) => edit(field, e.target.value)}
+                            placeholder="在这里查看或编辑完整文案"
+                            style={inputStyle}
+                        />
+                    )}
+                </div>
+                {viewingSuggestion && <div className="shrink-0">{suggestionActions(field)}</div>}
+                {!viewingSuggestion && (field === "script" || field === "instructions") && invalidMentions && (
+                    <div role="alert" className="text-xs" style={{ color: token.colorError }}>
+                        {invalidMentions}
+                    </div>
+                )}
+                <div className="flex shrink-0 flex-wrap justify-between gap-2 text-xs" style={muted}>
+                    <span>{Array.from(value).length.toLocaleString()} 字</span>
+                    <span>{wb.storageError ? "本地保存异常，请先复制文案备份" : viewingSuggestion ? "新建议尚未替换原稿，采用后可编辑" : "修改自动保存到本浏览器草稿"}</span>
+                </div>
+            </div>
         );
     };
     const refreshModels = async () => {
@@ -455,7 +580,7 @@ export default function ViralRecreateWorkspace() {
                                         ))}
                                     </div>
                                 )}
-                                <Input.TextArea aria-label="参考结构分析" rows={4} disabled={locked} value={d.analysis} onChange={(e) => edit("analysis", e.target.value)} placeholder="可手写开场、镜头顺序与结尾；抽样不代表镜头边界" />
+                                {textPreview("analysis", "可手写开场、镜头顺序与结尾；抽样不代表镜头边界")}
                                 {suggestion("analysis")}
                                 <Collapse
                                     items={[
@@ -470,14 +595,7 @@ export default function ViralRecreateWorkspace() {
                                                             转写参考音轨
                                                         </Button>,
                                                     )}
-                                                    <Input.TextArea
-                                                        aria-label="参考音轨文字"
-                                                        rows={3}
-                                                        disabled={locked || !reference}
-                                                        value={d.transcript}
-                                                        onChange={(e) => edit("transcript", e.target.value)}
-                                                        placeholder="服务不可用时可手动粘贴，或跳过"
-                                                    />
+                                                    {textPreview("transcript", "服务不可用时可手动粘贴，或跳过")}
                                                     <p className="text-xs" style={muted}>
                                                         未提供文字时只分析画面，不推测声音或音乐节拍。
                                                     </p>
@@ -490,37 +608,21 @@ export default function ViralRecreateWorkspace() {
                             {materialField("product", "新商品图片", referenceMode ? "按模型能力作为视频参考图" : "用于商品分析；商品进入画面需准备相应首帧")}
                             <section>
                                 {heading("viralFacts")}
-                                <Input.TextArea aria-label="新商品真实资料" rows={3} disabled={locked} value={d.viralFacts || ""} onChange={(e) => edit("viralFacts", e.target.value)} placeholder="名称、真实卖点与适用人群；不编造价格、优惠和功效" />
+                                {textPreview("viralFacts", "名称、真实卖点与适用人群；不编造价格、优惠和功效")}
                             </section>
                             <section>
                                 {heading("viralProductAnalysis", textAction("product-analyze", "分析新商品", !d.media.some((m) => m.role === "product")))}
-                                <Input.TextArea aria-label="商品分析" rows={3} disabled={locked} value={d.viralProductAnalysis || ""} onChange={(e) => edit("viralProductAnalysis", e.target.value)} placeholder="仅描述新商品，独立于参考视频结构" />
+                                {textPreview("viralProductAnalysis", "仅描述新商品，独立于参考视频结构")}
                                 {suggestion("viralProductAnalysis")}
                             </section>
                             {materialField("model", "出镜人物（可选）", referenceMode ? "视频参考用途以当前能力为准，真实外观需要验收" : "分析辅助；要出镜需准备包含该人物的首帧")}
                             <section>
                                 {heading("instructions")}
-                                <Mentions
-                                    aria-label="改编要求"
-                                    rows={3}
-                                    disabled={locked}
-                                    value={d.instructions}
-                                    options={labels.map((l) => ({ value: l.label, label: `${l.label} · ${l.name}` }))}
-                                    onChange={(value) => edit("instructions", value)}
-                                    placeholder="保留哪些表达、改写哪些卖点；@引用素材"
-                                />
+                                {textPreview("instructions", "保留哪些表达、改写哪些卖点；@引用素材")}
                             </section>
                             <section>
                                 {heading("script", textAction("script", "AI 撰写脚本", !d.viralFacts?.trim() && !d.instructions.trim() && !d.analysis.trim() && !d.media.some((m) => m.role === "product")))}
-                                <Mentions
-                                    aria-label="视频脚本"
-                                    rows={6}
-                                    disabled={locked}
-                                    value={d.script}
-                                    options={labels.map((l) => ({ value: l.label, label: `${l.label} · ${l.name}` }))}
-                                    onChange={(value) => edit("script", value)}
-                                    placeholder={`可直接手写；实际制作${cfg.videoSeconds}秒片段`}
-                                />
+                                {textPreview("script", `可直接手写；实际制作${cfg.videoSeconds}秒片段`)}
                                 <div className="mt-2 flex items-center justify-between gap-2">
                                     <span className="text-xs" style={muted}>
                                         脚本与费用按 {cfg.videoSeconds} 秒规格
@@ -674,11 +776,13 @@ export default function ViralRecreateWorkspace() {
                             onChange={setTab}
                             items={[
                                 { key: "current", label: "当前作品" },
+                                { key: "editor", label: "文案编辑" },
                                 { key: "history", label: "本浏览器作品" },
                                 { key: "guide", label: "使用说明" },
                             ]}
                         />
-                        <div className="min-h-0 flex-1 overflow-y-auto">
+                        <div className={`min-h-0 flex-1 ${tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "overflow-y-auto"}`}>
+                            {tab === "editor" && editorBody(editingField)}
                             {tab === "current" && (
                                 <div className="space-y-3">
                                     {viewed && (
@@ -820,8 +924,17 @@ export default function ViralRecreateWorkspace() {
                 {controls}
             </footer>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
-            <Modal title={editor ? editorNames[editor] : "编辑"} width={900} open={Boolean(editor)} onCancel={() => setEditor(null)} footer={<Button onClick={() => setEditor(null)}>完成</Button>}>
-                {editor && <Input.TextArea aria-label={`放大编辑${editorNames[editor]}`} rows={14} disabled={locked || (editor === "transcript" && !reference)} value={d[editor] || ""} onChange={(e) => edit(editor, e.target.value)} />}
+            <Modal
+                title="文案全屏编辑"
+                width="100%"
+                className="!m-0 !max-w-none !pb-0"
+                style={{ top: 0 }}
+                styles={{ container: { height: "100dvh", display: "flex", flexDirection: "column", borderRadius: 0 }, body: { flex: 1, minHeight: 0 }, header: { flexShrink: 0 }, footer: { flexShrink: 0 } }}
+                open={Boolean(editor)}
+                onCancel={() => setEditor(null)}
+                footer={<Button onClick={() => setEditor(null)}>完成编辑</Button>}
+            >
+                {editor && editorBody(editor, true)}
             </Modal>
             <Modal
                 title="视频设置"

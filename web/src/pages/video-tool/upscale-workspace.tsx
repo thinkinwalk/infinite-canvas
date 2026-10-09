@@ -484,7 +484,7 @@ export default function UpscaleWorkspace() {
                                                         { value: "replicate", label: "平台视频增强（推荐）" },
                                                         { value: "worker", label: "增强处理服务" },
                                                     ]}
-                                                    onChange={(route) => wb.edit({ route }, "finish")}
+                                                    onChange={(route: "replicate" | "worker") => wb.edit({ route }, "finish")}
                                                 />
                                                 {!cloud && (
                                                     <>
