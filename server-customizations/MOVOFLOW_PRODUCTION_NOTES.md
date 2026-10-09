@@ -100,12 +100,22 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## v0.19.19 deployment verification
 
+See the v0.19.20 verification below for the current runtime.
+
 - Release commit: `00a1fb25079cedd7fb297355363be1b18bbc272d`; tag `v0.19.19` and the GitHub Release are published in `thinkinwalk/infinite-canvas`.
 - App image, docs image and official plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/37895987747.
 - Production image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.19`; image digest: `sha256:2ac3217eb578843c71838967e335292ec7cecbedcd5fada6a2bd4d0bb107fa02`.
 - Container `/app/VERSION` and image revision match the release; the running binary contains the image channel failover logic. Internal and external health checks return `ok`; `/`, `/image`, `/digital-human` and `/video` return HTTP 200.
 - SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.19-20261009-065456.sqlite`. Deployment helper also created `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261009-085911.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261009-085911.tgz`.
 - Deployment evidence is saved beside the checkout in `artifacts/release-v0.19.19/`. No paid generation was submitted; real upstream failover, credit settlement and browser retry remain for manual acceptance. Local development backend was not restarted.
+
+## v0.19.20 deployment verification
+
+- Release commit: `9f43c6ad807f9ccc1af0710a752351f29a2a54bb`; tag `v0.19.20` is published. App, docs and official plugin workflows succeeded; app workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/37916567505.
+- Production image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.20`; image digest: `sha256:7104f25b17ebd576ff5233486b4e572ca3c241409ca93ac254a958e2f3a63e5f`. Container version and image revision match the release; internal and external health checks return `ok`, and the viral-recreate page returns HTTP 200 and renders without browser console errors.
+- Reference analysis, product analysis and script writing now validate/quote the text model. Final video generation still validates/quotes the video model. The independent browser page was not logged in, so no paid analysis or generation was submitted; authenticated click acceptance remains pending.
+- SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.20-20261009-121821.sqlite`. Deployment helper saved `docker-compose.deploy.yml.20261009-122228.bak` and `data-before-deploy-20261009-122228.tgz` in the same backups directory.
+- The existing `infinite-canvas-video-worker` container remained running. App setting `VIDEO_WORKER_URL=http://video-worker:8767` is retained; authenticated internal health confirms frames, compose, cut and transcribe available. Whisper small weights are mounted from `/opt/infinite-canvas/video-worker-models/whisper-small`.
 
 ## v0.19.18 deployment verification
 
