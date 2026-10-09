@@ -98,9 +98,15 @@ curl -fsS http://127.0.0.1:3002/api/health
 - Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.22.
 - Production container /app/VERSION: v0.19.22.
 
-## v0.19.19 deployment verification
+## v0.19.21 / v0.19.22 text editor deployment verification
 
-See the v0.19.20 verification below for the current runtime.
+- Final release commit: `af0f8da1b9499ed78369e2852d1069b83256e6c9`; image `ghcr.io/thinkinwalk/infinite-canvas:v0.19.22`; digest `sha256:f9b603e095ad36e2237a2f3b388bb90b5dd242c7e07e957ae01a7d6b7817ce1b`. Container version and image revision match. App, docs and plugin workflows succeeded; app workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/37935872406.
+- Internal/external health returns `ok`. The production viral-recreate page renders the new text editor without console errors. v0.19.21 browser acceptance verified a 752-character sample, sidebar sync, refresh recovery and fullscreen; final v0.19.22 recheck verified the editor entry and clean console. Local mobile width 390px opens the editor fullscreen without horizontal overflow.
+- v0.19.22 explicitly preserves pending AI script suggestions while editing the current draft. No paid generation was submitted; real AI suggestion acceptance and material references remain user acceptance items.
+- SQLite backup passed quick_check: `/opt/infinite-canvas/backups/database-before-v0.19.22-20261009-151953.sqlite`. Deploy backups: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261009-152245.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261009-152245.tgz`. Video worker stayed running.
+- Screenshots from the independent browser test, using clearly labeled sample copy, are stored beside the checkout in `artifacts/release-v0.19.21/`. Sample text was cleared after verification. Vite production build succeeded; complete TypeScript checking still reports the pre-existing admin task reconciliation call missing its predictionId argument.
+
+## v0.19.19 deployment verification
 
 - Release commit: `00a1fb25079cedd7fb297355363be1b18bbc272d`; tag `v0.19.19` and the GitHub Release are published in `thinkinwalk/infinite-canvas`.
 - App image, docs image and official plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/37895987747.
