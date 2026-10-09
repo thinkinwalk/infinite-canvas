@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.18
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.19
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -43,7 +43,7 @@ server-customizations/deploy_infinite_canvas_image.sh
 Example production deploy command:
 
 ```bash
-/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.18
+/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.19
 ```
 
 The helper backs up data and docker-compose.deploy.yml, pulls the image, restarts only the app service, checks /api/health, and restores the previous compose file if the health check fails.
@@ -53,7 +53,7 @@ The helper backs up data and docker-compose.deploy.yml, pulls the image, restart
 Do not build images on the production host.
 
 1. Build and publish the image from CI or another build machine.
-2. Confirm the image tag exists, for example ghcr.io/thinkinwalk/infinite-canvas:v0.19.18.
+2. Confirm the image tag exists, for example ghcr.io/thinkinwalk/infinite-canvas:v0.19.19.
 3. SSH to production:
 
 ```bash
@@ -84,8 +84,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
-- Release tag deployed for the current production fixes: v0.19.18
-- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.18
+- Release tag deployed for the current production fixes: v0.19.19
+- Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.19
 - Expected settings response includes seedance-2.0-mini and tejiasd-mini-720p in availableModels when enabled in channels.
 - Expected platform settings have allowCustomChannel=false so frontend should prefer platform models when no usable local channel is configured.
 - seedance-2.0-mini is configured on the Lingzhou relay channel with Base URL https://api.lingzhouai.com and protocol openai. It must use JSON POST /v1/videos, not Fireworks/Ark Agent Plan POST /v1/contents/generations/tasks.
@@ -95,8 +95,17 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 - DNS: studio.lingzhouai.com resolves to 37.221.196.102.
 - External health check: https://studio.lingzhouai.com/api/health returns ok.
-- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.18.
-- Production container /app/VERSION: v0.19.18.
+- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.19.
+- Production container /app/VERSION: v0.19.19.
+
+## v0.19.19 deployment verification
+
+- Release commit: `00a1fb25079cedd7fb297355363be1b18bbc272d`; tag `v0.19.19` and the GitHub Release are published in `thinkinwalk/infinite-canvas`.
+- App image, docs image and official plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/37895987747.
+- Production image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.19`; image digest: `sha256:2ac3217eb578843c71838967e335292ec7cecbedcd5fada6a2bd4d0bb107fa02`.
+- Container `/app/VERSION` and image revision match the release; the running binary contains the image channel failover logic. Internal and external health checks return `ok`; `/`, `/image`, `/digital-human` and `/video` return HTTP 200.
+- SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.19-20261009-065456.sqlite`. Deployment helper also created `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261009-085911.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261009-085911.tgz`.
+- Deployment evidence is saved beside the checkout in `artifacts/release-v0.19.19/`. No paid generation was submitted; real upstream failover, credit settlement and browser retry remain for manual acceptance. Local development backend was not restarted.
 
 ## v0.19.18 deployment verification
 
@@ -117,6 +126,10 @@ curl -fsS http://127.0.0.1:3002/api/health
 - The independent video worker was not deployed; local development backend was not restarted.
 
 ## Recent backups on production
+
+- /opt/infinite-canvas/backups/database-before-v0.19.19-20261009-065456.sqlite (SQLite online backup).
+- /opt/infinite-canvas/backups/docker-compose.deploy.yml.20261009-085911.bak
+- /opt/infinite-canvas/backups/data-before-deploy-20261009-085911.tgz
 
 - /opt/infinite-canvas/backups/database-before-v0.19.17-20261008-142105.sqlite (SQLite online backup).
 - /opt/infinite-canvas/backups/docker-compose.deploy.yml.20261008-142105.bak
