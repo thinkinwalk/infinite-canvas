@@ -5,6 +5,10 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 灵舟运维兑换码内部 Token
+
+- 服务端新增 `INFINITE_CANVAS_OPS_REDEMPTION_TOKEN`。配置后仅三条兑换码接口接受 `X-Internal-Redemption-Token`，创建记录的 `createdBy` 为 `ops-integration`；未配置、缺失或错误 Token 均按未登录处理，其他管理员接口继续拒绝内部 Token。专项 Go 测试覆盖内部 Token、普通管理员 JWT、路由隔离与系统创建标识，未创建真实兑换码或连接生产数据库。
+
 ## 首页任务引导与案例创作
 
 - 首屏改为具体任务与价值文案，并增加图片、视频、数字人口播三类可切换创作入口；首页可填写图片描述、视频脚本或口播正文/制作要求，选择图片/视频模型，切换照片说话与视频对口型，再带入现有工作台补素材、确认规格和费用。三类草稿分别保存在当前浏览器，未在首页直接提交生成；展示同一次本站融图运行的商品原图、风格参考与结果，使用压缩 WebP；下方仍提供商品套图、图片、视频与数字人入口、真实画布截图、三步开始、费用/素材/API/本地保存 FAQ 和资源页脚。浅深主题与中英文文案同步更新。

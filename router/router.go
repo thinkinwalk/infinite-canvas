@@ -119,12 +119,7 @@ func New() *gin.Engine {
 	})
 	admin.POST("/replicate/tasks/:id/reconcile", func(c *gin.Context) { handler.AdminReconcileReplicateTask(c.Writer,c.Request,c.Param("id")) })
 	admin.GET("/credit-logs", gin.WrapF(handler.AdminCreditLogs))
-	admin.GET("/redemption-codes", gin.WrapF(handler.AdminRedemptionCodes))
-	admin.POST("/redemption-codes", gin.WrapF(handler.AdminCreateRedemptionCodes))
 	admin.DELETE("/redemption-codes/invalid", gin.WrapF(handler.AdminDeleteInvalidRedemptionCodes))
-	admin.POST("/redemption-codes/:id/status", func(c *gin.Context) {
-		handler.AdminUpdateRedemptionCodeStatus(c.Writer, c.Request, c.Param("id"))
-	})
 	admin.DELETE("/redemption-codes/:id", func(c *gin.Context) {
 		handler.AdminDeleteRedemptionCode(c.Writer, c.Request, c.Param("id"))
 	})
@@ -150,6 +145,13 @@ func New() *gin.Engine {
 	admin.POST("/cases", gin.WrapF(handler.AdminCreateCase))
 	admin.POST("/cases/:id/review", func(c *gin.Context) {
 		handler.AdminReviewCase(c.Writer, c.Request, c.Param("id"))
+	})
+
+	redemption := api.Group("/admin", middleware.OpsRedemptionAuth)
+	redemption.GET("/redemption-codes", gin.WrapF(handler.AdminRedemptionCodes))
+	redemption.POST("/redemption-codes", gin.WrapF(handler.AdminCreateRedemptionCodes))
+	redemption.POST("/redemption-codes/:id/status", func(c *gin.Context) {
+		handler.AdminUpdateRedemptionCodeStatus(c.Writer, c.Request, c.Param("id"))
 	})
 
 	router.NoRoute(staticAppFallback())

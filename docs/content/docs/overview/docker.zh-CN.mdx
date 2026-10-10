@@ -51,6 +51,16 @@ docker compose -f docker-compose.local.yml up -d --build
 
 当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取，不需要额外挂载数据目录。
 
+## 运维兑换码 Token
+
+需要由灵舟运维管理系统调用兑换码接口时，在服务端环境中配置长随机值：
+
+```bash
+INFINITE_CANVAS_OPS_REDEMPTION_TOKEN=填写仅供服务端使用的长随机令牌
+```
+
+该 Token 只允许访问 `GET /api/admin/redemption-codes`、`POST /api/admin/redemption-codes` 和 `POST /api/admin/redemption-codes/:id/status`。它不会授权用户管理、系统设置、模型渠道、积分调整或其他管理员接口，也不会显示在前端、日志或响应中。未配置时该认证方式关闭；普通管理员 JWT 仍按原流程使用。
+
 ## 统计分析（可选）
 
 项目**默认不接入任何统计**：不设置下列环境变量时，页面不会加载任何统计脚本，也不会发送任何外部请求。你在自己的部署上想查看流量时，设置对应环境变量即可，无需修改代码或重新构建镜像——镜像启动时会据此生成运行期配置。

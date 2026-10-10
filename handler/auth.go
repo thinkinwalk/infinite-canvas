@@ -231,14 +231,18 @@ func AdminRedemptionCodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func AdminCreateRedemptionCodes(w http.ResponseWriter, r *http.Request) {
-	user, ok := service.UserFromContext(r.Context())
-	if !ok {
+	createdBy := ""
+	if service.IsOpsRedemptionRequest(r.Context()) {
+		createdBy = "ops-integration"
+	} else if user, ok := service.UserFromContext(r.Context()); ok {
+		createdBy = user.ID
+	} else {
 		Fail(w, "未登录或权限不足")
 		return
 	}
 	var request createRedemptionCodesRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	codes, err := service.CreateRedemptionCodes(request.Name, request.Credits, request.Count, request.ExpiresAt, request.Remark, user.ID)
+	codes, err := service.CreateRedemptionCodes(request.Name, request.Credits, request.Count, request.ExpiresAt, request.Remark, createdBy)
 	if err != nil {
 		FailError(w, err)
 		return

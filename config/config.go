@@ -23,6 +23,7 @@ type Config struct {
 	InfiniteCanvasOpsURL         string `env:"INFINITE_CANVAS_OPS_URL"`
 	InfiniteCanvasCallbackSecret string `env:"INFINITE_CANVAS_CALLBACK_SECRET"`
 	InfiniteCanvasSyncToken      string `env:"INFINITE_CANVAS_SYNC_TOKEN"`
+	OpsRedemptionToken           string `env:"INFINITE_CANVAS_OPS_REDEMPTION_TOKEN"`
 	StaticDir                    string `env:"STATIC_DIR" envDefault:"web/dist"`
 	LinuxDoAuthorizeURL          string `env:"LINUX_DO_AUTHORIZE_URL" envDefault:"https://connect.linux.do/oauth2/authorize"`
 	LinuxDoTokenURL              string `env:"LINUX_DO_TOKEN_URL" envDefault:"https://connect.linux.do/oauth2/token"`
