@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.22
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.23
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -43,7 +43,7 @@ server-customizations/deploy_infinite_canvas_image.sh
 Example production deploy command:
 
 ```bash
-/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.22
+/opt/infinite-canvas/deploy_infinite_canvas_image.sh ghcr.io/thinkinwalk/infinite-canvas:v0.19.23
 ```
 
 The helper backs up data and docker-compose.deploy.yml, pulls the image, restarts only the app service, checks /api/health, and restores the previous compose file if the health check fails.
@@ -83,6 +83,14 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.23 homepage creation entry deployment verification
+
+- Release commit: `5e28e3ceeb56b8f949739f9d0bf41394c2766172`; release tag: `v0.19.23`.
+- GitHub Actions Docker image workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38022222081. Published image digest: `sha256:25326e0d8dee39e3fc4596a290a3f8edef37817963f3b22807850ad50671515e`.
+- Production deployment helper completed successfully on 2026-10-10. It created `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261010-060028.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261010-060028.tgz`; the first health probe returned 502 during container startup and the helper passed on its retry loop without rollback.
+- Production container image and `/app/VERSION` both report `v0.19.23`; internal and external `/api/health` return `ok`. External `HEAD` checks for `/`, `/image`, `/video` and `/digital-human` return HTTP 200.
+- This release adds homepage image/video/digital-human creation entry switching, separate local drafts and workbench transfer; no paid generation was submitted during release verification.
 
 - Release tag deployed for the current production fixes: v0.19.22
 - Relevant image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.22
