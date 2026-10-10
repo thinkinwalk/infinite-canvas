@@ -13,6 +13,12 @@ export function loadCuratedPrompts() {
     return catalogue;
 }
 
+export async function loadHomepagePrompts() {
+    const response = await fetch(`${import.meta.env.BASE_URL}prompts/home-v1.json`);
+    if (!response.ok) throw new Error("首页精选案例加载失败");
+    return await response.json() as Prompt[];
+}
+
 export function mergePromptCatalogue(curated: Prompt[], sources: Prompt[]) {
     const ids = new Set<string>();
     const texts = new Set<string>();

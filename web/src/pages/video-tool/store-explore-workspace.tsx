@@ -17,7 +17,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { useConfigStore, selectableModelsByCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { StoreVideoSettings, VideoDraft, VideoRecord } from "@/types/video-workbench";
-import { useVideoCreationConfig } from "../video/use-video-creation-config";
+import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoSettings } from "./store-explore-request";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 

@@ -82,3 +82,13 @@ export function trackPageview(path: string) {
         /* Ignore analytics reporting errors. */
     }
 }
+
+// Homepage actions only pass placement and tool/template IDs, never prompts or user materials.
+export function trackEvent(name: string, params: Record<string, string> = {}) {
+    try {
+        if (active.ga4 && window.gtag) window.gtag("event", name, params);
+        if (active.baidu && window._hmt) window._hmt.push(["_trackEvent", "homepage", name, [params.placement, params.target].filter(Boolean).join(":")]);
+    } catch {
+        /* Analytics must not interrupt navigation or template use. */
+    }
+}

@@ -15,6 +15,7 @@ import type { MediaRole, VideoRecord, WorkerCapabilities } from "@/types/video-w
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { digitalCopyTypes, digitalHumanScriptError, digitalHumanSubtitleError, digitalHumanTaskError, digitalLearningSource, digitalSystemSpeakers } from "./digital-human-request";
 import { DigitalHumanPresets } from "./digital-human-presets";
+import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 
 const states = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待恢复" } as const;
 const modeCopy = {
@@ -58,6 +59,20 @@ export default function DigitalHumanWorkspace() {
     const uploadLock = useRef(false);
     const historyRequest = useRef(0);
     const appliedMode = useRef<string | null>(null);
+    const homeCommand = useWorkbenchAgentStore((state) => state.humanCommand);
+    const clearHomeCommand = useWorkbenchAgentStore((state) => state.clearHumanCommand);
+    const appliedHomeCommand = useRef<number | null>(null);
+    useEffect(() => {
+        if (!wb.hydrated || !homeCommand || appliedHomeCommand.current === homeCommand.nonce) return;
+        appliedHomeCommand.current = homeCommand.nonce;
+        clearHomeCommand();
+        if (busy) { message.warning("当前数字人任务处理中，首页草稿已保留，请完成后再带入"); return; }
+        if (homeCommand.mode !== d.digitalHumanMode) wb.edit({ digitalHumanMode: homeCommand.mode }, "video");
+        if (homeCommand.prompt.trim()) {
+            wb.edit({ digitalCopySource: homeCommand.copySource, narration: homeCommand.copySource === "manual" ? homeCommand.prompt : "", script: homeCommand.copySource === "manual" ? homeCommand.prompt : "", instructions: homeCommand.copySource === "brief" ? homeCommand.prompt : "" }, "script");
+        }
+        setStageFocus("speech");
+    }, [homeCommand, wb.hydrated, busy, clearHomeCommand]);
     const mode = modeCopy[d.digitalHumanMode];
     const avatar = d.media.find((m) => m.role === "avatar" && m.kind === (d.digitalHumanMode === "video" ? "video" : "image"));
     const speech = d.speech;

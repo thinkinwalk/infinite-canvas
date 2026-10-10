@@ -18,7 +18,7 @@ import { selectableModelsByCapability, useConfigStore } from "@/stores/use-confi
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { StoreVideoSettings, VideoRecord } from "@/types/video-workbench";
-import { useVideoCreationConfig } from "../video/use-video-creation-config";
+import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralFrameMaterials, viralImageCandidates, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";

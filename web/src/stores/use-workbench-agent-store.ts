@@ -27,6 +27,9 @@ export type WorkbenchGenerationTask = {
 type WorkbenchAgentStore = {
     imageCommand: WorkbenchCommand | null;
     videoCommand: WorkbenchCommand | null;
+    humanCommand: { nonce: number; prompt: string; mode: "photo" | "video"; copySource: "manual" | "brief" } | null;
+    dispatchHuman: (command: { prompt: string; mode: "photo" | "video"; copySource: "manual" | "brief" }) => void;
+    clearHumanCommand: () => void;
     tasks: WorkbenchGenerationTask[];
     dispatchImage: (command: Omit<WorkbenchCommand, "nonce" | "taskId">) => string | undefined;
     dispatchVideo: (command: Omit<WorkbenchCommand, "nonce" | "taskId">) => string | undefined;
@@ -41,6 +44,9 @@ const nextNonce = () => (nonce += 1);
 export const useWorkbenchAgentStore = create<WorkbenchAgentStore>((set) => ({
     imageCommand: null,
     videoCommand: null,
+    humanCommand: null,
+    dispatchHuman: (command) => set({ humanCommand: { ...command, nonce: nextNonce() } }),
+    clearHumanCommand: () => set({ humanCommand: null }),
     tasks: [],
     dispatchImage: (command) => {
         const commandNonce = nextNonce();

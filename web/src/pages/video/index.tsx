@@ -24,7 +24,8 @@ import { videoInputMode, videoProfile, videoReferenceError, videoInputDescriptio
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
 import { publicServiceText, REPLICATE_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
 import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
-import { useVideoCreationConfig } from "./use-video-creation-config";
+import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
+import { VIDEO_SCRIPT_TEMPLATES } from "@/lib/video-script-templates";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -695,13 +696,6 @@ export default function VideoPage() {
         </div>
     );
 }
-
-const VIDEO_SCRIPT_TEMPLATES = [
-    { title: "商品展示", prompt: "商品置于简洁台面，镜头由全景缓慢推进到细节特写，再绕商品小幅移动。柔和侧光突出材质和轮廓，背景干净，不新增文字、商标或虚构商品功能。" },
-    { title: "带货开箱", prompt: "以真实开箱视角拍摄，依次展示包装、打开过程与商品外观。镜头跟随手部动作，节奏自然，重点呈现商品细节，不虚构包装内容和卖点。" },
-    { title: "同城到店", prompt: "先展示店铺环境，再拍服务过程和细节，最后回到整体空间。运镜平稳，光线自然，营造亲切可信的到店体验，不编造地址、价格或承诺。" },
-    { title: "动作与运镜参考", prompt: "主体从侧面缓慢转向镜头，动作自然连贯。镜头先保持中景，再平稳推进到面部或主体细节，背景保持一致。若有参考视频，请插入它的素材编号并说明要参考的动作或运镜。" },
-];
 
 function GenerationSettings({ config, model, updateConfig }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig }) {
     const profile = videoProfile(config, model);
