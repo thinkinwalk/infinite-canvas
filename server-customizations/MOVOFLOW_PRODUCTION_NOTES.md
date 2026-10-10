@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.23
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.24
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,15 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.24 运维兑换码内部 Token 部署验证
+
+- Release commit: `f6a908d`; release tag: `v0.19.24`.
+- GitHub Actions Docker image workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38051658665. Published image digest: `sha256:a65ac8379f91129a5557f68ba98e305427493fc34252e0b92b88132062852bcd`.
+- Production container image and `/app/VERSION` both report `v0.19.24`; internal `/api/health` returns `ok` and external `https://studio.lingzhouai.com/api/health` returns HTTP 200.
+- Deployment helper created `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261010-142904.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261010-142904.tgz`. Token configuration additionally preserved `/opt/infinite-canvas/backups/.env.before-redemption.bak` and `/opt/infinite-canvas/backups/docker-compose.deploy.yml.before-redemption.bak`.
+- A shared random internal Token is loaded into the canvas container and the production `lingzhou-price-sync.service` through root-only environment files; the Token value is intentionally not recorded here.
+- Read-only `GET /api/admin/redemption-codes?page=1&pageSize=1` with `X-Internal-Redemption-Token` returned HTTP 200 and business code `0`. No redemption code was created, disabled, or listed in the verification output.
 
 ## v0.19.23 homepage creation entry deployment verification
 
