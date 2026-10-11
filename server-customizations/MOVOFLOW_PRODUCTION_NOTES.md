@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.24
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.25
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -84,6 +84,15 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
+## v0.19.25 视频自动匹配与 H3 修复部署验证
+
+- Release commit: `246c67de6791380a53e514bccc7a6b22110a16ad`; release tag: `v0.19.25`; GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.25.
+- App image workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38110545421. Published image digest: `sha256:2b0cecc393980f422af75876c45cfe4dc5f8d30c7ea0b29ac352926d2112e8af`. Docs image and official plugin publishing workflows also succeeded; GitHub Pages skipped as configured.
+- Production container image, `/app/VERSION`, and OCI image revision match this release. Internal and external health return `ok`; `/`, `/video`, `/image`, and `/digital-human` return HTTP 200. The existing video worker remained running.
+- SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.25-20261011-040730.sqlite`. Deployment helper additionally preserved `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261011-061130.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261011-061130.tgz`; these backup files are root-only. The previous app image `v0.19.24-h3-fix4` remains available for rollback.
+- Using the logged-in session from BitBrowser 464 in an independent temporary browser context, verified the normal `/video` entry chooses T2V, one image switches to I2V, two images use first/last frames, removing images restores T2V, and reload retains the new directory. Real quote responses for 720p / about 5 seconds returned 390 credits for both T2V and base I2V under the verification account. No page runtime errors and no paid predictions were created; original user tabs were preserved.
+- Evidence is stored beside the repository in `artifacts/release-v0.19.25/`. Real video quality, specification compliance, and charge/refund behavior still require business-material acceptance.
+
 ## v0.19.24 运维兑换码内部 Token 部署验证
 
 - Release commit: `f6a908d`; release tag: `v0.19.24`.
@@ -112,8 +121,8 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 - DNS: studio.lingzhouai.com resolves to 37.221.196.102.
 - External health check: https://studio.lingzhouai.com/api/health returns ok.
-- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.22.
-- Production container /app/VERSION: v0.19.22.
+- Production container image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.25.
+- Production container /app/VERSION: v0.19.25.
 
 ## v0.19.21 / v0.19.22 text editor deployment verification
 
