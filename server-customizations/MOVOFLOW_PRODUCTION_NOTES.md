@@ -90,6 +90,10 @@ curl -fsS http://127.0.0.1:3002/api/health
 - 视频创作台新增「重新获取视频」，只下载原 Replicate 任务结果。浏览器成功解码首帧后替换原媒体存储键并更新预览/作品记录；错误响应或解码失败保留旧文件。不创建预测、不扣费。
 - 用户原 Firefox 未开启调试端口，未改写其浏览器数据库；需刷新页面加载新版后，在「我的作品」打开旧作品并点击「重新获取视频」。
 
+- Production app release commit: `d95e7019bf33008ad5765e6c387799c7485f7b22`; image digest: `sha256:4704cc0baf2d0a30084b70f39dd4244ba8d885506de6ecbe61b30f147f301069`. App and docs image workflows passed; production image, VERSION and health checks match v0.19.28. The existing video worker was preserved.
+- SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.28-20261011-124056.sqlite`; consistent archive: `/opt/infinite-canvas/backups/data-before-v0.19.28-20261011-124056.tgz`; compose backup: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261011-124056.bak`.
+- Independent Firefox 157.0.1 production validation passed: original Blob failed decoding; existing task content GET returned 2,945,420 bytes; recovery replaced the same local media key, decoded 720×1280/5.063s, advanced playback and persisted across refresh. Non-video HTTP200, undecodable MP4 and HTTP401 kept the original Blob. One content request and zero prediction submissions during recovery. Evidence is beside the repository in `artifacts/release-v0.19.28/`.
+
 ## v0.19.27 视频播放兼容性修复
 
 - Wan 文生视频返回的 MP4 实际为 MPEG-4 Part 2 Simple Profile，Chrome/Edge 无法播放；已将当前结果转为 H.264/YUV420P，并在结果保存阶段对后续非 H.264 视频自动转码。
