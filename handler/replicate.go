@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -520,8 +521,50 @@ func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
 			}
 		}
 	}
+	if strings.HasPrefix(mimeType, "video/") {
+		if err := normalizeReplicateVideo(target); err != nil {
+			return fmt.Errorf("生成文件转码失败，可恢复查询：%w", err)
+		}
+	}
 	task.ResultFile = filename
 	task.MimeType = mimeType
+	return nil
+}
+
+func normalizeReplicateVideo(path string) error {
+	codecOutput, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", path).Output()
+	if err != nil {
+		return nil
+	}
+	codec := strings.TrimSpace(string(codecOutput))
+	if codec == "" || codec == "h264" {
+		return nil
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), "transcode-*.mp4")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(temporaryName)
+		return err
+	}
+	defer os.Remove(temporaryName)
+	command := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", temporaryName)
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg: %s: %w", safeUpstreamText(string(output)), err)
+	}
+	original := path + ".raw"
+	if err := os.Rename(path, original); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryName, path); err != nil {
+		_ = os.Rename(original, path)
+		return err
+	}
+	if err := os.Remove(original); err != nil {
+		return err
+	}
 	return nil
 }
 

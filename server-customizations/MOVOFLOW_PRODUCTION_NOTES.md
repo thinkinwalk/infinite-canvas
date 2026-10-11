@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.26
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.27
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,11 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.27 视频播放兼容性修复
+
+- Wan 文生视频返回的 MP4 实际为 MPEG-4 Part 2 Simple Profile，Chrome/Edge 无法播放；已将当前结果转为 H.264/YUV420P，并在结果保存阶段对后续非 H.264 视频自动转码。
+- 转码使用应用镜像内已有 FFmpeg，输出保留 MP4、快速开始标记及音频转 AAC；本次未重新创建付费任务。
 
 ## v0.19.26 Wan 文生视频版本修复
 
