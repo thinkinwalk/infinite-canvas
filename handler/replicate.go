@@ -333,17 +333,51 @@ func callReplicate(ctx context.Context, token, method, path string, body []byte)
 		return cloudPrediction{}, 0, err
 	}
 	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return cloudPrediction{}, response.StatusCode, readErr
+	}
 	if response.StatusCode == http.StatusTooManyRequests {
 		return cloudPrediction{}, response.StatusCode, fmt.Errorf("Replicate 暂时限制创建频率，本次未创建模型任务，请稍后重试")
 	}
 	if response.StatusCode >= 400 {
-		return cloudPrediction{}, response.StatusCode, fmt.Errorf("Replicate 请求未接受（%d），请检查参数、余额和模型权限", response.StatusCode)
+		message := fmt.Sprintf("Replicate 请求未接受（%d），请检查参数、余额和模型权限", response.StatusCode)
+		if detail := replicateErrorDetail(responseBody); detail != "" {
+			message += "：" + detail
+		}
+		return cloudPrediction{}, response.StatusCode, errors.New(message)
 	}
 	var prediction cloudPrediction
-	if err := json.NewDecoder(response.Body).Decode(&prediction); err != nil {
+	if err := json.Unmarshal(responseBody, &prediction); err != nil {
 		return prediction, response.StatusCode, err
 	}
 	return prediction, response.StatusCode, nil
+}
+
+func replicateErrorDetail(body []byte) string {
+	var payload struct {
+		Detail  any    `json:"detail"`
+		Error   any    `json:"error"`
+		Message string `json:"message"`
+		Title   string `json:"title"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	for _, value := range []any{payload.Detail, payload.Error, payload.Message, payload.Title} {
+		switch detail := value.(type) {
+		case string:
+			if text := safeUpstreamText(detail); text != "" {
+				return text
+			}
+		case []any:
+			encoded, _ := json.Marshal(detail)
+			if text := safeUpstreamText(string(encoded)); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
 }
 func applyReplicatePrediction(task *model.ReplicateTask, prediction cloudPrediction) error {
 	task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)

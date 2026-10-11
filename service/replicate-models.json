@@ -530,7 +530,7 @@
     "operation": "text-to-video",
     "label": "文字生成视频",
     "model": "wan-video/wan-2.2-t2v-fast",
-    "version": "9f0a607c444c14a25ca46cb94f01d83566e40a7c68ee0d313cb8b8b5e5cf2c09",
+    "version": "c483b1f7b892065bc58ebadb6381abf557f6b1f517d2ff0febb3fb635cf49b4d",
     "inputSchema": {
       "type": "object",
       "title": "Input",

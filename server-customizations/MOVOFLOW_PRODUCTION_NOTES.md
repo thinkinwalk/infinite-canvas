@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.25
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.26
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,12 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.26 Wan 文生视频版本修复
+
+- Wan 文生视频原固定版本 `9f0a607c444c14a25ca46cb94f01d83566e40a7c68ee0d313cb8b8b5e5cf2c09` 已被 Replicate 删除，生产提交阶段因此返回 422 且没有 prediction ID。
+- 新版本 `c483b1f7b892065bc58ebadb6381abf557f6b1f517d2ff0febb3fb635cf49b4d` 已通过生产令牌的只读版本接口读取，官方输入 schema 与现有 T2V 请求兼容；本次没有创建付费预测。
+- `callReplicate` 现在会在不记录密钥的前提下保留上游 4xx 的安全截断原因，便于后续区分版本、参数、权限和余额问题。
 
 ## v0.19.25 视频自动匹配与 H3 修复部署验证
 
