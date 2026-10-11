@@ -29,8 +29,16 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "请选择模型")
 		return
 	}
-	if input.Model == "wan-video/wan-2.2-i2v-fast" {
-		spec, err := service.FindReplicateModel("image-to-video")
+	if input.Model == "wan-video/wan-2.2-i2v-fast" || input.Model == "wan-video/wan-2.2-t2v-fast" {
+		operation := "image-to-video"
+		if input.Model == "wan-video/wan-2.2-t2v-fast" {
+			operation = "text-to-video"
+		}
+		if (input.Resolution != "480" && input.Resolution != "720") || (input.Seconds != "5" && input.Seconds != "7.5") {
+			Fail(w, "当前视频服务支持 480p / 720p，约 5 秒或 7.5 秒")
+			return
+		}
+		spec, err := service.FindReplicateModel(operation)
 		if err != nil {
 			FailError(w, err)
 			return
@@ -79,8 +87,22 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		OK(w, map[string]any{"credits": quote.Credits, "calculation": quote.Calculation})
 		return
 	}
-	if _, err := service.SelectModelChannelForGroup(input.Model, user.Group); err != nil {
+	channel, err := service.SelectModelChannelForGroup(input.Model, user.Group)
+	if err != nil {
 		FailError(w, err)
+		return
+	}
+	if quoted, calculation, ok := service.VideoQuote(channel, input.Model, input.Resolution, input.Seconds); ok {
+		ratio, err := service.UserGroupRatio(user.Group)
+		if err != nil {
+			FailError(w, err)
+			return
+		}
+		credits := int(math.Ceil(float64(quoted) * ratio))
+		if ratio != 1 {
+			calculation = fmt.Sprintf("%s · 分组倍率 %g", calculation, ratio)
+		}
+		OK(w, map[string]any{"credits": credits, "calculation": calculation})
 		return
 	}
 	base, err := service.ModelCost(input.Model)
@@ -95,6 +117,47 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 	}
 	credits := int(math.Ceil(float64(base) * ratio))
 	OK(w, map[string]any{"credits": credits, "calculation": fmt.Sprintf("后台配置每次 %d 算力点，已计入用户分组倍率", credits)})
+}
+
+func videoRequestPricingFields(body []byte, contentType string) (string, string) {
+	if strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data") {
+		_, params, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			return "", ""
+		}
+		reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+		values := map[string]string{}
+		for {
+			part, err := reader.NextPart()
+			if err != nil {
+				break
+			}
+			if part.FormName() == "resolution_name" || part.FormName() == "resolution" || part.FormName() == "seconds" || part.FormName() == "duration" {
+				value, _ := io.ReadAll(part)
+				values[part.FormName()] = strings.TrimSpace(string(value))
+			}
+			part.Close()
+		}
+		resolution := values["resolution_name"]
+		if resolution == "" {
+			resolution = values["resolution"]
+		}
+		seconds := values["seconds"]
+		if seconds == "" {
+			seconds = values["duration"]
+		}
+		return resolution, seconds
+	}
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return "", ""
+	}
+	resolution := jsonStringValue(payload["resolution"])
+	seconds := jsonStringValue(payload["seconds"])
+	if seconds == "" {
+		seconds = jsonStringValue(payload["duration"])
+	}
+	return resolution, seconds
 }
 
 func videoChannelPath(channel model.ModelChannel, name, path string) string {

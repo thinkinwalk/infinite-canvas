@@ -9,7 +9,7 @@ import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factor
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
-import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
+import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
 import { remapMaterialMentions } from "@/lib/video-capabilities";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralInput, viralMaterialLabels, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
@@ -452,7 +452,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 expectedCredits,
                 confirmReplicate,
                 onTaskSubmitted: async (task) => {
-                    store().patchRecord(ctx.recordId, { modelTask: task, ...(task.provider === "replicate" ? { replicateTask: { id: task.id, operation: task.model === REPLICATE_VIDEO_MODEL ? "image-to-video" : "hailuo-video" } } : {}) });
+                    store().patchRecord(ctx.recordId, { modelTask: task, ...(task.provider === "replicate" ? { replicateTask: { id: task.id, operation: task.model === REPLICATE_VIDEO_MODEL ? "image-to-video" : task.model === REPLICATE_TEXT_VIDEO_MODEL ? "text-to-video" : "hailuo-video" } } : {}) });
                 },
             });
             store().patchRecord(ctx.recordId, { modelTask: task });
@@ -497,7 +497,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     expectedCredits,
                     confirmReplicate,
                     onTaskSubmitted: async (task) => {
-                        store().patchRecord(ctx.recordId, { modelTask: task, ...(task.provider === "replicate" ? { replicateTask: { id: task.id, operation: task.model === REPLICATE_VIDEO_MODEL ? "image-to-video" : "hailuo-video" } } : {}) });
+                        store().patchRecord(ctx.recordId, { modelTask: task, ...(task.provider === "replicate" ? { replicateTask: { id: task.id, operation: task.model === REPLICATE_VIDEO_MODEL ? "image-to-video" : task.model === REPLICATE_TEXT_VIDEO_MODEL ? "text-to-video" : "hailuo-video" } } : {}) });
                     },
                 });
                 store().patchRecord(ctx.recordId, { modelTask: task });

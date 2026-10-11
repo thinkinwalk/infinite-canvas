@@ -193,6 +193,8 @@ func replicateDescription(operation string) string {
 		return "提升视频清晰度，可输出 720p、1080p 或 4K"
 	case "image-to-video":
 		return "让静态图片按照文字描述生成动态短视频"
+	case "text-to-video":
+		return "仅输入文字生成短视频，支持横屏或竖屏、480p 或 720p"
 	case "hailuo-video":
 		return "Hailuo 2.3 支持纯文字生成视频，也可上传一张首帧图；768p 支持 6/10 秒，1080p 仅支持 6 秒"
 	case "video-edit":
@@ -222,6 +224,8 @@ func replicateBillingDescription(operation string) string {
 		return "按视频时长、输出分辨率和帧率计费"
 	case "image-to-video":
 		return "按视频版本、分辨率和输出条数计费"
+	case "text-to-video":
+		return "按分辨率收取每条视频费用，插帧不额外加价"
 	case "hailuo-video":
 		return "按分辨率、时长档位收取每条视频费用"
 	case "video-edit":
@@ -269,6 +273,10 @@ func defaultReplicatePricing(spec ReplicateModel) model.ReplicatePricing {
 		pricing.BillingMode = "output_count"
 		pricing.UnitCredits = 180
 		pricing.Tiers = map[string]int{"base:480p": 180, "interpolate:480p": 230, "base:720p": 390, "interpolate:720p": 510}
+	case "text-to-video":
+		pricing.BillingMode = "output_count"
+		pricing.UnitCredits = 180
+		pricing.Tiers = map[string]int{"480p": 180, "720p": 390}
 	case "hailuo-video":
 		pricing.BillingMode = "output_count"
 		pricing.UnitCredits = 800

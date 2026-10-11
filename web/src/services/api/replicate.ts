@@ -5,10 +5,11 @@ import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { workbenchMediaBlob } from "./video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "./video";
 
-export type ReplicateOperation = "transcribe" | "speech" | "digital-human" | "lipsync" | "replace-person" | "upscale" | "image-to-video" | "hailuo-video" | "video-edit" | "masked-edit" | "subtitle-remove";
+export type ReplicateOperation = "transcribe" | "speech" | "digital-human" | "lipsync" | "replace-person" | "upscale" | "image-to-video" | "text-to-video" | "hailuo-video" | "video-edit" | "masked-edit" | "subtitle-remove";
 export const REPLICATE_VIDEO_MODEL = "replicate::wan-video/wan-2.2-i2v-fast";
+export const REPLICATE_TEXT_VIDEO_MODEL = "replicate::wan-video/wan-2.2-t2v-fast";
 export const HAILUO_VIDEO_MODEL = "replicate::minimax/hailuo-2.3";
-export function isReplicateVideoModel(model: string) { return model === REPLICATE_VIDEO_MODEL || model === HAILUO_VIDEO_MODEL; }
+export function isReplicateVideoModel(model: string) { return model === REPLICATE_VIDEO_MODEL || model === REPLICATE_TEXT_VIDEO_MODEL || model === HAILUO_VIDEO_MODEL; }
 export const REPLICATE_MODEL_NAMES: Record<ReplicateOperation, string> = {
     transcribe: "云端语音识别",
     speech: "系统音色与声音克隆",
@@ -17,6 +18,7 @@ export const REPLICATE_MODEL_NAMES: Record<ReplicateOperation, string> = {
     "replace-person": "视频人物替换",
     upscale: "视频增强",
     "image-to-video": "图像生成视频",
+    "text-to-video": "文字生成视频",
     "hailuo-video": "快速视频生成",
     "video-edit": "视频内容编辑",
     "masked-edit": "局部视频编辑",
@@ -25,6 +27,7 @@ export const REPLICATE_MODEL_NAMES: Record<ReplicateOperation, string> = {
 export function replicateFeatureUrl(operation: ReplicateOperation) {
     if (operation === "transcribe") return "/digital-human?focus=speech";
     if (operation === "image-to-video") return "/video?model=wan";
+    if (operation === "text-to-video") return "/video";
     if (operation === "hailuo-video") return "/video?model=hailuo";
     if (operation === "upscale") return "/video/upscale";
     if (operation === "subtitle-remove") return "/video/subtitle-remove";
@@ -32,6 +35,7 @@ export function replicateFeatureUrl(operation: ReplicateOperation) {
     return `/video/content-replace?replacement=${operation === "replace-person" ? "person" : "background"}${operation === "masked-edit" ? "&masked=1" : ""}`;
 }
 export const REPLICATE_FEATURES: { operation: ReplicateOperation; label: string; model: string; description: string; billingMode: string; tierKeys?: string[] }[] = [
+    { operation: "text-to-video", label: "Wan 2.2 · 文生视频", model: "wan-video/wan-2.2-t2v-fast", description: "仅输入文字生成视频，支持横屏/竖屏、480p/720p、约5/7.5秒；按分辨率收取每条费用，插帧不额外加价。", billingMode: "output_count", tierKeys: ["480p", "720p"] },
     { operation: "transcribe", label: "视频学习 · 云端语音识别", model: "vaibhavs10/incredibly-fast-whisper", description: "提取视频人声并在云端识别原文与时间戳。本站按输入音频秒数报价，上游按运行时间计费；请配置价格并启用后使用。", billingMode: "input_seconds" },
     { operation: "hailuo-video", label: "Hailuo 2.3 · 文生视频 / 图生视频", model: "minimax/hailuo-2.3", description: "输入文字直接生成视频，也可加1张首帧图。768p支持6/10秒；1080p仅支持6秒。按规格收取每条成片费用。", billingMode: "output_count", tierKeys: ["768p:6", "768p:10", "1080p:6"] },
     { operation: "speech", label: "中文配音与声音克隆", model: "qwen/qwen3-tts", description: "文字转语音，支持预设音色、声音克隆和声音设计。", billingMode: "input_characters" },

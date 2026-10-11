@@ -149,6 +149,11 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	if videoCreate {
+		if resolution, seconds := videoRequestPricingFields(body, contentType); resolution != "" {
+			if quoted, _, ok := service.VideoQuote(channel, modelName, resolution, seconds); ok {
+				credits = int(math.Ceil(float64(quoted)*ratio)) * readAIRequestCount(body, contentType)
+			}
+		}
 		if err := checkExpectedVideoCredits(r, credits); err != nil {
 			Fail(w, err.Error())
 			return

@@ -508,7 +508,8 @@ export function modelOptionName(value: string) {
 }
 
 export function modelOptionLabel(config: AiConfig, value: string) {
-    if (value === "replicate::wan-video/wan-2.2-i2v-fast") return "通义万相 Wan 2.2";
+    if (value === "replicate::wan-video/wan-2.2-i2v-fast") return "通义万相 Wan 2.2 · 图生视频";
+    if (value === "replicate::wan-video/wan-2.2-t2v-fast") return "通义万相 Wan 2.2 · 文生视频";
     if (value === "replicate::minimax/hailuo-2.3") return "海螺 Hailuo 2.3";
     if (/seedance.*mini/i.test(modelOptionName(value))) return "Seedance Mini";
     const decoded = decodeChannelModel(value);

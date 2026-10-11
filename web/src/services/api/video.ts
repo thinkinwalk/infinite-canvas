@@ -12,7 +12,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
-import { createReplicateTask, fetchReplicateResult, publicServiceText, quoteReplicate, readReplicateTask, REPLICATE_VIDEO_MODEL, HAILUO_VIDEO_MODEL, uploadReplicateReference, type ReplicateQuote } from "./replicate";
+import { createReplicateTask, fetchReplicateResult, publicServiceText, quoteReplicate, readReplicateTask, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, uploadReplicateReference, type ReplicateQuote } from "./replicate";
 
 type VideoResponse = {
     id?: string;
@@ -155,22 +155,28 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
         await createReplicateTask(task.id, "hailuo-video", input, quote.credits, options.signal);
         return task;
     }
-    if (selectedModel === REPLICATE_VIDEO_MODEL) {
+    if (selectedModel === REPLICATE_VIDEO_MODEL || selectedModel === REPLICATE_TEXT_VIDEO_MODEL) {
+        const textOnly = selectedModel === REPLICATE_TEXT_VIDEO_MODEL;
+        const operation = textOnly ? "text-to-video" : "image-to-video";
         if (!options?.confirmReplicate) throw new Error("请确认平台视频服务费用");
-        if (references.length < 1 || references.length > 2 || videoReferences.length || audioReferences.length) throw new Error("当前标准视频服务需要 1 张首帧图片，可加 1 张尾帧；不支持第 3 张图片、视频或音频参考");
+        if (!prompt.trim()) throw new Error("请填写视频脚本");
+        const error = videoReferenceError(config, selectedModel, references.length, videoReferences.length, audioReferences.length);
+        if (error) throw new Error(error);
         const resolution = normalizeVideoResolution(config.vquality);
         if (!["480p", "720p"].includes(resolution)) throw new Error("当前标准视频服务支持 480p 或 720p");
         if (!["5", "7.5"].includes(config.videoSeconds)) throw new Error("当前标准视频服务支持约 5 秒或 7.5 秒");
         const reference = references[0];
-        const image = await uploadReplicateReference({ url: reference.dataUrl, storageKey: reference.storageKey || "", bytes: 0, mimeType: reference.type, name: reference.name, kind: "image" }, options.signal);
+        const image = reference ? await uploadReplicateReference({ url: reference.dataUrl, storageKey: reference.storageKey || "", bytes: 0, mimeType: reference.type, name: reference.name, kind: "image" }, options.signal) : undefined;
         const lastImage = references[1] ? await uploadReplicateReference({ url: references[1].dataUrl, storageKey: references[1].storageKey || "", bytes: 0, mimeType: references[1].type, name: references[1].name, kind: "image" }, options.signal) : undefined;
-        const input = { image, ...(lastImage ? { last_image: lastImage } : {}), prompt, resolution, num_frames: config.videoSeconds === "7.5" ? 121 : 81, interpolate_output: config.videoInterpolate === "true" };
-        const quote = await quoteReplicate("image-to-video", input, options.signal);
-        await options.confirmReplicate({ ...quote, inputSummary: `输入：1张首帧图片${lastImage ? " + 1张尾帧图片" : "（不指定尾帧）"}；输出：约${config.videoSeconds}秒 · ${resolution}${config.videoInterpolate === "true" ? " · 插帧" : ""}` }, options.signal);
+        const ratio = inferVideoRatio(config.size);
+        if (textOnly && !["auto", "16:9", "9:16"].includes(ratio)) throw new Error("文生视频支持横屏 16:9 或竖屏 9:16，请调整画面比例");
+        const input = { ...(image ? { image } : {}), ...(lastImage ? { last_image: lastImage } : {}), ...(textOnly ? { aspect_ratio: ratio === "9:16" ? "9:16" : "16:9" } : {}), prompt, resolution, num_frames: config.videoSeconds === "7.5" ? 121 : 81, interpolate_output: config.videoInterpolate === "true" };
+        const quote = await quoteReplicate(operation, input, options.signal);
+        await options.confirmReplicate({ ...quote, inputSummary: `输入：${textOnly ? "纯文字（文生视频）" : `1张首帧图片${lastImage ? " + 1张尾帧图片" : "（不指定尾帧）"}`}；输出：约${config.videoSeconds}秒 · ${resolution}${textOnly ? ` · ${input.aspect_ratio}` : ""}${config.videoInterpolate === "true" ? " · 插帧" : ""}` }, options.signal);
         options.signal?.throwIfAborted();
         const task: VideoGenerationTask = { id: nanoid(), provider: "replicate", model: selectedModel, createdAt: Date.now() };
         await options.onTaskSubmitted?.(task);
-        await createReplicateTask(task.id, "image-to-video", input, quote.credits, options.signal);
+        await createReplicateTask(task.id, operation, input, quote.credits, options.signal);
         return task;
     }
     const requestConfig = resolveModelRequestConfig(config, selectedModel);

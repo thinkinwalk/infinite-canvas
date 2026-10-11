@@ -40,6 +40,12 @@ type VideoModelProfile struct {
 	Resolutions        []string `json:"resolutions"`
 	Seconds            []string `json:"seconds"`
 	GenerateAudio      bool     `json:"generateAudio"`
+	// Billing fields are optional. When configured, video requests use the
+	// corresponding duration/resolution price instead of the fixed model cost.
+	BillingMode    string             `json:"billingMode,omitempty"`
+	UnitCredits    float64            `json:"unitCredits,omitempty"`
+	MinimumCredits int                `json:"minimumCredits,omitempty"`
+	BillingTiers   map[string]float64 `json:"billingTiers,omitempty"`
 }
 
 type UserGroup struct {

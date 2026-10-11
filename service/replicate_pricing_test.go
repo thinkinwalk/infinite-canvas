@@ -131,3 +131,40 @@ func TestHailuoPricingAndSupportedSpecifications(t *testing.T) {
 		}
 	}
 }
+
+func TestWanTextVideoSchemaAndPricing(t *testing.T) {
+	spec, err := FindReplicateModel("text-to-video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pricing := defaultReplicatePricing(spec)
+	for _, resolution := range []string{"480p", "720p"} {
+		for _, interpolate := range []bool{false, true} {
+			for _, frames := range []float64{81, 121} {
+				for _, ratio := range []string{"16:9", "9:16"} {
+					input := map[string]any{"prompt": "商品展示", "resolution": resolution, "num_frames": frames, "aspect_ratio": ratio, "interpolate_output": interpolate}
+					if err := ValidateReplicateInput("user", spec, input); err != nil {
+						t.Fatal(err)
+					}
+					want := 180
+					if resolution == "720p" {
+						want = 390
+					}
+					got, err := calculateReplicateCredits(pricing, input)
+					if err != nil || got != want {
+						t.Fatalf("%v: credits %d, want %d, error %v", input, got, want, err)
+					}
+				}
+			}
+		}
+	}
+	for _, input := range []map[string]any{
+		{}, {"prompt": " "}, {"prompt": "test", "image": "https://example.com/test.png"},
+		{"prompt": "test", "resolution": "1080p"}, {"prompt": "test", "aspect_ratio": "1:1"},
+		{"prompt": "test", "num_frames": float64(122)},
+	} {
+		if err := ValidateReplicateInput("user", spec, input); err == nil {
+			t.Fatalf("invalid text-video input accepted: %v", input)
+		}
+	}
+}

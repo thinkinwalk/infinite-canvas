@@ -1,5 +1,5 @@
 import type { VideoModelProfile } from "@/services/api/admin";
-import { modelOptionLabel, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, modelOptionName, resolveModelRequestConfig, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 
 export const VIDEO_INPUT_MODES = [
     { value: "reference", label: "参考" },
@@ -9,6 +9,7 @@ export const VIDEO_INPUT_MODES = [
 
 export function videoProfile(config: AiConfig, model: string): VideoModelProfile {
     const name = modelOptionName(model);
+    if (model.startsWith("replicate::") && name === "wan-video/wan-2.2-t2v-fast") return { displayName: modelOptionLabel(config, model), description: "只写文字即可生成视频，支持横屏 / 竖屏、约 5 秒或 7.5 秒。", interface: "relay", maxImages: 0, maxVideos: 0, maxAudios: 0, resolutions: ["480", "720"], seconds: ["5", "7.5"], generateAudio: false, inputModes: ["reference"] };
     if (model.startsWith("replicate::") && name === "wan-video/wan-2.2-i2v-fast") return { displayName: modelOptionLabel(config, model), description: "首帧必填、尾帧可选；比例跟随首帧，支持约 5 秒或 7.5 秒。", interface: "relay", maxImages: 2, maxVideos: 0, maxAudios: 0, resolutions: ["480", "720"], seconds: ["5", "7.5"], generateAudio: false, inputModes: ["first_last"], firstFrameRequired: true, lastFrameOptional: true, firstFrameField: "image", lastFrameField: "last_image" };
     if (model.startsWith("replicate::") && name === "minimax/hailuo-2.3") return { displayName: modelOptionLabel(config, model), description: "可直接输入文字，也可上传1张首帧图片。768p支持6/10秒，1080p仅支持6秒。", interface: "relay", maxImages: 1, maxVideos: 0, maxAudios: 0, resolutions: ["768", "1080"], seconds: config.vquality.replace(/p$/i, "") === "1080" ? ["6"] : ["6", "10"], generateAudio: false, inputModes: ["first_frame_only"], firstFrameRequired: false, firstFrameField: "first_frame_image" };
     const saved = config.channelMode === "remote" ? config.videoModels?.[name] : undefined;
@@ -16,6 +17,12 @@ export function videoProfile(config: AiConfig, model: string): VideoModelProfile
     const ark = request.baseUrl.includes("/api/plan/v3");
     const seedance = /seedance|seedace/i.test(name);
     return { description: "根据文字和参考图片制作视频；视频、音频及首尾帧需由管理员确认渠道支持后开放。", interface: ark ? "ark" : seedance ? "relay" : "openai", maxImages: 7, maxVideos: ark ? 3 : 0, maxAudios: ark ? 3 : 0, resolutions: seedance && !ark ? ["480", "720"] : ["480", "720", "1080"], seconds: seedance ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [], generateAudio: ark, inputModes: ["reference"], ...saved, displayName: /seedance.*mini/i.test(name) ? modelOptionLabel(config, model) : saved?.displayName || name };
+}
+
+export function resolveAutomaticVideoModel(config: AiConfig, images: number, videos: number, audios: number) {
+    const models = selectableModelsByCapability(config, "video");
+    const preferred = `replicate::wan-video/wan-2.2-${images ? "i2v" : "t2v"}-fast`;
+    return [preferred, config.videoModel, ...models].find((model) => models.includes(model) && videoProfile(config, model).interface !== "unavailable" && !videoReferenceError(config, model, images, videos, audios)) || "";
 }
 
 export function supportedVideoInputModes(profile: VideoModelProfile) {

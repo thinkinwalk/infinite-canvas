@@ -11,14 +11,22 @@ import (
 func TestVideoReferencesSurviveProtocolConversion(t *testing.T) {
 	payload := map[string]any{"model": "seedance-test", "prompt": "参考视频1的运镜", "seconds": "5", "image_url": "https://example.com/image.png", "reference_videos": []any{"https://example.com/video.mp4"}, "audio_urls": []any{"https://example.com/audio.mp3"}}
 	ark, ok := buildArkAgentPlanVideoBody(payload)
-	if !ok { t.Fatal("conversion failed") }
+	if !ok {
+		t.Fatal("conversion failed")
+	}
 	var content map[string]any
-	if err := json.Unmarshal(ark, &content); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(ark, &content); err != nil {
+		t.Fatal(err)
+	}
 	relay, ok := buildOpenAICompatibleVideoBody(content)
-	if !ok { t.Fatal("reverse conversion failed") }
+	if !ok {
+		t.Fatal("reverse conversion failed")
+	}
 	var result map[string]any
 	json.Unmarshal(relay, &result)
-	if len(jsonURLValues(result["reference_videos"])) != 1 || len(jsonURLValues(result["audio_urls"])) != 1 { t.Fatalf("lost references: %s", relay) }
+	if len(jsonURLValues(result["reference_videos"])) != 1 || len(jsonURLValues(result["audio_urls"])) != 1 {
+		t.Fatalf("lost references: %s", relay)
+	}
 }
 
 func TestVideoProfileRejectsUnsupportedInputsBeforeBilling(t *testing.T) {
@@ -30,15 +38,30 @@ func TestVideoProfileRejectsUnsupportedInputsBeforeBilling(t *testing.T) {
 		`{"model":"seedance-test","resolution":"1080p","seconds":"5"}`,
 		`{"model":"seedance-test","resolution":"720p","seconds":"15"}`,
 	} {
-		if validateVideoProfileRequest(profile, []byte(body), "application/json") == nil { t.Fatalf("unchecked input: %s", body) }
+		if validateVideoProfileRequest(profile, []byte(body), "application/json") == nil {
+			t.Fatalf("unchecked input: %s", body)
+		}
 	}
 	profile.MaxVideos, profile.MaxAudios = 3, 3
-	if err := validateVideoProfileRequest(profile, []byte(`{"resolution":"720p","seconds":"5","reference_videos":["https://example.com/video.mp4"],"audio_urls":["https://example.com/audio.mp3"]}`), "application/json"); err != nil { t.Fatal(err) }
+	if err := validateVideoProfileRequest(profile, []byte(`{"resolution":"720p","seconds":"5","reference_videos":["https://example.com/video.mp4"],"audio_urls":["https://example.com/audio.mp3"]}`), "application/json"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestVideoPriceChangeRequiresNewConfirmation(t *testing.T) {
 	r := httptest.NewRequest("POST", "/api/v1/videos", nil)
 	r.Header.Set("X-Expected-Credits", "180")
-	if checkExpectedVideoCredits(r, 180) != nil { t.Fatal("matching quote rejected") }
-	if checkExpectedVideoCredits(r, 390) == nil { t.Fatal("changed price accepted") }
+	if checkExpectedVideoCredits(r, 180) != nil {
+		t.Fatal("matching quote rejected")
+	}
+	if checkExpectedVideoCredits(r, 390) == nil {
+		t.Fatal("changed price accepted")
+	}
+}
+
+func TestVideoRequestPricingFieldsReadsJSON(t *testing.T) {
+	resolution, seconds := videoRequestPricingFields([]byte(`{"resolution":"720p","seconds":"5"}`), "application/json")
+	if resolution != "720p" || seconds != "5" {
+		t.Fatalf("pricing fields = %q, %q", resolution, seconds)
+	}
 }

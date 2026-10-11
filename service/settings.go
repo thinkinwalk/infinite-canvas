@@ -42,7 +42,7 @@ func PublicSettingsForGroup(userGroup string) (model.PublicSetting, error) {
 	if normalized.Private.Replicate.APIKey != "" || os.Getenv("REPLICATE_API_TOKEN") != "" {
 		for _, spec := range ReplicateModels() {
 			price := normalized.Private.Replicate.Pricing[spec.Model]
-			if (spec.Operation == "image-to-video" || spec.Operation == "hailuo-video") && price.Enabled && price.Version == spec.Version {
+			if (spec.Operation == "image-to-video" || spec.Operation == "text-to-video" || spec.Operation == "hailuo-video") && price.Enabled && price.Version == spec.Version {
 				normalized.Public.ReplicateVideoModels = append(normalized.Public.ReplicateVideoModels, spec.Model)
 			}
 		}

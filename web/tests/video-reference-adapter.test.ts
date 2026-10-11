@@ -4,13 +4,13 @@ import axios from "axios";
 const memory = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value), removeItem: (key: string) => memory.delete(key) } });
 const { createVideoGenerationTask } = await import("../src/services/api/video");
-const { defaultConfig } = await import("../src/stores/use-config-store");
+const { defaultConfig, createModelChannel } = await import("../src/stores/use-config-store");
 import type { VideoModelProfile } from "../src/services/api/admin";
 
 const originalPost = axios.post;
 afterEach(() => { axios.post = originalPost; });
 const profile: VideoModelProfile = { displayName: "Test", description: "Test", interface: "relay", maxImages: 7, maxVideos: 3, maxAudios: 3, resolutions: ["720"], seconds: ["5"], generateAudio: false };
-const config = { ...defaultConfig, channels: [], channelMode: "remote" as const, model: "seedance-test", videoModel: "seedance-test", videoSeconds: "5", vquality: "720", videoModels: { "seedance-test": profile } };
+const config = { ...defaultConfig, channels: [createModelChannel({ id: "remote", models: [{ name: "seedance-test", capability: "video" }] })], channelMode: "remote" as const, model: "seedance-test", videoModel: "seedance-test", videoSeconds: "5", vquality: "720", videoModels: { "seedance-test": profile } };
 const image = { id: "image", name: "image.png", type: "image/png", dataUrl: "https://example.com/image.png" };
 const video = { id: "video", name: "video.mp4", type: "video/mp4", url: "https://example.com/video.mp4" };
 const audio = { id: "audio", name: "audio.mp3", type: "audio/mpeg", url: "https://example.com/audio.mp3" };

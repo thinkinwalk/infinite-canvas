@@ -259,6 +259,10 @@ export type VideoModelProfile = {
     resolutions: string[];
     seconds: string[];
     generateAudio: boolean;
+    billingMode?: "duration_resolution" | string;
+    unitCredits?: number;
+    minimumCredits?: number;
+    billingTiers?: Record<string, number>;
 };
 
 export type AdminPublicModelChannelSettings = {

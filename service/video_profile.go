@@ -2,11 +2,41 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
 )
+
+// VideoQuote returns the platform charge for one video request. A profile
+// with duration/resolution pricing takes precedence over the legacy fixed
+// model cost; the caller applies the user's group ratio afterwards.
+func VideoQuote(channel model.ModelChannel, modelName, resolution string, seconds string) (int, string, bool) {
+	profile := VideoProfile(channel, modelName)
+	if profile.BillingMode != "duration_resolution" || len(profile.BillingTiers) == 0 {
+		return 0, "", false
+	}
+	resolution = strings.TrimSuffix(strings.TrimSpace(resolution), "p")
+	rate, ok := profile.BillingTiers[resolution]
+	if !ok {
+		rate = profile.UnitCredits
+	}
+	if rate <= 0 {
+		return 0, "", false
+	}
+	duration, err := strconv.ParseFloat(strings.TrimSpace(seconds), 64)
+	if err != nil || duration <= 0 {
+		duration = 1
+	}
+	units := math.Ceil(duration)
+	credits := int(math.Ceil(units * rate))
+	if credits < profile.MinimumCredits {
+		credits = profile.MinimumCredits
+	}
+	return credits, fmt.Sprintf("%sp · %g 秒：%g 算力点/秒，最低 %d 点", resolution, duration, rate, profile.MinimumCredits), true
+}
 
 func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfile {
 	if profile, ok := channel.VideoModels[name]; ok && profile.Interface != "" {
@@ -56,6 +86,9 @@ func normalizeVideoInputProfile(profile model.VideoModelProfile) model.VideoMode
 		}
 	}
 	profile.InputModes = modes
+	if profile.BillingTiers == nil {
+		profile.BillingTiers = map[string]float64{}
+	}
 	if len(modes) == 0 {
 		profile.Interface = "unavailable"
 		profile.Description = "当前渠道未配置有效的输入模式或首尾帧字段，请管理员检查配置。"
