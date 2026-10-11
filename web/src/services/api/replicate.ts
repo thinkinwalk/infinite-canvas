@@ -209,8 +209,8 @@ export async function storeReplicateResult(task: ReplicateTask): Promise<Uploade
     return uploadMediaFile(await fetchReplicateResult(task.id), "replicate");
 }
 export async function fetchReplicateResult(id: string): Promise<Blob> {
-    const response = await fetch(`/api/v1/replicate/tasks/${encodeURIComponent(id)}/content`, { headers: { Authorization: `Bearer ${sessionToken()}` } });
-    if (!response.ok) throw new Error("作品下载失败，请从任务记录恢复查询");
+    const response = await fetch(`/api/v1/replicate/tasks/${encodeURIComponent(id)}/content`, { cache: "no-store", headers: { Authorization: `Bearer ${sessionToken()}` } });
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "请登录生成该作品的账号后重新获取视频" : "作品下载失败，请从任务记录恢复查询");
     return response.blob();
 }
 

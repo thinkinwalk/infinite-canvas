@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`，这是从 Docker labels 排查确认的目录；不要使用 `/opt/chatgpt2api`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.25`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.28`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
 - 旧服务器 `47.104.6.6` 已迁移，不要向其部署或以其状态判断当前生产。
 
@@ -112,3 +112,5 @@
 - Agent 对话消息必须同时按 `threadId`、`turnId` 和 `itemId` 归属；实时事件只用于补充未物化的 turn，历史快照成为权威后不得重复合并同一条消息。
 - Agent 通信协议版本与消息存储版本必须独立管理；消息存储格式升级时必须先备份再迁移，遇到未知版本、损坏清单或冲突备份时拒绝覆盖原文件，不得按记录数量或文件大小静默裁剪历史元数据。
 - 本地启动或浏览器验收时不要关闭用户已经打开的浏览器窗口或标签页；需要自动化验证时使用独立测试页面，避免打断用户当前页面和对话状态。
+
+- 排查生成媒体无法播放时，须核对实际播放来源（浏览器本地 Blob / 云端文件）和浏览器解码结果；服务器转码成功不能作为既有本地作品已修复的证据，不要要求用户清空作品缓存。

@@ -40,6 +40,20 @@ export async function setMediaBlob(storageKey: string, blob: Blob) {
     return url;
 }
 
+export async function replaceStoredVideo(storageKey: string, blob: Blob): Promise<UploadedFile> {
+    if (!blob.size || !blob.type.startsWith("video/")) throw new Error("获取的文件不是有效视频，本地作品已保留");
+    const url = URL.createObjectURL(blob);
+    try {
+        const meta = await readVideoMeta(url, true);
+        await store.setItem(storageKey, blob);
+        objectUrls.set(storageKey, url);
+        return { url, storageKey, bytes: blob.size, mimeType: blob.type, ...meta };
+    } catch (error) {
+        URL.revokeObjectURL(url);
+        throw error;
+    }
+}
+
 export async function deleteStoredMedia(keys: Iterable<string>) {
     await Promise.all(
         Array.from(new Set(keys)).map(async (key) => {
@@ -69,12 +83,15 @@ export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()
     return keys;
 }
 
-function readVideoMeta(url: string) {
-    return new Promise<{ width: number; height: number; durationMs?: number }>((resolve) => {
+function readVideoMeta(url: string, requirePlayable = false) {
+    return new Promise<{ width: number; height: number; durationMs?: number }>((resolve, reject) => {
         const video = document.createElement("video");
-        const done = () => resolve({ width: video.videoWidth, height: video.videoHeight, durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined });
-        video.onloadedmetadata = done;
-        video.onerror = done;
+        const cleanup = () => { video.onloadedmetadata = null; video.onloadeddata = null; video.onerror = null; video.removeAttribute("src"); video.load(); };
+        const done = () => { const meta = { width: video.videoWidth, height: video.videoHeight, durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined }; cleanup(); resolve(meta); };
+        if (requirePlayable) video.onloadeddata = done;
+        else video.onloadedmetadata = done;
+        video.onerror = () => { if (requirePlayable) { cleanup(); reject(new Error("浏览器仍无法解码此视频，本地作品已保留，请联系管理员")); } else done(); };
+        video.preload = "auto";
         video.src = url;
     });
 }

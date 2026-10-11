@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.27
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.28
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,12 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.28 本地视频缓存恢复
+
+- Firefox 实际播放 IndexedDB 旧 MPEG-4 副本；上次服务器 H.264 转码没有更新浏览器本地作品。
+- 视频创作台新增「重新获取视频」，只下载原 Replicate 任务结果。浏览器成功解码首帧后替换原媒体存储键并更新预览/作品记录；错误响应或解码失败保留旧文件。不创建预测、不扣费。
+- 用户原 Firefox 未开启调试端口，未改写其浏览器数据库；需刷新页面加载新版后，在「我的作品」打开旧作品并点击「重新获取视频」。
 
 ## v0.19.27 视频播放兼容性修复
 

@@ -14,7 +14,7 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
+import { deleteStoredMedia, replaceStoredVideo, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { createVideoGenerationTask, isVideoTaskFailed, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoGenerationTask, type VideoTaskWaitState, type VideoPrice } from "@/services/api/video";
 import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -22,7 +22,7 @@ import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoInputDescription, remapMaterialMentions, materialMentionError } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
-import { publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
+import { fetchReplicateResult, publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
 import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { VIDEO_SCRIPT_TEMPLATES } from "@/lib/video-script-templates";
@@ -493,6 +493,20 @@ export default function VideoPage() {
         saveAs(video.url, "video.mp4");
     };
 
+    const restoreVideo = async (video: GeneratedVideo) => {
+        const log = logs.find((item) => item.video?.id === video.id);
+        if (!log?.task || log.task.provider !== "replicate") throw new Error("该作品没有可恢复的云端任务记录");
+        const blob = await fetchReplicateResult(log.task.id);
+        const saved = await logStore.getItem<GenerationLog>(log.id);
+        if (!saved) throw new Error("作品记录已删除");
+        const stored = await replaceStoredVideo(video.storageKey, blob);
+        const nextVideo = { ...video, ...stored, width: stored.width || video.width, height: stored.height || video.height, durationMs: stored.durationMs ?? video.durationMs };
+        await saveLog({ ...saved, video: nextVideo }, false);
+        setResults((items) => items.map((item) => item.video?.id === video.id ? { ...item, video: nextVideo } : item));
+        setPreviewLog((item) => item?.id === log.id ? { ...item, video: nextVideo } : item);
+        message.success("已重新获取原任务视频，未重新生成、未扣费");
+    };
+
     const saveResultToAssets = (video: GeneratedVideo) => {
         addAsset({
             kind: "video",
@@ -692,7 +706,7 @@ export default function VideoPage() {
                 </section>
                 <section className="thin-scrollbar min-h-0 overflow-y-auto rounded-lg border border-border bg-card p-4">
                     <div className="flex items-center justify-between gap-2"><Tabs activeKey={resultView} onChange={setResultView} items={[{ key: "results", label: "生成结果" }, { key: "history", label: `我的作品（${logs.length}）` }, { key: "examples", label: "使用示例" }]} />{running && <Tag>{t("workbench.waiting", { time: formatDuration(elapsedMs) })}</Tag>}</div>
-                    {resultView === "history" ? <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={(log) => { if (!running && !writing) previewGenerationLog(log); else message.warning("请等待当前制作完成后查看其他作品"); }} /> : resultView === "examples" ? <div className="space-y-4"><p className="text-sm text-muted-foreground">以下是可编辑的文字脚本模板。选择模板不调用模型、不扣费；上传你的素材后再生成。</p><div className="grid gap-3 xl:grid-cols-2">{VIDEO_SCRIPT_TEMPLATES.map((item) => <div key={item.title} className="space-y-3 rounded-lg border border-border p-4"><h3 className="font-semibold">{item.title}</h3><p className="text-sm leading-6 text-muted-foreground">{item.prompt}</p><Button disabled={running || writing} onClick={() => { setPrompt(references.length ? `以 @图片1 中的主体为准。${item.prompt}` : item.prompt); message.success("已填入脚本，可按素材修改"); }}>应用脚本</Button></div>)}</div></div> : results.length ? <div className="grid gap-4">{results.map((result) => result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} waitState={result.waitState} />)}</div> : <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border text-center"><VideoIcon size={42} className="text-muted-foreground" /><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="视频生成后将在这里预览" /><Button onClick={() => setResultView("examples")}>查看使用示例</Button></div>}
+                    {resultView === "history" ? <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={(log) => { if (!running && !writing) previewGenerationLog(log); else message.warning("请等待当前制作完成后查看其他作品"); }} /> : resultView === "examples" ? <div className="space-y-4"><p className="text-sm text-muted-foreground">以下是可编辑的文字脚本模板。选择模板不调用模型、不扣费；上传你的素材后再生成。</p><div className="grid gap-3 xl:grid-cols-2">{VIDEO_SCRIPT_TEMPLATES.map((item) => <div key={item.title} className="space-y-3 rounded-lg border border-border p-4"><h3 className="font-semibold">{item.title}</h3><p className="text-sm leading-6 text-muted-foreground">{item.prompt}</p><Button disabled={running || writing} onClick={() => { setPrompt(references.length ? `以 @图片1 中的主体为准。${item.prompt}` : item.prompt); message.success("已填入脚本，可按素材修改"); }}>应用脚本</Button></div>)}</div></div> : results.length ? <div className="grid gap-4">{results.map((result) => result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} onRestore={logs.some((log) => log.video?.id === result.video?.id && log.task?.provider === "replicate" && log.video?.storageKey) ? restoreVideo : undefined} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} waitState={result.waitState} />)}</div> : <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border text-center"><VideoIcon size={42} className="text-muted-foreground" /><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="视频生成后将在这里预览" /><Button onClick={() => setResultView("examples")}>查看使用示例</Button></div>}
                 </section>
             </main>
             <input ref={fileInputRef} type="file" accept="image/*" multiple={!singleImage} className="hidden" onChange={(event) => { void addReferences(event.target.files); event.target.value = ""; }} />
@@ -730,11 +744,21 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
     </div>;
 }
 
-function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
+function ResultVideoCard({ video, onDownload, onSaveAsset, onRestore }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void; onRestore?: (video: GeneratedVideo) => Promise<void> }) {
     const { t } = useTranslation();
+    const [playbackError, setPlaybackError] = useState("");
+    const [restoring, setRestoring] = useState(false);
+    const restore = async () => {
+        if (!onRestore || restoring) return;
+        setRestoring(true);
+        try { await onRestore(video); setPlaybackError(""); }
+        catch (error) { setPlaybackError(publicServiceText(error instanceof Error ? error.message : "视频获取失败，请稍后重试")); }
+        finally { setRestoring(false); }
+    };
     return (
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
-            <video src={video.url} controls className="aspect-video w-full bg-black object-contain" />
+            <video src={video.url} controls onLoadedData={() => setPlaybackError("")} onError={() => setPlaybackError(onRestore ? "本地视频无法播放，可重新获取原任务视频，不重新生成、不扣费。" : "浏览器无法播放该视频，请下载后使用本地播放器查看或联系管理员。")} className="aspect-video w-full bg-black object-contain" />
+            {playbackError && <div role="alert" className="px-3 py-2 text-sm text-destructive">{playbackError}</div>}
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
                 <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
                     <span>
@@ -744,10 +768,11 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
                     <span>{formatDuration(video.durationMs)}</span>
                 </div>
                 <div className="flex shrink-0 gap-1">
-                    <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => onSaveAsset(video)}>
+                    {onRestore && <Button size="small" loading={restoring} icon={<RefreshCw className="size-3.5" />} onClick={() => void restore()}>重新获取视频</Button>}
+                    <Button size="small" disabled={restoring} icon={<FolderPlus className="size-3.5" />} onClick={() => onSaveAsset(video)}>
                         {t("common.addToAssets")}
                     </Button>
-                    <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(video)}>
+                    <Button size="small" disabled={restoring} icon={<Download className="size-3.5" />} onClick={() => onDownload(video)}>
                         {t("common.download")}
                     </Button>
                 </div>
