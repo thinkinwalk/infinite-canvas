@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.31
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.32
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -238,3 +238,11 @@ curl -fsS http://127.0.0.1:3002/api/health
 - H3 profile on its existing enabled channel now uses relay JSON, 2K/768p, 15 seconds, reference limits9 images/3 videos/3 audios. Production model cost is480 credits/request as explicitly confirmed; existing user-group multipliers still apply. No unrelated model price or channel access setting changed.
 - Go video/H3 tests and9 frontend adapter/material tests pass; Vite build succeeds. Independent browser verified the built local page, stale-profile correction and switching from another model to2K/16:9/15 seconds,768p and portrait options. Production video page renders the published build. Existing bootstrap credentials did not authenticate, so authenticated production quote and paid generation were not tested; actual pixels, duration and media-reference output remain pending. No credentials changed. Existing wider Wan test and unrelated TypeScript failures are recorded in pending-test.
 - Evidence and helpers are saved beside the checkout in `artifacts/release-v0.19.31/`.
+
+## v0.19.32 H3 duration correction deployment verification
+
+- Release commit: `7357b3273cc2107a042eb785cf088e06d57bff5d`; tag/release: `v0.19.32`. App workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38267167769; docs and plugin workflows also succeeded.
+- Current image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.32`; digest: `sha256:f190332f2335d15ab97f656fe8ee6917c8889d8299202e2e14bf0328c40d780e`. Container revision and VERSION match; internal/external health return HTTP200 `ok`.
+- H3 duration choices are5/10/15 seconds, default15, based on the user's latest upstream confirmation. Both frontend profiles and backend quote/submission checks accept the three choices. Production channel profile has seconds `["15","5","10"]`; price remains480 credits/request, and no unrelated price changed.
+- Consistent SQLite/data/Compose backups created in `/opt/infinite-canvas/backups/`: `database-before-v0.19.32-20261012-170643.sqlite`, `data-before-v0.19.32-20261012-170643.tgz`, and `docker-compose.deploy.yml.20261012-170643.bak`. Initial startup probe returned502; deployment retry succeeded. Video worker remained running.
+- Go H3 tests cover both resolutions and all three durations;11 frontend adapter/material tests pass. CI built the production image successfully. No paid generation or authenticated production quote submitted; actual upstream output remains pending. Helpers/evidence are beside the checkout in `artifacts/release-v0.19.32/`.
