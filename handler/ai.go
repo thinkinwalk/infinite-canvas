@@ -129,7 +129,11 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	baseCredits, err := service.ModelCost(modelName)
 	if err != nil {
 		log.Printf("AI proxy read model cost failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
+		if service.IsH3Video2K(modelName) {
+			FailError(w, err)
+		} else {
+			Fail(w, "AI 接口请求失败")
+		}
 		return
 	}
 	ratio, err := service.UserGroupRatio(user.Group)
@@ -149,6 +153,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	if videoCreate {
+		if service.IsH3Video2K(modelName) {
+			if err := validateH3VideoRequest(body, contentType); err != nil {
+				Fail(w, err.Error())
+				return
+			}
+		}
 		if resolution, seconds := videoRequestPricingFields(body, contentType); resolution != "" {
 			if quoted, _, ok := service.VideoQuote(channel, modelName, resolution, seconds); ok {
 				credits = int(math.Ceil(float64(quoted)*ratio)) * readAIRequestCount(body, contentType)

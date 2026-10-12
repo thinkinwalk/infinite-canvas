@@ -343,7 +343,7 @@ async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt:
     if (config.channelMode === "remote") payload.input_mode = mode;
     if (mode === "reference") {
         if (imageUrls[0]) payload.image_url = imageUrls[0];
-        if (imageUrls.length > 1) payload.reference_image_urls = imageUrls.slice(1, 7);
+        if (imageUrls.length > 1) payload.reference_image_urls = imageUrls.slice(1);
     } else {
         payload.prompt = prompt.trim();
         if (imageUrls[0]) payload[profile.firstFrameField!] = imageUrls[0];
@@ -539,7 +539,7 @@ async function resolveSeedanceAudioUrl(config: AiConfig, audio: ReferenceAudio, 
 
 async function resolvePidoiReferenceUrls(references: ReferenceImage[], options?: RequestOptions) {
     const result: string[] = [];
-    for (const image of references.slice(0, 7)) {
+    for (const image of references) {
         const directUrl = image.url || image.dataUrl;
         if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) {
             result.push(directUrl);
@@ -627,6 +627,7 @@ function normalizeVideoSize(value: string) {
 }
 
 function normalizeVideoResolution(value: string) {
+    if (value.trim().toLowerCase() === "2k") return "2K";
     if (value === "low") return "480p";
     if (value === "auto" || value === "high" || value === "medium") return "720p";
     const resolution = value.replace(/p$/i, "") || "720";

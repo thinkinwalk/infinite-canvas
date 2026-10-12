@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/basketikun/infinite-canvas/model"
+	"github.com/basketikun/infinite-canvas/service"
 )
 
 func TestVideoReferencesSurviveProtocolConversion(t *testing.T) {
@@ -26,6 +27,41 @@ func TestVideoReferencesSurviveProtocolConversion(t *testing.T) {
 	json.Unmarshal(relay, &result)
 	if len(jsonURLValues(result["reference_videos"])) != 1 || len(jsonURLValues(result["audio_urls"])) != 1 {
 		t.Fatalf("lost references: %s", relay)
+	}
+}
+
+func TestH3VideoRequestValidatesExactParametersBeforeBilling(t *testing.T) {
+	profile := service.VideoProfile(model.ModelChannel{}, "H3video-2k")
+	for _, resolution := range []string{"2K", "768p"} {
+		body := []byte(`{"model":"H3video-2k","resolution":"` + resolution + `","seconds":"15","aspect_ratio":"16:9"}`)
+		if err := validateH3VideoRequest(body, "application/json"); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateVideoProfileRequest(profile, body, "application/json"); err != nil {
+			t.Fatal(err)
+		}
+		forwarded, _ := normalizeAIProxyVideoBody("", "/videos", stripVideoInputMode(body, "application/json"), "application/json")
+		if err := validateH3VideoRequest(forwarded, "application/json"); err != nil {
+			t.Fatalf("protocol conversion changed valid H3 fields: %s", forwarded)
+		}
+	}
+	for _, body := range []string{
+		`{"resolution":"1080p","seconds":"15","aspect_ratio":"16:9"}`,
+		`{"resolution":"720p","seconds":"15","aspect_ratio":"16:9"}`,
+		`{"resolution":"2Kp","seconds":"15","aspect_ratio":"16:9"}`,
+		`{"resolution":"768","seconds":"15","aspect_ratio":"16:9"}`,
+		`{"resolution":"2K","seconds":"5","aspect_ratio":"16:9"}`,
+		`{"resolution":"2K","seconds":"15","ratio":"16:9"}`,
+		`{"resolution":"2K","seconds":"15","size":"1920x1080"}`,
+		`{"resolution":"2K","seconds":"15","aspect_ratio":"2:3"}`,
+		`{"resolution":"2K","seconds":"15","aspect_ratio":"16:9","duration":5}`,
+	} {
+		if validateH3VideoRequest([]byte(body), "application/json") == nil {
+			t.Fatalf("invalid H3 parameters accepted: %s", body)
+		}
+	}
+	if validateH3VideoRequest([]byte(`{}`), "multipart/form-data") == nil {
+		t.Fatal("H3 multipart accepted")
 	}
 }
 

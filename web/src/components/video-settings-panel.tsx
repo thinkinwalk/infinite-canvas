@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Slider } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -7,7 +7,7 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { modelCapabilityOf, type AiConfig } from "@/stores/use-config-store";
-import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription } from "@/lib/video-capabilities";
+import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription, isH3Video2K } from "@/lib/video-capabilities";
 
 const resolutionOptions = [
     { value: "480", label: "480p" },
@@ -37,14 +37,22 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
     const selectedModel = config.model && modelCapabilityOf(config, config.model) === "video" ? config.model : config.videoModel || config.model;
     const profile = videoProfile(config, selectedModel);
+    const h3 = isH3Video2K(selectedModel);
     const availableModes = supportedVideoInputModes(profile);
     const inputMode = resolveVideoInputMode({ ...config, videoInputMode: config.videoInputMode }, selectedModel);
     const resolution = parseVideoResolution(config.vquality);
-    const selectedRatio = inferVideoRatio(config.size || "auto");
+    const selectedRatio = h3 && inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size || "auto");
+    useEffect(() => {
+        if (!h3) return;
+        if (!["2K", "768"].includes(parseVideoResolution(config.vquality))) onConfigChange("vquality", "2K");
+        if (config.videoSeconds !== "15") onConfigChange("videoSeconds", "15");
+        const ratio = !["2K", "768"].includes(parseVideoResolution(config.vquality)) || config.videoSeconds !== "15" ? "16:9" : selectedRatio;
+        if (config.size !== ratio) onConfigChange("size", ratio);
+    }, [h3, config.vquality, config.videoSeconds, config.size, selectedRatio, onConfigChange]);
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
     const applySize = (nextResolution: string, ratio: string) => {
         onConfigChange("vquality", nextResolution);
-        onConfigChange("size", computeVideoSize(nextResolution, ratio));
+        onConfigChange("size", h3 ? ratio : computeVideoSize(nextResolution, ratio));
     };
     const selectResolution = (nextResolution: string) => {
         if (selectedRatio === "auto") onConfigChange("vquality", nextResolution);
@@ -57,24 +65,24 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {resolutionOptions.map((item) => (
+                        {(h3 ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions).map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />
+                        {!h3 && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
                     </div>
                 </SettingGroup>
-                <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
+                {!h3 && <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
                         <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
                         <span className="text-lg opacity-45">↔</span>
                         <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("height", value, dimensions, onConfigChange)} />
                     </div>
-                </SettingGroup>
+                </SettingGroup>}
                 <SettingGroup title={t("settingsPanels.video.ratio")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {videoRatioOptions.map((item) => (
+                        {videoRatioOptions.filter((item) => !h3 || item.value !== "auto").map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
@@ -90,11 +98,11 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                    {h3 ? <p className="text-sm">固定 15 秒 · 按次计费</p> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
                         <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
                         <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
-                    </div>
+                    </div>}
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.inputMode")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
@@ -111,7 +119,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
 }
 
 export function videoResolutionLabel(value: string) {
-    return `${parseVideoResolution(value)}p`;
+    const resolution = parseVideoResolution(value);
+    return resolution === "2K" ? resolution : `${resolution}p`;
 }
 
 export function videoSizeLabel(value: string) {

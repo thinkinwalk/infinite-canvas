@@ -92,6 +92,12 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
+	if service.IsH3Video2K(input.Model) {
+		if err := validateH3VideoSettings(input.Resolution, input.Seconds); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+	}
 	if quoted, calculation, ok := service.VideoQuote(channel, input.Model, input.Resolution, input.Seconds); ok {
 		ratio, err := service.UserGroupRatio(user.Group)
 		if err != nil {
@@ -117,6 +123,38 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 	}
 	credits := int(math.Ceil(float64(base) * ratio))
 	OK(w, map[string]any{"credits": credits, "calculation": fmt.Sprintf("后台配置每次 %d 算力点，已计入用户分组倍率", credits)})
+}
+
+func validateH3VideoSettings(resolution, seconds string) error {
+	if (resolution != "2K" && resolution != "768" && resolution != "768p") || seconds != "15" {
+		return fmt.Errorf("H3video-2k 仅支持 768p / 2K，固定 15 秒，请刷新设置后重试；本次未扣费")
+	}
+	return nil
+}
+
+func validateH3VideoRequest(body []byte, contentType string) error {
+	var payload map[string]any
+	if !strings.HasPrefix(contentType, "application/json") || json.Unmarshal(body, &payload) != nil {
+		return fmt.Errorf("H3video-2k 需要 JSON 格式，请刷新页面后重试")
+	}
+	resolution := jsonStringValue(payload["resolution"])
+	if resolution != "2K" && resolution != "768p" {
+		return fmt.Errorf("H3video-2k 分辨率必须为 768p 或 2K；本次未扣费")
+	}
+	if err := validateH3VideoSettings(resolution, fmt.Sprint(payload["seconds"])); err != nil {
+		return err
+	}
+	for _, key := range []string{"ratio", "size", "duration", "content"} {
+		if payload[key] != nil {
+			return fmt.Errorf("H3video-2k 请使用 aspect_ratio、resolution、seconds 指定视频规格")
+		}
+	}
+	switch jsonStringValue(payload["aspect_ratio"]) {
+	case "16:9", "9:16", "1:1", "4:3", "3:4", "21:9":
+		return nil
+	default:
+		return fmt.Errorf("H3video-2k 请选择有效画面比例，并使用 aspect_ratio 传递")
+	}
 }
 
 func videoRequestPricingFields(body []byte, contentType string) (string, string) {

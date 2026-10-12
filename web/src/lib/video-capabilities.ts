@@ -9,6 +9,7 @@ export const VIDEO_INPUT_MODES = [
 
 export function videoProfile(config: AiConfig, model: string): VideoModelProfile {
     const name = modelOptionName(model);
+    if (isH3Video2K(model)) return { displayName: name, description: "支持 768p / 2K，固定 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", interface: "relay", maxImages: 9, maxVideos: 3, maxAudios: 3, resolutions: ["2K", "768"], seconds: ["15"], generateAudio: false, inputModes: ["reference"] };
     if (model.startsWith("replicate::") && name === "wan-video/wan-2.2-t2v-fast") return { displayName: modelOptionLabel(config, model), description: "只写文字即可生成视频，支持横屏 / 竖屏、约 5 秒或 7.5 秒。", interface: "relay", maxImages: 0, maxVideos: 0, maxAudios: 0, resolutions: ["480", "720"], seconds: ["5", "7.5"], generateAudio: false, inputModes: ["reference"] };
     if (model.startsWith("replicate::") && name === "wan-video/wan-2.2-i2v-fast") return { displayName: modelOptionLabel(config, model), description: "首帧必填、尾帧可选；可选横屏 / 竖屏，确认裁剪构图后生成，支持约 5 秒或 7.5 秒。", interface: "relay", maxImages: 2, maxVideos: 0, maxAudios: 0, resolutions: ["480", "720"], seconds: ["5", "7.5"], generateAudio: false, inputModes: ["first_last"], firstFrameRequired: true, lastFrameOptional: true, firstFrameField: "image", lastFrameField: "last_image" };
     if (model.startsWith("replicate::") && name === "minimax/hailuo-2.3") return { displayName: modelOptionLabel(config, model), description: "可直接输入文字，也可上传1张首帧图片。768p支持6/10秒，1080p仅支持6秒。", interface: "relay", maxImages: 1, maxVideos: 0, maxAudios: 0, resolutions: ["768", "1080"], seconds: config.vquality.replace(/p$/i, "") === "1080" ? ["6"] : ["6", "10"], generateAudio: false, inputModes: ["first_frame_only"], firstFrameRequired: false, firstFrameField: "first_frame_image" };
@@ -17,6 +18,10 @@ export function videoProfile(config: AiConfig, model: string): VideoModelProfile
     const ark = request.baseUrl.includes("/api/plan/v3");
     const seedance = /seedance|seedace/i.test(name);
     return { description: "根据文字和参考图片制作视频；视频、音频及首尾帧需由管理员确认渠道支持后开放。", interface: ark ? "ark" : seedance ? "relay" : "openai", maxImages: 7, maxVideos: ark ? 3 : 0, maxAudios: ark ? 3 : 0, resolutions: seedance && !ark ? ["480", "720"] : ["480", "720", "1080"], seconds: seedance ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [], generateAudio: ark, inputModes: ["reference"], ...saved, displayName: /seedance.*mini/i.test(name) ? modelOptionLabel(config, model) : saved?.displayName || name };
+}
+
+export function isH3Video2K(model: string) {
+    return modelOptionName(model).trim().toLowerCase() === "h3video-2k";
 }
 
 export function resolveAutomaticVideoModel(config: AiConfig, images: number, videos: number, audios: number, requestedMode?: string) {

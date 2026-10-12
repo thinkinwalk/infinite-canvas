@@ -153,8 +153,14 @@ func ModelCost(modelName string) (int, error) {
 	modelName = strings.TrimSpace(modelName)
 	for _, item := range normalizePublicSetting(settings.Public).ModelChannel.ModelCosts {
 		if item.Model == modelName {
+			if IsH3Video2K(modelName) && item.Credits <= 0 {
+				return 0, fmt.Errorf("H3video-2k 尚未配置按次价格，请联系管理员设置算力点单价；本次未扣费")
+			}
 			return item.Credits, nil
 		}
+	}
+	if IsH3Video2K(modelName) {
+		return 0, fmt.Errorf("H3video-2k 尚未配置按次价格，请联系管理员设置算力点单价；本次未扣费")
 	}
 	return 0, nil
 }
@@ -439,7 +445,11 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		if profile.Description == "" { profile.Description = "根据文字及支持的参考素材制作视频。" }
 		if profile.Resolutions == nil { profile.Resolutions = []string{"480", "720", "1080"} }
 		if profile.Seconds == nil { profile.Seconds = []string{} }
-		profile.MaxImages = max(0, min(7, profile.MaxImages))
+		imageLimit := 7
+		if IsH3Video2K(name) {
+			imageLimit = 9
+		}
+		profile.MaxImages = max(0, min(imageLimit, profile.MaxImages))
 		profile.MaxVideos = max(0, min(3, profile.MaxVideos))
 		profile.MaxAudios = max(0, min(3, profile.MaxAudios))
 		if profile.Interface != "relay" && profile.Interface != "ark" && profile.Interface != "unavailable" {

@@ -13,7 +13,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { ModelPicker } from "@/components/model-picker";
 import { VideoModelOption } from "@/components/video-model-option";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
-import { normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
+import { normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel, videoResolutionLabel } from "@/components/video-settings-panel";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, replaceStoredVideo, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
@@ -22,7 +22,7 @@ import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImag
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
-import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode } from "@/lib/video-capabilities";
+import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode, isH3Video2K } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
 import { fetchReplicateResult, publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
 import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
@@ -182,6 +182,11 @@ export default function VideoPage() {
         if (loadingModels || model.startsWith("remote::") && !effectiveConfig.videoModels || effectiveConfig.channelMode === "remote" && !effectiveConfig.videoModels) return;
         if (profile.resolutions.length && !profile.resolutions.includes(normalizeResolution(effectiveConfig.vquality))) updateConfig("vquality", profile.resolutions[0]);
         if (profile.seconds.length && !profile.seconds.includes(effectiveConfig.videoSeconds)) updateConfig("videoSeconds", profile.seconds[0]);
+        if (isH3Video2K(model)) {
+            const legacySpecs = !profile.resolutions.includes(normalizeResolution(effectiveConfig.vquality)) || effectiveConfig.videoSeconds !== "15";
+            const ratio = legacySpecs ? "16:9" : inferVideoRatio(effectiveConfig.size);
+            if (effectiveConfig.size !== ratio || ratio === "auto") updateConfig("size", ratio === "auto" ? "16:9" : ratio);
+        }
         if (isWan && !["16:9", "9:16"].includes(inferVideoRatio(effectiveConfig.size))) updateConfig("size", computeVideoSize(normalizeResolution(effectiveConfig.vquality), "16:9"));
     }, [loadingModels, model, profile.resolutions.join("|"), profile.seconds.join("|"), effectiveConfig.channelMode, effectiveConfig.videoModels, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.size, isWan, updateConfig]);
     useEffect(() => {
@@ -394,7 +399,7 @@ export default function VideoPage() {
             if (!isCloudVideo && snapshot.config.channelMode === "remote") {
                 const quote = await quoteVideoModel(snapshot.config, model);
                 setQuotedPrice({ key: quoteKey, value: quote });
-                await new Promise<void>((resolve, reject) => modal.confirm({ title: "确认视频制作", content: <div className="space-y-2"><div>处理服务：{publicServiceText(profile.displayName)}</div><div>素材：{references.length}张图片、{videoReferences.length}段视频、{audioReferences.length}段音频</div><div>输出：{snapshot.config.videoSeconds}秒 · {snapshot.config.vquality}p</div><div>{publicServiceText(quote.calculation || "")}</div><div className="font-semibold">本次 {quote.credits} 算力点</div><div>取消不扣费；任务明确失败后自动返还。</div></div>, okText: "确认生成", cancelText: "取消", onOk: () => resolve(), onCancel: () => reject(new DOMException("用户取消制作", "AbortError")) }));
+                await new Promise<void>((resolve, reject) => modal.confirm({ title: "确认视频制作", content: <div className="space-y-2"><div>处理服务：{publicServiceText(profile.displayName)}</div><div>素材：{references.length}张图片、{videoReferences.length}段视频、{audioReferences.length}段音频</div><div>输出：{snapshot.config.videoSeconds}秒 · {videoResolutionLabel(snapshot.config.vquality)}</div><div>{publicServiceText(quote.calculation || "")}</div><div className="font-semibold">本次 {quote.credits} 算力点</div><div>取消不扣费；任务明确失败后自动返还。</div></div>, okText: "确认生成", cancelText: "取消", onOk: () => resolve(), onCancel: () => reject(new DOMException("用户取消制作", "AbortError")) }));
                 expectedCredits = quote.credits;
             }
             const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences, {
@@ -730,7 +735,7 @@ export default function VideoPage() {
                             </div>
                         }>
                             <Button aria-label="视频设置" aria-expanded={settingsOpen} disabled={running || writing || !validVideoModel} icon={<SlidersHorizontal size={14} />} className="!w-full !justify-center !rounded-lg !px-3">
-                                <span className="text-sm">视频规格 · {normalizeResolution(effectiveConfig.vquality)}p · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : videoSizeLabel(effectiveConfig.size)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
+                                <span className="text-sm">视频规格 · {videoResolutionLabel(effectiveConfig.vquality)} · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : videoSizeLabel(effectiveConfig.size)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
                                 <ChevronDown size={12} className={`transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
                             </Button>
                         </Popover>
@@ -774,13 +779,13 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
     return <div className="space-y-4">
         <div className="space-y-2">
             <div className="text-xs font-semibold">分辨率</div>
-            <div role="group" aria-label="视频分辨率" className="flex flex-wrap gap-2">{resolutions.map((value) => <button key={value} type="button" aria-pressed={normalizeResolution(config.vquality) === value} className="h-9 min-w-20 flex-1 cursor-pointer rounded-xl border border-transparent bg-muted/60 px-3 text-sm transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => { updateConfig("vquality", value); if (canSelectRatio) updateConfig("size", computeVideoSize(value, ratio)); }}>{value}p</button>)}</div>
+            <div role="group" aria-label="视频分辨率" className="flex flex-wrap gap-2">{resolutions.map((value) => <button key={value} type="button" aria-pressed={normalizeResolution(config.vquality) === value} className="h-9 min-w-20 flex-1 cursor-pointer rounded-xl border border-transparent bg-muted/60 px-3 text-sm transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => { updateConfig("vquality", value); if (canSelectRatio) updateConfig("size", (isH3Video2K(model) ? ratio : computeVideoSize(value, ratio))); }}>{videoResolutionLabel(value)}</button>)}</div>
         </div>
         <div className="space-y-2">
             <div className="text-xs font-semibold">画面比例</div>
             {canSelectRatio ? <div role="group" aria-label="视频比例" className="grid grid-cols-3 gap-2">{ratios.map((value) => {
                 const [width, height] = value.split(":").map(Number);
-                return <button key={value} type="button" aria-label={`画面比例 ${value}`} aria-pressed={ratio === value} className="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-muted/60 text-xs transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => updateConfig("size", computeVideoSize(normalizeResolution(config.vquality), value))}><span aria-hidden="true" className="block rounded-[1px] border border-current opacity-60" style={{ width: 22 * width / Math.max(width, height), height: 22 * height / Math.max(width, height) }} /><span>{value}</span></button>;
+                return <button key={value} type="button" aria-label={`画面比例 ${value}`} aria-pressed={ratio === value} className="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-muted/60 text-xs transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => updateConfig("size", isH3Video2K(model) ? value : computeVideoSize(normalizeResolution(config.vquality), value))}><span aria-hidden="true" className="block rounded-[1px] border border-current opacity-60" style={{ width: 22 * width / Math.max(width, height), height: 22 * height / Math.max(width, height) }} /><span>{value}</span></button>;
             })}</div> : <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{isHailuo ? "上传图片时跟随首帧，纯文字使用默认比例。" : "画面比例跟随首帧图片。"}</p>}
         </div>
         {model === REPLICATE_VIDEO_MODEL && <p className="text-xs text-muted-foreground">首尾帧按所选画幅裁剪；上传后请确认构图，最终尺寸可能由模型对齐调整。</p>}
@@ -788,6 +793,7 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
             <div className="text-xs font-semibold">视频时长{isWan ? "（约）" : ""}</div>
             <VideoDurationControl value={config.videoSeconds} seconds={seconds} onChange={(value) => updateConfig("videoSeconds", value)} />
         </div>
+        {isH3Video2K(model) && <p className="text-xs text-muted-foreground">按次计费；2K 为输出档位，实际像素以成片为准。</p>}
         {isHailuo && <p className="text-xs text-muted-foreground">1080p仅支持6秒，768p支持6秒或10秒。</p>}
         {(isWan || profile.generateAudio || profile.interface === "ark") && <div className="space-y-3 border-t border-border pt-3 text-xs">
             {isWan && <div className="flex items-center justify-between gap-3"><span>插帧，让动作更流畅</span><Switch size="small" aria-label="视频插帧" checked={config.videoInterpolate === "true"} onChange={(value) => updateConfig("videoInterpolate", String(value))} /></div>}
@@ -807,6 +813,7 @@ function VideoDurationControl({ value, seconds, onChange }: { value: string; sec
         setDraft(closest);
         onChange(String(closest));
     };
+    if (options.length === 1) return <p className="rounded-xl bg-muted/60 px-3 py-2 text-sm">固定 {options[0]} 秒</p>;
     if (options.length <= 3) return <div role="group" aria-label="视频时长" className="flex gap-2">{options.map((option) => <button key={option} type="button" aria-pressed={Number(value) === option} className="h-9 flex-1 cursor-pointer rounded-xl border border-transparent bg-muted/60 px-3 text-sm transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => onChange(String(option))}>{option} 秒</button>)}</div>;
     return <div>
         <div className="flex items-center gap-3">
@@ -956,7 +963,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
                     <div className="mt-2 flex flex-wrap gap-1">
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.size}</Tag>
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.resolution}p</Tag>
+                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{videoResolutionLabel(log.resolution)}</Tag>
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.seconds}s</Tag>
                     </div>
                 </div>

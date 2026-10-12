@@ -39,6 +39,9 @@ func VideoQuote(channel model.ModelChannel, modelName, resolution string, second
 }
 
 func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfile {
+	if IsH3Video2K(name) {
+		return normalizeVideoInputProfile(model.VideoModelProfile{DisplayName: name, Description: "支持 768p / 2K，固定 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", Interface: "relay", MaxImages: 9, MaxVideos: 3, MaxAudios: 3, Resolutions: []string{"2K", "768"}, Seconds: []string{"15"}})
+	}
 	if profile, ok := channel.VideoModels[name]; ok && profile.Interface != "" {
 		return normalizeVideoInputProfile(profile)
 	}
@@ -61,6 +64,10 @@ func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfi
 		profile.Description = "支持图片、视频、音频组合参考，用于指定外观、动作、镜头与声音。"
 	}
 	return normalizeVideoInputProfile(profile)
+}
+
+func IsH3Video2K(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), "H3video-2k")
 }
 
 // Only declared input modes are exposed; unconfigured channels retain reference input.

@@ -3,7 +3,7 @@ import axios from "axios";
 
 const memory = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value), removeItem: (key: string) => memory.delete(key) } });
-const { createVideoGenerationTask } = await import("../src/services/api/video");
+const { createVideoGenerationTask, quoteVideoModel } = await import("../src/services/api/video");
 const { defaultConfig, createModelChannel } = await import("../src/stores/use-config-store");
 import type { VideoModelProfile } from "../src/services/api/admin";
 
@@ -44,5 +44,45 @@ test("unsupported reference media are rejected before any HTTP request", async (
     axios.post = (async () => { requests++; throw new Error("unexpected request"); }) as typeof axios.post;
     const imagesOnly = { ...config, videoModels: { "seedance-test": { ...profile, maxVideos: 0, maxAudios: 0 } } };
     await expect(createVideoGenerationTask(imagesOnly, "商品视频", [image], [video])).rejects.toThrow("不受当前模型支持");
+    expect(requests).toBe(0);
+});
+
+const h3 = { ...config, channels: [createModelChannel({ id: "remote", models: [{ name: "H3video-2k", capability: "video" }] })], model: "H3video-2k", videoModel: "H3video-2k", vquality: "2K", videoSeconds: "15", size: "9:16", videoModels: { "H3video-2k": { ...profile, interface: "openai" as const, billingMode: "duration_resolution" } } };
+
+test("H3 quotes and submits the exact named 2K tier and fixed duration despite a stale profile", async () => {
+    const calls: string[] = [];
+    axios.post = (async (url, body) => {
+        calls.push(String(url));
+        expect(body.resolution).toBe("2K");
+        expect(body.seconds).toBe("15");
+        if (String(url).endsWith("/quote")) return { data: { credits: 360, calculation: "每次" } };
+        expect(body.aspect_ratio).toBe("9:16");
+        expect(body.size).toBeUndefined();
+        expect(body.ratio).toBeUndefined();
+        return { data: { id: "mock-h3" } };
+    }) as typeof axios.post;
+    await quoteVideoModel(h3, h3.model);
+    await createVideoGenerationTask(h3, "测试");
+    expect(calls).toEqual(["/api/v1/models/quote", "/api/v1/videos"]);
+});
+
+test("H3 preserves all nine reference images and supports the 768p request tier", async () => {
+    const images = Array.from({ length: 9 }, (_, i) => ({ ...image, id: String(i), dataUrl: `https://example.com/${i}.png` }));
+    axios.post = (async (_url, body) => {
+        expect(body.resolution).toBe("768p");
+        expect([body.image_url, ...body.reference_image_urls]).toEqual(images.map((item) => item.dataUrl));
+        expect(body.reference_videos).toEqual([video.url]);
+        expect(body.audio_urls).toEqual([audio.url]);
+        return { data: { id: "mock-h3-refs" } };
+    }) as typeof axios.post;
+    await createVideoGenerationTask({ ...h3, vquality: "768" }, "测试", images, [video], [audio]);
+});
+
+test("H3 rejects legacy resolutions, duration and excess references before HTTP", async () => {
+    let requests = 0;
+    axios.post = (async () => { requests++; throw new Error("unexpected request"); }) as typeof axios.post;
+    for (const vquality of ["480", "720", "1080", "4K"]) await expect(createVideoGenerationTask({ ...h3, vquality }, "测试")).rejects.toThrow("分辨率");
+    await expect(createVideoGenerationTask({ ...h3, videoSeconds: "5" }, "测试")).rejects.toThrow("时长");
+    await expect(createVideoGenerationTask(h3, "测试", Array.from({ length: 10 }, () => image))).rejects.toThrow("数量超限");
     expect(requests).toBe(0);
 });
