@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.29
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.30
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,13 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.30 首尾帧画幅与构图优化
+
+- Release commit: `0a67c8664d3633d2787093b1c350c665e7b0f7e3`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.30`; digest: `sha256:6884cd3a7b9d9980e6bd5724abcfe51df6100379bc2cbc6c6453bd2f82134eda`. App, docs and plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38216347736.
+- Production image, OCI revision and `/app/VERSION` match the release. Internal/external health returns `ok`; `/video` returns HTTP 200 and loads `/assets/index-CTRN-qHn.js`. Independent in-app browser verification confirms Wan first/last-frame settings expose 16:9 and 9:16, with the summary updating when portrait is selected. No paid generation was submitted. Existing video worker start time remains unchanged.
+- SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.30-20261012-091644.sqlite`; consistent archive: `/opt/infinite-canvas/backups/data-before-v0.19.30-20261012-091644.tgz`; compose backup: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261012-091644.bak`. Previous v0.19.29 image remains available for rollback.
+- Deployment output and production settings screenshot are beside the repository in `artifacts/release-v0.19.30/`. Real sample quality, final output dimensions and credit settlement remain business acceptance items.
 
 ## v0.19.29 视频创作台交互优化
 
