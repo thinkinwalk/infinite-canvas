@@ -183,7 +183,8 @@ export default function VideoPage() {
         if (profile.resolutions.length && !profile.resolutions.includes(normalizeResolution(effectiveConfig.vquality))) updateConfig("vquality", profile.resolutions[0]);
         if (profile.seconds.length && !profile.seconds.includes(effectiveConfig.videoSeconds)) updateConfig("videoSeconds", profile.seconds[0]);
         if (isH3Video2K(model)) {
-            const legacySpecs = !profile.resolutions.includes(normalizeResolution(effectiveConfig.vquality)) || effectiveConfig.videoSeconds !== "15";
+            const legacySpecs = !profile.resolutions.includes(normalizeResolution(effectiveConfig.vquality)) || !profile.seconds.includes(effectiveConfig.videoSeconds);
+            if (legacySpecs && effectiveConfig.videoSeconds !== "15") updateConfig("videoSeconds", "15");
             const ratio = legacySpecs ? "16:9" : inferVideoRatio(effectiveConfig.size);
             if (effectiveConfig.size !== ratio || ratio === "auto") updateConfig("size", ratio === "auto" ? "16:9" : ratio);
         }

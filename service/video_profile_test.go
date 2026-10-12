@@ -20,10 +20,10 @@ func TestVideoQuoteUsesResolutionAndDurationRate(t *testing.T) {
 func TestH3Video2KOverridesStaleSpecsAndUsesFixedModelCost(t *testing.T) {
 	channel := model.ModelChannel{VideoModels: map[string]model.VideoModelProfile{"H3video-2k": {Interface: "openai", Resolutions: []string{"1080"}, Seconds: []string{"5"}, BillingMode: "duration_resolution", BillingTiers: map[string]float64{"2K": 360}}}}
 	profile := VideoProfile(channel, "H3video-2k")
-	if profile.Interface != "relay" || len(profile.Resolutions) != 2 || profile.Resolutions[0] != "2K" || profile.Seconds[0] != "15" || profile.MaxImages != 9 || profile.MaxVideos != 3 || profile.MaxAudios != 3 {
+	if profile.Interface != "relay" || len(profile.Resolutions) != 2 || profile.Resolutions[0] != "2K" || len(profile.Seconds) != 3 || profile.Seconds[0] != "15" || profile.MaxImages != 9 || profile.MaxVideos != 3 || profile.MaxAudios != 3 {
 		t.Fatalf("incorrect H3 profile: %+v", profile)
 	}
-	for _, seconds := range []string{"5", "15"} {
+	for _, seconds := range []string{"5", "10", "15"} {
 		if _, _, ok := VideoQuote(channel, "H3video-2k", "2K", seconds); ok {
 			t.Fatal("H3 must use the configured per-request model price")
 		}

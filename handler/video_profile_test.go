@@ -33,16 +33,18 @@ func TestVideoReferencesSurviveProtocolConversion(t *testing.T) {
 func TestH3VideoRequestValidatesExactParametersBeforeBilling(t *testing.T) {
 	profile := service.VideoProfile(model.ModelChannel{}, "H3video-2k")
 	for _, resolution := range []string{"2K", "768p"} {
-		body := []byte(`{"model":"H3video-2k","resolution":"` + resolution + `","seconds":"15","aspect_ratio":"16:9"}`)
-		if err := validateH3VideoRequest(body, "application/json"); err != nil {
-			t.Fatal(err)
-		}
-		if err := validateVideoProfileRequest(profile, body, "application/json"); err != nil {
-			t.Fatal(err)
-		}
-		forwarded, _ := normalizeAIProxyVideoBody("", "/videos", stripVideoInputMode(body, "application/json"), "application/json")
-		if err := validateH3VideoRequest(forwarded, "application/json"); err != nil {
-			t.Fatalf("protocol conversion changed valid H3 fields: %s", forwarded)
+		for _, seconds := range []string{"5", "10", "15"} {
+			body := []byte(`{"model":"H3video-2k","resolution":"` + resolution + `","seconds":"` + seconds + `","aspect_ratio":"16:9"}`)
+			if err := validateH3VideoRequest(body, "application/json"); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateVideoProfileRequest(profile, body, "application/json"); err != nil {
+				t.Fatal(err)
+			}
+			forwarded, _ := normalizeAIProxyVideoBody("", "/videos", stripVideoInputMode(body, "application/json"), "application/json")
+			if err := validateH3VideoRequest(forwarded, "application/json"); err != nil {
+				t.Fatalf("protocol conversion changed valid H3 fields: %s", forwarded)
+			}
 		}
 	}
 	for _, body := range []string{
@@ -50,7 +52,7 @@ func TestH3VideoRequestValidatesExactParametersBeforeBilling(t *testing.T) {
 		`{"resolution":"720p","seconds":"15","aspect_ratio":"16:9"}`,
 		`{"resolution":"2Kp","seconds":"15","aspect_ratio":"16:9"}`,
 		`{"resolution":"768","seconds":"15","aspect_ratio":"16:9"}`,
-		`{"resolution":"2K","seconds":"5","aspect_ratio":"16:9"}`,
+		`{"resolution":"2K","seconds":"7","aspect_ratio":"16:9"}`,
 		`{"resolution":"2K","seconds":"15","ratio":"16:9"}`,
 		`{"resolution":"2K","seconds":"15","size":"1920x1080"}`,
 		`{"resolution":"2K","seconds":"15","aspect_ratio":"2:3"}`,

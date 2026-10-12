@@ -40,7 +40,7 @@ func VideoQuote(channel model.ModelChannel, modelName, resolution string, second
 
 func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfile {
 	if IsH3Video2K(name) {
-		return normalizeVideoInputProfile(model.VideoModelProfile{DisplayName: name, Description: "支持 768p / 2K，固定 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", Interface: "relay", MaxImages: 9, MaxVideos: 3, MaxAudios: 3, Resolutions: []string{"2K", "768"}, Seconds: []string{"15"}})
+		return normalizeVideoInputProfile(model.VideoModelProfile{DisplayName: name, Description: "支持 768p / 2K，支持 5 / 10 / 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", Interface: "relay", MaxImages: 9, MaxVideos: 3, MaxAudios: 3, Resolutions: []string{"2K", "768"}, Seconds: []string{"15", "5", "10"}})
 	}
 	if profile, ok := channel.VideoModels[name]; ok && profile.Interface != "" {
 		return normalizeVideoInputProfile(profile)

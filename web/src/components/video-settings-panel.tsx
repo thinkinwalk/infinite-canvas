@@ -45,8 +45,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     useEffect(() => {
         if (!h3) return;
         if (!["2K", "768"].includes(parseVideoResolution(config.vquality))) onConfigChange("vquality", "2K");
-        if (config.videoSeconds !== "15") onConfigChange("videoSeconds", "15");
-        const ratio = !["2K", "768"].includes(parseVideoResolution(config.vquality)) || config.videoSeconds !== "15" ? "16:9" : selectedRatio;
+        if ((!profile.seconds.includes(config.videoSeconds) || !["2K", "768"].includes(parseVideoResolution(config.vquality))) && config.videoSeconds !== "15") onConfigChange("videoSeconds", "15");
+        const ratio = !["2K", "768"].includes(parseVideoResolution(config.vquality)) || !profile.seconds.includes(config.videoSeconds) ? "16:9" : selectedRatio;
         if (config.size !== ratio) onConfigChange("size", ratio);
     }, [h3, config.vquality, config.videoSeconds, config.size, selectedRatio, onConfigChange]);
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
@@ -98,7 +98,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    {h3 ? <p className="text-sm">固定 15 秒 · 按次计费</p> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                    {h3 ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
                         <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
                         <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>

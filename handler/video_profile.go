@@ -126,8 +126,8 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateH3VideoSettings(resolution, seconds string) error {
-	if (resolution != "2K" && resolution != "768" && resolution != "768p") || seconds != "15" {
-		return fmt.Errorf("H3video-2k 仅支持 768p / 2K，固定 15 秒，请刷新设置后重试；本次未扣费")
+	if (resolution != "2K" && resolution != "768" && resolution != "768p") || (seconds != "5" && seconds != "10" && seconds != "15") {
+		return fmt.Errorf("H3video-2k 仅支持 768p / 2K，支持 5 / 10 / 15 秒，请刷新设置后重试；本次未扣费")
 	}
 	return nil
 }
