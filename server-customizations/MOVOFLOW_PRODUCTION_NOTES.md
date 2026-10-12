@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.28
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.29
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,13 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.29 视频创作台交互优化
+
+- Release commit: `f1e8cfa90fa62787cde359f066fa8d65d8e3cff9`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.29`; digest: `sha256:2d7d743a949acb2b29748d80d2235806fa495b497d3ddcd41e7cc57ba4f3627f`. App, docs and plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38212561666.
+- Production image, OCI revision and `/app/VERSION` match the release. Internal/external health and `/`, `/video`, `/image`, `/digital-human` return HTTP 200. The existing video worker remains running with its original start time.
+- SQLite online backup passed `PRAGMA quick_check`: `/opt/infinite-canvas/backups/database-before-v0.19.29-20261012-083110.sqlite`; consistent archive: `/opt/infinite-canvas/backups/data-before-v0.19.29-20261012-083110.tgz`; compose backup: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261012-083110.bak`. Previous v0.19.28 image remains available for rollback.
+- Independent Chrome production verification passed with the real model directory: quick settings popover, resolution buttons, removal of the old modal and current frontend after reload. No page runtime errors or generation requests. Evidence is beside the repository in `artifacts/release-v0.19.29/`; real generation results and credit settlement remain business acceptance items.
 
 ## v0.19.28 本地视频缓存恢复
 
