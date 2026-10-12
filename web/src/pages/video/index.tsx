@@ -7,6 +7,8 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 import type { MentionsRef } from "antd/es/mentions";
 
+import { VideoFrameEditor } from "./video-frame-editor";
+import { wanFrameRatio } from "@/lib/video-frames";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { VideoModelOption } from "@/components/video-model-option";
@@ -122,6 +124,7 @@ export default function VideoPage() {
     const [quoteRevision, setQuoteRevision] = useState(0);
     const pricingRevision = useConfigStore((state) => JSON.stringify(state.publicSettings?.modelChannel.modelCosts));
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [frameEditorOpen, setFrameEditorOpen] = useState(false);
     const [promptDialogOpen, setPromptDialogOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [startedAt, setStartedAt] = useState(0);
@@ -156,6 +159,8 @@ export default function VideoPage() {
     const frameMode = inputMode === "first_last";
     const firstFrameOnly = inputMode === "first_frame_only";
     const singleImage = manualModel && firstFrameOnly;
+    const frameRatio = wanFrameRatio(effectiveConfig.size);
+    const framesNeedReview = model === REPLICATE_VIDEO_MODEL && references.some((item) => item.videoFrame?.ratio !== frameRatio);
     const uploadProfiles = manualModel && selectableModeModels.includes(effectiveConfig.videoModel) ? [profile] : selectableModeModels.map((value) => videoProfile(effectiveConfig, value));
     const referenceLimit = Math.max(0, ...uploadProfiles.map((item) => item.maxImages));
     const maxVideos = Math.max(0, ...uploadProfiles.map((item) => item.maxVideos));
@@ -177,8 +182,8 @@ export default function VideoPage() {
         if (loadingModels || model.startsWith("remote::") && !effectiveConfig.videoModels || effectiveConfig.channelMode === "remote" && !effectiveConfig.videoModels) return;
         if (profile.resolutions.length && !profile.resolutions.includes(normalizeResolution(effectiveConfig.vquality))) updateConfig("vquality", profile.resolutions[0]);
         if (profile.seconds.length && !profile.seconds.includes(effectiveConfig.videoSeconds)) updateConfig("videoSeconds", profile.seconds[0]);
-        if (isTextWan && !["auto", "16:9", "9:16"].includes(inferVideoRatio(effectiveConfig.size))) updateConfig("size", computeVideoSize(normalizeResolution(effectiveConfig.vquality), "16:9"));
-    }, [loadingModels, model, profile.resolutions.join("|"), profile.seconds.join("|"), effectiveConfig.channelMode, effectiveConfig.videoModels, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.size, isTextWan, updateConfig]);
+        if (isWan && !["16:9", "9:16"].includes(inferVideoRatio(effectiveConfig.size))) updateConfig("size", computeVideoSize(normalizeResolution(effectiveConfig.vquality), "16:9"));
+    }, [loadingModels, model, profile.resolutions.join("|"), profile.seconds.join("|"), effectiveConfig.channelMode, effectiveConfig.videoModels, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.size, isWan, updateConfig]);
     useEffect(() => {
         const controller = new AbortController();
         setQuotedPrice(null);
@@ -481,6 +486,7 @@ export default function VideoPage() {
             message.error(t("videoWorkbench.promptRequired"));
             return null;
         }
+        if (framesNeedReview) { setFrameEditorOpen(true); message.warning("请先确认首尾帧构图，再生成视频。"); return null; }
         if (referenceError || profile.interface === "unavailable") { message.warning(referenceError || profile.description); return null; }
         if (effectiveConfig.channelMode === "remote" && !useUserStore.getState().token) { message.warning("请先登录后生成视频"); return null; }
         if (isCloudVideo && !useUserStore.getState().token) {
@@ -702,6 +708,7 @@ export default function VideoPage() {
                                 <div className="grid grid-cols-3 gap-2">
                                     {references.map((item, index) => <div key={item.id} className="group relative overflow-hidden rounded-md border border-border"><button type="button" disabled={running || writing} className="block w-full cursor-pointer" onClick={() => { if (!frameMode) insertMention(`图片${index + 1}`); }}><img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="aspect-square w-full object-cover" /><span className="block truncate px-1 py-1 text-xs">{frameMode ? (index === 0 ? "首帧" : "尾帧") : `图片${index + 1}`}</span></button>{!frameMode && <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => { if (!running && !writing) changeImages(moveListItem(references, index, offset)); }} />}<button type="button" disabled={running || writing} className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white" aria-label={`移除图片${index + 1}`} onClick={() => removeMaterial(item.id)}><Trash2 size={12} /></button></div>)}
                                 </div>
+                                {model === REPLICATE_VIDEO_MODEL && references.length > 0 && <div className="mt-3 space-y-2"><Button block disabled={running || writing} onClick={() => setFrameEditorOpen(true)}>{framesNeedReview ? "确认首尾帧构图" : "调整首尾帧构图"} · {frameRatio}</Button><p className="text-xs text-muted-foreground">{framesNeedReview ? "生成前先查看裁剪预览；首尾帧将统一画幅，不会拉伸。" : `已确认 ${frameRatio} 构图，原图保留；修改画幅后需重新确认。`}</p></div>}
                                 {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><video src={item.url} controls className="max-h-32 w-full rounded" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing} onClick={() => removeMaterial(item.id)}>移除</Button></div></div>)}
                                 {audioReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><audio src={item.url} controls className="w-full" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`音频${index + 1}`)} className="cursor-pointer truncate text-primary">@音频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing} onClick={() => removeMaterial(item.id)}>移除</Button></div></div>)}
                             </div>
@@ -723,14 +730,14 @@ export default function VideoPage() {
                             </div>
                         }>
                             <Button aria-label="视频设置" aria-expanded={settingsOpen} disabled={running || writing || !validVideoModel} icon={<SlidersHorizontal size={14} />} className="!w-full !justify-center !rounded-lg !px-3">
-                                <span className="text-sm">视频规格 · {normalizeResolution(effectiveConfig.vquality)}p · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : isWan && !isTextWan ? "跟随首帧" : videoSizeLabel(effectiveConfig.size)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
+                                <span className="text-sm">视频规格 · {normalizeResolution(effectiveConfig.vquality)}p · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : videoSizeLabel(effectiveConfig.size)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
                                 <ChevronDown size={12} className={`transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
                             </Button>
                         </Popover>
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 text-sm">{priceLoading ? <span className="text-xs text-muted-foreground">正在读取报价…</span> : price ? <div className="flex items-baseline gap-2"><span className="text-xs text-muted-foreground">预计扣费</span><strong>{price.credits.toLocaleString()} 算力点</strong></div> : token && (isCloudVideo || effectiveConfig.channelMode === "remote") ? <Typography.Text type="warning">{priceError || "报价尚未就绪"}</Typography.Text> : isCloudVideo || effectiveConfig.channelMode === "remote" ? <span className="text-xs text-muted-foreground">登录后查看本次算力点</span> : <span className="text-xs text-muted-foreground">自定义渠道费用以该服务账单为准</span>}</div>
                         </div>
-                        <Button type="primary" size="large" block icon={<Sparkles size={16} />} loading={running} disabled={!canGenerate || running || writing || Boolean(referenceError) || profile.interface === "unavailable"} onClick={() => void generate()}>生成视频</Button>
+                        <Button type="primary" size="large" block icon={<Sparkles size={16} />} loading={running} disabled={!canGenerate || framesNeedReview || running || writing || Boolean(referenceError) || profile.interface === "unavailable"} onClick={() => void generate()}>生成视频</Button>
                         <p className="text-xs text-muted-foreground">提交前确认最新费用；上传素材、选择模板和查看报价不扣费。</p>
                     </div>
                 </section>
@@ -739,6 +746,7 @@ export default function VideoPage() {
                     {resultView === "history" ? <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={(log) => { if (!running && !writing) previewGenerationLog(log); else message.warning("请等待当前制作完成后查看其他作品"); }} /> : resultView === "examples" ? <div className="space-y-4"><p className="text-sm text-muted-foreground">以下是可编辑的文字脚本模板。选择模板不调用模型、不扣费；上传你的素材后再生成。</p><div className="grid gap-3 xl:grid-cols-2">{VIDEO_SCRIPT_TEMPLATES.map((item) => <div key={item.title} className="space-y-3 rounded-lg border border-border p-4"><h3 className="font-semibold">{item.title}</h3><p className="text-sm leading-6 text-muted-foreground">{item.prompt}</p><Button disabled={running || writing} onClick={() => { setPrompt(references.length ? `以 @图片1 中的主体为准。${item.prompt}` : item.prompt); message.success("已填入脚本，可按素材修改"); }}>应用脚本</Button></div>)}</div></div> : results.length ? <div className="grid gap-4">{results.map((result) => result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} onRestore={logs.some((log) => log.video?.id === result.video?.id && log.task?.provider === "replicate" && log.video?.storageKey) ? restoreVideo : undefined} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} waitState={result.waitState} />)}</div> : <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-border text-center"><VideoIcon size={42} className="text-muted-foreground" /><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="视频生成后将在这里预览" /><Button onClick={() => setResultView("examples")}>查看使用示例</Button></div>}
                 </section>
             </main>
+            {frameEditorOpen && <VideoFrameEditor references={references} ratio={frameRatio} onClose={() => setFrameEditorOpen(false)} onConfirm={(next) => { setReferences(next); setFrameEditorOpen(false); }} />}
             <input ref={fileInputRef} type="file" accept="image/*" multiple={!singleImage} className="hidden" onChange={(event) => { void addReferences(event.target.files); event.target.value = ""; }} />
             <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={(event) => { void addMediaReferences(event.target.files); event.target.value = ""; }} />
             <input ref={audioInputRef} type="file" accept="audio/*" multiple className="hidden" onChange={(event) => { void addMediaReferences(event.target.files); event.target.value = ""; }} />
@@ -761,8 +769,8 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
     const ratio = inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size);
     const resolutions = profile.resolutions.length ? profile.resolutions : ["480", "720", "1080"];
     const seconds = profile.seconds.length ? profile.seconds : Array.from({ length: 27 }, (_, index) => String(index + 4));
-    const canSelectRatio = !isCloudVideo || isTextWan;
-    const ratios = isTextWan ? ["16:9", "9:16"] : ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
+    const canSelectRatio = !isCloudVideo || isWan;
+    const ratios = isWan ? ["16:9", "9:16"] : ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
     return <div className="space-y-4">
         <div className="space-y-2">
             <div className="text-xs font-semibold">分辨率</div>
@@ -775,6 +783,7 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
                 return <button key={value} type="button" aria-label={`画面比例 ${value}`} aria-pressed={ratio === value} className="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-muted/60 text-xs transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => updateConfig("size", computeVideoSize(normalizeResolution(config.vquality), value))}><span aria-hidden="true" className="block rounded-[1px] border border-current opacity-60" style={{ width: 22 * width / Math.max(width, height), height: 22 * height / Math.max(width, height) }} /><span>{value}</span></button>;
             })}</div> : <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{isHailuo ? "上传图片时跟随首帧，纯文字使用默认比例。" : "画面比例跟随首帧图片。"}</p>}
         </div>
+        {model === REPLICATE_VIDEO_MODEL && <p className="text-xs text-muted-foreground">首尾帧按所选画幅裁剪；上传后请确认构图，最终尺寸可能由模型对齐调整。</p>}
         <div className="space-y-2">
             <div className="text-xs font-semibold">视频时长{isWan ? "（约）" : ""}</div>
             <VideoDurationControl value={config.videoSeconds} seconds={seconds} onChange={(value) => updateConfig("videoSeconds", value)} />

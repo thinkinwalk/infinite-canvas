@@ -72,6 +72,12 @@ func ReplicatePrice(w http.ResponseWriter, r *http.Request) {
 		Fail(w, err.Error())
 		return
 	}
+	if spec.Operation == "image-to-video" {
+		if err := validateWanVideoFrames(input.Input); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+	}
 	quote, err := service.QuoteReplicate(user, spec, input.Input)
 	if err != nil {
 		FailError(w, err)
@@ -111,6 +117,12 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 	if err := service.ValidateReplicateInput(user.ID, spec, input.Input); err != nil {
 		Fail(w, err.Error())
 		return
+	}
+	if spec.Operation == "image-to-video" {
+		if err := validateWanVideoFrames(input.Input); err != nil {
+			Fail(w, err.Error())
+			return
+		}
 	}
 	quote, err := service.QuoteReplicate(user, spec, input.Input)
 	if err != nil {
