@@ -19,10 +19,23 @@ export function videoProfile(config: AiConfig, model: string): VideoModelProfile
     return { description: "根据文字和参考图片制作视频；视频、音频及首尾帧需由管理员确认渠道支持后开放。", interface: ark ? "ark" : seedance ? "relay" : "openai", maxImages: 7, maxVideos: ark ? 3 : 0, maxAudios: ark ? 3 : 0, resolutions: seedance && !ark ? ["480", "720"] : ["480", "720", "1080"], seconds: seedance ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [], generateAudio: ark, inputModes: ["reference"], ...saved, displayName: /seedance.*mini/i.test(name) ? modelOptionLabel(config, model) : saved?.displayName || name };
 }
 
-export function resolveAutomaticVideoModel(config: AiConfig, images: number, videos: number, audios: number) {
+export function resolveAutomaticVideoModel(config: AiConfig, images: number, videos: number, audios: number, requestedMode?: string) {
     const models = selectableModelsByCapability(config, "video");
     const preferred = `replicate::wan-video/wan-2.2-${images ? "i2v" : "t2v"}-fast`;
-    return [preferred, config.videoModel, ...models].find((model) => models.includes(model) && videoProfile(config, model).interface !== "unavailable" && !videoReferenceError(config, model, images, videos, audios)) || "";
+    const supportsMode = (model: string) => !requestedMode || supportedVideoInputModes(videoProfile(config, model)).includes(requestedMode);
+    const ordered = [preferred, config.videoModel, ...models].filter((model, index, values) => values.indexOf(model) === index);
+    return ordered.find((model) => models.includes(model) && videoProfile(config, model).interface !== "unavailable" && supportsMode(model) && !videoReferenceError(config, model, images, videos, audios))
+        || ordered.find((model) => models.includes(model) && videoProfile(config, model).interface !== "unavailable" && supportsMode(model))
+        || "";
+}
+
+export function videoModelsForInputMode(config: AiConfig, mode: string) {
+    return selectableModelsByCapability(config, "video").filter((model) => {
+        const profile = videoProfile(config, model);
+        const modes = supportedVideoInputModes(profile);
+        const compatible = mode === "reference" ? modes.includes("reference") || modes.includes("first_frame_only") : modes.includes(mode);
+        return profile.interface !== "unavailable" && compatible;
+    });
 }
 
 export function supportedVideoInputModes(profile: VideoModelProfile) {

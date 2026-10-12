@@ -1,6 +1,6 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, LoaderCircle, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ChevronDown, ClipboardPaste, Download, FolderPlus, LoaderCircle, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
-import { App, Button, Checkbox, Empty, Input, Mentions, Modal, Select, Switch, Tabs, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Empty, Input, InputNumber, Mentions, Modal, Popover, Segmented, Select, Slider, Switch, Tabs, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -20,7 +20,7 @@ import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImag
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
-import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoInputDescription, remapMaterialMentions, materialMentionError } from "@/lib/video-capabilities";
+import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
 import { fetchReplicateResult, publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
 import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
@@ -116,6 +116,7 @@ export default function VideoPage() {
     const [writingBrief, setWritingBrief] = useState("");
     const [quotedPrice, setQuotedPrice] = useState<{ key: string; value: VideoPrice } | null>(null);
     const [manualModel, setManualModel] = useState(false);
+    const [creationMode, setCreationMode] = useState<"reference" | "first_last">("reference");
     const [priceError, setPriceError] = useState("");
     const [priceLoading, setPriceLoading] = useState(false);
     const [quoteRevision, setQuoteRevision] = useState(0);
@@ -137,7 +138,13 @@ export default function VideoPage() {
     const agentTaskIdRef = useRef<string | undefined>(undefined);
 
     const videoModels = selectableModelsByCapability(effectiveConfig, "video");
-    const model = manualModel ? effectiveConfig.videoModel : resolveAutomaticVideoModel(effectiveConfig, references.length, videoReferences.length, audioReferences.length);
+    const modeModels = videoModelsForInputMode(effectiveConfig, creationMode);
+    const compatibleModeModels = modeModels.filter((value) => !videoReferenceError(effectiveConfig, value, references.length, videoReferences.length, audioReferences.length));
+    const hasMaterials = references.length > 0 || videoReferences.length > 0 || audioReferences.length > 0;
+    const selectableModeModels = compatibleModeModels.length || !hasMaterials ? (compatibleModeModels.length ? compatibleModeModels : modeModels) : [];
+    const model = manualModel && selectableModeModels.includes(effectiveConfig.videoModel)
+        ? effectiveConfig.videoModel
+        : resolveAutomaticVideoModel(effectiveConfig, references.length, videoReferences.length, audioReferences.length, creationMode) || selectableModeModels[0] || "";
     const validVideoModel = Boolean(model && videoModels.includes(model));
     const isTextWan = model === REPLICATE_TEXT_VIDEO_MODEL;
     const isWan = model === REPLICATE_VIDEO_MODEL || isTextWan;
@@ -149,7 +156,7 @@ export default function VideoPage() {
     const frameMode = inputMode === "first_last";
     const firstFrameOnly = inputMode === "first_frame_only";
     const singleImage = manualModel && firstFrameOnly;
-    const uploadProfiles = manualModel ? [profile] : videoModels.map((value) => videoProfile(effectiveConfig, value)).filter((item) => item.interface !== "unavailable");
+    const uploadProfiles = manualModel && selectableModeModels.includes(effectiveConfig.videoModel) ? [profile] : selectableModeModels.map((value) => videoProfile(effectiveConfig, value));
     const referenceLimit = Math.max(0, ...uploadProfiles.map((item) => item.maxImages));
     const maxVideos = Math.max(0, ...uploadProfiles.map((item) => item.maxVideos));
     const maxAudios = Math.max(0, ...uploadProfiles.map((item) => item.maxAudios));
@@ -161,6 +168,7 @@ export default function VideoPage() {
     const referenceError = (!manualModel && !model ? "暂无支持这些输入的可用服务，请调整素材或联系管理员启用相应服务。" : videoReferenceError(effectiveConfig, model, references.length, videoReferences.length, audioReferences.length)) || materialMentionError(prompt, materialLabels);
     const quoteKey = [model, effectiveConfig.channelMode, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.videoInputMode, effectiveConfig.videoInterpolate, token, quoteRevision, pricingRevision].join("|");
     const price = quotedPrice?.key === quoteKey ? quotedPrice.value : null;
+    useEffect(() => { setSettingsOpen(false); }, [model, running, writing]);
     useEffect(() => {
         if (!model || profile.interface === "unavailable") return;
         // Wait for the remote model directory before normalizing a custom
@@ -216,6 +224,12 @@ export default function VideoPage() {
         if (!["480", "720"].includes(normalizeResolution(effectiveConfig.vquality))) updateConfig("vquality", "480");
         if (!["5", "7.5"].includes(effectiveConfig.videoSeconds)) updateConfig("videoSeconds", "5");
     }, [model, effectiveConfig.vquality, effectiveConfig.videoSeconds, updateConfig]);
+    useEffect(() => {
+        if (effectiveConfig.videoInputMode === "first_last") setCreationMode("first_last");
+    }, [effectiveConfig.videoInputMode]);
+    useEffect(() => {
+        if (manualModel && effectiveConfig.videoModel && !selectableModeModels.includes(effectiveConfig.videoModel)) setManualModel(false);
+    }, [manualModel, effectiveConfig.videoModel, selectableModeModels.join("|")]);
     const canGenerate = Boolean(prompt.trim() && validVideoModel && !modelDirectoryUnavailable);
 
     useEffect(() => {
@@ -665,12 +679,16 @@ export default function VideoPage() {
                             <h1 className="text-xl font-semibold">视频创作台</h1>
                             <Button disabled={running || writing} icon={<Plus size={14} />} onClick={createSession}>新建</Button>
                         </div>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between"><span className="font-semibold">{manualModel ? "手动选择服务" : "自动匹配服务"}</span><Button type="text" size="small" loading={loadingModels} icon={<RefreshCw size={14} />} onClick={() => { void useConfigStore.getState().loadPublicSettings(); setQuoteRevision((value) => value + 1); }}>刷新服务 / 报价</Button></div>
-                            <p className="text-sm">{manualModel ? profile.displayName : "根据文字和上传素材自动选择，无需挑选模型"}</p>
-                            {(modelsError || !validVideoModel) && <Typography.Text role="alert" type="warning">{modelsError || (loadingModels ? "正在加载视频服务…" : referenceError)}</Typography.Text>}
-                            <p className="text-xs leading-5 text-muted-foreground">{manualModel ? profile.description : "只写脚本生成视频；添加图片后自动切换为图生视频。标准图生服务中，第1张是首帧，第2张是尾帧。"}</p>
-                            {model && <Tag>{videoReferences.length || audioReferences.length ? "多素材参考" : references.length ? frameMode && references.length === 2 ? "首尾帧生成视频" : "图生视频" : "文生视频"}</Tag>}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between"><span className="font-semibold">生成模式</span><Button type="text" size="small" loading={loadingModels} icon={<RefreshCw size={14} />} onClick={() => { void useConfigStore.getState().loadPublicSettings(); setQuoteRevision((value) => value + 1); }}>刷新服务 / 报价</Button></div>
+                            <Segmented block value={creationMode} disabled={running || writing} options={[{ label: "参考模式", value: "reference" }, { label: "首尾帧模式", value: "first_last" }]} onChange={(value) => { const next = value as "reference" | "first_last"; setCreationMode(next); updateConfig("videoInputMode", next); setManualModel(false); }} />
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2"><span className="font-semibold">视频模型</span>{manualModel && <Tag color="blue">手动</Tag>}</div>
+                                <Select aria-label="视频模型" className="w-full" size="large" disabled={running || writing || !selectableModeModels.length} value={model || undefined} placeholder="暂无支持当前模式的模型" optionLabelProp="title" virtual={false} optionRender={(option) => <VideoModelOption config={effectiveConfig} model={String(option.value)} />} onChange={(value) => { setManualModel(true); updateConfig("videoModel", value); }} options={selectableModeModels.map((value) => { const item = videoProfile(effectiveConfig, value); return { value, title: item.displayName, label: item.displayName }; })} />
+                                {(modelsError || !validVideoModel) && <Typography.Text role="alert" type="warning">{modelsError || (loadingModels ? "正在加载视频服务…" : referenceError)}</Typography.Text>}
+                                <p className="text-xs leading-5 text-muted-foreground">{model ? profile.description : "模型会根据当前模式和已上传素材筛选。"}</p>
+                                {model && <Tag>{creationMode === "first_last" ? "首尾帧生成视频" : videoReferences.length || audioReferences.length ? "视频 / 音频参考" : references.length ? "图生视频" : "文生视频"}</Tag>}
+                            </div>
                         </div>
                         <div className="space-y-2">
                             <div className="flex items-center justify-between gap-2"><span className="font-semibold">{frameMode ? "首尾帧图片" : !manualModel || isHailuo ? "图片素材（可选）" : "参考素材"}</span><Button size="small" disabled={running || writing} icon={<FolderPlus size={14} />} onClick={() => setAssetPickerOpen(true)}>我的资产</Button></div>
@@ -680,7 +698,7 @@ export default function VideoPage() {
                                 {maxAudios > 0 && <Button size="small" disabled={running || writing} onClick={() => audioInputRef.current?.click()}>添加音频</Button>}
                             </div>
                             <div className={`min-h-28 rounded-lg border border-dashed p-3 ${referenceDragTarget ? "border-primary bg-primary/5" : "border-border"}`} onDragEnter={handleReferenceDragEnter} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={handleReferenceDragLeave} onDrop={handleReferenceDrop}>
-                                {!materialLabels.length && <div className="py-5 text-center text-sm text-muted-foreground">{!manualModel ? "无需图片即可文生视频；添加图片后自动匹配图生视频服务" : frameMode ? "首帧必填，尾帧可选；两张图片分别控制开始和结束画面" : isHailuo ? "无需图片即可文生视频；添加1张图切换为图生视频" : "上传或拖入当前模型支持的素材"}</div>}
+                                {!materialLabels.length && <div className="py-5 text-center text-sm text-muted-foreground">{creationMode === "first_last" ? "上传首帧和尾帧图片控制开始与结束画面" : "只写文字生成文生视频；上传图片、视频或音频后仅显示对应能力的模型"}</div>}
                                 <div className="grid grid-cols-3 gap-2">
                                     {references.map((item, index) => <div key={item.id} className="group relative overflow-hidden rounded-md border border-border"><button type="button" disabled={running || writing} className="block w-full cursor-pointer" onClick={() => { if (!frameMode) insertMention(`图片${index + 1}`); }}><img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="aspect-square w-full object-cover" /><span className="block truncate px-1 py-1 text-xs">{frameMode ? (index === 0 ? "首帧" : "尾帧") : `图片${index + 1}`}</span></button>{!frameMode && <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => { if (!running && !writing) changeImages(moveListItem(references, index, offset)); }} />}<button type="button" disabled={running || writing} className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white" aria-label={`移除图片${index + 1}`} onClick={() => removeMaterial(item.id)}><Trash2 size={12} /></button></div>)}
                                 </div>
@@ -696,11 +714,23 @@ export default function VideoPage() {
                             <Mentions ref={promptInputRef} aria-label="视频脚本" className="w-full" rows={8} disabled={running || writing} value={prompt} onChange={setPrompt} prefix="@" options={materialLabels.map((item) => ({ value: item.label, label: `${item.label} · ${item.name}` }))} placeholder="描述主体、动作和镜头；输入 @ 选择参考素材，或点击AI代写。" />
                             <p className="text-xs text-muted-foreground">例如：以 @图片1 中的商品为主体，镜头缓慢环绕，突出材质细节。</p>
                         </div>
-                        <Button block disabled={running || writing} icon={<SlidersHorizontal size={15} />} onClick={() => setSettingsOpen(true)}>视频设置 · {isTextWan ? videoSizeLabel(effectiveConfig.size) : isWan ? "首帧比例" : isHailuo ? "默认比例 / 跟随首帧" : videoSizeLabel(effectiveConfig.size)} · {effectiveConfig.videoSeconds}秒 · {normalizeResolution(effectiveConfig.vquality)}p{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</Button>
                     </div>
-                    <div className="space-y-2 border-t border-border p-4">
-                         <div className="text-sm">{priceLoading ? "正在读取报价…" : price ? <>预计扣费 <strong>{price.credits.toLocaleString()}</strong> 算力点<div className="mt-1 text-xs text-muted-foreground">{publicServiceText(price.calculation || "")}</div></> : token && (isCloudVideo || effectiveConfig.channelMode === "remote") ? <Typography.Text type="warning">{priceError || "报价尚未就绪"}</Typography.Text> : isCloudVideo || effectiveConfig.channelMode === "remote" ? "登录后查看本次算力点" : "自定义渠道费用以该服务账单为准"}</div>
-                        <Button type="primary" size="large" block icon={<Sparkles size={16} />} loading={running} disabled={!canGenerate || running || writing || Boolean(referenceError) || profile.interface === "unavailable"} onClick={() => void generate()}>生成视频{price ? ` · ${price.credits} 算力点` : ""}</Button>
+                    <div className="space-y-3 border-t border-border bg-card/95 p-4 backdrop-blur" onKeyDown={(event) => { if (event.key === "Escape") { setSettingsOpen(false); event.stopPropagation(); } }}>
+                        <Popover trigger="click" placement="topLeft" open={settingsOpen && !running && !writing} onOpenChange={setSettingsOpen} destroyOnHidden content={
+                            <div className="thin-scrollbar max-h-[calc(100dvh-96px)] w-[336px] max-w-[calc(100vw-48px)] space-y-4 overflow-y-auto p-1">
+                                <div className="flex items-center justify-between"><span className="font-semibold">视频设置</span><Button type="text" size="small" aria-label="关闭视频设置" icon={<X size={15} />} onClick={() => setSettingsOpen(false)} /></div>
+                                <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} />
+                            </div>
+                        }>
+                            <Button aria-label="视频设置" aria-expanded={settingsOpen} disabled={running || writing || !validVideoModel} icon={<SlidersHorizontal size={14} />} className="!w-full !justify-center !rounded-lg !px-3">
+                                <span className="text-sm">视频规格 · {normalizeResolution(effectiveConfig.vquality)}p · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : isWan && !isTextWan ? "跟随首帧" : videoSizeLabel(effectiveConfig.size)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
+                                <ChevronDown size={12} className={`transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+                            </Button>
+                        </Popover>
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 text-sm">{priceLoading ? <span className="text-xs text-muted-foreground">正在读取报价…</span> : price ? <div className="flex items-baseline gap-2"><span className="text-xs text-muted-foreground">预计扣费</span><strong>{price.credits.toLocaleString()} 算力点</strong></div> : token && (isCloudVideo || effectiveConfig.channelMode === "remote") ? <Typography.Text type="warning">{priceError || "报价尚未就绪"}</Typography.Text> : isCloudVideo || effectiveConfig.channelMode === "remote" ? <span className="text-xs text-muted-foreground">登录后查看本次算力点</span> : <span className="text-xs text-muted-foreground">自定义渠道费用以该服务账单为准</span>}</div>
+                        </div>
+                        <Button type="primary" size="large" block icon={<Sparkles size={16} />} loading={running} disabled={!canGenerate || running || writing || Boolean(referenceError) || profile.interface === "unavailable"} onClick={() => void generate()}>生成视频</Button>
                         <p className="text-xs text-muted-foreground">提交前确认最新费用；上传素材、选择模板和查看报价不扣费。</p>
                     </div>
                 </section>
@@ -712,7 +742,6 @@ export default function VideoPage() {
             <input ref={fileInputRef} type="file" accept="image/*" multiple={!singleImage} className="hidden" onChange={(event) => { void addReferences(event.target.files); event.target.value = ""; }} />
             <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={(event) => { void addMediaReferences(event.target.files); event.target.value = ""; }} />
             <input ref={audioInputRef} type="file" accept="audio/*" multiple className="hidden" onChange={(event) => { void addMediaReferences(event.target.files); event.target.value = ""; }} />
-            <Modal title="视频设置" open={settingsOpen} footer={<Button type="primary" onClick={() => setSettingsOpen(false)}>完成</Button>} onCancel={() => setSettingsOpen(false)}><div className="space-y-4"><GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} /><div className="space-y-2 border-t border-border pt-4"><Switch aria-label="手动选择视频模型" checked={manualModel} disabled={running || writing} onChange={(value) => { if (value && model) updateConfig("videoModel", model); setManualModel(value); }} /> 高级：手动选择模型{manualModel && <Select aria-label="视频模型" className="w-full" size="large" disabled={running || writing} value={model || undefined} placeholder="暂无可用视频模型" optionLabelProp="title" virtual={false} optionRender={(option) => <VideoModelOption config={effectiveConfig} model={String(option.value)} />} onChange={(value) => updateConfig("videoModel", value)} options={videoModels.map((value) => { const item = videoProfile(effectiveConfig, value); return { value, title: item.displayName, label: item.displayName }; })} />}</div></div></Modal>
             <Modal title="AI脚本助手" open={writingOpen} onCancel={() => { if (!writing) setWritingOpen(false); }} maskClosable={!writing} closable={!writing} footer={<div className="flex justify-end gap-2"><Button loading={writing} disabled={running} onClick={() => void writePrompt()}>撰写脚本</Button><Button type="primary" disabled={writing || !writingPreview.trim()} onClick={() => { const error = materialMentionError(writingPreview, materialLabels); if (error) { setWritingError(error); return; } setPrompt(writingPreview); setWritingOpen(false); }}>应用到脚本</Button></div>}>
                 <div className="space-y-3"><p className="text-sm text-muted-foreground">根据文字和参考图片扩写脚本，不分析视频、音频内容。AI代写按文字模型单独计费，生成视频另行确认。</p><ModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(value) => { if (!writing) updateConfig("textModel", value); }} capability="text" fullWidth onMissingConfig={() => openConfigDialog(false, "channels")} /><Input.TextArea aria-label="代写要求" rows={3} disabled={writing} value={writingBrief} onChange={(event) => setWritingBrief(event.target.value)} placeholder="例如：做一段香水广告，镜头缓慢环绕，突出瓶身质感。" />{writing && <Typography.Text role="status" type="secondary">正在撰写，请稍候…</Typography.Text>}{writingPreview && <Input.TextArea aria-label="代写脚本预览" rows={8} readOnly={writing} value={writingPreview} onChange={(event) => setWritingPreview(event.target.value)} />}{writingError && <Typography.Text role="alert" type="danger">{writingError}</Typography.Text>}</div>
             </Modal>
@@ -732,15 +761,51 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
     const ratio = inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size);
     const resolutions = profile.resolutions.length ? profile.resolutions : ["480", "720", "1080"];
     const seconds = profile.seconds.length ? profile.seconds : Array.from({ length: 27 }, (_, index) => String(index + 4));
+    const canSelectRatio = !isCloudVideo || isTextWan;
+    const ratios = isTextWan ? ["16:9", "9:16"] : ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
     return <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">仅显示当前输入可用的输出规格。</p>
-        {(!isCloudVideo || isTextWan) && <div className="space-y-2"><div>画面比例</div><Select aria-label="视频比例" className="w-full" value={ratio} onChange={(value) => updateConfig("size", computeVideoSize(normalizeResolution(config.vquality), value))} options={(isTextWan ? ["16:9", "9:16"] : ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]).map((value) => ({ value, label: value }))} /></div>}
-        <div className="space-y-2"><div>分辨率</div><Select aria-label="视频分辨率" className="w-full" value={normalizeResolution(config.vquality)} onChange={(value) => { updateConfig("vquality", value); if (!isCloudVideo || isTextWan) updateConfig("size", computeVideoSize(value, ratio)); }} options={resolutions.map((value) => ({ value, label: `${value}p` }))} /></div>
-        <div className="space-y-2"><div>视频时长</div><Select aria-label="视频时长" className="w-full" value={config.videoSeconds} onChange={(value) => updateConfig("videoSeconds", value)} options={seconds.map((value) => ({ value, label: `${isWan ? "约 " : ""}${value} 秒` }))} /></div>
-        {isHailuo && <p className="text-xs text-muted-foreground">按所选清晰度和时长收取每条费用。上传图片时比例跟随首帧；纯文字使用平台默认比例。1080p仅支持6秒。</p>}
-        {isWan && <div><Switch aria-label="视频插帧" checked={config.videoInterpolate === "true"} onChange={(value) => updateConfig("videoInterpolate", String(value))} /> 插帧，让动作更流畅<p className="mt-2 text-xs text-muted-foreground">{isTextWan ? "按分辨率收取每条视频费用，插帧不额外加价。" : "画面比例跟随首帧图；按分辨率及插帧档位收取每条视频费用。"}</p></div>}
-        {profile.generateAudio && <div><Switch aria-label="生成声音" checked={boolConfig(config.videoGenerateAudio, true)} onChange={(value) => updateConfig("videoGenerateAudio", String(value))} /> 生成声音</div>}
-        {profile.interface === "ark" && <div><Switch aria-label="视频水印" checked={boolConfig(config.videoWatermark, false)} onChange={(value) => updateConfig("videoWatermark", String(value))} /> 平台水印</div>}
+        <div className="space-y-2">
+            <div className="text-xs font-semibold">分辨率</div>
+            <div role="group" aria-label="视频分辨率" className="flex flex-wrap gap-2">{resolutions.map((value) => <button key={value} type="button" aria-pressed={normalizeResolution(config.vquality) === value} className="h-9 min-w-20 flex-1 cursor-pointer rounded-xl border border-transparent bg-muted/60 px-3 text-sm transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => { updateConfig("vquality", value); if (canSelectRatio) updateConfig("size", computeVideoSize(value, ratio)); }}>{value}p</button>)}</div>
+        </div>
+        <div className="space-y-2">
+            <div className="text-xs font-semibold">画面比例</div>
+            {canSelectRatio ? <div role="group" aria-label="视频比例" className="grid grid-cols-3 gap-2">{ratios.map((value) => {
+                const [width, height] = value.split(":").map(Number);
+                return <button key={value} type="button" aria-label={`画面比例 ${value}`} aria-pressed={ratio === value} className="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-muted/60 text-xs transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => updateConfig("size", computeVideoSize(normalizeResolution(config.vquality), value))}><span aria-hidden="true" className="block rounded-[1px] border border-current opacity-60" style={{ width: 22 * width / Math.max(width, height), height: 22 * height / Math.max(width, height) }} /><span>{value}</span></button>;
+            })}</div> : <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{isHailuo ? "上传图片时跟随首帧，纯文字使用默认比例。" : "画面比例跟随首帧图片。"}</p>}
+        </div>
+        <div className="space-y-2">
+            <div className="text-xs font-semibold">视频时长{isWan ? "（约）" : ""}</div>
+            <VideoDurationControl value={config.videoSeconds} seconds={seconds} onChange={(value) => updateConfig("videoSeconds", value)} />
+        </div>
+        {isHailuo && <p className="text-xs text-muted-foreground">1080p仅支持6秒，768p支持6秒或10秒。</p>}
+        {(isWan || profile.generateAudio || profile.interface === "ark") && <div className="space-y-3 border-t border-border pt-3 text-xs">
+            {isWan && <div className="flex items-center justify-between gap-3"><span>插帧，让动作更流畅</span><Switch size="small" aria-label="视频插帧" checked={config.videoInterpolate === "true"} onChange={(value) => updateConfig("videoInterpolate", String(value))} /></div>}
+            {profile.generateAudio && <div className="flex items-center justify-between gap-3"><span>生成声音</span><Switch size="small" aria-label="生成声音" checked={boolConfig(config.videoGenerateAudio, true)} onChange={(value) => updateConfig("videoGenerateAudio", String(value))} /></div>}
+            {profile.interface === "ark" && <div className="flex items-center justify-between gap-3"><span>平台水印</span><Switch size="small" aria-label="视频水印" checked={boolConfig(config.videoWatermark, false)} onChange={(value) => updateConfig("videoWatermark", String(value))} /></div>}
+        </div>}
+    </div>;
+}
+
+function VideoDurationControl({ value, seconds, onChange }: { value: string; seconds: string[]; onChange: (value: string) => void }) {
+    const options = [...new Set(seconds.map(Number))].sort((a, b) => a - b);
+    const [draft, setDraft] = useState<number | null>(Number(value));
+    useEffect(() => { setDraft(Number(value)); }, [value, seconds.join("|")]);
+    const commit = (next: number | null) => {
+        const target = next ?? Number(value);
+        const closest = options.reduce((best, option) => Math.abs(option - target) < Math.abs(best - target) ? option : best);
+        setDraft(closest);
+        onChange(String(closest));
+    };
+    if (options.length <= 3) return <div role="group" aria-label="视频时长" className="flex gap-2">{options.map((option) => <button key={option} type="button" aria-pressed={Number(value) === option} className="h-9 flex-1 cursor-pointer rounded-xl border border-transparent bg-muted/60 px-3 text-sm transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => onChange(String(option))}>{option} 秒</button>)}</div>;
+    return <div>
+        <div className="flex items-center gap-3">
+            <Slider className="min-w-0 flex-1" ariaLabelForHandle="视频时长滑杆" min={options[0]} max={options[options.length - 1]} step={null} marks={Object.fromEntries(options.map((option) => [option, " "]))} value={draft ?? Number(value)} tooltip={{ formatter: (current) => `${current} 秒` }} onChange={setDraft} onChangeComplete={commit} />
+            <InputNumber aria-label="视频时长（秒）" className="!w-16" controls={false} min={options[0]} max={options[options.length - 1]} value={draft} onChange={setDraft} onBlur={() => commit(draft)} onPressEnter={() => commit(draft)} />
+            <span className="text-xs text-muted-foreground">s</span>
+        </div>
+        <p className="text-xs text-muted-foreground">{options[0]}–{options[options.length - 1]} 秒 · 自动对齐模型支持的时长</p>
     </div>;
 }
 
