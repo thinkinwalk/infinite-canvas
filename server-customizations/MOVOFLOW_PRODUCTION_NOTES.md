@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.30
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.31
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -229,3 +229,12 @@ curl -fsS http://127.0.0.1:3002/api/health
 - /opt/infinite-canvas/backups/docker-compose.deploy.yml.20260915-121127.bak
 - /opt/infinite-canvas/backups/data-before-deploy-20260915-121127.tgz
 - /opt/infinite-canvas/deploy_infinite_canvas_image.sh.bak-20260915-121811
+
+## v0.19.31 H3video-2k deployment verification
+
+- Release commit: `d2cbbf4dded762e06ef5beefa8acd4720db74a67`; tag/release: `v0.19.31`. App Docker workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38230594012; docs and official plugin workflows succeeded.
+- Production image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.31`; digest: `sha256:d16e5c1af4134c20d3809e69f524f3d3b859af08afa32b67d4d1d657abb1df07`. Container image revision and `/app/VERSION` match the release; internal/external health returns `ok`, `/video` HTTP 200. Served asset `/assets/index-g8ifPV_p.js` contains the release version, H3 adapter and fixed15-second UI.
+- Before deployment, SQLite online backup passed quick_check: `/opt/infinite-canvas/backups/database-before-v0.19.31-20261012-113954.sqlite`. Compose and data backups: `docker-compose.deploy.yml.20261012-113954.bak` and `data-before-v0.19.31-20261012-113954.tgz` in the same directory. The existing video worker remained running.
+- H3 profile on its existing enabled channel now uses relay JSON, 2K/768p, 15 seconds, reference limits9 images/3 videos/3 audios. Production model cost is480 credits/request as explicitly confirmed; existing user-group multipliers still apply. No unrelated model price or channel access setting changed.
+- Go video/H3 tests and9 frontend adapter/material tests pass; Vite build succeeds. Independent browser verified the built local page, stale-profile correction and switching from another model to2K/16:9/15 seconds,768p and portrait options. Production video page renders the published build. Existing bootstrap credentials did not authenticate, so authenticated production quote and paid generation were not tested; actual pixels, duration and media-reference output remain pending. No credentials changed. Existing wider Wan test and unrelated TypeScript failures are recorded in pending-test.
+- Evidence and helpers are saved beside the checkout in `artifacts/release-v0.19.31/`.
