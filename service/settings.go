@@ -414,6 +414,7 @@ func isVideoModelName(modelName string) bool {
 		strings.Contains(name, "veo") ||
 		strings.Contains(name, "kling") ||
 		strings.Contains(name, "hailuo") ||
+		name == "wan30-720p" ||
 		strings.Contains(name, "tejiasd")
 }
 
@@ -462,13 +463,16 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		if profile.Seconds == nil {
 			profile.Seconds = []string{}
 		}
-		imageLimit := 7
+		imageLimit, mediaLimit := 7, 3
 		if IsH3Video2K(name) {
 			imageLimit = 9
 		}
+		if strings.EqualFold(strings.TrimSpace(name), "wan30-720p") {
+			imageLimit, mediaLimit = 10, 5
+		}
 		profile.MaxImages = max(0, min(imageLimit, profile.MaxImages))
-		profile.MaxVideos = max(0, min(3, profile.MaxVideos))
-		profile.MaxAudios = max(0, min(3, profile.MaxAudios))
+		profile.MaxVideos = max(0, min(mediaLimit, profile.MaxVideos))
+		profile.MaxAudios = max(0, min(mediaLimit, profile.MaxAudios))
 		if profile.Interface != "relay" && profile.Interface != "ark" && profile.Interface != "unavailable" {
 			profile.Interface, profile.MaxVideos, profile.MaxAudios = "openai", 0, 0
 		}

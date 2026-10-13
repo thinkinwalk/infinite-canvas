@@ -124,6 +124,7 @@ export function useVideoWorkbench(tool: VideoTool) {
 
     const edit = (value: Partial<VideoDraft>, invalidate?: Invalidation) => {
         if (store().busyTools[tool]) return;
+        if (tool === "content-replace") value = { ...value, activeRecord: undefined };
         if (digital && invalidate) value = { ...value, digitalRevision: (read(tool).digitalRevision || 0) + 1 };
         if (digital && ["brief", "learning", "preview"].includes(invalidate || "")) {
             patch({ ...(invalidate === "learning" ? { transcript: "", digitalTranscriptSource: "" } : {}), ...(invalidate === "preview" ? { voicePreview: null } : {}), ...value });

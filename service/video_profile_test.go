@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestWan30ProfileSurvivesNormalizationAndPublicCatalog(t *testing.T) {
+	channel := normalizeModelChannel(model.ModelChannel{
+		Enabled: true, BaseURL: "https://example.com", APIKey: "test", Models: []string{"wan30-720p"},
+		VideoModels: map[string]model.VideoModelProfile{"wan30-720p": {
+			Interface: "relay", MaxImages: 10, MaxVideos: 5, MaxAudios: 5,
+			Resolutions: []string{"720"}, Seconds: []string{"30"},
+			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 42},
+		}},
+	})
+	profile, ok := publicVideoProfiles([]model.ModelChannel{channel})["wan30-720p"]
+	if !ok || profile.MaxImages != 10 || profile.MaxVideos != 5 || profile.MaxAudios != 5 || profile.Interface != "relay" {
+		t.Fatalf("Wan30 capabilities missing or reduced: %+v", profile)
+	}
+	if credits, _, ok := VideoQuote(channel, "wan30-720p", "720p", "30"); !ok || credits != 1260 {
+		t.Fatalf("Wan30 quote = %d, %v; want 1260, true", credits, ok)
+	}
+}
+
 func TestVideoQuoteUsesResolutionAndDurationRate(t *testing.T) {
 	channel := model.ModelChannel{VideoModels: map[string]model.VideoModelProfile{
 		"h3-video": {Interface: "relay", BillingMode: "duration_resolution", MinimumCredits: 6, BillingTiers: map[string]float64{"720": 1.5, "960": 12}},

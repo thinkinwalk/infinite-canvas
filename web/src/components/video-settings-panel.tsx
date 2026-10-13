@@ -6,7 +6,7 @@ import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
-import { modelCapabilityOf, type AiConfig } from "@/stores/use-config-store";
+import { modelCapabilityOf, modelOptionName, type AiConfig } from "@/stores/use-config-store";
 import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription, isH3Video2K } from "@/lib/video-capabilities";
 
 const resolutionOptions = [
@@ -38,6 +38,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const selectedModel = config.model && modelCapabilityOf(config, config.model) === "video" ? config.model : config.videoModel || config.model;
     const profile = videoProfile(config, selectedModel);
     const h3 = isH3Video2K(selectedModel);
+    const wan30 = modelOptionName(selectedModel).trim().toLowerCase() === "wan30-720p";
     const availableModes = supportedVideoInputModes(profile);
     const inputMode = resolveVideoInputMode({ ...config, videoInputMode: config.videoInputMode }, selectedModel);
     const resolution = parseVideoResolution(config.vquality);
@@ -49,6 +50,11 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         const ratio = !["2K", "768"].includes(parseVideoResolution(config.vquality)) || !profile.seconds.includes(config.videoSeconds) ? "16:9" : selectedRatio;
         if (config.size !== ratio) onConfigChange("size", ratio);
     }, [h3, config.vquality, config.videoSeconds, config.size, selectedRatio, onConfigChange]);
+    useEffect(() => {
+        if (!wan30) return;
+        if (!profile.resolutions.includes(parseVideoResolution(config.vquality))) onConfigChange("vquality", profile.resolutions[0] || "720");
+        if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) onConfigChange("videoSeconds", profile.seconds[0]);
+    }, [wan30, profile.resolutions.join(","), profile.seconds.join(","), config.vquality, config.videoSeconds, onConfigChange]);
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
     const applySize = (nextResolution: string, ratio: string) => {
         onConfigChange("vquality", nextResolution);
@@ -65,12 +71,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {(h3 ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions).map((item) => (
+                        {(h3 ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions.filter((item) => !profile.resolutions.length || profile.resolutions.includes(item.value))).map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        {!h3 && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
+                        {!h3 && !wan30 && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
                     </div>
                 </SettingGroup>
                 {!h3 && <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
@@ -98,7 +104,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    {h3 ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                    {h3 || wan30 && profile.seconds.length ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
                         <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
                         <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>

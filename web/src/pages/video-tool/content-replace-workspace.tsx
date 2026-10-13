@@ -223,6 +223,7 @@ export default function ContentReplaceWorkspace() {
     const addFile = async (file: File, role: MediaRole, accept: string) => {
         if (locked || uploadingRef.current) return;
         uploadingRef.current = true;
+        wb.patch({ activeRecord: undefined });
         setUploading(true);
         setUploadErrors((errors) => ({ ...errors, [role]: "" }));
         try {
@@ -720,6 +721,8 @@ export default function ContentReplaceWorkspace() {
                                 <Alert
                                     type={active.status === "failed" ? "error" : "warning"}
                                     showIcon
+                                    closable
+                                    onClose={() => wb.patch({ activeRecord: undefined })}
                                     title="最近一次任务反馈"
                                     description={
                                         <Space wrap>
