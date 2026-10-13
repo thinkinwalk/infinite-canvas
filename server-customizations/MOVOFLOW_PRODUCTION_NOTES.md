@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.37
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.38
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,12 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.38 内容替换人物空掩膜失败提示
+
+- Release commit: `356170eef9fba8178dd7b8c76b22c00be6a9f12c`; tag: `v0.19.38`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.38`; digest: `sha256:c211fcc7de5e08bb1cc3adc22583f9ee447ce3041ee0136e3be81452fcda2aed`. App, docs and official plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38379784003.
+- Production image revision and `/app/VERSION` match v0.19.38. Internal/external health return `ok`; `/`, `/video/content-replace`, `/video`, `/image` and `/digital-human` return HTTP 200. The served content-replacement JavaScript includes the person-tracking guidance, duration/charge and server refund status copy.
+- Consistent backups: `/opt/infinite-canvas/backups/database-before-v0.19.38-20261013-120052.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.38-20261013-120052.tgz` and `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-120052.bak`. Database `quick_check` is `ok`; settings and all seven historical tasks match the backup. Existing worker start time remains `2026-10-09T06:50:12.435805303Z`; compose capability remains available. Previous v0.19.37 image remains available for rollback. No paid prediction was submitted; the failed incident task had already been refunded 1120 credits by the service. Evidence is beside the repository in `artifacts/release-v0.19.38/`.
 
 ## v0.19.37 内容替换上传交互优化
 
