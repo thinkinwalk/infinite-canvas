@@ -671,7 +671,7 @@
   },
   {
     "operation": "image-to-video",
-    "label": "图片生成视频",
+    "label": "通义万相 Wan 2.2 · 图生视频",
     "model": "wan-video/wan-2.2-i2v-fast",
     "version": "4eaf2b01d3bf70d8a2e00b219efeb7cb415855ad18b7dacdc4cae664a73a6eea",
     "inputSchema": {

@@ -814,7 +814,7 @@ export default function AdminSettingsPage() {
                                 const version = (form.getFieldValue(["public", "modelChannel", "models"]) || []).find((item: { model: string; version?: string }) => item.model === feature.model)?.version;
                                 return {
                                 key: feature.model,
-                                label: <Space wrap><span>{feature.label}</span><Tag>{replicatePrices[feature.model]?.enabled ? "已启用" : "已停用"}</Tag></Space>,
+                                label: <Space wrap><span>{feature.label}</span><Typography.Text type="secondary" code>{feature.model}</Typography.Text><Tag>{replicatePrices[feature.model]?.enabled ? "已启用" : "已停用"}</Tag></Space>,
                                 children: <>
                                     <Typography.Paragraph><Typography.Text code>{feature.model}</Typography.Text></Typography.Paragraph>
                                     <Typography.Paragraph type="secondary">{feature.description}{feature.operation === "video-edit" ? " 此模型同时用于视频编辑与字幕去除，共享报价。" : ""}</Typography.Paragraph>

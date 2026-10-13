@@ -52,9 +52,9 @@ export const REPLICATE_FEATURES: { operation: ReplicateOperation; label: string;
     },
     {
         operation: "image-to-video",
-        label: "图片生成视频",
+        label: "通义万相 Wan 2.2 · 图生视频",
         model: "wan-video/wan-2.2-i2v-fast",
-        description: "让静态图片按照文字描述生成动态短视频。",
+        description: "首帧必填，尾帧可选；支持横屏/竖屏、480p/720p、约5/7.5秒。与 Wan 2.2 文生视频是独立模型，启停与报价分别配置。",
         billingMode: "output_count",
         tierKeys: ["base:480p", "interpolate:480p", "base:720p", "interpolate:720p"],
     },
