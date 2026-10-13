@@ -15,13 +15,13 @@ const image = { id: "image", name: "image.png", type: "image/png", dataUrl: "htt
 const video = { id: "video", name: "video.mp4", type: "video/mp4", url: "https://example.com/video.mp4" };
 const audio = { id: "audio", name: "audio.mp3", type: "audio/mpeg", url: "https://example.com/audio.mp3" };
 
-test("Wan30 relay preserves ten images, five videos and five audios at 720p / 30 seconds", async () => {
-    const wan = { ...config, channels: [createModelChannel({ id: "remote", models: [{ name: "wan30-720p", capability: "video" }] })], model: "wan30-720p", videoModel: "wan30-720p", videoSeconds: "30", videoModels: { "wan30-720p": { ...profile, maxImages: 10, maxVideos: 5, maxAudios: 5, seconds: ["30"] } } };
+for (const seconds of ["4", "6", "16", "30"]) test(`Wan30 relay preserves selected ${seconds} seconds and all reference media`, async () => {
+    const wan = { ...config, channels: [createModelChannel({ id: "remote", models: [{ name: "wan30-720p", capability: "video" }] })], model: "wan30-720p", videoModel: "wan30-720p", videoSeconds: seconds, videoModels: { "wan30-720p": { ...profile, maxImages: 10, maxVideos: 5, maxAudios: 5, seconds: Array.from({ length: 27 }, (_, i) => String(i + 4)) } } };
     const images = Array.from({ length: 10 }, (_, i) => ({ ...image, id: String(i), dataUrl: `https://example.com/${i}.png` }));
     const videos = Array.from({ length: 5 }, (_, i) => ({ ...video, id: String(i), url: `https://example.com/${i}.mp4` }));
     const audios = Array.from({ length: 5 }, (_, i) => ({ ...audio, id: String(i), url: `https://example.com/${i}.mp3` }));
     axios.post = (async (_url, body) => {
-        expect(body.seconds).toBe("30");
+        expect(body.seconds).toBe(seconds);
         expect(body.resolution).toBe("720p");
         expect([body.image_url, ...body.reference_image_urls]).toEqual(images.map((item) => item.dataUrl));
         expect(body.reference_videos).toEqual(videos.map((item) => item.url));
@@ -29,6 +29,7 @@ test("Wan30 relay preserves ten images, five videos and five audios at 720p / 30
         return { data: { id: "mock-wan30" } };
     }) as typeof axios.post;
     await createVideoGenerationTask(wan, "按参考素材生成", images, videos, audios);
+    await expect(createVideoGenerationTask({ ...wan, videoSeconds: "31" }, "按参考素材生成")).rejects.toThrow("时长");
 });
 
 test("relay sends real video/audio fields and the confirmed price without creating a real prediction", async () => {

@@ -10,7 +10,7 @@ func TestWan30ProfileSurvivesNormalizationAndPublicCatalog(t *testing.T) {
 		Enabled: true, BaseURL: "https://example.com", APIKey: "test", Models: []string{"wan30-720p"},
 		VideoModels: map[string]model.VideoModelProfile{"wan30-720p": {
 			Interface: "relay", MaxImages: 10, MaxVideos: 5, MaxAudios: 5,
-			Resolutions: []string{"720"}, Seconds: []string{"30"},
+			Resolutions: []string{"720"}, Seconds: []string{"4", "6", "16", "30"},
 			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 42},
 		}},
 	})
@@ -18,8 +18,10 @@ func TestWan30ProfileSurvivesNormalizationAndPublicCatalog(t *testing.T) {
 	if !ok || profile.MaxImages != 10 || profile.MaxVideos != 5 || profile.MaxAudios != 5 || profile.Interface != "relay" {
 		t.Fatalf("Wan30 capabilities missing or reduced: %+v", profile)
 	}
-	if credits, _, ok := VideoQuote(channel, "wan30-720p", "720p", "30"); !ok || credits != 1260 {
-		t.Fatalf("Wan30 quote = %d, %v; want 1260, true", credits, ok)
+	for seconds, want := range map[string]int{"4": 168, "6": 252, "16": 672, "30": 1260} {
+		if credits, _, ok := VideoQuote(channel, "wan30-720p", "720p", seconds); !ok || credits != want {
+			t.Fatalf("Wan30 %s-second quote = %d, %v; want %d, true", seconds, credits, ok, want)
+		}
 	}
 }
 

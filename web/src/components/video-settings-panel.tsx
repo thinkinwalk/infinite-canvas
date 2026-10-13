@@ -104,11 +104,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    {h3 || wan30 && profile.seconds.length ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                    {h3 ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
                         <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
                         <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
                     </div>}
+                    {wan30 && <p className="text-xs" style={{ color: theme.node.muted }}>最长 30 秒，按所选秒数计费。</p>}
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.inputMode")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
