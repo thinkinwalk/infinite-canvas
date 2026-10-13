@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Input, Modal, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
-import { ArrowLeft, Download, FolderPlus, Grid2X2, Image as ImageIcon, RefreshCw, Sparkles, Video, X } from "lucide-react";
+import { Alert, App, Button, Collapse, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
+import { ArrowLeft, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -287,9 +287,22 @@ export default function ContentReplaceWorkspace() {
             <section className="min-w-0" data-material-role={role}>
                 <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="font-medium">{label}</span>
-                    <span className="text-xs" style={muted}>
-                        {role === "reference" ? "视频" : accept === "image/*" ? "单张图片" : "图片 / 视频"}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2 text-xs" style={muted}>
+                        {cloud && person && role === "reference" && (
+                            <Popover
+                                title="人物替换素材建议"
+                                trigger="click"
+                                content={<div className="max-w-64 text-xs leading-relaxed">目标人物应在片段中持续可见。混剪、频繁转场、无人画面或主体遮挡容易导致跟踪失败，建议先按镜头拆分，只提交人物连续出现的片段。</div>}
+                            >
+                                <Button type="text" size="small" className="!h-7 !px-1" icon={<Info size={14} />} aria-label="查看人物替换素材建议">
+                                    素材建议
+                                </Button>
+                            </Popover>
+                        )}
+                        <span>
+                            {role === "reference" ? "视频" : accept === "image/*" ? "单张图片" : "图片 / 视频"}
+                        </span>
+                    </div>
                 </div>
                 {media ? (
                     <div className="space-y-3 rounded-lg border p-3" style={surface}>
@@ -457,14 +470,6 @@ export default function ContentReplaceWorkspace() {
                                 onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"] }, "video")}
                             />
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
-                            {cloud && person && (
-                                <Alert
-                                    type="info"
-                                    showIcon
-                                    title="人物替换素材建议"
-                                    description="目标人物应在片段中持续可见。混剪、频繁转场、无人画面或主体遮挡可能导致跟踪失败，建议先按镜头拆分，只提交人物连续出现的片段。"
-                                />
-                            )}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             {(!cloud || !person) && (
                                 <label className="block">
