@@ -90,6 +90,7 @@ def capabilities():
     return [
         {"name": "frames", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "compose", "available": ffmpeg, "reason": "需要 FFmpeg"},
+        {"name": "trim", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "cut", "available": ffmpeg and whisper, "reason": "需要配置 Whisper 转写模型"},
         {"name": "transcribe", "available": ffmpeg and whisper, "reason": "需要安装 faster-whisper 并配置 WHISPER_MODEL"},
         {"name": "upscale", "available": ffmpeg and engine_ready("realesrgan"), "reason": "需要配置 Real-ESRGAN 引擎及权重"},
@@ -182,6 +183,12 @@ async def recover():
 
 def validate_options(request: JobRequest):
     try:
+        if request.operation == "trim":
+            start, end = float(request.options["start"]), float(request.options["end"])
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or not 1 <= end - start <= 15:
+                raise ValueError("参考视频裁剪片段须为 1–15 秒，开始时间不能为负数")
+            if not isinstance(request.inputs.get("video"), str):
+                raise ValueError("请提供需要裁剪的视频")
         for key in ("scale", "fps", "count", "subtitleSize"):
             value = request.options.get(key)
             if value is not None and (not math.isfinite(float(value)) or float(value) <= 0):
@@ -522,6 +529,17 @@ async def run_job(identifier: str, request: JobRequest):
                 await ffmpeg(identifier, "-i", video, "-vf", f"minterpolate=fps={float(options['fps'])}", "-c:v", "libx264", "-c:a", "copy", interpolated)
                 video = interpolated
             result = {"file": publish(video)}
+        elif operation == "trim":
+            source = inputs["video"]
+            start, end = float(options["start"]), float(options["end"])
+            info = await asyncio.to_thread(metadata, source)
+            if end > info["duration"]:
+                raise ValueError("裁剪结束时间超过原视频时长")
+            output = work / "trim.mp4"
+            await ffmpeg(identifier, "-ss", start, "-i", source, "-t", end - start,
+                         "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                         "-c:a", "aac", "-movflags", "+faststart", output)
+            result = {"file": publish(output)}
         elif operation == "cut":
             source = inputs["video"]
             segments = await transcribe(identifier, source, work)

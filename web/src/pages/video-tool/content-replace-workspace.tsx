@@ -7,9 +7,10 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { ModelPicker } from "@/components/model-picker";
 import { VideoSettingsPanel } from "@/components/video-settings-panel";
+import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { videoReferenceError } from "@/lib/video-capabilities";
+import { isWan30, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
 import { getWorkerCapabilities, prepareWorkbenchVideo, workbenchMediaBlob } from "@/services/api/video-worker";
 import { replaceStoredVideo, type UploadedFile } from "@/services/file-storage";
@@ -49,6 +50,7 @@ export default function ContentReplaceWorkspace() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [assetRole, setAssetRole] = useState<{ role: MediaRole; accept: string } | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [trimming, setTrimming] = useState(false);
     const uploadingRef = useRef(false);
     const [uploadErrors, setUploadErrors] = useState<Partial<Record<MediaRole, string>>>({});
     const [quoting, setQuoting] = useState(false);
@@ -64,7 +66,7 @@ export default function ContentReplaceWorkspace() {
     const anchor = useRef<{ x: number; y: number } | null>(null);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
-    const locked = busy || uploading || repairingSource;
+    const locked = busy || uploading || repairingSource || trimming;
     const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
@@ -184,7 +186,7 @@ export default function ContentReplaceWorkspace() {
     else if (d.route === "worker") {
         const capability = capabilities?.find((c) => c.name === (person ? "replace-person" : "replace-product"));
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
-    } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0);
+    } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
     const missing = !wb.hydrated
         ? "正在恢复本浏览器草稿"
         : uploading
@@ -200,7 +202,7 @@ export default function ContentReplaceWorkspace() {
                   : cloud && !person && !d.maskedEdit && reference.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                     ? "当前视频编辑模型要求原视频为 2–10 秒，请先裁剪"
                     : "";
-    const blocked = unavailable || missing || (pending ? "已有已提交任务，请先恢复查询结果" : "");
+    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || (pending ? "已有已提交任务，请先恢复查询结果" : "");
     const prepareQuote = async () => {
         if (blocked || busy || quoteController.current) return;
         const key = inputKey;
@@ -326,6 +328,7 @@ export default function ContentReplaceWorkspace() {
                         </div>
                         {media.kind === "image" ? <img src={media.url} alt={media.name} className="max-h-40 w-full rounded-lg object-contain" /> : <video key={media.url} src={media.url} controls preload="metadata" onError={() => { if (role === "reference") setSourcePreviewError(true); }} onLoadedMetadata={(event) => { if (role === "reference" && !event.currentTarget.videoWidth) setSourcePreviewError(true); }} className="max-h-44 w-full rounded-lg" />}
                         {uploading && <div role="status" className="flex items-center gap-2 text-xs" style={muted}><Spin size="small" />正在检查并处理素材</div>}
+                        {media.kind === "video" && d.route === "model" && isWan30(config.videoModel) && <VideoReferenceTrimmer media={media} disabled={locked} onBusyChange={setTrimming} onApply={(file) => wb.edit({ media: (useVideoWorkbenchStore.getState().drafts["content-replace"]?.media || []).map((item) => item.id === media.id ? { ...item, ...file } : item) }, "materials")} />}
                     </div>
                 ) : <Upload.Dragger
                     {...uploadProps}

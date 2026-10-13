@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import type { MentionsRef } from "antd/es/mentions";
 
 import { VideoFrameEditor } from "./video-frame-editor";
+import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { wanFrameRatio } from "@/lib/video-frames";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
@@ -22,7 +23,7 @@ import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImag
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
-import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode, isH3Video2K } from "@/lib/video-capabilities";
+import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoReferenceDurationError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode, isH3Video2K, isWan30 } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
 import { fetchReplicateResult, publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
 import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
@@ -105,6 +106,7 @@ export default function VideoPage() {
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [videoReferences, setVideoReferences] = useState<ReferenceVideo[]>([]);
+    const [trimming, setTrimming] = useState(false);
     const [audioReferences, setAudioReferences] = useState<ReferenceAudio[]>([]);
     const [writing, setWriting] = useState(false);
     const [writingError, setWritingError] = useState("");
@@ -170,7 +172,7 @@ export default function VideoPage() {
         ...videoReferences.map((item, index) => ({ id: item.id, label: `视频${index + 1}`, name: item.name })),
         ...audioReferences.map((item, index) => ({ id: item.id, label: `音频${index + 1}`, name: item.name })),
     ];
-    const referenceError = (!manualModel && !model ? "暂无支持这些输入的可用服务，请调整素材或联系管理员启用相应服务。" : videoReferenceError(effectiveConfig, model, references.length, videoReferences.length, audioReferences.length)) || materialMentionError(prompt, materialLabels);
+    const referenceError = (trimming ? "参考视频正在裁剪，请稍候" : "") || (!manualModel && !model ? "暂无支持这些输入的可用服务，请调整素材或联系管理员启用相应服务。" : videoReferenceError(effectiveConfig, model, references.length, videoReferences.length, audioReferences.length)) || videoReferenceDurationError(model, videoReferences) || materialMentionError(prompt, materialLabels);
     const quoteKey = [model, effectiveConfig.channelMode, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.videoInputMode, effectiveConfig.videoInterpolate, token, quoteRevision, pricingRevision].join("|");
     const price = quotedPrice?.key === quoteKey ? quotedPrice.value : null;
     useEffect(() => { setSettingsOpen(false); }, [model, running, writing]);
@@ -715,7 +717,7 @@ export default function VideoPage() {
                                     {references.map((item, index) => <div key={item.id} className="group relative overflow-hidden rounded-md border border-border"><button type="button" disabled={running || writing} className="block w-full cursor-pointer" onClick={() => { if (!frameMode) insertMention(`图片${index + 1}`); }}><img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="aspect-square w-full object-cover" /><span className="block truncate px-1 py-1 text-xs">{frameMode ? (index === 0 ? "首帧" : "尾帧") : `图片${index + 1}`}</span></button>{!frameMode && <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => { if (!running && !writing) changeImages(moveListItem(references, index, offset)); }} />}<button type="button" disabled={running || writing} className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white" aria-label={`移除图片${index + 1}`} onClick={() => removeMaterial(item.id)}><Trash2 size={12} /></button></div>)}
                                 </div>
                                 {model === REPLICATE_VIDEO_MODEL && references.length > 0 && <div className="mt-3 space-y-2"><Button block disabled={running || writing} onClick={() => setFrameEditorOpen(true)}>{framesNeedReview ? "确认首尾帧构图" : "调整首尾帧构图"} · {frameRatio}</Button><p className="text-xs text-muted-foreground">{framesNeedReview ? "生成前先查看裁剪预览；首尾帧将统一画幅，不会拉伸。" : `已确认 ${frameRatio} 构图，原图保留；修改画幅后需重新确认。`}</p></div>}
-                                {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><video src={item.url} controls className="max-h-32 w-full rounded" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing} onClick={() => removeMaterial(item.id)}>移除</Button></div></div>)}
+                                {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><video src={item.url} controls className="max-h-32 w-full rounded" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing || trimming} onClick={() => removeMaterial(item.id)}>移除</Button></div>{isWan30(model) && <VideoReferenceTrimmer media={{ ...item, storageKey: item.storageKey || "", bytes: item.bytes || 0, mimeType: item.type }} disabled={running || writing || trimming} onBusyChange={setTrimming} onApply={(file) => setVideoReferences((items) => items.map((current) => current.id === item.id ? { ...current, ...file, type: file.mimeType } : current))} />}</div>)}
                                 {audioReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><audio src={item.url} controls className="w-full" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`音频${index + 1}`)} className="cursor-pointer truncate text-primary">@音频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing} onClick={() => removeMaterial(item.id)}>移除</Button></div></div>)}
                             </div>
                             <p className="text-xs leading-5 text-muted-foreground">{isTextWan ? manualModel ? "当前手动选择文生视频服务，仅支持文字输入。" : "图片可选，添加图片将自动切换服务。" : videoInputDescription(profile, inputMode)}{inputMode === "reference" && references.length > 0 && "点击素材插入编号。"}</p>

@@ -24,6 +24,20 @@ export function isH3Video2K(model: string) {
     return modelOptionName(model).trim().toLowerCase() === "h3video-2k";
 }
 
+export function isWan30(model: string) {
+    return modelOptionName(model).trim().toLowerCase() === "wan30-720p";
+}
+
+export function videoReferenceDurationError(model: string, videos: { durationMs?: number }[]) {
+    if (!isWan30(model)) return "";
+    for (const [index, video] of videos.entries()) {
+        const duration = video.durationMs;
+        if (!duration || !Number.isFinite(duration)) return `第 ${index + 1} 个参考视频时长无法读取，请重新上传`;
+        if (duration < 1000 || duration > 15000) return `第 ${index + 1} 个参考视频需为 1–15 秒，请裁剪后再提交`;
+    }
+    return "";
+}
+
 export function resolveAutomaticVideoModel(config: AiConfig, images: number, videos: number, audios: number, requestedMode?: string) {
     const models = selectableModelsByCapability(config, "video");
     const preferred = `replicate::wan-video/wan-2.2-${images ? "i2v" : "t2v"}-fast`;

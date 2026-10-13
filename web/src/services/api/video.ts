@@ -1,5 +1,5 @@
 import axios from "axios";
-import { videoProfile, videoInputMode, videoReferenceError } from "@/lib/video-capabilities";
+import { videoProfile, videoInputMode, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { nanoid } from "nanoid";
 
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -187,7 +187,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, videoReferences, audioReferences, options);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (profile.interface === "unavailable") throw new Error(profile.description);
-    const referenceError = videoReferenceError(config, selectedModel, references.length, videoReferences.length, audioReferences.length);
+    const referenceError = videoReferenceError(config, selectedModel, references.length, videoReferences.length, audioReferences.length) || videoReferenceDurationError(selectedModel, videoReferences);
     if (referenceError) throw new Error(referenceError);
     if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) throw new Error("当前模型不支持所选视频时长，请重新选择");
     if (profile.resolutions.length && !profile.resolutions.includes(normalizeVideoResolution(config.vquality).replace(/p$/, ""))) throw new Error("当前模型不支持所选分辨率，请重新选择");

@@ -18,7 +18,7 @@ const audio = { id: "audio", name: "audio.mp3", type: "audio/mpeg", url: "https:
 for (const seconds of ["4", "6", "16", "30"]) test(`Wan30 relay preserves selected ${seconds} seconds and all reference media`, async () => {
     const wan = { ...config, channels: [createModelChannel({ id: "remote", models: [{ name: "wan30-720p", capability: "video" }] })], model: "wan30-720p", videoModel: "wan30-720p", videoSeconds: seconds, videoModels: { "wan30-720p": { ...profile, maxImages: 10, maxVideos: 5, maxAudios: 5, seconds: Array.from({ length: 27 }, (_, i) => String(i + 4)) } } };
     const images = Array.from({ length: 10 }, (_, i) => ({ ...image, id: String(i), dataUrl: `https://example.com/${i}.png` }));
-    const videos = Array.from({ length: 5 }, (_, i) => ({ ...video, id: String(i), url: `https://example.com/${i}.mp4` }));
+    const videos = Array.from({ length: 5 }, (_, i) => ({ ...video, id: String(i), url: `https://example.com/${i}.mp4`, durationMs: 15000 }));
     const audios = Array.from({ length: 5 }, (_, i) => ({ ...audio, id: String(i), url: `https://example.com/${i}.mp3` }));
     axios.post = (async (_url, body) => {
         expect(body.seconds).toBe(seconds);
@@ -30,6 +30,16 @@ for (const seconds of ["4", "6", "16", "30"]) test(`Wan30 relay preserves select
     }) as typeof axios.post;
     await createVideoGenerationTask(wan, "按参考素材生成", images, videos, audios);
     await expect(createVideoGenerationTask({ ...wan, videoSeconds: "31" }, "按参考素材生成")).rejects.toThrow("时长");
+});
+
+test("Wan30 rejects invalid reference durations before submitting or uploading", async () => {
+    const wan = { ...config, channels: [createModelChannel({ id: "remote", models: [{ name: "wan30-720p", capability: "video" }] })], model: "wan30-720p", videoModel: "wan30-720p", videoModels: { "wan30-720p": profile } };
+    let requests = 0;
+    axios.post = (async () => { requests++; return { data: { id: "mock" } }; }) as typeof axios.post;
+    for (const durationMs of [undefined, 0, 999, 15001, Infinity, NaN]) await expect(createVideoGenerationTask(wan, "参考视频", [], [{ ...video, durationMs }])).rejects.toThrow("参考视频");
+    expect(requests).toBe(0);
+    for (const durationMs of [1000, 15000]) await createVideoGenerationTask(wan, "参考视频", [], [{ ...video, durationMs }]);
+    expect(requests).toBe(2);
 });
 
 test("relay sends real video/audio fields and the confirmed price without creating a real prediction", async () => {

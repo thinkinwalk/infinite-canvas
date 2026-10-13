@@ -90,6 +90,27 @@ export async function createWorkerJob(config: WorkerConfig, operation: string, i
     return (await workerRequest(config, "jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation, inputs, options }), signal })).json();
 }
 
+export async function trimWorkbenchVideo(config: WorkerConfig, media: UploadedFile & { name?: string }, start: number, end: number, signal: AbortSignal): Promise<UploadedFile> {
+    if (![start, end].every(Number.isFinite) || start < 0 || end - start < 1 || end - start > 15) throw new Error("请选择 1–15 秒的参考片段");
+    const capabilities = await getWorkerCapabilities(config);
+    signal.throwIfAborted();
+    if (!capabilities.some((item) => item.name === "trim" && item.available)) throw new Error("当前剪辑服务暂不支持裁剪，请更新或连接处理服务后重试");
+    const id = await uploadWorkerMedia(config, media, signal);
+    const job = await createWorkerJob(config, "trim", { video: id }, { start, end }, signal);
+    try {
+        const completed = await waitForWorkerJob(config, job.id, signal, () => {});
+        if (!completed.result?.file) throw new Error("剪辑服务未返回视频");
+        const blob = await (await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}`, { signal })).blob();
+        const meta = await readPlayableVideoMeta(blob);
+        if (!meta.durationMs || meta.durationMs < 1000 || meta.durationMs > 15000) throw new Error("裁剪结果不在 1–15 秒内，请缩短选区后重试");
+        signal.throwIfAborted();
+        return uploadMediaFile(blob, "video-trim");
+    } catch (error) {
+        if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
+        throw error;
+    }
+}
+
 export async function readWorkerJob(config: WorkerConfig, id: string, signal?: AbortSignal): Promise<WorkerJob> {
     return (await workerRequest(config, `jobs/${encodeURIComponent(id)}`, { signal })).json();
 }
