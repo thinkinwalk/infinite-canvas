@@ -84,6 +84,12 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
+## v0.19.37 内容替换上传交互优化
+
+- Release commit: `56143eff2d897e64c65fed664436736409b11852`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.37`; digest: `sha256:3d2a9a5e47e7e18618f17bce6674667629c18ee3d3a5508538181df9a12b3b2f`. App, docs and plugin workflows succeeded; the docs ARM dependency extraction failure passed on rerun. GitHub Pages skipped as configured. Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.37; app workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38370377665.
+- Production image, OCI revision and `/app/VERSION` match the release. Internal/external health and common page routes return HTTP 200. Public `/assets/index-DZGTh2Yu.js` contains the new uploaded-material actions and removes the duplicate replacement dropzone. Independent production browser verified video/image upload cards, image replacement, persistence after reload, removal restoring the empty upload state and playable video; no page runtime errors or paid predictions. User browser drafts were preserved.
+- Consistent backups: `/opt/infinite-canvas/backups/database-before-v0.19.37-20261013-104044.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.37-20261013-104044.tgz` and `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-104044.bak`. Database `quick_check` is `ok`; settings and all 7 historical tasks match the deployment backup. Existing worker start time remains `2026-10-09T06:50:12.435805303Z`; its compose/transcode capability is available. Previous v0.19.36 image remains available for rollback. Evidence is beside the repository in `artifacts/release-v0.19.37/`.
+
 ## v0.19.36 内容替换视频预览修复
 
 - Release commit: `60b6d86afcf1439a7e14423f3928119366359e49`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.36`; digest: `sha256:6481893869cd765cbd00ce1cf6026428a5d576fbf6e862e5343f104724809354`. App, docs and plugin workflows succeeded; GitHub Pages skipped as configured. Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.36; app workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38366448417.
