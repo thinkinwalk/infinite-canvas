@@ -84,6 +84,13 @@ curl -fsS http://127.0.0.1:3002/api/health
 
 ## Current Seedance model fix state
 
+## v0.19.36 内容替换视频预览修复
+
+- Release commit: `60b6d86afcf1439a7e14423f3928119366359e49`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.36`; digest: `sha256:6481893869cd765cbd00ce1cf6026428a5d576fbf6e862e5343f104724809354`. App, docs and plugin workflows succeeded; GitHub Pages skipped as configured. Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.36; app workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38366448417.
+- Production image, OCI revision and `/app/VERSION` match the release. Internal/external health and normal page routes return HTTP 200; the public `/assets/index-Cid7r3DK.js` contains the release and source-preview repair action. Existing worker start time remains `2026-10-09T06:50:12.435805303Z` and its compose/transcode capability is available. Database `quick_check` is `ok`; settings and all 5 historical tasks match the deployment backup.
+- Consistent backups: `/opt/infinite-canvas/backups/database-before-v0.19.36-20261013-100553.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.36-20261013-100553.tgz` and `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-100553.bak`. Previous v0.19.35 image remains available for rollback.
+- Local Firefox playback and failure protection passed 7 checks with a real isolated FFmpeg worker. Production release verification did not create paid predictions or alter the user's browser cache; the original uploaded video still requires refresh and the repair action in the original browser. Evidence is beside the repository in `artifacts/content-replace-playback/` and `artifacts/release-v0.19.36/`.
+
 ## v0.19.30 首尾帧画幅与构图优化
 
 - Release commit: `0a67c8664d3633d2787093b1c350c665e7b0f7e3`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.30`; digest: `sha256:6884cd3a7b9d9980e6bd5724abcfe51df6100379bc2cbc6c6453bd2f82134eda`. App, docs and plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38216347736.
