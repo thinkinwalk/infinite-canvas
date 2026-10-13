@@ -15,7 +15,7 @@ import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMater
 import { viralInput, viralMaterialLabels, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
-import { cancelWorkerJob, createWorkerJob, getWorkerCapabilities, resolveWorkerUrl, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
+import { cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -197,7 +197,8 @@ export function useVideoWorkbench(tool: VideoTool) {
             const added: WorkbenchMedia[] = [];
             for (const file of files) {
                 if (!accept.split(",").some((a) => file.type.startsWith(a.trim().replace("*", "")))) throw new Error("请选择该位置支持的图片、视频或音频格式");
-                const result = file.type.startsWith("image/") ? await uploadImage(file) : await uploadMediaFile(file, "video-material");
+                const blob = tool === "content-replace" && file.type.startsWith("video/") ? await prepareWorkbenchVideo(store().worker, file, file.name) : file;
+                const result = file.type.startsWith("image/") ? await uploadImage(file) : await uploadMediaFile(blob, "video-material");
                 added.push({ ...result, storageKey: result.storageKey || "", id: nanoid(), name: file.name, kind: file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "video", role });
             }
             const single = ["voice", "avatar", "music", "mask", "first-frame", "learning"].includes(role) || (tool === "content-replace" && ["model", "background"].includes(role)) || (role === "reference" && added.some((m) => m.kind === "video"));
