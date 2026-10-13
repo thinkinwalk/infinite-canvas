@@ -21,6 +21,14 @@ Do not commit private key material. The key path above is recorded only so futur
 
 ## Important migration notes
 
+## v0.19.40 Wan30 capability deployment verification
+
+- Release commit: `22fa52d17a4fb356f79835d810440fff6eeb69b2`; release tag: `v0.19.40`. App image workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38407074653. Application, documentation and official plugin workflows succeeded; GitHub Pages skipped by configuration.
+- Image digest: `sha256:479666ada1c52a61e2b452f17ccf3dabb34f5575f4afcb4402d551e54a38fdd8`. Container version and revision match the release; internal and external health checks return `ok`.
+- Channel 14 / `lingzhouai-sp` retains VIP access and now exposes `wan30-720p` relay/reference capabilities: 10 images, 5 videos, 5 audios, 720p, 30 seconds. User-approved price is 42 credits/second; production quote is1260 credits/30 seconds at the existing VIP ratio1.
+- Independent Chrome verified the ordinary video entry, capability refresh on an opened page's focus event, content-replace button enabled after local test uploads, and720p/30-second parameter choices without runtime errors. No paid task was created; actual upstream field acceptance and output quality remain unverified.
+- Backups: `/opt/infinite-canvas/backups/database-before-v0.19.40-20261013-154613.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.40-20261013-154613.tgz`, `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-154613.bak`. SQLite quick_check is `ok`; settings,12 video tasks and8 Replicate tasks match the pre-deploy backup. Worker start time remains `2026-10-09T06:50:12.435805303Z`. Previous image remains available for rollback. Evidence: `artifacts/release-v0.19.40/` beside the repository.
+
 - The project directory is /opt/infinite-canvas. Do not use /opt/chatgpt2api for this project.
 - The old production host 47.104.6.6 has been migrated away. Do not deploy there for the current Lingzhou Studio production site.
 - The old domain https://studio.movoflow.com is no longer the production validation target.
