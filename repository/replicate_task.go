@@ -13,12 +13,12 @@ func ReplicateChannelInUse(channelID int, legacy bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	ids := []int{channelID}
+	channelFilter := "channel_id = ?"
 	if legacy {
-		ids = append(ids, 0)
+		channelFilter = "(channel_id = ? OR channel_id = 0 OR channel_id IS NULL)"
 	}
 	var count int64
-	err = db.Model(&model.ReplicateTask{}).Where("channel_id IN ? AND status NOT IN ?", ids, []string{"completed", "failed", "cancelled"}).Count(&count).Error
+	err = db.Model(&model.ReplicateTask{}).Where(channelFilter, channelID).Where("status NOT IN ?", []string{"completed", "failed", "cancelled"}).Count(&count).Error
 	return count > 0, err
 }
 

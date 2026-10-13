@@ -113,6 +113,18 @@ func TestReplicateTaskKeepsOriginalChannelAndGuardsDeletion(t *testing.T) {
 	if err := validateReplicateChannels(settings.Private.Channels[1:], settings.Private); err == nil {
 		t.Fatal("unfinished task channel was deleted")
 	}
+	for _, legacyID := range []any{nil, 0} {
+		if err := db.Model(&task).Update("channel_id", legacyID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := validateReplicateChannels(settings.Private.Channels[1:], settings.Private); err == nil {
+			t.Fatal("unfinished legacy task channel was deleted")
+		}
+		active, err := repository.ReplicateChannelInUse(52, false)
+		if err != nil || active {
+			t.Fatal("legacy task blocked an unrelated channel")
+		}
+	}
 	selected, err := SelectReplicateChannel("qwen/qwen3-tts", "default")
 	if err != nil || selected.ID != 52 {
 		t.Fatal("new task used disabled channel")
