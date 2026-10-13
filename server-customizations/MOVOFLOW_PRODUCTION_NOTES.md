@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.38
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.39
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -83,6 +83,12 @@ curl -fsS http://127.0.0.1:3002/api/health
 ```
 
 ## Current Seedance model fix state
+
+## v0.19.39 内容替换人物建议提示收纳
+
+- Release commit: `232246c0fceb84df8913b82167953fe9f2d6aad9`; tag: `v0.19.39`; image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.39`; digest: `sha256:56eea1620c3c0850a0d2818897f6d56f798f62c77d449d8e0e48bd3fac223474`. App, docs and official plugin workflows succeeded; GitHub Pages skipped as configured. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38383566077.
+- Production image revision and `/app/VERSION` match v0.19.39. Internal/external health return `ok`; `/`, `/video/content-replace`, `/video`, `/image` and `/digital-human` return HTTP 200. The served content-replacement JavaScript contains the compact「素材建议」entry and the full click/tap guidance. The first post-restart readiness probe returned 502; the deployment retry succeeded and subsequent health and route checks passed.
+- Consistent backups: `/opt/infinite-canvas/backups/database-before-v0.19.39-20261013-123431.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.39-20261013-123431.tgz` and `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-123431.bak`. Database `quick_check` is `ok`; settings and all eight historical tasks match the deployment backup. Existing worker start time remains `2026-10-09T06:50:12.435805303Z`. Previous v0.19.38 image remains available for rollback. No paid prediction was submitted. Evidence is beside the repository in `artifacts/release-v0.19.39/`.
 
 ## v0.19.38 内容替换人物空掩膜失败提示
 
