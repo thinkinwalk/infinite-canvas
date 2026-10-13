@@ -19,6 +19,13 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
+## v0.19.42 reference video trimming deployment
+
+- Release revision `4afefa5064b4275a7745aa6a9749d8f5feb2fa23`, image digest `sha256:7c18a2c9ee6e5acf954b3fa58b0d736c1a30a34132d84012b339bd5dc8610f67`; app/docs/plugin workflows succeeded. App workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38413838189.
+- Worker now advertises `trim`, validates 1–15-second ranges and source bounds, and returns H.264 MP4 with the source audio when present. No worker job was running during replacement; all six existing worker job files remained identical. Source is mounted read-only from `/opt/infinite-canvas/releases/v0.19.42/video-worker-app.py` to `/worker/app.py` in production Compose; preserve or explicitly update this mount on future worker releases. SHA256: `abb98d353207d35b13eb8ad6c43a505204b2f8b9f16037dd27f8afc28d39ff36`. Worker source and Compose rollback backup: `/opt/infinite-canvas/backups/worker-before-v0.19.42-20261013-163041/`. No production image build was performed.
+- Independent production Chrome verified a 20-second input warning and disabled submission, one-click output exactly15 seconds, manual3–9-second output exactly6 seconds, enabled content-replace submission after reference image upload, and restored6-second draft after reload. Worker rejected16-second, negative-start and subsecond ranges with422. No paid upstream generation was submitted and no page runtime error occurred. Local ordinary video page and failed-service preservation also passed. Evidence: `artifacts/reference-trim/` and `artifacts/release-v0.19.42/` beside the repository.
+- Internal/external health returned `ok`; SQLite quick_check passed, settings and14 video /8 Replicate tasks matched the deployment backup. App backups: `/opt/infinite-canvas/backups/database-before-v0.19.42-20261013-163443.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.42-20261013-163443.tgz`, `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-163443.bak`. App rollback preserves the updated worker; worker rollback uses its separate Compose backup above.
+
 ## v0.19.41 Wan30 duration correction verification
 
 - Deployed release `v0.19.41`, revision `be3e2828e77454dd937cdff6fcec3757ce12688f`, digest `sha256:767b0e093301415029d428e1213f8e13d06800d7311c719da7f0a220fd42a26f`. App workflow https://github.com/thinkinwalk/infinite-canvas/actions/runs/38409799379 succeeded, as did docs and plugins.
