@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Input, Modal, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme } from "antd";
+import { Alert, App, Button, Collapse, Empty, Input, Modal, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
 import { ArrowLeft, Download, FolderPlus, Grid2X2, Image as ImageIcon, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -260,6 +260,17 @@ export default function ContentReplaceWorkspace() {
     };
     const materialField = (role: MediaRole, accept: string, label: string, hint: string) => {
         const media = d.media.find((m) => m.role === role);
+        const uploadProps: UploadProps = {
+            accept,
+            multiple: false,
+            showUploadList: false,
+            disabled: locked,
+            beforeUpload: (file, files) => {
+                if (files.length > 1) setUploadErrors((errors) => ({ ...errors, [role]: "请每次选择一份素材，替换图仅使用单张图片" }));
+                else void addFile(file, role, accept);
+                return Upload.LIST_IGNORE;
+            },
+        };
         return (
             <section className="min-w-0" data-material-role={role}>
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -268,43 +279,43 @@ export default function ContentReplaceWorkspace() {
                         {role === "reference" ? "视频" : accept === "image/*" ? "单张图片" : "图片 / 视频"}
                     </span>
                 </div>
-                {media && (
-                    <div className="mb-2 space-y-2">
+                {media ? (
+                    <div className="space-y-3 rounded-lg border p-3" style={surface}>
+                        <div className="flex min-w-0 flex-wrap items-start gap-2">
+                            <div className="min-w-0 flex-1 basis-28">
+                                <div className="truncate text-xs font-medium" title={media.name}>{media.name}</div>
+                                <div className="mt-1 text-xs" style={muted}>
+                                    已上传 · {[formatBytes(media.bytes), media.width && media.height ? `${media.width}×${media.height}` : "", media.durationMs ? formatDuration(media.durationMs) : ""].filter(Boolean).join(" · ")}
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                                <Upload {...uploadProps}>
+                                    <Button size="small" disabled={locked} icon={<RefreshCw size={13} />} aria-label={`更换${label}`}>更换</Button>
+                                </Upload>
+                                <Button type="text" danger size="small" disabled={locked} icon={<X size={13} />} aria-label={`移除${label}`} onClick={() => {
+                                    wb.removeMedia(media.id);
+                                    setUploadErrors((errors) => ({ ...errors, [role]: "" }));
+                                }}>移除</Button>
+                            </div>
+                        </div>
                         {media.kind === "image" ? <img src={media.url} alt={media.name} className="max-h-40 w-full rounded-lg object-contain" /> : <video key={media.url} src={media.url} controls preload="metadata" onError={() => { if (role === "reference") setSourcePreviewError(true); }} onLoadedMetadata={(event) => { if (role === "reference" && !event.currentTarget.videoWidth) setSourcePreviewError(true); }} className="max-h-44 w-full rounded-lg" />}
-                        <div className="flex min-w-0 items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate text-xs" title={media.name}>
-                                {media.name}
-                            </span>
-                            <Button type="text" size="small" disabled={locked} icon={<X size={14} />} aria-label={`移除${label}`} onClick={() => wb.removeMedia(media.id)} />
-                        </div>
-                        <div className="text-xs" style={muted}>
-                            {[formatBytes(media.bytes), media.width && media.height ? `${media.width}×${media.height}` : "", media.durationMs ? formatDuration(media.durationMs) : ""].filter(Boolean).join(" · ")}
-                        </div>
+                        {uploading && <div role="status" className="flex items-center gap-2 text-xs" style={muted}><Spin size="small" />正在检查并处理素材</div>}
                     </div>
-                )}
-                <Upload.Dragger
+                ) : <Upload.Dragger
+                    {...uploadProps}
                     height={112}
-                    accept={accept}
-                    multiple={false}
-                    showUploadList={false}
-                    disabled={locked}
-                    beforeUpload={(file, files) => {
-                        if (files.length > 1) setUploadErrors((errors) => ({ ...errors, [role]: "请每次选择一份素材，替换图仅使用单张图片" }));
-                        else void addFile(file, role, accept);
-                        return Upload.LIST_IGNORE;
-                    }}
                     style={{ background: token.colorFillQuaternary }}
                 >
                     <div className="flex items-center justify-center gap-2 px-2 text-sm" style={muted}>
                         {uploading ? <Spin size="small" /> : accept === "image/*" ? <ImageIcon size={19} /> : <Video size={19} />}
-                        <span>{uploading ? "正在检查并处理素材" : media ? "点击或拖拽替换素材" : "点击或拖拽上传"}</span>
+                        <span>{uploading ? "正在检查并处理素材" : "点击或拖拽上传"}</span>
                     </div>
                     <div className="mt-1 px-3 text-xs" style={muted}>
                         {hint}
                     </div>
-                </Upload.Dragger>
+                </Upload.Dragger>}
                 <Button type="text" className="mt-1" size="small" disabled={locked} onClick={() => setAssetRole({ role, accept })}>
-                    从我的素材选择
+                    {media ? "从我的素材更换" : "从我的素材选择"}
                 </Button>
                 {uploadErrors[role] && (
                     <div role="alert" className="mt-1 text-xs" style={{ color: token.colorError }}>
