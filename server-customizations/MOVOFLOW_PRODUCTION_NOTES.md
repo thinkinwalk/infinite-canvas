@@ -19,7 +19,13 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
-## v0.19.40 Wan30 capability deployment verification
+## v0.19.41 Wan30 duration correction verification
+
+- Deployed release `v0.19.41`, revision `be3e2828e77454dd937cdff6fcec3757ce12688f`, digest `sha256:767b0e093301415029d428e1213f8e13d06800d7311c719da7f0a220fd42a26f`. App workflow https://github.com/thinkinwalk/infinite-canvas/actions/runs/38409799379 succeeded, as did docs and plugins.
+- Corrects v0.19.40's mistaken fixed 30-second setting. Production capabilities and slider now use the site's existing 4–30-second range; 30 is the maximum. Independent Chrome verified 6/16/30-second selection and 16 seconds retained after reload. Authenticated quotes are 252/672/1260 credits respectively. No paid generation was submitted and no page runtime errors occurred.
+- Internal/external health returned `ok`; SQLite quick_check passed, settings and 12 video / 8 Replicate tasks matched the backup, worker start time remained unchanged. Backups: `/opt/infinite-canvas/backups/database-before-v0.19.41-20261013-160608.sqlite`, `/opt/infinite-canvas/backups/data-before-v0.19.41-20261013-160608.tgz`, `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261013-160608.bak`. Evidence: `artifacts/release-v0.19.41/` beside the repository.
+
+## v0.19.40 Wan30 capability deployment verification (historical; duration corrected above)
 
 - Release commit: `22fa52d17a4fb356f79835d810440fff6eeb69b2`; release tag: `v0.19.40`. App image workflow: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38407074653. Application, documentation and official plugin workflows succeeded; GitHub Pages skipped by configuration.
 - Image digest: `sha256:479666ada1c52a61e2b452f17ccf3dabb34f5575f4afcb4402d551e54a38fdd8`. Container version and revision match the release; internal and external health checks return `ok`.
