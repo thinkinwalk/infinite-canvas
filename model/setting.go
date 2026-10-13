@@ -11,17 +11,20 @@ const (
 
 // ModelChannel 模型渠道配置。
 type ModelChannel struct {
-	ID            int                          `json:"id"`
-	Protocol      string                       `json:"protocol"`
-	Name          string                       `json:"name"`
-	BaseURL       string                       `json:"baseUrl"`
-	APIKey        string                       `json:"apiKey"`
-	Models        []string                     `json:"models"`
-	Weight        int                          `json:"weight"`
-	Enabled       bool                         `json:"enabled"`
-	Remark        string                       `json:"remark"`
-	AllowedGroups []string                     `json:"allowedGroups"`
-	VideoModels   map[string]VideoModelProfile `json:"videoModels,omitempty"`
+	ID                int                          `json:"id"`
+	Protocol          string                       `json:"protocol"`
+	Name              string                       `json:"name"`
+	BaseURL           string                       `json:"baseUrl"`
+	APIKey            string                       `json:"apiKey"`
+	APIKeyConfigured  bool                         `json:"apiKeyConfigured"`
+	ClearAPIKey       bool                         `json:"clearApiKey,omitempty"`
+	UseEnvironmentKey bool                         `json:"useEnvironmentKey,omitempty"`
+	Models            []string                     `json:"models"`
+	Weight            int                          `json:"weight"`
+	Enabled           bool                         `json:"enabled"`
+	Remark            string                       `json:"remark"`
+	AllowedGroups     []string                     `json:"allowedGroups"`
+	VideoModels       map[string]VideoModelProfile `json:"videoModels,omitempty"`
 }
 
 // VideoModelProfile describes the inputs verified for a model on this channel.
@@ -62,6 +65,7 @@ type ModelCost struct {
 
 // PublicModelChannelSetting 公开模型渠道配置。
 type PublicModelChannelSetting struct {
+	Models             []PublicChannelModel         `json:"models"`
 	AvailableModels    []string                     `json:"availableModels"`
 	ModelCosts         []ModelCost                  `json:"modelCosts"`
 	DefaultModel       string                       `json:"defaultModel"`
@@ -73,12 +77,21 @@ type PublicModelChannelSetting struct {
 	VideoModels        map[string]VideoModelProfile `json:"videoModels,omitempty"`
 }
 
+// PublicChannelModel exposes capabilities without exposing provider credentials.
+type PublicChannelModel struct {
+	Version      string   `json:"version,omitempty"`
+	Model        string   `json:"model"`
+	Label        string   `json:"label"`
+	Protocol     string   `json:"protocol"`
+	Capabilities []string `json:"capabilities"`
+	Operations   []string `json:"operations,omitempty"`
+}
+
 // PublicSetting 公开配置。
 type PublicSetting struct {
-	ModelChannel         PublicModelChannelSetting `json:"modelChannel"`
-	ReplicateVideoModels []string                  `json:"replicateVideoModels,omitempty"`
-	Auth                 PublicAuthSetting         `json:"auth"`
-	AdminContact         AdminContactSetting       `json:"adminContact"`
+	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
+	Auth         PublicAuthSetting         `json:"auth"`
+	AdminContact AdminContactSetting       `json:"adminContact"`
 }
 
 type AdminContactSetting struct {
@@ -106,12 +119,14 @@ type PrivateSetting struct {
 }
 
 type ReplicateSetting struct {
+	ChannelsInitialized bool `json:"channelsInitialized"`
+	LegacyChannelID     int  `json:"legacyChannelId,omitempty"`
 	// ModelCredits is retained as a fallback for settings saved before model-aware pricing.
-	ModelCredits     map[string]*int             `json:"modelCredits"`
-	Pricing          map[string]ReplicatePricing `json:"pricing"`
-	APIKey           string                      `json:"apiKey"`
-	APIKeyConfigured bool                        `json:"apiKeyConfigured"`
-	ClearAPIKey      bool                        `json:"clearApiKey"`
+	ModelCredits map[string]*int             `json:"modelCredits"`
+	Pricing      map[string]ReplicatePricing `json:"pricing"`
+	// Legacy credential is read only during the one-time channel import.
+	APIKey      string `json:"apiKey,omitempty"`
+	ClearAPIKey bool   `json:"clearApiKey,omitempty"`
 }
 
 // ReplicatePricing describes the platform price for one pinned Replicate model.

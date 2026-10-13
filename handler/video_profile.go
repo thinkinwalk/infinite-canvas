@@ -21,6 +21,7 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 	user, _ := service.UserFromContext(r.Context())
 	var input struct {
 		Model       string `json:"model"`
+		Protocol    string `json:"protocol"`
 		Resolution  string `json:"resolution"`
 		Seconds     string `json:"seconds"`
 		Interpolate bool   `json:"interpolate"`
@@ -29,7 +30,11 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "请选择模型")
 		return
 	}
-	if input.Model == "wan-video/wan-2.2-i2v-fast" || input.Model == "wan-video/wan-2.2-t2v-fast" {
+	if input.Protocol != "" && input.Protocol != "openai" && input.Protocol != "replicate" {
+		Fail(w, "不支持的渠道协议")
+		return
+	}
+	if input.Protocol != "openai" && (input.Model == "wan-video/wan-2.2-i2v-fast" || input.Model == "wan-video/wan-2.2-t2v-fast") {
 		operation := "image-to-video"
 		if input.Model == "wan-video/wan-2.2-t2v-fast" {
 			operation = "text-to-video"
@@ -59,7 +64,7 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		OK(w, map[string]any{"credits": quote.Credits, "calculation": quote.Calculation})
 		return
 	}
-	if input.Model == "minimax/hailuo-2.3" {
+	if input.Protocol != "openai" && input.Model == "minimax/hailuo-2.3" {
 		spec, err := service.FindReplicateModel("hailuo-video")
 		if err != nil {
 			FailError(w, err)
@@ -85,6 +90,10 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		OK(w, map[string]any{"credits": quote.Credits, "calculation": quote.Calculation})
+		return
+	}
+	if input.Protocol == "replicate" {
+		Fail(w, "该 Replicate 模型尚未适配通用报价，请使用对应工具入口")
 		return
 	}
 	channel, err := service.SelectModelChannelForGroup(input.Model, user.Group)

@@ -13,7 +13,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
-import { createReplicateTask, fetchReplicateResult, publicServiceText, quoteReplicate, readReplicateTask, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, uploadReplicateReference, type ReplicateQuote } from "./replicate";
+import { createReplicateTask, fetchReplicateResult, isReplicateVideoModel, publicServiceText, quoteReplicate, readReplicateTask, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, uploadReplicateReference, type ReplicateQuote } from "./replicate";
 
 type VideoResponse = {
     id?: string;
@@ -44,13 +44,13 @@ type RequestOptions = { signal?: AbortSignal; expectedCredits?: number; onWaitSt
 export type VideoPrice = { credits: number; calculation: string };
 export async function quoteVideoModel(config: AiConfig, model: string, signal?: AbortSignal): Promise<VideoPrice> {
     if (!model || !modelMatchesCapability(config, model, "video")) throw new Error("请选择可用的视频模型后重试");
-    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { model: modelOptionName(model), resolution: normalizeVideoResolution(config.vquality).replace(/p$/, ""), seconds: config.videoSeconds, interpolate: config.videoInterpolate === "true" }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
+    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: isReplicateVideoModel(model) ? "replicate" : "openai", model: modelOptionName(model), resolution: normalizeVideoResolution(config.vquality).replace(/p$/, ""), seconds: config.videoSeconds, interpolate: config.videoInterpolate === "true" }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
     return unwrapEnvelope(response.data, "视频报价读取失败");
 }
 
 export async function quoteTextModel(config: AiConfig, model: string, signal?: AbortSignal): Promise<VideoPrice> {
     if (!model || !modelMatchesCapability(config, model, "text")) throw new Error("请选择可用的分析 / 文案模型后重试");
-    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { model: modelOptionName(model) }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
+    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: "openai", model: modelOptionName(model) }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
     return unwrapEnvelope(response.data, "文案报价读取失败");
 }
 

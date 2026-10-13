@@ -231,8 +231,11 @@ export async function deleteAdminAsset(token: string, id: string) {
 }
 
 export type AdminModelChannel = {
+    apiKeyConfigured?: boolean;
+    clearApiKey?: boolean;
+    useEnvironmentKey?: boolean;
     id: number;
-    protocol: "openai";
+    protocol: "openai" | "replicate";
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -265,7 +268,10 @@ export type VideoModelProfile = {
     billingTiers?: Record<string, number>;
 };
 
+export type PublicChannelModel = { version?: string; model: string; label: string; protocol: string; capabilities: string[]; operations?: string[] };
+
 export type AdminPublicModelChannelSettings = {
+    models?: PublicChannelModel[];
     videoModels?: Record<string, VideoModelProfile>;
     availableModels: string[];
     modelCosts: AdminModelCost[];
@@ -295,7 +301,6 @@ export type AdminReplicatePricing = {
 };
 
 export type AdminPublicSettings = {
-	replicateVideoModels?: string[];
     modelChannel: AdminPublicModelChannelSettings;
     adminContact: {
         qq: string;
@@ -326,9 +331,8 @@ export type AdminPrivateSettings = {
     replicate: {
         modelCredits?: Record<string, number | null>;
         pricing?: Record<string, AdminReplicatePricing>;
-        apiKey: string;
-        apiKeyConfigured: boolean;
-        clearApiKey: boolean;
+        channelsInitialized?: boolean;
+        legacyChannelId?: number;
     };
 };
 
@@ -343,10 +347,6 @@ export async function fetchAdminSettings(token: string) {
 
 export async function saveAdminSettings(token: string, settings: AdminSettings) {
     return apiPost<AdminSettings>("/api/admin/settings", settings, token);
-}
-
-export async function testReplicate(token: string) {
-    return apiPost<string>("/api/admin/settings/replicate-test", {}, token);
 }
 
 export type AdminChannelActionRequest = {

@@ -11,12 +11,12 @@ import (
 )
 
 func TestReplicateKeyHiddenFromAdminSettings(t *testing.T) {
-	settings := model.Settings{Private: model.PrivateSetting{Replicate: model.ReplicateSetting{APIKey: "secret-token"}}}
+	settings := model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{{Protocol: "replicate", APIKey: "secret-token"}}}}
 	hidden := hidePrivateAPIKeys(settings)
-	if hidden.Private.Replicate.APIKey != "" || !hidden.Private.Replicate.APIKeyConfigured {
-		t.Fatalf("Replicate key was exposed or configuration status was lost: %+v", hidden.Private.Replicate)
+	if hidden.Private.Channels[0].APIKey != "" || !hidden.Private.Channels[0].APIKeyConfigured {
+		t.Fatal("Replicate key was exposed or configuration status was lost")
 	}
-	if settings.Private.Replicate.APIKey != "secret-token" {
+	if settings.Private.Channels[0].APIKey != "secret-token" {
 		t.Fatal("hiding the key mutated the stored settings")
 	}
 }

@@ -61,7 +61,14 @@ export const REPLICATE_FEATURES: { operation: ReplicateOperation; label: string;
     { operation: "video-edit", label: "视频智能编辑", model: "wan-video/wan-2.7-videoedit", description: "用文字修改视频中的时间、天气、背景和视觉风格。", billingMode: "output_seconds" },
     { operation: "masked-edit", label: "局部视频编辑", model: "prunaai/vace-14b", description: "通过掩膜指定区域，局部修改人物、物体或背景。", billingMode: "runtime_seconds" },
 ];
+export const REPLICATE_IMAGE_MODELS = [
+    { model: "men1scus/birefnet", label: "图像抠图", description: "用于案例中的图片背景去除，费用沿用对应案例的价格。" },
+    { model: "nightmareai/real-esrgan", label: "图像超分", description: "用于案例中的图片放大，费用沿用对应案例的价格。" },
+];
+export const REPLICATE_SUPPORTED_MODELS = [...REPLICATE_FEATURES, ...REPLICATE_IMAGE_MODELS];
 export type ReplicateTask = {
+    channelId?: number;
+    channelName?: string;
     id: string;
     operation: ReplicateOperation;
     model: string;

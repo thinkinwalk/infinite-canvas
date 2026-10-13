@@ -25,6 +25,19 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     }, [hydrateUser, loadPublicSettings, token]);
 
     useEffect(() => {
+        const refresh = () => { if (document.visibilityState === "visible") void loadPublicSettings(); };
+        const changed = (event: StorageEvent) => { if (event.key === "platform-model-catalog-changed") void loadPublicSettings(); };
+        window.addEventListener("focus", refresh);
+        window.addEventListener("storage", changed);
+        document.addEventListener("visibilitychange", refresh);
+        return () => {
+            window.removeEventListener("focus", refresh);
+            window.removeEventListener("storage", changed);
+            document.removeEventListener("visibilitychange", refresh);
+        };
+    }, [loadPublicSettings]);
+
+    useEffect(() => {
         if (handledConfigParams.current) return;
         const searchParams = new URLSearchParams(window.location.search);
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");

@@ -326,12 +326,12 @@ export function useEffectiveConfig() {
     return useMemo(() => resolveEffectiveConfig(config, publicSettings), [config, publicSettings]);
 }
 
-function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
+export function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
     const modelChannel = publicSettings?.modelChannel;
-    if (!modelChannel) return appendReplicateVideoChannel(config, publicSettings?.replicateVideoModels);
+    if (!modelChannel) return appendReplicateVideoChannel(config, modelChannel?.models);
     const channelMode = modelChannel.allowCustomChannel && hasUsableLocalChannel(config) ? config.channelMode : "remote";
-    if (channelMode === "local") return appendReplicateVideoChannel({ ...config, channelMode }, publicSettings?.replicateVideoModels);
-    const remoteConfig = appendReplicateVideoChannel(remoteConfigFromPublicSettings(config, modelChannel), publicSettings?.replicateVideoModels);
+    if (channelMode === "local") return appendReplicateVideoChannel({ ...config, channelMode }, modelChannel?.models);
+    const remoteConfig = appendReplicateVideoChannel(remoteConfigFromPublicSettings(config, modelChannel), modelChannel?.models);
     // Replicate models are added after the platform channel is normalized. Preserve a
     // previously selected Replicate video model instead of falling back to the default
     // platform video model on every render.
@@ -341,8 +341,8 @@ function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSet
         : remoteConfig;
 }
 
-function appendReplicateVideoChannel(config: AiConfig, modelNames: string[] | undefined): AiConfig {
-    const names = Array.from(new Set((modelNames || []).map((name) => name.trim().replace(/^replicate::/i, "")).filter(Boolean)));
+function appendReplicateVideoChannel(config: AiConfig, catalog: AdminPublicSettings["modelChannel"]["models"]): AiConfig {
+    const names = Array.from(new Set((catalog || []).filter((item) => item.protocol === "replicate" && item.capabilities.includes("video")).map((item) => item.model)));
     const existing = config.channels.find((channel) => channel.id === "replicate");
     const channel = createModelChannel({ id: "replicate", name: "平台提供", baseUrl: "", models: names.map((name) => ({ name, capability: "video" })) });
     const channels = names.length ? existing ? config.channels.map((item) => item.id === "replicate" ? channel : item) : [...config.channels, channel] : config.channels.filter((item) => item.id !== "replicate");

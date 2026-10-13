@@ -137,12 +137,8 @@ func QuoteReplicate(user model.AuthUser, spec ReplicateModel, input map[string]a
 		configured = false
 	}
 	quote.Configured = configured
-	token, err := ReplicateAPIKey()
-	if err != nil {
-		return quote, err
-	}
-	if token == "" {
-		quote.Reason = "管理员尚未配置 Replicate"
+	if _, err := SelectReplicateChannel(spec.Model, user.Group); err != nil {
+		quote.Reason = err.Error()
 		return quote, nil
 	}
 	if spec.Operation == "transcribe" && !configured {

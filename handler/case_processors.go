@@ -334,14 +334,15 @@ type replicatePrediction struct {
 	} `json:"urls"`
 }
 
-func runReplicateTool(r *http.Request, operation string, inputs map[string]any) (map[string]any, error) {
-	token, err := service.ReplicateAPIKey()
-	if err != nil {
-		return nil, err
+func replicateToolModel(operation string) string {
+	if operation == "upscale-replicate" {
+		return "nightmareai/real-esrgan"
 	}
-	if token == "" {
-		return nil, errors.New("专用图像处理服务未配置，请联系管理员在私有配置中设置 Replicate API Token")
-	}
+	return "men1scus/birefnet"
+}
+
+func runReplicateTool(r *http.Request, channel model.ModelChannel, operation string, inputs map[string]any) (map[string]any, error) {
+	token := channel.APIKey
 	sourceBytes, sourceMime, err := caseImageBytes(inputs["imageUrl"])
 	if err != nil {
 		return nil, err
@@ -351,10 +352,9 @@ func runReplicateTool(r *http.Request, operation string, inputs map[string]any) 
 			return nil, err
 		}
 	}
-	modelID := "men1scus/birefnet"
+	modelID := replicateToolModel(operation)
 	arguments := map[string]any{"image": "data:" + sourceMime + ";base64," + base64.StdEncoding.EncodeToString(sourceBytes)}
 	if operation == "upscale-replicate" {
-		modelID = "nightmareai/real-esrgan"
 		scale := 2
 		if inputs["scale"] == "4x" {
 			scale = 4

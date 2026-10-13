@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -38,15 +37,7 @@ func PublicSettingsForGroup(userGroup string) (model.PublicSetting, error) {
 	normalized.Public.ModelChannel.DefaultImageModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultImageModel, normalized.Public.ModelChannel.AvailableModels, isImageModelName)
 	normalized.Public.ModelChannel.DefaultVideoModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultVideoModel, normalized.Public.ModelChannel.AvailableModels, isVideoModelName)
 	normalized.Public.ModelChannel.DefaultModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
-	normalized.Public.ReplicateVideoModels = nil
-	if normalized.Private.Replicate.APIKey != "" || os.Getenv("REPLICATE_API_TOKEN") != "" {
-		for _, spec := range ReplicateModels() {
-			price := normalized.Private.Replicate.Pricing[spec.Model]
-			if (spec.Operation == "image-to-video" || spec.Operation == "text-to-video" || spec.Operation == "hailuo-video") && price.Enabled && price.Version == spec.Version {
-				normalized.Public.ReplicateVideoModels = append(normalized.Public.ReplicateVideoModels, spec.Model)
-			}
-		}
-	}
+	normalized.Public.ModelChannel.Models = publicChannelModels(normalized, userGroup)
 	return normalized.Public, nil
 }
 
@@ -62,16 +53,14 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	}
 	saved = normalizeSettings(saved)
 	settings.Private.NextChannelID = max(settings.Private.NextChannelID, saved.Private.NextChannelID)
+	settings.Private.Replicate.ChannelsInitialized = saved.Private.Replicate.ChannelsInitialized
+	settings.Private.Replicate.LegacyChannelID = saved.Private.Replicate.LegacyChannelID
 	settings = normalizeSettings(settings)
 	keepPrivateAPIKeys(&settings, saved)
 	keepPrivateAuthSecrets(&settings, saved)
-	if settings.Private.Replicate.ClearAPIKey {
-		settings.Private.Replicate.APIKey = ""
-	} else if strings.TrimSpace(settings.Private.Replicate.APIKey) == "" {
-		settings.Private.Replicate.APIKey = saved.Private.Replicate.APIKey
+	if err := validateReplicateChannels(settings.Private.Channels, saved.Private); err != nil {
+		return model.Settings{}, err
 	}
-	settings.Private.Replicate.ClearAPIKey = false
-	settings.Private.Replicate.APIKeyConfigured = false
 	result, err := repository.SaveSettings(settings, now())
 	if err == nil {
 		RefreshPromptSyncScheduler()
@@ -80,6 +69,9 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 }
 
 func AdminChannelModels(index *int, channel model.ModelChannel) ([]string, error) {
+	if channel.Protocol == "replicate" {
+		return fetchAdminChannelModels(normalizeModelChannel(channel))
+	}
 	resolved, err := resolveAdminChannel(index, channel)
 	if err != nil {
 		return nil, err
@@ -91,6 +83,9 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	resolved, err := resolveAdminChannel(index, channel)
 	if err != nil {
 		return "", err
+	}
+	if resolved.Protocol == "replicate" {
+		return testReplicateChannelModel(resolved, modelName)
 	}
 	if isArkAgentPlanChannel(resolved) {
 		return testArkSeedanceChannelModel(resolved, modelName)
@@ -186,6 +181,7 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
 	setting.Replicate = normalizeReplicatePricing(setting.Replicate)
+	initializeReplicateChannels(&setting)
 	setting.NextChannelID = max(1, setting.NextChannelID)
 	for _, channel := range setting.Channels {
 		setting.NextChannelID = max(setting.NextChannelID, channel.ID+1)
@@ -215,34 +211,33 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 }
 
 func hidePrivateAPIKeys(settings model.Settings) model.Settings {
+	settings.Public.ModelChannel.Models = SupportedReplicateModels()
+	settings.Private.Channels = append([]model.ModelChannel(nil), settings.Private.Channels...)
 	for i := range settings.Private.Channels {
+		settings.Private.Channels[i].APIKeyConfigured = strings.TrimSpace(settings.Private.Channels[i].APIKey) != "" || (settings.Private.Channels[i].Protocol == "replicate" && replicateChannelKey(settings.Private.Channels[i]) != "")
 		settings.Private.Channels[i].APIKey = ""
+		settings.Private.Channels[i].ClearAPIKey = false
 	}
 	settings.Private.Auth.LinuxDo.ClientSecret = ""
-	settings.Private.Replicate.APIKeyConfigured = strings.TrimSpace(settings.Private.Replicate.APIKey) != "" || strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN")) != ""
 	settings.Private.Replicate.APIKey = ""
-	settings.Private.Replicate.ClearAPIKey = false
 	return settings
-}
-
-func ReplicateAPIKey() (string, error) {
-	settings, err := repository.GetSettings()
-	if err != nil {
-		return "", err
-	}
-	if key := strings.TrimSpace(settings.Private.Replicate.APIKey); key != "" {
-		return key, nil
-	}
-	return strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN")), nil
 }
 
 func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 	for i := range settings.Private.Channels {
+		settings.Private.Channels[i].APIKeyConfigured = false
+		if settings.Private.Channels[i].ClearAPIKey {
+			settings.Private.Channels[i].APIKey = ""
+			settings.Private.Channels[i].ClearAPIKey = false
+			continue
+		}
 		if strings.TrimSpace(settings.Private.Channels[i].APIKey) != "" {
 			continue
 		}
 		if channel, ok := findSavedChannel(settings.Private.Channels[i], saved.Private.Channels, i); ok {
-			settings.Private.Channels[i].APIKey = channel.APIKey
+			if channel.Protocol == settings.Private.Channels[i].Protocol {
+				settings.Private.Channels[i].APIKey = channel.APIKey
+			}
 		}
 	}
 }
@@ -299,6 +294,10 @@ func SelectModelChannelsForGroup(modelName string, userGroup string) ([]model.Mo
 		}
 		return nil, errors.New("没有可用模型渠道")
 	}
+	return orderModelChannels(channels), nil
+}
+
+func orderModelChannels(channels []model.ModelChannel) []model.ModelChannel {
 	ordered := make([]model.ModelChannel, 0, len(channels))
 	for len(channels) > 0 {
 		total := 0
@@ -315,7 +314,7 @@ func SelectModelChannelsForGroup(modelName string, userGroup string) ([]model.Mo
 			}
 		}
 	}
-	return ordered, nil
+	return ordered
 }
 
 // ResolveModelChannelForTask returns the same configured channel that created an asynchronous task.
@@ -370,7 +369,7 @@ func isArkAgentPlanChannel(channel model.ModelChannel) bool {
 func enabledChannelModels(channels []model.ModelChannel) []string {
 	models := []string{}
 	for _, channel := range channels {
-		if !channel.Enabled {
+		if !channel.Enabled || channel.Protocol == "replicate" {
 			continue
 		}
 		models = append(models, channel.Models...)
@@ -431,20 +430,38 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	if channel.Protocol == "" {
 		channel.Protocol = "openai"
 	}
+	if channel.Protocol == "replicate" {
+		channel.BaseURL = ReplicateBaseURL
+		channel.Models = uniqueModelNames(channel.Models)
+		channel.VideoModels = nil
+		return channel
+	}
 	if channel.Models == nil {
 		channel.Models = []string{}
 	}
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}
-	if channel.VideoModels == nil { channel.VideoModels = map[string]model.VideoModelProfile{} }
+	if channel.VideoModels == nil {
+		channel.VideoModels = map[string]model.VideoModelProfile{}
+	}
 	for _, name := range channel.Models {
-		if !isVideoModelName(name) { continue }
+		if !isVideoModelName(name) {
+			continue
+		}
 		profile := VideoProfile(channel, name)
-		if profile.DisplayName == "" { profile.DisplayName = name }
-		if profile.Description == "" { profile.Description = "根据文字及支持的参考素材制作视频。" }
-		if profile.Resolutions == nil { profile.Resolutions = []string{"480", "720", "1080"} }
-		if profile.Seconds == nil { profile.Seconds = []string{} }
+		if profile.DisplayName == "" {
+			profile.DisplayName = name
+		}
+		if profile.Description == "" {
+			profile.Description = "根据文字及支持的参考素材制作视频。"
+		}
+		if profile.Resolutions == nil {
+			profile.Resolutions = []string{"480", "720", "1080"}
+		}
+		if profile.Seconds == nil {
+			profile.Seconds = []string{}
+		}
 		imageLimit := 7
 		if IsH3Video2K(name) {
 			imageLimit = 9
@@ -485,6 +502,9 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 			}
 		}
 	}
+	if resolved.Protocol == "replicate" {
+		resolved.APIKey = replicateChannelKey(resolved)
+	}
 	if strings.TrimSpace(resolved.BaseURL) == "" {
 		return model.ModelChannel{}, safeMessageError{message: "缺少接口地址"}
 	}
@@ -495,6 +515,13 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
+	if channel.Protocol == "replicate" {
+		models := []string{}
+		for _, spec := range SupportedReplicateModels() {
+			models = append(models, spec.Model)
+		}
+		return models, nil
+	}
 	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
 	if err != nil {
 		return nil, err
@@ -705,7 +732,7 @@ func modelChannelsForModel(channels []model.ModelChannel, modelName string) []mo
 func modelChannelsForGroup(channels []model.ModelChannel, modelName string, userGroup string) []model.ModelChannel {
 	result := []model.ModelChannel{}
 	for _, channel := range channels {
-		if !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
+		if channel.Protocol == "replicate" || !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
 			continue
 		}
 		if userGroup != "" && len(channel.AllowedGroups) > 0 && !containsString(channel.AllowedGroups, userGroup) {

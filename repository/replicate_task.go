@@ -8,6 +8,20 @@ import (
 
 var ErrReplicateCredits = errors.New("算力点不足")
 
+func ReplicateChannelInUse(channelID int, legacy bool) (bool, error) {
+	db, err := DB()
+	if err != nil {
+		return false, err
+	}
+	ids := []int{channelID}
+	if legacy {
+		ids = append(ids, 0)
+	}
+	var count int64
+	err = db.Model(&model.ReplicateTask{}).Where("channel_id IN ? AND status NOT IN ?", ids, []string{"completed", "failed", "cancelled"}).Count(&count).Error
+	return count > 0, err
+}
+
 func GetReplicateTask(id string) (model.ReplicateTask, bool, error) {
 	db, err := DB()
 	if err != nil {

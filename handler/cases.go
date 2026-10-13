@@ -66,13 +66,9 @@ func CaseRunPrice(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if runtime.Operation == "cutout-replicate" || runtime.Operation == "upscale-replicate" {
-		key, err := service.ReplicateAPIKey()
+		_, err := service.SelectReplicateChannel(replicateToolModel(runtime.Operation), user.Group)
 		if err != nil {
 			FailError(w, err)
-			return
-		}
-		if key == "" {
-			Fail(w, "专用图像处理服务未配置，请联系管理员在私有配置中设置 Replicate API Token")
 			return
 		}
 		fee := max(item.PriceCredits, 0)
@@ -354,13 +350,9 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if runtime.Operation == "cutout-replicate" || runtime.Operation == "upscale-replicate" {
-		key, err := service.ReplicateAPIKey()
+		channel, err := service.SelectReplicateChannel(replicateToolModel(runtime.Operation), user.Group)
 		if err != nil {
 			FailError(w, err)
-			return
-		}
-		if key == "" {
-			Fail(w, "专用图像处理服务未配置，请联系管理员在私有配置中设置 Replicate API Token")
 			return
 		}
 		fee := item.PriceCredits
@@ -368,14 +360,14 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 			fee = 0
 		}
 		if fee > 0 {
-			if err := service.ConsumeUserCredits(user.ID, "case:"+item.ID, fee, "/cases/"+item.ID); err != nil {
+			if err := service.ConsumeUserCredits(user.ID, "case:"+item.ID, fee, "/cases/"+item.ID, channel); err != nil {
 				FailError(w, err)
 				return
 			}
 		}
-		payload, processErr := runReplicateTool(r, runtime.Operation, input.Inputs)
+		payload, processErr := runReplicateTool(r, channel, runtime.Operation, input.Inputs)
 		if processErr != nil {
-			refundCaseFee(user.ID, item.ID, fee)
+			refundCaseFee(user.ID, item.ID, fee, channel)
 			Fail(w, processErr.Error())
 			return
 		}
@@ -908,9 +900,9 @@ func validateCaseInputs(schema string, inputs map[string]any) error {
 	return nil
 }
 
-func refundCaseFee(userID string, caseID string, fee int) {
+func refundCaseFee(userID string, caseID string, fee int, channels ...model.ModelChannel) {
 	if fee > 0 {
-		_ = service.RefundUserCredits(userID, "case:"+caseID, fee, "/cases/"+caseID)
+		_ = service.RefundUserCredits(userID, "case:"+caseID, fee, "/cases/"+caseID, channels...)
 	}
 }
 

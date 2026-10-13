@@ -2,13 +2,14 @@
 
 import { CheckCircleOutlined, DeleteOutlined, EditOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
-import { App, Button, Card, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { App, Button, Card, Checkbox, Col, Collapse, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, testReplicate, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
-import { REPLICATE_FEATURES, replicateFeatureUrl } from "@/services/api/replicate";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminReplicatePricing, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
+import { REPLICATE_FEATURES, REPLICATE_IMAGE_MODELS, REPLICATE_SUPPORTED_MODELS, replicateFeatureUrl } from "@/services/api/replicate";
+import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -40,7 +41,7 @@ const emptySettings: AdminSettings = {
         adminContact: { qq: "", note: "" },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
     },
-    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { apiKey: "", apiKeyConfigured: false, clearApiKey: false, pricing: {} } },
+    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { channelsInitialized: true, pricing: {} } },
 };
 const emptyChannel: AdminModelChannel = { id: 0, protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
 
@@ -57,7 +58,7 @@ export default function AdminSettingsPage() {
     const [jsonText, setJsonText] = useState<Record<SettingsTabKey, string>>({ public: "", private: "" });
     const [channels, setChannels] = useState<AdminModelChannel[]>([]);
     const [groupEditor, setGroupEditor] = useState<{ originalKey?: string; key: string; name: string; creditRatio: number; enabled: boolean } | null>(null);
-    const [channelForm] = Form.useForm<AdminModelChannel>();
+    const [channelForm] = Form.useForm<AdminModelChannel & { replicatePricing?: Record<string, AdminReplicatePricing> }>();
     const [editingChannelIndex, setEditingChannelIndex] = useState<number | null>(null);
     const [isChannelDrawerOpen, setIsChannelDrawerOpen] = useState(false);
     const [testChannelIndex, setTestChannelIndex] = useState<number | null>(null);
@@ -75,10 +76,12 @@ export default function AdminSettingsPage() {
     const [isFetchingChannelModels, setIsFetchingChannelModels] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [replicateConfigured, setReplicateConfigured] = useState(false);
-    const [isTestingReplicate, setIsTestingReplicate] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
-    const channelVideoModels = ((Form.useWatch("models", channelForm) || []) as string[]).filter((name) => /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
+    const channelProtocol = Form.useWatch("protocol", channelForm) || "openai";
+    const channelUsesEnvironment = Form.useWatch("useEnvironmentKey", channelForm);
+    const channelSelectedModels = (Form.useWatch("models", channelForm) || []) as string[];
+    const replicatePrices = Form.useWatch("replicatePricing", { form: channelForm, preserve: true }) || {};
+    const channelVideoModels = (channelProtocol === "replicate" ? [] : channelSelectedModels).filter((name) => /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
@@ -99,7 +102,6 @@ export default function AdminSettingsPage() {
         try {
             const data = normalizeSettings(await fetchAdminSettings(token));
             form.setFieldsValue(data);
-            setReplicateConfigured(data.private.replicate.apiKeyConfigured);
             setChannels(data.private.channels);
             setModelCosts(data.public.modelChannel.modelCosts);
             setKnownModels(collectKnownModels(data));
@@ -131,9 +133,9 @@ export default function AdminSettingsPage() {
         setIsSaving(true);
         try {
             const saved = normalizeSettings(await saveAdminSettings(token, values));
-            const merged = mergeChannelApiKeys(values.private.channels, saved);
+            const merged = saved;
+            refreshModelCatalog();
             form.setFieldsValue(merged);
-            setReplicateConfigured(merged.private.replicate.apiKeyConfigured);
             setChannels(merged.private.channels);
             setModelCosts(merged.public.modelChannel.modelCosts);
             rememberKnownModels(merged);
@@ -170,18 +172,6 @@ export default function AdminSettingsPage() {
         setEditorMode((current) => ({ ...current, [tab]: nextMode }));
     };
 
-    const testReplicateConnection = async () => {
-        if (!token) return;
-        setIsTestingReplicate(true);
-        try {
-            message.success(await testReplicate(token));
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "连接测试失败");
-        } finally {
-            setIsTestingReplicate(false);
-        }
-    };
-
     const formatJson = (tab: SettingsTabKey) => {
         const parsed = parseTabJson(tab, jsonText[tab]);
         if (!parsed) {
@@ -199,7 +189,8 @@ export default function AdminSettingsPage() {
         setEditingChannelIndex(index);
         setIsChannelDrawerOpen(true);
         const channel = index === null ? emptyChannel : normalizeChannel(channels[index]);
-        channelForm.setFieldsValue(channel);
+        channelForm.resetFields();
+        channelForm.setFieldsValue({ ...channel, replicatePricing: form.getFieldValue(["private", "replicate", "pricing"]) || {} });
         rememberModels(channel.models);
     };
 
@@ -210,23 +201,29 @@ export default function AdminSettingsPage() {
     };
 
     const saveChannel = async () => {
-        const channel = normalizeChannel(await channelForm.validateFields());
-        rememberModels(channel.models);
-        const nextChannels = [...channels];
-        if (editingChannelIndex === null) nextChannels.push(channel);
-        else nextChannels[editingChannelIndex] = channel;
-        await persistChannels(nextChannels);
-        closeChannelDrawer();
+        try {
+            await channelForm.validateFields();
+            const draft = channelForm.getFieldsValue(true);
+            const channel = normalizeChannel(draft);
+            rememberModels(channel.models);
+            const nextChannels = [...channels];
+            if (editingChannelIndex === null) nextChannels.push(channel);
+            else nextChannels[editingChannelIndex] = channel;
+            await persistChannels(nextChannels, channel.protocol === "replicate" ? draft.replicatePricing : undefined);
+            closeChannelDrawer();
+        } catch (error) {
+            if (error instanceof Error) message.error(error.message);
+        }
     };
 
     const fetchChannelModelList = async () => {
         if (!token) return;
-        const channel = channelForm.getFieldsValue();
+        const channel = channelForm.getFieldsValue(true);
         if (!channel?.baseUrl) {
             message.warning("请先填写接口地址");
             return;
         }
-        if (editingChannelIndex === null && !channel?.apiKey) {
+        if (channel.protocol !== "replicate" && editingChannelIndex === null && !channel?.apiKey) {
             message.warning("请先填写 API Key");
             return;
         }
@@ -256,13 +253,13 @@ export default function AdminSettingsPage() {
 
     const openChannelModelSelector = (sourceModels?: string[]) => {
         const current = uniqueModels(channelForm.getFieldValue("models") || []);
-        const source = uniqueModels(sourceModels !== undefined ? sourceModels : [...knownModels, ...current]);
+        const source = uniqueModels(sourceModels !== undefined ? sourceModels : channelProtocol === "replicate" ? REPLICATE_SUPPORTED_MODELS.map((item) => item.model) : [...knownModels, ...current]);
         setModelSelectExisting(current);
         setModelSelectSource(source);
         setModelSelectSelected(sourceModels ? uniqueModels([...current, ...source]) : current);
         setModelSelectKeyword("");
         setModelSelectNewModel("");
-        setModelSelectTab(sourceModels ? "new" : "current");
+        setModelSelectTab(sourceModels || channelProtocol === "replicate" ? "new" : "current");
         setIsModelSelectorOpen(true);
     };
 
@@ -355,17 +352,23 @@ export default function AdminSettingsPage() {
     const testChannel = testChannelIndex === null ? null : normalizeChannel(channels[testChannelIndex]);
     const testModels = (testChannel?.models || []).filter((model) => model.toLowerCase().includes(testKeyword.trim().toLowerCase()));
 
-    async function persistChannels(nextChannels: AdminModelChannel[]) {
+    function refreshModelCatalog() {
+        void useConfigStore.getState().loadPublicSettings();
+        localStorage.setItem("platform-model-catalog-changed", String(Date.now()));
+    }
+
+    async function persistChannels(nextChannels: AdminModelChannel[], pricing?: Record<string, AdminReplicatePricing>) {
         if (!token) return;
         const values = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
         const nextChannelModels = collectChannelModels(nextChannels);
         const nextSettings = normalizeSettings({
             ...values,
             public: { ...values.public, modelChannel: { ...values.public.modelChannel, availableModels: nextChannelModels } },
-            private: { ...values.private, channels: nextChannels },
+            private: { ...values.private, channels: nextChannels, replicate: { ...values.private.replicate, pricing: pricing || values.private.replicate.pricing } },
         });
         const saved = normalizeSettings(await saveAdminSettings(token, nextSettings));
-        const merged = mergeChannelApiKeys(nextChannels, saved);
+        const merged = saved;
+        refreshModelCatalog();
         setChannels(merged.private.channels);
         setModelCosts(merged.public.modelChannel.modelCosts);
         rememberKnownModels(merged);
@@ -454,7 +457,7 @@ export default function AdminSettingsPage() {
                             <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                                 <Row gutter={16}>
                                     <Col span={24}>
-                                        <Form.Item name={["public", "modelChannel", "availableModels"]} label="系统可用模型(请先在私有配置里配置渠道)" extra="保存设置时会自动合并所有已启用私有渠道的模型，前台模型下拉会读取这里的公开列表">
+                                        <Form.Item name={["public", "modelChannel", "availableModels"]} label="OpenAI 兼容模型（先在私有配置里配置渠道）" extra="这里汇总 OpenAI 兼容渠道的模型；Replicate 模型按渠道权限、启用状态和报价配置自动发布。">
                                             <Select mode="multiple" placeholder="请选择系统可用模型" options={channelModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
@@ -584,35 +587,6 @@ export default function AdminSettingsPage() {
                                         </Row>
                                     </Flex>
                                 </Card>
-                                <Card size="small" title="Replicate 媒体处理">
-                                    <Flex vertical gap={12}>
-                                        <Typography.Text type="secondary">用于语音识别、配音、数字人、口型，以及图像和视频处理。新增语音识别复用同一个后台令牌，留空保存沿用已有令牌；还需单独设置识别价格、开启模型并保存。新增功能需更新并重启后端，刷新网页不会更新后端程序。</Typography.Text>
-                                        <Tag color={replicateConfigured ? "success" : "default"} style={{ alignSelf: "flex-start" }}>{replicateConfigured ? "令牌已配置" : "未配置令牌"}</Tag>
-                                        <Form.Item name={["private", "replicate", "apiKey"]} label="Replicate API Token" style={{ marginBottom: 0 }}>
-                                            <Input.Password autoComplete="new-password" placeholder={replicateConfigured ? "留空则沿用已保存的令牌" : "输入 Replicate API Token"} />
-                                        </Form.Item>
-                                        <Form.Item name={["private", "replicate", "clearApiKey"]} valuePropName="checked" style={{ marginBottom: 0 }}>
-                                            <Checkbox>保存时移除后台令牌</Checkbox>
-                                        </Form.Item>
-                                        <Typography.Text type="secondary">这里设置的是平台向用户收取的算力点。不是所有模型都按秒收费：配音按文字量，图生视频按成片条数，视频处理通常按时长和规格。关闭模型后普通用户不可用，管理员仍可查看配置。</Typography.Text>
-                                        <Row gutter={[12, 12]}>{REPLICATE_FEATURES.map((feature) => <Col xs={24} lg={12} key={feature.model}>
-                                            <Card size="small" title={<Space wrap><span>{feature.label}</span><Tag>{feature.model}</Tag></Space>} extra={<Button size="small" href={replicateFeatureUrl(feature.operation)} target="_blank" rel="noopener noreferrer">打开对应功能</Button>}>
-                                                <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>{feature.description}</Typography.Paragraph>
-                                                <Row gutter={12}>
-                                                    <Col span={8}><Form.Item name={["private", "replicate", "pricing", feature.model, "enabled"]} label="启用" valuePropName="checked"><Switch /></Form.Item></Col>
-                                                    <Col span={16}><Form.Item label="收费单位"><Space wrap><Tag color="blue">{replicateBillingModeLabel(feature.billingMode)}</Tag><Typography.Text type="secondary">{replicateBillingUnitHelp(feature.billingMode)}</Typography.Text></Space></Form.Item></Col>
-                                                    {!feature.tierKeys?.length && <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "unitCredits"]} label="计费单价（算力点）" extra={replicateBillingUnitHelp(feature.billingMode)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
-                                                    <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "minimumCredits"]} label="一次任务最低消耗" extra="任务计算结果低于此数值时，按这个数值收取。"><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
-                                                    {(feature.billingMode === "output_seconds" || feature.billingMode === "runtime_seconds" || feature.billingMode === "duration_resolution") && <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "defaultUnits"]} label="无法读取时的安全时长" extra="只有系统无法读取素材时使用，不代表每次固定扣除。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
-                                                    {feature.billingMode === "duration_resolution" && <Col span={12}><Form.Item name={["private", "replicate", "pricing", feature.model, "blockSeconds"]} label="每个计费档包含秒数" extra="例如填 5，表示按每 5 秒视频计算一个档位。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
-                                                </Row>
-                                                {feature.tierKeys?.length ? <><Typography.Text strong>不同规格的单价</Typography.Text><Typography.Paragraph type="secondary" style={{ margin: "4px 0 8px" }}>用户选择不同清晰度、帧率或模型版本时，系统会使用对应档位。</Typography.Paragraph><Row gutter={12}>{feature.tierKeys.map((tier) => <Col span={12} key={tier}><Form.Item name={["private", "replicate", "pricing", feature.model, "tiers", tier]} label={replicateTierLabel(tier)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>)}</Row></> : null}
-                                            </Card>
-                                        </Col>)}</Row>
-                                        <Typography.Text type="secondary">若服务器仍设置 REPLICATE_API_TOKEN 环境变量，移除后台令牌后会继续使用环境变量。</Typography.Text>
-                                        <Button style={{ alignSelf: "flex-start" }} loading={isTestingReplicate} disabled={!replicateConfigured} onClick={() => void testReplicateConnection()}>测试连接</Button>
-                                    </Flex>
-                                </Card>
                                 <Card
                                     size="small"
                                     title="用户分组"
@@ -706,7 +680,7 @@ export default function AdminSettingsPage() {
                                                         onClick={() => {
                                                             const nextChannels = [...channels];
                                                             nextChannels.splice(item._index, 1);
-                                                            void persistChannels(nextChannels);
+                                                            void persistChannels(nextChannels).catch((error) => message.error(error instanceof Error ? error.message : "删除渠道失败"));
                                                         }}
                                                     />
                                                 </Space>
@@ -757,8 +731,8 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
-                                <Form.Item name="protocol" label="协议" extra="这里选择接口调用格式；Sora、Seedance、Grok、Tejiasd 等属于模型名称，OpenAI 兼容接口统一选择 OpenAI。">
-                                    <Select options={[{ label: "OpenAI 兼容", value: "openai" }]} />
+                                <Form.Item name="protocol" label="协议" extra="按渠道接口协议选择，具体模型在下方配置。">
+                                    <Select options={[{ label: "OpenAI 兼容", value: "openai" }, { label: "Replicate", value: "replicate" }]} onChange={(protocol) => channelForm.setFieldsValue({ baseUrl: protocol === "replicate" ? "https://api.replicate.com/v1" : "", apiKey: "", apiKeyConfigured: false, clearApiKey: false, useEnvironmentKey: false, models: [], videoModels: {} })} />
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
@@ -778,19 +752,21 @@ export default function AdminSettingsPage() {
                             </Col>
                             <Col span={24}>
                                 <Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}>
-                                    <Input />
+                                    <Input disabled={channelProtocol === "replicate"} />
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
-                                <Form.Item name="apiKey" label="API Key" rules={editingChannelIndex === null ? [{ required: true, message: "请输入 API Key" }] : []}>
-                                    <Input.Password placeholder={editingChannelIndex === null ? "" : "留空则沿用已保存的 API Key"} />
+                                <Form.Item name="apiKey" label={channelProtocol === "replicate" ? "API Token" : "API Key"} extra={editingChannelIndex !== null ? (channels[editingChannelIndex].apiKeyConfigured ? "密钥已配置" : "未配置密钥") : undefined} rules={editingChannelIndex === null && !channelUsesEnvironment ? [{ required: true, message: "请输入 API Key" }] : []}>
+                                    <Input.Password autoComplete="new-password" placeholder={editingChannelIndex === null ? "输入渠道密钥" : "留空则沿用该渠道已保存的密钥"} />
                                 </Form.Item>
                             </Col>
+                            {editingChannelIndex !== null && <Col span={24}><Form.Item name="clearApiKey" valuePropName="checked"><Checkbox>保存时移除该渠道密钥</Checkbox></Form.Item></Col>}
+                            {channelProtocol === "replicate" && <Col span={24}><Form.Item name="useEnvironmentKey" valuePropName="checked" extra="仅此渠道使用服务器环境令牌；停用渠道后不会用于新任务。"><Checkbox>无渠道密钥时使用服务器 REPLICATE_API_TOKEN</Checkbox></Form.Item></Col>}
                             <Col span={24}>
                                 <Form.Item label="渠道可用模型">
                                     <Space.Compact style={{ width: "100%" }}>
                                         <Form.Item name="models" noStyle>
-                                            <Select mode="tags" maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={knownModels.map((model) => ({ label: model, value: model }))} />
+                                            <Select mode={channelProtocol === "replicate" ? "multiple" : "tags"} maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={channelProtocol === "replicate" ? REPLICATE_SUPPORTED_MODELS.map((item) => ({ label: `${item.label} · ${item.model}`, value: item.model })) : knownModels.map((model) => ({ label: model, value: model }))} />
                                         </Form.Item>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
                                     </Space.Compact>
@@ -829,6 +805,36 @@ export default function AdminSettingsPage() {
                                 </Col>
                             ))}
                         </Row>
+
+                        {channelProtocol === "replicate" && <>
+                            <Typography.Paragraph type="secondary">下列报价为平台向用户收取的算力点，同一模型在多个 Replicate 渠道和工具中共享。模型版本使用已适配的固定版本；停用渠道仍可恢复原任务。</Typography.Paragraph>
+                            <Collapse items={REPLICATE_FEATURES.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => {
+                                const billingMode = replicatePrices[feature.model]?.billingMode || feature.billingMode;
+                                const tierKeys = billingMode === "fixed" ? [] : feature.tierKeys;
+                                const version = (form.getFieldValue(["public", "modelChannel", "models"]) || []).find((item: { model: string; version?: string }) => item.model === feature.model)?.version;
+                                return {
+                                key: feature.model,
+                                label: <Space wrap><span>{feature.label}</span><Tag>{replicatePrices[feature.model]?.enabled ? "已启用" : "已停用"}</Tag></Space>,
+                                children: <>
+                                    <Typography.Paragraph><Typography.Text code>{feature.model}</Typography.Text></Typography.Paragraph>
+                                    <Typography.Paragraph type="secondary">{feature.description}{feature.operation === "video-edit" ? " 此模型同时用于视频编辑与字幕去除，共享报价。" : ""}</Typography.Paragraph>
+                                    <Typography.Paragraph type="secondary">固定版本：{replicatePrices[feature.model]?.version || "保存后由服务器补全"}</Typography.Paragraph>
+                                    {version && replicatePrices[feature.model]?.version !== version && <Button size="small" onClick={() => channelForm.setFieldValue(["replicatePricing", feature.model, "version"], version)}>采用当前适配版本（保存后生效）</Button>}
+                                    <Button size="small" href={replicateFeatureUrl(feature.operation)} target="_blank" rel="noopener noreferrer">打开对应功能</Button>
+                                    <Row gutter={12}>
+                                        <Col span={8}><Form.Item name={["replicatePricing", feature.model, "enabled"]} label="启用" valuePropName="checked"><Switch /></Form.Item></Col>
+                                        <Col span={16}><Form.Item label="收费单位"><Space wrap><Tag color="blue">{replicateBillingModeLabel(billingMode)}</Tag><Typography.Text type="secondary">{replicateBillingUnitHelp(billingMode)}</Typography.Text></Space></Form.Item></Col>
+                                        {!tierKeys?.length && <Col span={12}><Form.Item name={["replicatePricing", feature.model, "unitCredits"]} label="计费单价（算力点）" extra={replicateBillingUnitHelp(billingMode)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
+                                        <Col span={12}><Form.Item name={["replicatePricing", feature.model, "minimumCredits"]} label="一次任务最低消耗" extra="任务计算结果低于此数值时，按这个数值收取。"><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
+                                        {(billingMode === "output_seconds" || billingMode === "runtime_seconds" || billingMode === "duration_resolution") && <Col span={12}><Form.Item name={["replicatePricing", feature.model, "defaultUnits"]} label="无法读取时的安全时长" extra="只有系统无法读取素材时使用，不代表每次固定扣除。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
+                                        {billingMode === "duration_resolution" && <Col span={12}><Form.Item name={["replicatePricing", feature.model, "blockSeconds"]} label="每个计费档包含秒数" extra="例如填 5，表示按每 5 秒视频计算一个档位。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
+                                    </Row>
+                                    {tierKeys?.length ? <><Typography.Text strong>不同规格的单价</Typography.Text><Typography.Paragraph type="secondary" style={{ margin: "4px 0 8px" }}>用户选择不同清晰度、帧率或模型版本时，系统会使用对应档位。</Typography.Paragraph><Row gutter={12}>{tierKeys.map((tier) => <Col span={12} key={tier}><Form.Item name={["replicatePricing", feature.model, "tiers", tier]} label={replicateTierLabel(tier)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>)}</Row></> : null}
+                                </>,
+                                };
+                            })} />
+                            {REPLICATE_IMAGE_MODELS.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => <Card key={feature.model} size="small" title={feature.label} style={{ marginTop: 12 }}><Typography.Text code>{feature.model}</Typography.Text><Typography.Paragraph type="secondary">{feature.description}模型版本沿用现有案例接口的上游版本读取方式。</Typography.Paragraph></Card>)}
+                        </>}
                     </Form>
                 </Drawer>
                 <Modal title={groupEditor?.originalKey ? "编辑分组" : "新增分组"} open={Boolean(groupEditor)} onCancel={() => setGroupEditor(null)} onOk={saveGroup} okText="保存" cancelText="取消">
@@ -873,14 +879,13 @@ export default function AdminSettingsPage() {
                         <Flex gap={12} wrap>
                             <Input.Search placeholder="搜索模型" allowClear value={modelSelectKeyword} onChange={(event) => setModelSelectKeyword(event.target.value)} style={{ flex: "1 1 260px" }} />
                             <Space.Compact style={{ flex: "1 1 320px" }}>
-                                <Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} />
-                                <Button onClick={addModelInSelector}>增加模型</Button>
+                                {channelProtocol !== "replicate" && <><Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} /><Button onClick={addModelInSelector}>增加模型</Button></>}
                                 <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
-                                    拉取模型列表
+                                    {channelProtocol === "replicate" ? "查看已适配模型" : "拉取模型列表"}
                                 </Button>
                             </Space.Compact>
                         </Flex>
-                        <Typography.Text type="secondary">如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。</Typography.Text>
+                        <Typography.Text type="secondary">{channelProtocol === "replicate" ? "仅列出已适配模型；一个模型可支持多个工具功能。" : "如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。"}</Typography.Text>
                         <Tabs
                             activeKey={modelSelectTab}
                             onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)}
@@ -939,7 +944,7 @@ export default function AdminSettingsPage() {
                     destroyOnHidden
                 >
                     <Flex vertical gap={12}>
-                        <Typography.Text type="secondary">普通文本模型会发送一条 hi；Agent Plan / Seedance 视频模型只做配置格式检查，不会发起视频生成，也不代表模型权限已验证。</Typography.Text>
+                        <Typography.Text type="secondary">Replicate 测试检查当前模型的令牌和访问权限，不创建付费任务。普通文本模型发送一条 hi；Agent Plan / Seedance 只检查配置格式。</Typography.Text>
                         <Input.Search placeholder="搜索模型..." allowClear value={testKeyword} onChange={(event) => setTestKeyword(event.target.value)} />
                         <Table
                             rowKey="model"
@@ -1042,9 +1047,8 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             },
         },
         replicate: {
-            apiKey: setting.replicate?.apiKey || "",
-            apiKeyConfigured: setting.replicate?.apiKeyConfigured === true,
-            clearApiKey: setting.replicate?.clearApiKey === true,
+            channelsInitialized: setting.replicate?.channelsInitialized,
+            legacyChannelId: setting.replicate?.legacyChannelId,
             modelCredits: setting.replicate?.modelCredits || {},
             pricing: normalizeReplicatePricing(setting.replicate?.pricing || {}),
         },
@@ -1054,7 +1058,7 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
 function normalizeReplicatePricing(items: NonNullable<AdminSettings["private"]["replicate"]["pricing"]>) {
     return Object.fromEntries(REPLICATE_FEATURES.map((feature) => {
         const item = items[feature.model] || {};
-        const tiers = Object.fromEntries((feature.tierKeys || []).map((key) => [key, Math.max(0, Number(item.tiers?.[key]) || 0)]));
+        const tiers = { ...item.tiers, ...Object.fromEntries((feature.tierKeys || []).map((key) => [key, Math.max(0, Number(item.tiers?.[key]) || 0)])) };
         return [feature.model, {
             model: item.model || feature.model,
             version: item.version || "",
@@ -1064,7 +1068,7 @@ function normalizeReplicatePricing(items: NonNullable<AdminSettings["private"]["
             defaultUnits: Math.max(1, Number(item.defaultUnits) || 1),
             blockSeconds: Math.max(1, Number(item.blockSeconds) || (feature.billingMode === "duration_resolution" ? 1 : 0)),
             tiers,
-            enabled: item.enabled ?? (feature.operation !== "transcribe"),
+            enabled: item.enabled ?? false,
         }];
     }));
 }
@@ -1106,10 +1110,13 @@ function replicateTierLabel(tier: string) {
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
         id: item.id || 0,
-        protocol: "openai",
+        protocol: item.protocol === "replicate" ? "replicate" : "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
+        apiKeyConfigured: item.apiKeyConfigured,
+        clearApiKey: item.clearApiKey,
+        useEnvironmentKey: item.useEnvironmentKey,
         models: item.models || [],
         weight: Math.max(1, Number(item.weight) || 1),
         enabled: item.enabled !== false,
@@ -1131,19 +1138,8 @@ function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => voi
     setModelCosts(next);
 }
 
-function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {
-    const channels = saved.private.channels.map((item, index) => ({
-        ...item,
-        apiKey: currentChannels[index]?.apiKey || item.apiKey,
-    }));
-    return {
-        public: saved.public,
-        private: { ...saved.private, channels },
-    };
-}
-
 function collectChannelModels(channels: AdminModelChannel[]) {
-    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || []));
+    return uniqueModels(channels.filter((channel) => channel.enabled && channel.protocol !== "replicate").flatMap((channel) => channel.models || []));
 }
 
 function collectKnownModels(settings: AdminSettings) {

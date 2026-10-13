@@ -4,6 +4,8 @@ package model
 type ReplicateTask struct {
 	ID              string  `json:"id" gorm:"primaryKey"`
 	UserID          string  `json:"-" gorm:"index"`
+	ChannelID       int     `json:"channelId"`
+	ChannelName     string  `json:"channelName"`
 	Operation       string  `json:"operation"`
 	Model           string  `json:"model"`
 	Version         string  `json:"version"`

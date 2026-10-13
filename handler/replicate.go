@@ -137,15 +137,12 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "算力点报价已变化，请重新确认")
 		return
 	}
-	token, err := service.ReplicateAPIKey()
+	channel, err := service.SelectReplicateChannel(spec.Model, user.Group)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	if token == "" {
-		Fail(w, "Replicate 未配置")
-		return
-	}
+	token := channel.APIKey
 	cacheKey := user.ID + ":" + input.ID
 	if _, active := replicateSubmitting.LoadOrStore(cacheKey, true); active {
 		Fail(w, "任务正在提交，请恢复查询")
@@ -153,8 +150,8 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	defer replicateSubmitting.Delete(cacheKey)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	task := model.ReplicateTask{ID: input.ID, UserID: user.ID, Operation: spec.Operation, Model: spec.Model, Version: spec.Version, RequestHash: hash, Status: "creating", Credits: quote.Credits, PricingSnapshot: quote.PricingSnapshot, CreatedAt: now, UpdatedAt: now}
-	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "chargedCredits": task.Credits})
+	task := model.ReplicateTask{ChannelID: channel.ID, ChannelName: channel.Name, ID: input.ID, UserID: user.ID, Operation: spec.Operation, Model: spec.Model, Version: spec.Version, RequestHash: hash, Status: "creating", Credits: quote.Credits, PricingSnapshot: quote.PricingSnapshot, CreatedAt: now, UpdatedAt: now}
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "chargedCredits": task.Credits, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	err = repository.CreateReplicateTask(task, model.CreditLog{ID: uuid.NewString(), Remark: "云模型 " + spec.Label, Extra: string(extra)})
 	if err != nil {
 		first, found, readErr := repository.GetReplicateTask(input.ID)
@@ -230,12 +227,12 @@ func ReadReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if task.Status != "generated" {
-		token, err := service.ReplicateAPIKey()
+		channel, err := service.ResolveReplicateTaskChannel(task)
 		if err != nil {
 			FailError(w, err)
 			return
 		}
-		prediction, _, err := callReplicate(r.Context(), token, http.MethodGet, "/predictions/"+url.PathEscape(task.PredictionID), nil)
+		prediction, _, err := callReplicate(r.Context(), channel.APIKey, http.MethodGet, "/predictions/"+url.PathEscape(task.PredictionID), nil)
 		if err != nil {
 			Fail(w, "任务查询暂时失败，可恢复查询；不会重新创建模型任务")
 			return
@@ -274,12 +271,12 @@ func CancelReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, "上游任务编号尚未确认，当前不能取消，请先恢复查询")
 		return
 	}
-	token, err := service.ReplicateAPIKey()
+	channel, err := service.ResolveReplicateTaskChannel(task)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	prediction, _, err := callReplicate(r.Context(), token, http.MethodPost, "/predictions/"+url.PathEscape(task.PredictionID)+"/cancel", []byte("{}"))
+	prediction, _, err := callReplicate(r.Context(), channel.APIKey, http.MethodPost, "/predictions/"+url.PathEscape(task.PredictionID)+"/cancel", []byte("{}"))
 	if err != nil {
 		Fail(w, "上游取消未确认，请恢复查询核对状态")
 		return
@@ -441,7 +438,7 @@ func applyReplicatePrediction(task *model.ReplicateTask, prediction cloudPredict
 }
 func refundReplicateTask(task *model.ReplicateTask) error {
 	task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "predictionId": task.PredictionID, "status": task.Status})
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "predictionId": task.PredictionID, "status": task.Status, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	if err := repository.FailReplicateTask(*task, model.CreditLog{ID: uuid.NewString(), Remark: "云模型失败返还 " + task.Model, Extra: string(extra)}); err != nil {
 		return err
 	}
@@ -606,12 +603,12 @@ func AdminReconcileReplicateTask(w http.ResponseWriter, r *http.Request, id stri
 		Fail(w, "只有提交结果未确认的任务可进行关联")
 		return
 	}
-	token, err := service.ReplicateAPIKey()
+	channel, err := service.ResolveReplicateTaskChannel(task)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	prediction, _, err := callReplicate(r.Context(), token, http.MethodGet, "/predictions/"+url.PathEscape(input.PredictionID), nil)
+	prediction, _, err := callReplicate(r.Context(), channel.APIKey, http.MethodGet, "/predictions/"+url.PathEscape(input.PredictionID), nil)
 	if err != nil {
 		FailError(w, err)
 		return
