@@ -10,7 +10,7 @@ import { VideoSettingsPanel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { videoReferenceError } from "@/lib/video-capabilities";
-import { getReplicateModels, publicServiceText, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
+import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
 import { getWorkerCapabilities, prepareWorkbenchVideo, workbenchMediaBlob } from "@/services/api/video-worker";
 import { replaceStoredVideo, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -166,6 +166,18 @@ export default function ContentReplaceWorkspace() {
     }, [inputKey, platformToken]);
     useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
     useEffect(() => setSourcePreviewError(false), [reference?.storageKey, reference?.url]);
+    useEffect(() => {
+        if (!platformToken || active?.status !== "failed" || !active.replicateTask || active.replicateBilling) return;
+        let disposed = false;
+        void readReplicateTask(active.replicateTask.id)
+            .then((task) => {
+                if (!disposed) useVideoWorkbenchStore.getState().patchRecord(active.id, { replicateBilling: { credits: task.credits, refunded: task.refunded } });
+            })
+            .catch(() => {});
+        return () => {
+            disposed = true;
+        };
+    }, [platformToken, active?.id, active?.status, active?.replicateTask?.id, active?.replicateBilling]);
 
     let unavailable = "";
     if (cloud) unavailable = !platformToken ? "登录后使用平台智能处理" : modelsLoading ? "正在读取服务状态" : !model?.available ? publicServiceText(model?.reason || modelError || "当前平台服务暂不可用") : "";
@@ -378,6 +390,12 @@ export default function ContentReplaceWorkspace() {
                     </Button>
                 )}
             </div>
+            {cloud && person && currentQuote && (
+                <div className="break-words text-xs leading-relaxed" style={muted}>
+                    {currentQuote.usedDefaultDuration ? "未能读取素材时长，使用后台备用时长" : currentQuote.durationSeconds && currentQuote.durationSeconds > 0 ? `素材时长 ${currentQuote.durationSeconds.toFixed(2)} 秒` : "未能读取素材时长"}
+                    {currentQuote.calculation ? ` · ${currentQuote.calculation}` : ""}
+                </div>
+            )}
             {cloud && !platformToken ? (
                 <div className="flex items-center justify-between gap-3">
                     <span className="text-sm">登录后开始替换</span>
@@ -439,6 +457,14 @@ export default function ContentReplaceWorkspace() {
                                 onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"] }, "video")}
                             />
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
+                            {cloud && person && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    title="人物替换素材建议"
+                                    description="目标人物应在片段中持续可见。混剪、频繁转场、无人画面或主体遮挡可能导致跟踪失败，建议先按镜头拆分，只提交人物连续出现的片段。"
+                                />
+                            )}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             {(!cloud || !person) && (
                                 <label className="block">
@@ -685,7 +711,25 @@ export default function ContentReplaceWorkspace() {
                                     }
                                 />
                             )}
-                            {!busy && active?.error && <Alert type={active.status === "failed" ? "error" : "warning"} showIcon title="最近一次任务反馈" description={publicServiceText(active.error)} />}
+                            {!busy && active?.error && (
+                                <Alert
+                                    type={active.status === "failed" ? "error" : "warning"}
+                                    showIcon
+                                    title="最近一次任务反馈"
+                                    description={
+                                        <Space wrap>
+                                            <span>{publicServiceText(active.error)}</span>
+                                            {active.status === "failed" && active.replicateBilling && (
+                                                <Tag color={active.replicateBilling.refunded ? "success" : "warning"}>
+                                                    {active.replicateBilling.refunded
+                                                        ? `${active.replicateBilling.credits.toLocaleString()} 算力点已返还`
+                                                        : "平台尚未确认返还算力点"}
+                                                </Tag>
+                                            )}
+                                        </Space>
+                                    }
+                                />
+                            )}
                             {tab === "current" && (
                                 <>
                                     {historyPreview && (
@@ -763,7 +807,19 @@ export default function ContentReplaceWorkspace() {
                                                     {record.replacementInput.media.find((m) => m.role === "reference")?.name}
                                                 </div>
                                             )}
-                                            {record.error && <Alert type="warning" title={record.error} />}
+                                            {record.error && (
+                                                <Alert
+                                                    type="warning"
+                                                    title={publicServiceText(record.error)}
+                                                    description={record.status === "failed" && record.replicateBilling && (
+                                                        <Tag color={record.replicateBilling.refunded ? "success" : "warning"}>
+                                                            {record.replicateBilling.refunded
+                                                                ? `${record.replicateBilling.credits.toLocaleString()} 算力点已返还`
+                                                                : "平台尚未确认返还算力点"}
+                                                        </Tag>
+                                                    )}
+                                                />
+                                            )}
                                             <Space wrap>
                                                 {record.result && (
                                                     <>
@@ -804,7 +860,7 @@ export default function ContentReplaceWorkspace() {
                                     <h2 className="text-base font-medium">如何替换{replacementNames[d.replacement]}</h2>
                                     <ol className="list-decimal space-y-3 pl-5">
                                         <li>上传清晰的原视频和{replacementNames[d.replacement]}参考图。</li>
-                                        <li>{person ? "人物替换使用单张人物图，平台服务可选 480p / 720p 并合并原音轨。" : "商品和背景编辑需填写具体要求；平台编辑服务使用 2–10 秒原视频、720p 和原音轨。"}</li>
+                                        <li>{person ? "人物替换使用单张人物图，平台服务可选 480p / 720p 并合并原音轨；目标人物应持续可见，混剪建议先按镜头拆分。" : "商品和背景编辑需填写具体要求；平台编辑服务使用 2–10 秒原视频、720p 和原音轨。"}</li>
                                         <li>查看本次费用，提交前在确认弹窗核对处理方式、时长与算力点。</li>
                                         <li>处理后对照原片，检查边缘、动作和主体一致性，再下载或保存。</li>
                                     </ol>

@@ -116,6 +116,7 @@ function sessionToken() {
 }
 export function publicServiceText(value: string) {
     return value
+        .replace(/zero-size array to reduction operation minimum which has no identity/gi, "人物跟踪失败，部分画面未检测到可处理的人物区域。请按镜头拆分视频，只提交人物持续可见的片段后重试。")
         .replace(/Replicate/gi, "平台服务")
         .replace(/\b(?:wan(?:-video)?|wan\s*2(?:\.\d+)?)\b/gi, "标准视频服务")
         .replace(/\bhailuo(?:[-\s]*\d+(?:\.\d+)?)?\b/gi, "快速视频服务")

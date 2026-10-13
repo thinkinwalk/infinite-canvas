@@ -12,7 +12,7 @@ Object.defineProperty(globalThis, "localStorage", {
 const { createVideoGenerationTask, pollVideoGenerationTask } = await import("../src/services/api/video");
 const { defaultConfig, createModelChannel } = await import("../src/stores/use-config-store");
 const { useUserStore } = await import("../src/stores/use-user-store");
-const { REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL } = await import("../src/services/api/replicate");
+const { REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, publicServiceText } = await import("../src/services/api/replicate");
 const { resolveAutomaticVideoModel } = await import("../src/lib/video-capabilities");
 const models = [REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL];
 const channels = [createModelChannel({ id: "replicate", models: models.map((model) => ({ name: model.replace("replicate::", ""), capability: "video" })) })];
@@ -20,6 +20,13 @@ const config = { ...defaultConfig, channels, models, model: REPLICATE_VIDEO_MODE
 const references = [{ id: "image", name: "test.png", type: "image/png", dataUrl: "data:image/png;base64,aGVsbG8=" }];
 const originalFetch = globalThis.fetch;
 const ok = (data: unknown) => new Response(JSON.stringify({ code: 0, data }), { headers: { "Content-Type": "application/json" } });
+
+test("empty person mask failure gives actionable Chinese guidance", () => {
+    const text = publicServiceText("ValueError: zero-size array to reduction operation minimum which has no identity");
+    expect(text).toContain("人物跟踪失败");
+    expect(text).toContain("按镜头拆分视频");
+    expect(text).not.toContain("zero-size array");
+});
 afterEach(() => {
     globalThis.fetch = originalFetch;
     useUserStore.setState({ token: "" });

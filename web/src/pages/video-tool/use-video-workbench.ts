@@ -397,7 +397,8 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (digital) store().patchRecord(ctx.recordId, { digitalHumanQuote: quote });
         store().patchRecord(ctx.recordId, { replicateTask: { id: ctx.recordId, operation } });
         try {
-            await createReplicateTask(ctx.recordId, operation, input, quote.credits, ctx.signal);
+            const task = await createReplicateTask(ctx.recordId, operation, input, quote.credits, ctx.signal);
+            store().patchRecord(ctx.recordId, { replicateBilling: { credits: task.credits, refunded: task.refunded } });
         } catch (error) {
             if (operation === "transcribe" && !ctx.signal.aborted) {
                 try { await readReplicateTask(ctx.recordId, ctx.signal); }
@@ -410,6 +411,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         const task = await waitForReplicateTask(ctx.recordId, ctx.signal, (job) =>
             store().patchRecord(ctx.recordId, {
                 step: job.status === "generated" ? "模型已完成，正在保存作品" : job.status === "creating" ? "平台任务正在提交" : job.status === "running" ? "平台服务正在处理" : publicServiceText(job.error || job.status),
+                replicateBilling: { credits: job.credits, refunded: job.refunded },
                 ...(job.status === "failed" || job.status === "cancelled" ? { status: "failed" as const } : {}),
             }),
         );
@@ -1024,7 +1026,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     value = await cloudResult(
                         record.stage,
                         await waitForReplicateTask(record.replicateTask.id, signal, (job) =>
-                            store().patchRecord(record.id, { step: publicServiceText(job.error || job.status), ...(job.status === "failed" || job.status === "cancelled" ? { status: "failed" as const } : {}) }),
+                            store().patchRecord(record.id, { step: publicServiceText(job.error || job.status), replicateBilling: { credits: job.credits, refunded: job.refunded }, ...(job.status === "failed" || job.status === "cancelled" ? { status: "failed" as const } : {}) }),
                         ),
                     );
                 else if (record.workerJob) value = await applyWorkerResult(record.stage, await waitForWorkerJob(worker, record.workerJob.id, signal, (job) => store().patchRecord(record.id, { step: job.step, ...(digital && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })), worker);

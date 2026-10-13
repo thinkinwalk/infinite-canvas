@@ -189,6 +189,7 @@ export type VideoRecord = {
     modelTask?: VideoGenerationTask;
     workerJob?: { id: string; url: string };
     replicateTask?: { id: string; operation: string };
+    replicateBilling?: { credits: number; refunded: boolean };
     result?: UploadedFile;
     text?: string;
     step?: string;
