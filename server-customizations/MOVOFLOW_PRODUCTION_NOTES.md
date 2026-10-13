@@ -15,7 +15,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.32
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.35
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
@@ -252,5 +252,13 @@ curl -fsS http://127.0.0.1:3002/api/health
 - Release commit: `b23f888fd15a2e224395805a7248370a58f547ae`; tag/release: `v0.19.34`. Docker workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38343839563. The v0.19.33 image was superseded before deployment by the legacy-task safety fix in v0.19.34.
 - Production image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.34`; digest: `sha256:b0bee7561dbf6096846d000f5439fefdf13b8872e41ce4e901f892a14ff57e20`. Container revision and `/app/VERSION` match; external `/api/health` returns `ok`, and `/`, `/video`, `/image`, `/admin/settings` return HTTP 200.
 - Before deployment, consistent SQLite/data/Compose backups were created: `database-before-v0.19.34-20261013-055856.sqlite`, `data-before-v0.19.34-20261013-055856.tgz`, and `docker-compose.deploy.yml.20261013-055856.bak`. Database `quick_check` passed; settings and all five historical Replicate task records were unchanged, and new channel fields are present. The existing video worker remained running since `2026-10-09T06:50:12.435805303Z`.
-- Replicate channel management is now in production. The public catalog currently has no enabled model entries because production channel credentials/models are not enabled; no credentials or paid generation were changed or submitted. After administrator configuration, verify model visibility, quote, channel routing, existing task recovery, and one real low-risk generation separately.
+- Replicate channel management is now in production. The initial public catalog check incorrectly inspected the response wrapper instead of `data.modelChannel.models`; subsequent verification confirmed enabled Replicate entries including Wan image-to-video. No credentials or paid generation were changed or submitted. Authenticated quotes, channel routing, existing task recovery, and real generation still need business verification.
 - Local Go 55-case (including subtests) and frontend 4-case focused verification passed before release; the existing unrelated video test failures were reproduced against the pre-change snapshot. Evidence is beside the checkout in `artifacts/replicate-channel-review/` and `artifacts/release-v0.19.34/`.
+
+## v0.19.35 Wan image-to-video naming deployment verification
+
+- Release commit: `18331b10eb15faa8196f583148a7bed5fea57a01`; tag/release: `v0.19.35`. App Docker workflow succeeded: https://github.com/thinkinwalk/infinite-canvas/actions/runs/38352216940.
+- Production image: `ghcr.io/thinkinwalk/infinite-canvas:v0.19.35`; digest: `sha256:5191167fc14476b368e4ea7d4ff58c8b85e7960257f97fba3e49077acef1022b`. Container revision and `/app/VERSION` match. Internal health is `ok`; external health, `/video`, and `/admin/settings` return HTTP 200.
+- Public `data.modelChannel.models` now names `wan-video/wan-2.2-i2v-fast` as「通义万相 Wan 2.2 · 图生视频」. Served asset `/assets/index-JYj2F1i6.js` includes the new name and the independent text/image model explanation. The enabled model list is identical to the pre-deployment snapshot; settings and pricing are unchanged.
+- Consistent backups: `database-before-v0.19.35-20261013-074120.sqlite`, `data-before-v0.19.35-20261013-074120.tgz`, and `docker-compose.deploy.yml.20261013-074120.bak` under `/opt/infinite-canvas/backups/`. SQLite quick_check is `ok`, all five historical task records retain their existing fields, and video worker start time remains `2026-10-09T06:50:12.435805303Z`.
+- No local compilation/tests or paid generation were run during release. The existing CI built the production image; authenticated admin rendering remains available for user verification. Evidence is beside the checkout in `artifacts/release-v0.19.35/`.
