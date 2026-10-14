@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.42
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.45
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.45 subtitle opt-in deployment
+
+- Release revision `98a64f9949253dc18ea613a8d5aec954cd264d5e`, digest `sha256:80d1fc11e41c1c5ceb0a71eb7baeba2a864355b0dc58c6b5447b3ba61d03c202`. Application workflow https://github.com/thinkinwalk/infinite-canvas/actions/runs/38495787560 succeeded; docs and plugins also succeeded. The intermediate v0.19.44 tag was not deployed.
+- New drafts disable subtitle cleanup by default. An unavailable subtitle processor disables an existing draft's option automatically while preserving its inputs and output. Manual enabling remains selected in the current page and blocks analysis when unavailable. Cleanup still requires LaMa or an equivalent configured service; this release does not deploy that engine.
+- Three replacement API tests passed; Vite production build passed with existing bundle warnings. Typecheck reported four existing baseline errors in use-video-workbench.ts, viral-recreate-workspace.tsx, use-config-store.ts and use-home-draft-store.ts. Isolated local browser checks with mocked APIs verified preserved draft media/instructions/output, manual enabling, disabled analysis and re-enabling analysis after switching cleanup off.
+- Real production page https://studio.lingzhouai.com/video/content-replace returned 200 with `/assets/index-CY5qGb4g.js`, cleanup off by default and no page errors in independent Chrome. This check was unauthenticated; authenticated quotation and paid model generation were not performed. Internal/external health and SQLite quick_check passed. Worker start time remained `2026-10-14T00:16:02.490083702Z`; it was not restarted.
+- Worker capabilities confirm OCR, planning, extraction, validation, assembly and finish are available; replacement-prepare remains unavailable. Worker v0.19.43 was already deployed before this frontend patch; the older v0.19.42 source mount below is historical.
+- Backups: `/opt/infinite-canvas/backups/database-before-v0.19.45.sqlite`, `/opt/infinite-canvas/backups/data-before-deploy-20261014-033205.tgz`, `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261014-033205.bak`. Evidence: `artifacts/release-v0.19.45/` beside the repository.
 
 ## v0.19.42 reference video trimming deployment
 
