@@ -19,6 +19,14 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
+## Worker task identity hotfix after v0.19.45
+
+- Commit `b43b75d` fixes a media-validation loop overwriting the worker task UUID with the final media filename. New worker jobs with video inputs failed with HTTP 400 / “任务标识不正确” before processing, including replacement planning. Main app remains v0.19.45.
+- Production worker mounts `/opt/infinite-canvas/releases/worker-job-identity-app.py` read-only at `/worker/app.py` in Compose. SHA256: `48a8c9fc8cb1276b4752d7aaec6fa0a1cbfca4f6ba3a6d1f097b2985edc7f833`. Preserve this mount on future deployments. It differs from the v0.19.43 source by the two-line variable rename only.
+- No worker job was running before replacement. Backups of Compose, previous source and all 10 worker job records are in `/opt/infinite-canvas/backups/worker-job-identity-20261014-014704/`. Existing job records remained identical after restart; only the worker service was updated.
+- Five local regression tests passed, including HTTP create/read/reuse/conflict checks for supplied/generated UUIDs and single/list media inputs. A production request using the original paused job's worker UUID and video completed replacement-plan successfully (15 seconds, 720×1280, 10 detected segments); repeated submission reused the same job. No paid model call was made. The parent replacement task remains paused with zero credits until the user clicks 恢复处理 for quotation, then separately confirms generation.
+- Evidence and deployment scripts: `artifacts/worker-job-identity/` beside the repository. Main/worker health passed after deployment.
+
 ## v0.19.45 subtitle opt-in deployment
 
 - Release revision `98a64f9949253dc18ea613a8d5aec954cd264d5e`, digest `sha256:80d1fc11e41c1c5ceb0a71eb7baeba2a864355b0dc58c6b5447b3ba61d03c202`. Application workflow https://github.com/thinkinwalk/infinite-canvas/actions/runs/38495787560 succeeded; docs and plugins also succeeded. The intermediate v0.19.44 tag was not deployed.
