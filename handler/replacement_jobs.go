@@ -87,6 +87,7 @@ type replacementJob struct {
 	Result          string               `json:"result,omitempty"`
 	PreviousResults []string             `json:"previousResults,omitempty"`
 	Reviewed        bool                 `json:"reviewed"`
+	Archived        bool                 `json:"archived"`
 	CreatedAt       string               `json:"createdAt"`
 	UpdatedAt       string               `json:"updatedAt"`
 }
@@ -386,6 +387,29 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		OK(w, job)
 		return
 	}
+	if action == "archive" || action == "unarchive" {
+		if !c.running.CompareAndSwap(false, true) {
+			Fail(w, "任务或字幕仍在处理中，请等待完成或暂停后归档")
+			return
+		}
+		defer c.running.Store(false)
+		job, err = loadReplacement(id, user.ID)
+		if err != nil {
+			Fail(w, "读取任务失败")
+			return
+		}
+		job.Archived = action == "archive"
+		if err := saveReplacement(&job); err != nil {
+			Fail(w, "保存归档状态失败")
+			return
+		}
+		OK(w, job)
+		return
+	}
+	if job.Archived {
+		Fail(w, "请先在历史任务中取消归档，再继续处理")
+		return
+	}
 	if action == "pause" {
 		c.pause.Store(true)
 		OK(w, map[string]any{"message": "将在当前步骤结束并保存结果后暂停"})
@@ -398,7 +422,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		}
 		defer c.running.Store(false)
 		job, err = loadReplacement(id, user.ID)
-		if err != nil || job.Status != "completed" || job.Result == "" {
+		if err != nil || job.Archived || job.Status != "completed" || job.Result == "" {
 			Fail(w, "任务尚未完成")
 			return
 		}
@@ -429,7 +453,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		}
 		defer c.running.Store(false)
 		job, err = loadReplacement(id, user.ID)
-		if err != nil || job.Status != "completed" || job.Result == "" || job.SubtitleOutput != "editable" {
+		if err != nil || job.Archived || job.Status != "completed" || job.Result == "" || job.SubtitleOutput != "editable" {
 			Fail(w, "无字幕成片尚未完成")
 			return
 		}
@@ -474,7 +498,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			return
 		}
 		job, err = loadReplacement(id, user.ID)
-		if err != nil || job.Status != "completed" || job.Result == "" || job.SubtitleOutput != "editable" {
+		if err != nil || job.Archived || job.Status != "completed" || job.Result == "" || job.SubtitleOutput != "editable" {
 			c.running.Store(false)
 			Fail(w, "无字幕成片尚未完成")
 			return
@@ -543,7 +567,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		}
 		defer c.running.Store(false)
 		job, err = loadReplacement(id, user.ID)
-		if err != nil || !job.Planned || job.Status == "completed" {
+		if err != nil || job.Archived || !job.Planned || job.Status == "completed" {
 			Fail(w, "该任务无需重新报价")
 			return
 		}
@@ -583,7 +607,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		}
 		defer c.running.Store(false)
 		job, err = loadReplacement(id, user.ID)
-		if err != nil || input.Part >= len(job.Parts) {
+		if err != nil || job.Archived || input.Part >= len(job.Parts) {
 			Fail(w, "任务已变化，请刷新")
 			return
 		}
@@ -656,7 +680,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		return
 	}
 	job, err = loadReplacement(id, user.ID)
-	if err != nil || input.ExpectedCredits != job.Credits {
+	if err != nil || job.Archived || input.ExpectedCredits != job.Credits {
 		c.running.Store(false)
 		Fail(w, "任务已变化，请重新确认费用")
 		return

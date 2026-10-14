@@ -339,3 +339,43 @@ func TestReplacementCaptionEditsAreOwnedVersionedAndRenderedWithoutPaidModel(t *
 		t.Fatalf("caption render changed clean result or draft: %+v", saved)
 	}
 }
+
+func TestReplacementArchivePreservesResultsAndRequiresIdleOwner(t *testing.T) {
+	replacementTestStorage(t)
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("archive operations must not contact a worker or paid provider")
+		return nil, nil
+	})}
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Status: "paused", Result: "clean.mp4", CaptionResult: "captioned.mp4", Credits: 210, Parts: []replacementPart{{TaskID: "paid-task", Validated: true}}}
+	if err := saveReplacement(&job); err != nil {
+		t.Fatal(err)
+	}
+	action := func(user, name string) {
+		request := httptest.NewRequest(http.MethodPost, "/"+name, strings.NewReader(`{"expectedCredits":210}`)).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: user}))
+		ReplacementJobAction(httptest.NewRecorder(), request, job.ID, name)
+	}
+	assertArchived := func(want bool) {
+		t.Helper()
+		saved, err := loadReplacement(job.ID, "owner")
+		if err != nil || saved.Archived != want || saved.Result != job.Result || saved.CaptionResult != job.CaptionResult || saved.Credits != 210 || saved.Status != "paused" || saved.Parts[0].TaskID != "paid-task" || !saved.Parts[0].Validated {
+			t.Fatalf("archive changed task progress/results: %+v, %v", saved, err)
+		}
+	}
+	action("other", "archive")
+	assertArchived(false)
+	control := replacementControlFor(job.ID)
+	control.running.Store(true)
+	action("owner", "archive")
+	assertArchived(false)
+	control.running.Store(false)
+	action("owner", "archive")
+	assertArchived(true)
+	action("owner", "start")
+	assertArchived(true)
+	action("other", "unarchive")
+	assertArchived(true)
+	action("owner", "unarchive")
+	assertArchived(false)
+}

@@ -179,8 +179,8 @@ export default function ContentReplaceWorkspace() {
     }, [inputKey, platformToken]);
     useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
     useEffect(() => {
-        if (d.replacementResultKey) { setHistoryPreview(null); setTab("current"); }
-    }, [d.replacementResultKey, d.final?.storageKey]);
+        if (d.replacementJobId || d.replacementResultKey) { setHistoryPreview(null); setTab("current"); }
+    }, [d.replacementJobId, d.replacementResultKey, d.final?.storageKey]);
     useEffect(() => setSourcePreviewError(false), [reference?.storageKey, reference?.url]);
     useEffect(() => {
         if (!platformToken || active?.status !== "failed" || !active.replicateTask || active.replicateBilling) return;

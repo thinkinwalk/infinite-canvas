@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, App, Button, Select, theme } from "antd";
+import { Alert, App, Button, Empty, Modal, Segmented, Select, theme } from "antd";
 import { useConfigStore, resolveEffectiveConfig, modelOptionName, selectableModelsByCapability } from "@/stores/use-config-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -8,7 +8,7 @@ import { videoProfile } from "@/lib/video-capabilities";
 import { uploadReplicateReference } from "@/services/api/replicate";
 import { storeWorkerResult, uploadWorkerMedia } from "@/services/api/video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "@/services/api/video";
-import { createReplacementJob, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
+import { archiveReplacementJob, createReplacementJob, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
 import { contentReplacementPrompt } from "./content-replace-prompt";
 import { replacementDurationSummary } from "./replacement-summary";
 import { ReplacementCaptionEditor } from "./replacement-caption-editor";
@@ -32,6 +32,9 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
     const [seconds, setSeconds] = useState("");
     const [resolution, setResolution] = useState("");
     const [jobs, setJobs] = useState<ReplacementJob[]>([]);
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyTab, setHistoryTab] = useState<"recent" | "archived">("recent");
+    const [archiving, setArchiving] = useState("");
     const [captionEditorJobId, setCaptionEditorJobId] = useState("");
     const [previewChoice, setPreviewChoice] = useState<{ jobId: string; result: string } | null>(null);
     const [busy, setBusy] = useState(false);
@@ -55,7 +58,10 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
     const image = d.media.find((m) => m.role === "model" && m.kind === "image");
     const refresh = async () => setJobs((await listReplacementJobs()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     useEffect(() => {
-        if (!token) { setJobs([]); return; }
+        setJobs([]);
+        setHistoryOpen(false);
+        setCaptionEditorJobId("");
+        if (!token) return;
         let disposed = false;
         let timer: ReturnType<typeof setTimeout>;
         const controller = new AbortController();
@@ -69,7 +75,11 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
         void poll();
         return () => { disposed = true; controller.abort(); clearTimeout(timer); };
     }, [token]);
-    const currentJob = jobs.find((job) => job.id === d.replacementJobId);
+    const currentJob = jobs.find((job) => job.id === d.replacementJobId && !job.archived);
+    const currentArchived = jobs.some((job) => job.id === d.replacementJobId && job.archived);
+    useEffect(() => { if (currentArchived) selectJob(); }, [currentArchived]);
+    const historyJobs = jobs.filter((job) => Boolean(job.archived) === (historyTab === "archived"));
+    const activeCount = jobs.filter((job) => job.status === "running" || job.status === "planning" || job.captionStatus === "recognizing" || job.captionStatus === "rendering").length;
     const captionEditorJob = jobs.find((job) => job.id === captionEditorJobId);
     const selectedResult = currentJob ? (previewChoice?.jobId === currentJob.id ? previewChoice.result : currentJob.captionResult || currentJob.result) : undefined;
     useEffect(() => {
@@ -80,6 +90,43 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
         void showResult(currentJob, true, selectedResult);
     }, [hydrated, token, currentJob?.id, selectedResult, captionEditorJobId, d.replacementResultKey, d.final]);
     useEffect(() => () => { previewRevision.current++; }, [token]);
+    const selectJob = (job?: ReplacementJob) => {
+        previewRevision.current++;
+        attemptedResult.current = "";
+        setPreviewChoice(null);
+        setError("");
+        setBusy(false);
+        setCaptionEditorJobId("");
+        useVideoWorkbenchStore.getState().patchDraft("content-replace", {
+            replacementJobId: job?.id, replacementResultKey: undefined, replacementSource: undefined, final: null, edited: null, video: null, activeRecord: undefined,
+        });
+    };
+    const openJob = async (job: ReplacementJob) => {
+        selectJob(job);
+        setHistoryOpen(false);
+        const result = job.captionResult || job.result;
+        if (result) { await showResult(job, false, result); return; }
+        const revision = ++previewRevision.current;
+        setBusy(true);
+        try {
+            const original = await storeWorkerResult(worker, job.source);
+            if (revision === previewRevision.current && useVideoWorkbenchStore.getState().drafts["content-replace"]?.replacementJobId === job.id)
+                useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementSource: original });
+        } catch (e) { if (revision === previewRevision.current) setError(`原片载入失败：${e instanceof Error ? e.message : "读取失败"}`); }
+        finally { if (revision === previewRevision.current) setBusy(false); }
+    };
+    const setArchived = async (job: ReplacementJob, archived: boolean) => {
+        if (archiving) return;
+        setArchiving(job.id);
+        try {
+            const updated = await archiveReplacementJob(job.id, archived);
+            setJobs((items) => items.map((item) => item.id === updated.id ? updated : item));
+            if (archived && useVideoWorkbenchStore.getState().drafts["content-replace"]?.replacementJobId === job.id) selectJob();
+            message.success(archived ? "已归档，可在历史任务的已归档列表中找回" : "已取消归档，可打开任务继续处理");
+        } catch (e) { message.error(e instanceof Error ? e.message : "归档操作失败"); }
+        finally { setArchiving(""); }
+    };
+    const canArchive = (job: ReplacementJob) => !["planning", "running"].includes(job.status) && !["recognizing", "rendering"].includes(job.captionStatus || "");
     const prepare = async () => {
         if (submitting.current || subtitleBlocked || !source || !image || !duration || !size) return;
         submitting.current = true; setBusy(true); setError("");
@@ -147,8 +194,18 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
         <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>仅列出渠道已配置视频参考的候选模型，精准换人效果待实测。分析后显示整片报价；连续镜头重叠 0.5 秒，短镜头补齐后裁回原长度。</p>
         <Button block type="primary" loading={busy} disabled={!hydrated || !token || !source || !image || !duration || !size || Boolean(subtitleBlocked)} onClick={() => void prepare()}>分析整片并计算费用</Button>
         {error && <Alert type="warning" showIcon title={error} closable onClose={() => setError("")} />}
-        {jobs.map((job) => <div key={job.id} className="space-y-2 border-t pt-3" style={{ borderColor: colors.colorBorderSecondary }}>
+        <div className="flex items-center justify-between gap-2">
+            <span className="text-sm">{currentJob ? "当前任务" : "暂无当前任务"}</span>
+            <Button type="text" size="small" onClick={() => setHistoryOpen(true)}>历史任务（{jobs.length}）{activeCount > 0 ? ` · ${activeCount} 项处理中` : ""}</Button>
+        </div>
+        {!currentJob && <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>上传素材创建新任务，或从历史任务中打开已有任务。</p>}
+        {(currentJob ? [currentJob] : []).map((job) => <div key={job.id} className="space-y-2 border-t pt-3" style={{ borderColor: colors.colorBorderSecondary }}>
             <div className="text-sm">{job.model} · {labels[job.status]}</div>
+            <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{new Date(job.createdAt).toLocaleString()} · {job.id.slice(0, 8)}</div>
+            <div className="flex gap-2">
+                <Button size="small" type="text" disabled={busy} onClick={() => selectJob()}>收起当前任务</Button>
+                <Button size="small" type="text" loading={archiving === job.id} disabled={busy || Boolean(archiving) || !canArchive(job)} onClick={() => void setArchived(job, true)}>归档</Button>
+            </div>
             <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{job.step} · {job.parts?.filter((p) => p.validated).length || 0}/{job.parts?.length || 0} 段</div>
             {job.planned && <div className="text-xs">模型累计预算 {job.credits} 点 · {job.resolution}<br />{replacementDurationSummary(job)}</div>}
             {job.result && <Alert type={job.reviewed ? "success" : "info"} title={job.reviewed ? "已人工验收" : "合成完成，效果待验收"} description={job.subtitleOutput === "editable" ? "无字幕版已保留，请检查第一帧、转场后人物、口型与接缝；识别稿需校对后再生成带字幕版。" : "请检查第一帧、转场后人物、无人镜头、口型、字幕与接缝。时间轴校验通过不代表人物或文字正确。"} />}
@@ -173,6 +230,26 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
                 {(job.status === "completed" || job.status === "paused") && job.parts?.some((p) => p.taskId) && <Select<number> aria-label={`重做片段 ${job.id}`} placeholder="选择效果不合格的片段重做" value={undefined} className="w-full" options={job.parts.flatMap((p, i) => p.taskId ? [{value:i,label:`第 ${i+1} 段 · ${p.start.toFixed(2)}–${p.end.toFixed(2)} 秒`}] : [])} onChange={(index) => void retryPart(job, index)} />}
             </div>
         </div>)}
+        <Modal title="历史任务" open={historyOpen} onCancel={() => setHistoryOpen(false)} footer={null} width={640}>
+            <p className="text-sm" style={{ color: colors.colorTextSecondary }}>打开任务后可查看结果或继续处理。归档保留视频和进度，可随时取消；打开或取消归档不会自动开始生成。</p>
+            <Segmented value={historyTab} onChange={setHistoryTab} options={[
+                { label: `任务列表（${jobs.filter((job) => !job.archived).length}）`, value: "recent" },
+                { label: `已归档（${jobs.filter((job) => job.archived).length}）`, value: "archived" },
+            ]} />
+            <div className="mt-3 max-h-[60vh] space-y-3 overflow-y-auto">
+                {!historyJobs.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyTab === "archived" ? "暂无已归档任务" : "暂无任务"} />}
+                {historyJobs.map((job) => <div key={job.id} className="space-y-1 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
+                    <div className="text-sm">{job.model} · {labels[job.status]}{job.id === currentJob?.id ? " · 当前任务" : ""}</div>
+                    <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{new Date(job.createdAt).toLocaleString()} · {job.id.slice(0, 8)}</div>
+                    <div className="text-xs">{job.step} · {job.parts?.filter((p) => p.validated).length || 0}/{job.parts?.length || 0} 段</div>
+                    {job.error && <div className="text-xs" style={{ color: colors.colorWarningText }}>任务已暂停，打开任务查看原因</div>}
+                    <div className="flex gap-2">
+                        {!job.archived && <Button size="small" disabled={busy || Boolean(archiving)} onClick={() => void openJob(job)}>打开任务</Button>}
+                        <Button size="small" type="text" loading={archiving === job.id} disabled={busy || Boolean(archiving) || !canArchive(job)} onClick={() => void setArchived(job, !job.archived)}>{job.archived ? "取消归档" : "归档"}</Button>
+                    </div>
+                </div>)}
+            </div>
+        </Modal>
         {captionEditorJob && <ReplacementCaptionEditor key={captionEditorJob.id} job={captionEditorJob}
             videoUrl={d.replacementResultKey === captionEditorJob.result ? d.final?.url : undefined}
             onClose={() => setCaptionEditorJobId("")}

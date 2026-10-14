@@ -25,6 +25,7 @@ export type ReplacementJob = {
     subtitles: boolean;
     subtitleMethod?: "audio-after-generation";
     reviewed?: boolean;
+    archived?: boolean;
     previousResults?: string[];
     createdAt: string;
     parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; credits: number }[] | null;
@@ -50,6 +51,7 @@ export const createReplacementJob = (input: {
 }) => request<ReplacementJob>("", input);
 export const startReplacementJob = (job: ReplacementJob) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits });
 export const pauseReplacementJob = (id: string) => request<{ message: string }>(`/${id}/pause`, {});
+export const archiveReplacementJob = (id: string, archived: boolean) => request<ReplacementJob>(`/${id}/${archived ? "archive" : "unarchive"}`, {});
 
 export const quoteReplacementPart = (id: string, part: number) => request<{ credits: number }>(`/${id}/quote-part`, { part });
 export const repriceReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/reprice`, {});
