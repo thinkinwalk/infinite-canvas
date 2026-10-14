@@ -15,20 +15,20 @@ def settings():
         "X-Canvas-Worker": "1", "Authorization": "Bearer " + os.environ.get("GPU_WORKER_TOKEN", "")}
 
 
-async def available():
+async def capabilities():
     base, headers = settings()
     if not base:
-        return False
+        return {}
     try:
         async with httpx.AsyncClient(base_url=base, headers=headers, timeout=None) as client:
             response = await client.get("/health")
             response.raise_for_status()
-            return any(c["name"] == "replacement-prepare" and c["available"] for c in response.json()["capabilities"])
+            return {c["name"]: c["available"] for c in response.json()["capabilities"]}
     except (httpx.HTTPError, ValueError, KeyError):
-        return False
+        return {}
 
 
-async def prepare(source, work, update):
+async def run(source, work, update, operation, options):
     base, headers = settings()
     marker = work / "remote-job.json"
     async with httpx.AsyncClient(base_url=base, headers=headers, timeout=None) as client:
@@ -44,7 +44,7 @@ async def prepare(source, work, update):
             temporary.write_text(json.dumps(details), encoding="utf-8")
             temporary.replace(marker)
         try:
-            response = await client.post("/jobs", json={"id": details["id"], "operation": "replacement-prepare", "inputs": {"video": details["video"]}, "options": {}})
+            response = await client.post("/jobs", json={"id": details["id"], "operation": operation, "inputs": {"video": details["video"]}, "options": options})
             response.raise_for_status()
             while True:
                 state = response.json()
@@ -53,6 +53,10 @@ async def prepare(source, work, update):
                     raise RuntimeError(state.get("error") or "云端字幕处理失败")
                 if state["status"] == "completed":
                     result = state["result"]
+                    if operation == "transcribe":
+                        return result.get("segments", [])
+                    if options.get("subtitleMethod") == "audio-after-generation" and result.get("metadata", {}).get("subtitleMethod") != "audio-after-generation":
+                        raise ValueError("远程字幕服务未按新流程清理，已停止收费生成，请管理员更新服务")
                     output = work / "clean-subtitles.mp4"
                     async with client.stream("GET", "/media/" + result["file"]) as download:
                         download.raise_for_status()
@@ -67,3 +71,11 @@ async def prepare(source, work, update):
             response = await client.post("/jobs/" + details["id"] + "/cancel")
             response.raise_for_status()
             raise
+
+
+async def prepare(source, work, update, options=None):
+    return await run(source, work, update, "replacement-prepare", options or {})
+
+
+async def transcribe(source, work, update):
+    return await run(source, work, update, "transcribe", {})

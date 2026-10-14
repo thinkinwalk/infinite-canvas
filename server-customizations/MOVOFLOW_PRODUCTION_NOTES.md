@@ -15,9 +15,15 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.46
+- Release target image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.47 (deployment verification pending; previous runtime v0.19.46)
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.47 editable captions release
+
+- New whole-video person jobs preserve the clean video and original audio, store editable ASR captions, and render a separate captioned copy after online correction. Single-clip and existing jobs retain their saved workflows. Caption edits/rendering do not invoke paid person generation.
+- Worker must mount the complete released Python source, including replacement_subtitles.py, replacement_masks.py and remote_subtitles.py, while preserving CPU LaMa, OCR cache, text dependencies and model/data mounts. SAM 2 / Wan / VACE GPU engines remain unconfigured.
+- Existing checks: Go handler passed; 15 worker subtitle regression cases passed. Three unrelated TypeScript baseline errors remain. Release-time local builds/tests are omitted per AGENTS.md; CI builds the image. Actual production caption editing/rendering and complex-caption quality await user acceptance.
 
 ## v0.19.46 replacement repair deployment
 

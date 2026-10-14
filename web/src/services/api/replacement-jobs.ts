@@ -11,13 +11,25 @@ export type ReplacementJob = {
     credits: number;
     planned: boolean;
     result?: string;
+    subtitleOutput?: "editable";
+    captionSegments?: ReplacementCaption[];
+    captionRevision: number;
+    captionStatus?: "recognizing" | "draft" | "rendering" | "completed" | "failed";
+    captionError?: string;
+    captionResult?: string;
+    subtitleSize: number;
+    subtitleColor: string;
+    subtitleBottom: number;
+    subtitleFont: string;
     source: string;
     subtitles: boolean;
+    subtitleMethod?: "audio-after-generation";
     reviewed?: boolean;
     previousResults?: string[];
     createdAt: string;
     parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; credits: number }[] | null;
 };
+export type ReplacementCaption = { start: number; end: number; text: string };
 
 async function request<T>(path: string, input?: unknown, signal?: AbortSignal): Promise<T> {
     const token = useUserStore.getState().token;
@@ -43,3 +55,6 @@ export const quoteReplacementPart = (id: string, part: number) => request<{ cred
 export const repriceReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/reprice`, {});
 export const retryReplacementPart = (job: ReplacementJob, part: number, expectedCredits: number) => request<ReplacementJob>(`/${job.id}/retry`, { part, expectedCredits });
 export const reviewReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/review`, {});
+export const saveReplacementCaptions = (id: string, input: { revision: number; segments: ReplacementCaption[]; size: number; color: string; bottom: number; font: string }) => request<ReplacementJob>(`/${id}/save-captions`, input);
+export const recognizeReplacementCaptions = (id: string, revision: number) => request<ReplacementJob>(`/${id}/recognize-captions`, { revision });
+export const renderReplacementCaptions = (id: string, revision: number) => request<ReplacementJob>(`/${id}/render-captions`, { revision });

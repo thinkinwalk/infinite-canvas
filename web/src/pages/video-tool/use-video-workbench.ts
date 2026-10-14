@@ -126,6 +126,10 @@ export function useVideoWorkbench(tool: VideoTool) {
 
     const edit = (value: Partial<VideoDraft>, invalidate?: Invalidation) => {
         if (store().busyTools[tool]) return;
+        if (tool === "content-replace" && value.media) {
+            const source = (media: WorkbenchMedia[]) => media.find((m) => m.role === "reference" && m.kind === "video")?.storageKey;
+            if (source(value.media) !== source(read(tool).media)) value = { ...value, regions: [], replacementSeedTime: undefined, media: value.media.filter((m) => m.role !== "mask") };
+        }
         if (tool === "content-replace") value = { ...value, activeRecord: undefined, ...(invalidate ? { replacementJobId: undefined, replacementResultKey: undefined, replacementSource: undefined } : {}) };
         if (digital && invalidate) value = { ...value, digitalRevision: (read(tool).digitalRevision || 0) + 1 };
         if (digital && ["brief", "learning", "preview"].includes(invalidate || "")) {
@@ -422,7 +426,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const replacementPipeline = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
         const record = () => store().records.find((r) => r.id === ctx.recordId)!;
-        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { phase: "prepare", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
+        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { subtitleMethod: "audio-after-generation", phase: "prepare", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
         const save = (value: Partial<NonNullable<VideoRecord["replacementPipeline"]>>, finishedStep = false) => {
             state = { ...state, ...value };
             store().patchRecord(ctx.recordId, { replacementPipeline: state, ...(finishedStep ? { workerJob: undefined } : {}) });
@@ -445,12 +449,16 @@ export function useVideoWorkbench(tool: VideoTool) {
         };
         if (!state.prepared) {
             const capabilities = await getWorkerCapabilities(ctx.worker);
-            for (const name of ["replacement-prepare", "replacement-finish"]) {
+            for (const name of ["replacement-prepare", "replacement-finish", ...(state.subtitleMethod ? ["replacement-subtitles-v2"] : [])]) {
                 const capability = capabilities.find((item) => item.name === name);
                 if (!capability?.available) throw new Error(`${capability?.reason || "平台自动字幕处理尚未启用，请管理员更新处理服务"}；尚未提交收费替换`);
             }
-            const prepared = await localStep("replacement-prepare", { video: source });
+            const prepared = await localStep("replacement-prepare", { video: source }, state.subtitleMethod ? { subtitleMethod: state.subtitleMethod } : {});
             if (!prepared.result?.file) throw new Error("字幕预处理未返回视频");
+            if (state.subtitleMethod && prepared.result.metadata?.subtitleMethod !== state.subtitleMethod) {
+                store().patchRecord(ctx.recordId, { workerJob: undefined });
+                throw new Error("字幕服务未返回新流程的清理结果，请管理员更新服务；未提交收费生成");
+            }
             save({ prepared: await storeWorkerResult(ctx.worker, prepared.result.file), subtitles: prepared.result.segments || [], phase: "generate" }, true);
         }
         ctx.signal.throwIfAborted();
@@ -470,9 +478,13 @@ export function useVideoWorkbench(tool: VideoTool) {
             store().patchRecord(ctx.recordId, { result: value.video });
         }
         const generated = await restoreWorkbenchFile(state.generated!);
-        const finished = await localStep("replacement-finish", { video: generated, source }, { subtitles: state.subtitles || [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
+        const finished = await localStep("replacement-finish", { video: generated, source }, { ...(state.subtitleMethod ? { subtitleMethod: state.subtitleMethod } : {}), subtitles: state.subtitles || [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
         if (!finished.result?.file) throw new Error("字幕合成未返回视频，已保留内容替换结果");
-        return { video: generated, final: await storeWorkerResult(ctx.worker, finished.result.file), subtitles: state.subtitles || [] };
+        if (state.subtitleMethod && finished.result.metadata?.subtitleMethod !== state.subtitleMethod) {
+            store().patchRecord(ctx.recordId, { workerJob: undefined });
+            throw new Error("字幕服务未按原音轨生成字幕，已保留替换结果，请管理员检查服务版本");
+        }
+        return { video: generated, final: await storeWorkerResult(ctx.worker, finished.result.file), subtitles: finished.result.segments || state.subtitles || [] };
     };
     const execute = async (stage: string, ctx: Context, replacementDraft?: VideoDraft): Promise<Partial<VideoDraft>> => {
         const d = replacementDraft || read(tool);
@@ -696,9 +708,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                                       ),
                                   }),
                             ...(d.replacement !== "person" && d.media.find((m) => m.role === "mask") ? { mask: d.media.find((m) => m.role === "mask")! } : {}),
-                            ...(d.replacement !== "background" && d.media.find((m) => m.role === "background") ? { background: d.media.find((m) => m.role === "background")! } : {}),
+                            ...(d.replacement === "product" && d.media.find((m) => m.role === "background") ? { background: d.media.find((m) => m.role === "background")! } : {}),
                         },
-                        { replacement: d.replacement, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions },
+                        { replacement: d.replacement, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions, seedTime: d.replacementSeedTime || 0 },
                     ),
                     ctx.worker,
                 );
@@ -815,6 +827,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ? {
                       replacementInput: {
                           replacement: d.replacement,
+                          replacementSeedTime: d.replacementSeedTime,
                           route: d.route,
                           instructions: d.instructions,
                           replaceSubtitles: d.replaceSubtitles !== false,

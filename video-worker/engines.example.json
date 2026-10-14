@@ -21,6 +21,12 @@
     "required_paths": ["/opt/engines/Wan2.2/.venv/bin/python", "/opt/engines/Wan2.2/generate.py", "/opt/models/Wan2.2-Animate-14B", "/opt/models/Wan2.2-Animate-14B/process_checkpoint"],
     "command": ["/opt/engines/Wan2.2/.venv/bin/python", "{adapter_dir}/wan_animate.py", "--repo", "/opt/engines/Wan2.2", "--weights", "/opt/models/Wan2.2-Animate-14B", "--process-weights", "/opt/models/Wan2.2-Animate-14B/process_checkpoint", "--video", "{video}", "--image", "{image}", "--output", "{output}"]
   },
+  "sam2": {
+    "cwd": "/opt/engines/sam2",
+    "required_paths": ["/opt/engines/sam2/.venv/bin/python", "/opt/engines/sam2/sam2/sam2_video_predictor.py", "/opt/models/sam2.1_hiera_large.pt"],
+    "command": ["/opt/engines/sam2/.venv/bin/python", "{adapter_dir}/sam2_product_mask.py", "--config", "configs/sam2.1/sam2.1_hiera_l.yaml", "--checkpoint", "/opt/models/sam2.1_hiera_large.pt", "--frames", "{frames}", "--box", "{box}", "--frame", "{frame}", "--output", "{output_dir}"],
+    "output_glob": "*.png"
+  },
   "vace": {
     "cwd": "/opt/engines/VACE",
     "required_paths": ["/opt/engines/VACE/.venv/bin/python", "/opt/engines/VACE/vace/vace_wan_inference.py", "/opt/models/Wan2.1-VACE-1.3B"],

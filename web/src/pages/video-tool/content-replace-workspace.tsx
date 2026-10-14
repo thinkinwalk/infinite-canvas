@@ -66,6 +66,8 @@ export default function ContentReplaceWorkspace() {
     const [drawRegions, setDrawRegions] = useState(false);
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
+    const selectionVideo = useRef<HTMLVideoElement | null>(null);
+    const selectionTime = useRef(0);
     const [wholeVideo, setWholeVideo] = useState(true);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
@@ -83,6 +85,8 @@ export default function ContentReplaceWorkspace() {
         d.maskedEdit,
         d.replicateResolution,
         d.replaceSubtitles,
+        d.regions,
+        d.replacementSeedTime,
         cloud && person ? "" : d.instructions,
         d.media.map((m) => [m.id, m.storageKey, m.role, m.durationMs]),
         config.videoModel,
@@ -196,10 +200,12 @@ export default function ContentReplaceWorkspace() {
     else if (d.route === "worker") {
         const capability = capabilities?.find((c) => c.name === (person ? "replace-person" : "replace-product"));
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
+        if (!unavailable && d.replacement === "product" && !d.media.some((m) => m.role === "mask") && !capabilities?.some((c) => c.name === "track-product" && c.available)) unavailable = "商品自动跟踪尚未就绪，请管理员配置跟踪服务";
     } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
-    const subtitleCapability = ["replacement-prepare", "replacement-finish"].map((name) => capabilities?.find((item) => item.name === name)).find((item) => !item?.available);
+    const subtitleCapabilities = ["replacement-prepare", "replacement-finish", "replacement-subtitles-v2", ...(person && wholeVideo ? ["replacement-transcribe", "replacement-render-captions"] : [])];
+    const subtitleCapability = subtitleCapabilities.map((name) => capabilities?.find((item) => item.name === name)).find((item) => !item?.available);
     const subtitleUnavailable = d.replaceSubtitles
-        ? checking || !capabilities && !serviceError ? "正在检查自动字幕处理能力" : serviceError || (capabilities?.some((item) => item.name === "replacement-prepare" && item.available) && capabilities?.some((item) => item.name === "replacement-finish" && item.available) ? "" : subtitleCapability?.reason || "自动字幕处理尚未启用，请管理员更新处理服务")
+        ? checking || !capabilities && !serviceError ? "正在检查自动字幕处理能力" : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "自动字幕处理尚未启用，请管理员更新处理服务")
         : "";
     const subtitleNotice = !d.replaceSubtitles && (serviceError || subtitleCapability?.reason || (capabilities && !capabilities.some((item) => item.name === "replacement-prepare" && item.available) ? "自动字幕清理暂未启用，当前保留原字幕并继续人物替换。" : ""));
     const missing = !wb.hydrated
@@ -217,7 +223,9 @@ export default function ContentReplaceWorkspace() {
                   : cloud && !person && !d.maskedEdit && reference.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                     ? "当前视频编辑模型要求原视频为 2–10 秒，请先裁剪"
                     : "";
-    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
+    const regionMissing = d.route === "worker" && !person && !d.media.some((m) => m.role === "mask") && (d.replacement === "product" ? d.regions.length !== 1 : !d.regions.length)
+        ? d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
+    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
     const prepareQuote = async () => {
         if (blocked || busy || quoteController.current) return;
         const key = inputKey;
@@ -486,16 +494,16 @@ export default function ContentReplaceWorkspace() {
                                 value={d.replacement}
                                 disabled={locked}
                                 options={Object.entries(replacementNames).map(([value, label]) => ({ value, label: `换${label}` }))}
-                                onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"] }, "video")}
+                                onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"], regions: [], replacementSeedTime: undefined }, "video")}
                             />
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">
                                     <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
-                                    <span className="text-sm">自动清理并重做口播字幕</span>
+                                    <span className="text-sm">自动清理口播字幕</span>
                                 </div>
-                                <p className="m-0 text-xs" style={muted}>自动清理口播硬字幕，按识别到的原字幕文字和时间重做统一样式字幕，不保留原花字特效。服务不可用或清理校验失败时暂停，不会自动关闭此项。关闭后原字幕会交给生成模型，可能被重画。</p>
+                                <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "先清理原片字幕，再替换人物；完成后保留原音轨，先交付无字幕版。从原音轨得到的字幕稿可在线校对文字、时间和样式，确认后另行生成带字幕版，也可下载 SRT。" : "先清理原片字幕并检查残字，再替换目标内容；当前单片模式会自动按原音轨识别并烧录字幕，识别文字可能需要校对。"} 无法可靠清理时暂停，由平台排查；关闭此项后原字幕可能被模型重画。</p>
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>
@@ -621,24 +629,26 @@ export default function ContentReplaceWorkspace() {
                                                             检查连接
                                                         </Button>
                                                         {serviceError && <Alert type="warning" showIcon title={serviceError} />}
-                                                        {d.replacement !== "background" && materialField("background", "image/*", "背景参考图（可选）", "仅增强处理服务使用此额外背景")}
+                                                        {d.replacement === "product" && materialField("background", "image/*", "背景参考图（可选）", "仅增强处理服务使用此额外背景")}
                                                         {!person && (
                                                             <>
                                                                 {materialField("mask", "image/*,video/*", "编辑掩膜（可选）", "移动主体建议使用动态掩膜，白色区域改动")}
                                                                 <div className="flex items-center gap-2">
                                                                     <Switch aria-label="框选编辑区域" disabled={locked || !reference} checked={drawRegions} onChange={setDrawRegions} />
-                                                                    <span>框选固定区域</span>
-                                                                    <Button type="text" size="small" disabled={locked || !d.regions.length} onClick={() => wb.edit({ regions: [] }, "video")}>
+                                                                    <span>{d.replacement === "product" ? "框选要跟踪的商品" : "框选固定区域"}</span>
+                                                                    <Button type="text" size="small" disabled={locked || !d.regions.length} onClick={() => wb.edit({ regions: [], replacementSeedTime: undefined }, "video")}>
                                                                         清空
                                                                     </Button>
                                                                 </div>
                                                                 {reference && (
                                                                     <div className="relative overflow-hidden rounded">
-                                                                        <video className="block h-auto w-full" controls src={reference.url} />
+                                                                        <video ref={selectionVideo} className="block h-auto w-full" controls={!drawRegions} src={reference.url} />
                                                                         <div
                                                                             className="absolute inset-0"
                                                                             style={{ pointerEvents: drawRegions && !locked ? "auto" : "none", cursor: "crosshair" }}
                                                                             onPointerDown={(event) => {
+                                                                                selectionVideo.current?.pause();
+                                                                                selectionTime.current = selectionVideo.current?.currentTime || 0;
                                                                                 event.currentTarget.setPointerCapture(event.pointerId);
                                                                                 anchor.current = point(event);
                                                                                 setDrawing({ ...anchor.current, width: 0, height: 0 });
@@ -649,7 +659,7 @@ export default function ContentReplaceWorkspace() {
                                                                                 setDrawing({ x: Math.min(anchor.current.x, b.x), y: Math.min(anchor.current.y, b.y), width: Math.abs(b.x - anchor.current.x), height: Math.abs(b.y - anchor.current.y) });
                                                                             }}
                                                                             onPointerUp={(event) => {
-                                                                                if (drawing?.width && drawing.height) wb.edit({ regions: [...d.regions, drawing] }, "video");
+                                                                                if (drawing?.width && drawing.height) wb.edit(d.replacement === "product" ? { regions: [drawing], replacementSeedTime: selectionTime.current } : { regions: [...d.regions, drawing] }, "video");
                                                                                 anchor.current = null;
                                                                                 setDrawing(null);
                                                                                 event.currentTarget.releasePointerCapture(event.pointerId);
@@ -678,7 +688,7 @@ export default function ContentReplaceWorkspace() {
                                                                     </div>
                                                                 )}
                                                                 <div className="text-xs" style={muted}>
-                                                                    已选 {d.regions.length} 个固定区域；固定框会覆盖整个视频，不能跟随移动主体。
+                                                                    {d.replacement === "product" ? `先暂停在商品清晰的画面，再打开框选。已选 ${d.regions.length} 个商品，选取时间 ${(d.replacementSeedTime || 0).toFixed(2)} 秒；系统跟踪整段视频，跟踪失败会在生成前停止。` : `已选 ${d.regions.length} 个固定区域；固定框会覆盖整个视频。`}
                                                                 </div>
                                                             </>
                                                         )}

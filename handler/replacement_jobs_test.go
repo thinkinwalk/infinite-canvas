@@ -194,3 +194,148 @@ func TestReplacementInterruptedSubtitlePreparationCannotBeSkippedOnRecovery(t *t
 		t.Fatal("failure allowed a paid submission")
 	}
 }
+
+func TestReplacementNewSubtitleFlowPreservesCleanVideoWhenTranscriptionFails(t *testing.T) {
+	replacementTestStorage(t)
+	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	operations := []string{}
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Subtitles: true, SubtitleMethod: "audio-after-generation", SubtitleOutput: "editable", Planned: true,
+		Parts: []replacementPart{{Generated: "paid-output.mp4", Start: 0, End: 3, InputEnd: 3, Seconds: 3}}}
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatal("must not submit a paid generation")
+		}
+		var request struct {
+			Operation string         `json:"operation"`
+			Inputs    map[string]any `json:"inputs"`
+			Options   map[string]any `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		operations = append(operations, request.Operation)
+		file := ""
+		switch request.Operation {
+		case "replacement-prepare":
+			if request.Inputs["video"] != "original.mp4" || request.Options["subtitleMethod"] != job.SubtitleMethod {
+				t.Fatalf("bad prepare: %+v", request)
+			}
+			file = "whole-clean.mp4"
+		case "replacement-extract":
+			if request.Inputs["video"] != "whole-clean.mp4" {
+				t.Fatal("extract used unclean source")
+			}
+			file = "clean-part.mp4"
+		case "replacement-validate":
+		case "replacement-assemble":
+			file = "assembled.mp4"
+		case "replacement-finish":
+			if request.Inputs["source"] != "original.mp4" || request.Inputs["video"] != "assembled.mp4" || request.Options["subtitleMethod"] != job.SubtitleMethod || request.Options["subtitleOutput"] != "editable" || len(request.Options["subtitles"].([]any)) != 0 {
+				t.Fatalf("bad finish: %+v", request)
+			}
+			file = "clean-with-audio.mp4"
+		case "replacement-transcribe":
+			if request.Inputs["video"] != "original.mp4" {
+				t.Fatalf("recognition must use original audio: %+v", request)
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"failed","error":"ASR failed"}`))}, nil
+		default:
+			t.Fatalf("unexpected operation %s", request.Operation)
+		}
+		body, _ := json.Marshal(map[string]any{"status": "completed", "result": map[string]any{"file": file, "metadata": map[string]any{"subtitleMethod": job.SubtitleMethod, "subtitleOutput": job.SubtitleOutput}}})
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+	})}
+	if err := executeReplacement(context.Background(), &job, false); err != nil {
+		t.Fatalf("ASR failure should not fail the clean video delivery: %v", err)
+	}
+	if strings.Join(operations, ",") != "replacement-prepare,replacement-extract,replacement-validate,replacement-assemble,replacement-finish,replacement-transcribe" {
+		t.Fatalf("wrong order: %v", operations)
+	}
+	saved, err := loadReplacement(job.ID, job.UserID)
+	if err != nil || saved.Status != "completed" || saved.Result != "clean-with-audio.mp4" || saved.CaptionStatus != "failed" || saved.Assembled != "assembled.mp4" || saved.Parts[0].Generated != "paid-output.mp4" || !saved.Parts[0].Validated || saved.PreparedSource != "whole-clean.mp4" {
+		t.Fatalf("results lost: %+v, %v", saved, err)
+	}
+	operations = nil
+	if err := executeReplacement(context.Background(), &saved, false); err != nil || strings.Join(operations, ",") != "replacement-finish,replacement-transcribe" {
+		t.Fatalf("resume should only rerun reversible post-processing: %v %v", operations, err)
+	}
+}
+
+func TestReplacementNewSubtitleFlowRejectsOldWorkerBeforeGeneration(t *testing.T) {
+	replacementTestStorage(t)
+	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatal("must not charge")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","result":{"file":"legacy.mp4"}}`))}, nil
+	})}
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "source.mp4", Subtitles: true, SubtitleMethod: "audio-after-generation", Parts: []replacementPart{{}}}
+	if err := executeReplacement(context.Background(), &job, false); err == nil || job.PreparedSource != "" || job.Parts[0].Submitted {
+		t.Fatalf("old worker accepted: %+v, %v", job, err)
+	}
+}
+
+func TestReplacementCaptionEditsAreOwnedVersionedAndRenderedWithoutPaidModel(t *testing.T) {
+	replacementTestStorage(t)
+	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Result: "clean.mp4", Status: "completed", SubtitleOutput: "editable", CaptionStatus: "draft", CaptionRevision: 1,
+		Parts: []replacementPart{{End: 3}}}
+	if err := saveReplacement(&job); err != nil {
+		t.Fatal(err)
+	}
+	input := `{"revision":1,"segments":[{"start":0.2,"end":1.5,"text":"人工校对"}],"size":38,"color":"#ffff00","bottom":0.12,"font":"Noto Sans CJK SC"}`
+	for _, owner := range []string{"other", "owner"} {
+		request := httptest.NewRequest(http.MethodPost, "/save-captions", strings.NewReader(input)).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: owner}))
+		ReplacementJobAction(httptest.NewRecorder(), request, job.ID, "save-captions")
+		saved, _ := loadReplacement(job.ID, "owner")
+		if owner == "other" && saved.CaptionRevision != 1 {
+			t.Fatal("other user changed captions")
+		}
+		if owner == "owner" && (saved.CaptionRevision != 2 || saved.CaptionSegments[0].Text != "人工校对") {
+			t.Fatalf("caption draft not saved: %+v", saved)
+		}
+	}
+	request := httptest.NewRequest(http.MethodPost, "/save-captions", strings.NewReader(input)).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: "owner"}))
+	ReplacementJobAction(httptest.NewRecorder(), request, job.ID, "save-captions")
+	saved, _ := loadReplacement(job.ID, "owner")
+	if saved.CaptionRevision != 2 {
+		t.Fatal("stale edit overwrote new captions")
+	}
+	for _, action := range []string{"render-captions", "recognize-captions"} {
+		request := httptest.NewRequest(http.MethodPost, "/"+action, strings.NewReader(`{"revision":1}`)).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: "owner"}))
+		response := httptest.NewRecorder()
+		ReplacementJobAction(response, request, job.ID, action)
+		if !strings.Contains(response.Body.String(), "字幕已在其他页面更新") {
+			t.Fatalf("stale action accepted: %s", response.Body.String())
+		}
+	}
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatal("caption render called paid generation")
+		}
+		var request struct {
+			Operation string         `json:"operation"`
+			Inputs    map[string]any `json:"inputs"`
+			Options   map[string]any `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Operation != "replacement-render-captions" || request.Inputs["video"] != "clean.mp4" || request.Inputs["source"] != "original.mp4" || request.Options["subtitleBottom"] != 0.12 || request.Options["subtitleFont"] != "Noto Sans CJK SC" {
+			t.Fatalf("wrong render: %+v", request)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","result":{"file":"captioned.mp4","metadata":{"subtitleOutput":"burned-in"}}}`))}, nil
+	})}
+	runReplacementCaptionRender(context.Background(), saved)
+	saved, _ = loadReplacement(job.ID, "owner")
+	if saved.CaptionResult != "captioned.mp4" || saved.Result != "clean.mp4" || saved.CaptionStatus != "completed" || saved.CaptionRevision != 2 {
+		t.Fatalf("caption render changed clean result or draft: %+v", saved)
+	}
+}

@@ -128,6 +128,7 @@ export type VideoDraft = {
     subtitleMode: SubtitleMarkMode;
     regions: SubtitleRegion[];
     replacement: "person" | "product" | "background";
+    replacementSeedTime?: number;
     maskedEdit: boolean;
     route: "replicate" | "model" | "worker";
     replicateSpeaker: string;
@@ -199,8 +200,9 @@ export type VideoRecord = {
     text?: string;
     step?: string;
     draftPatch?: Partial<VideoDraft>;
-    replacementInput?: Pick<VideoDraft, "replacement" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementInput?: Pick<VideoDraft, "replacement" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
     replacementPipeline?: {
+        subtitleMethod?: "audio-after-generation";
         phase: "prepare" | "generate" | "finish";
         workerUrl: string;
         model: string;

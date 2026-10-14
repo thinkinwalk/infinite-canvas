@@ -46,34 +46,49 @@ type replacementPart struct {
 	Captions      []map[string]any `json:"captions,omitempty"`
 	Credits       int              `json:"credits"`
 }
+type replacementCaption struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Text  string  `json:"text"`
+}
 type replacementJob struct {
-	ID              string            `json:"id"`
-	UserID          string            `json:"userId"`
-	Source          string            `json:"source"`
-	Image           string            `json:"image"`
-	Model           string            `json:"model"`
-	ChannelID       int               `json:"channelId"`
-	Resolution      string            `json:"resolution"`
-	Seconds         string            `json:"seconds"`
-	Prompt          string            `json:"prompt"`
-	Subtitles       bool              `json:"subtitles"`
-	SubtitleSize    float64           `json:"subtitleSize"`
-	SubtitleColor   string            `json:"subtitleColor"`
-	Status          string            `json:"status"`
-	Step            string            `json:"step"`
-	Error           string            `json:"error,omitempty"`
-	Credits         int               `json:"credits"`
-	Parts           []replacementPart `json:"parts"`
-	Planned         bool              `json:"planned"`
-	AspectRatio     string            `json:"aspectRatio"`
-	WorkerStep      string            `json:"workerStep,omitempty"`
-	WorkerID        string            `json:"workerId,omitempty"`
-	Assembled       string            `json:"assembled,omitempty"`
-	Result          string            `json:"result,omitempty"`
-	PreviousResults []string          `json:"previousResults,omitempty"`
-	Reviewed        bool              `json:"reviewed"`
-	CreatedAt       string            `json:"createdAt"`
-	UpdatedAt       string            `json:"updatedAt"`
+	ID              string               `json:"id"`
+	UserID          string               `json:"userId"`
+	Source          string               `json:"source"`
+	Image           string               `json:"image"`
+	Model           string               `json:"model"`
+	ChannelID       int                  `json:"channelId"`
+	Resolution      string               `json:"resolution"`
+	Seconds         string               `json:"seconds"`
+	Prompt          string               `json:"prompt"`
+	Subtitles       bool                 `json:"subtitles"`
+	SubtitleSize    float64              `json:"subtitleSize"`
+	SubtitleColor   string               `json:"subtitleColor"`
+	SubtitleFont    string               `json:"subtitleFont"`
+	SubtitleMethod  string               `json:"subtitleMethod,omitempty"`
+	SubtitleOutput  string               `json:"subtitleOutput,omitempty"`
+	CaptionSegments []replacementCaption `json:"captionSegments,omitempty"`
+	CaptionRevision int                  `json:"captionRevision"`
+	CaptionStatus   string               `json:"captionStatus,omitempty"`
+	CaptionError    string               `json:"captionError,omitempty"`
+	CaptionResult   string               `json:"captionResult,omitempty"`
+	SubtitleBottom  float64              `json:"subtitleBottom"`
+	PreparedSource  string               `json:"preparedSource,omitempty"`
+	Status          string               `json:"status"`
+	Step            string               `json:"step"`
+	Error           string               `json:"error,omitempty"`
+	Credits         int                  `json:"credits"`
+	Parts           []replacementPart    `json:"parts"`
+	Planned         bool                 `json:"planned"`
+	AspectRatio     string               `json:"aspectRatio"`
+	WorkerStep      string               `json:"workerStep,omitempty"`
+	WorkerID        string               `json:"workerId,omitempty"`
+	Assembled       string               `json:"assembled,omitempty"`
+	Result          string               `json:"result,omitempty"`
+	PreviousResults []string             `json:"previousResults,omitempty"`
+	Reviewed        bool                 `json:"reviewed"`
+	CreatedAt       string               `json:"createdAt"`
+	UpdatedAt       string               `json:"updatedAt"`
 }
 type replacementControl struct {
 	running atomic.Bool
@@ -224,8 +239,10 @@ type replacementWorkerResult struct {
 	File     string           `json:"file"`
 	Segments []map[string]any `json:"segments"`
 	Metadata struct {
-		Parts []replacementPart `json:"parts"`
-		Size  [2]int            `json:"size"`
+		Parts          []replacementPart `json:"parts"`
+		Size           [2]int            `json:"size"`
+		SubtitleMethod string            `json:"subtitleMethod"`
+		SubtitleOutput string            `json:"subtitleOutput"`
 	} `json:"metadata"`
 }
 
@@ -327,6 +344,12 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 	job := replacementJob{ID: request.ID, UserID: user.ID, Source: request.Source, Image: request.Image, Model: request.Model,
 		Resolution: request.Resolution, Seconds: request.Seconds, Prompt: request.Prompt, Subtitles: request.Subtitles,
 		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if job.Subtitles {
+		job.SubtitleMethod = "audio-after-generation"
+		job.SubtitleOutput = "editable"
+		job.SubtitleBottom = 0.08
+		job.SubtitleFont = "Noto Sans CJK SC"
+	}
 	if err := validateReplacementRequest(r.Context(), &job); err != nil {
 		control.running.Store(false)
 		Fail(w, err.Error())
@@ -344,6 +367,10 @@ func markReplacementPaused(job *replacementJob) {
 	if (job.Status == "running" || job.Status == "planning") && !replacementControlFor(job.ID).running.Load() {
 		job.Status = "paused"
 		job.Error = "服务已重启，可恢复查询已有任务；不会自动重发收费请求"
+	}
+	if (job.CaptionStatus == "recognizing" || job.CaptionStatus == "rendering") && !replacementControlFor(job.ID).running.Load() {
+		job.CaptionStatus = "failed"
+		job.CaptionError = "字幕处理服务已重启；无字幕原版和已保存字幕均已保留，可重新识别或合成。"
 	}
 }
 func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action string) {
@@ -381,6 +408,116 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			return
 		}
 		OK(w, job)
+		return
+	}
+	if action == "save-captions" {
+		var input struct {
+			Revision int                  `json:"revision"`
+			Segments []replacementCaption `json:"segments"`
+			Size     float64              `json:"size"`
+			Color    string               `json:"color"`
+			Bottom   float64              `json:"bottom"`
+			Font     string               `json:"font"`
+		}
+		if json.NewDecoder(r.Body).Decode(&input) != nil {
+			Fail(w, "字幕内容格式不正确")
+			return
+		}
+		if !c.running.CompareAndSwap(false, true) {
+			Fail(w, "字幕处理正在进行，请稍后")
+			return
+		}
+		defer c.running.Store(false)
+		job, err = loadReplacement(id, user.ID)
+		if err != nil || job.Status != "completed" || job.Result == "" || job.SubtitleOutput != "editable" {
+			Fail(w, "无字幕成片尚未完成")
+			return
+		}
+		if input.Revision != job.CaptionRevision {
+			Fail(w, "字幕已在其他页面更新，请刷新后再编辑")
+			return
+		}
+		if err := validateReplacementCaptions(input.Segments, replacementDuration(&job)); len(input.Segments) > 0 && err != nil {
+			Fail(w, err.Error())
+			return
+		}
+		if math.IsNaN(input.Size) || math.IsInf(input.Size, 0) || input.Size <= 0 || math.IsNaN(input.Bottom) || math.IsInf(input.Bottom, 0) || input.Bottom < 0 || input.Bottom >= 1 || !validReplacementColor(input.Color) || !validReplacementFont(input.Font) {
+			Fail(w, "字幕样式不正确")
+			return
+		}
+		if job.CaptionResult != "" {
+			job.PreviousResults = append(job.PreviousResults, job.CaptionResult)
+		}
+		job.CaptionResult = ""
+		job.Reviewed = false
+		job.CaptionSegments, job.SubtitleSize, job.SubtitleColor, job.SubtitleBottom, job.SubtitleFont = input.Segments, input.Size, input.Color, input.Bottom, input.Font
+		job.CaptionRevision++
+		job.CaptionStatus, job.CaptionError, job.WorkerStep, job.WorkerID = "draft", "", "", ""
+		job.Step = "无字幕成片已保存，字幕草稿待校对"
+		if err := saveReplacement(&job); err != nil {
+			Fail(w, "保存字幕失败")
+			return
+		}
+		OK(w, job)
+		return
+	}
+	if action == "recognize-captions" || action == "render-captions" {
+		var input struct {
+			Revision int `json:"revision"`
+		}
+		if json.NewDecoder(r.Body).Decode(&input) != nil {
+			Fail(w, "字幕请求格式不正确")
+			return
+		}
+		if !c.running.CompareAndSwap(false, true) {
+			Fail(w, "字幕处理正在进行，请稍后")
+			return
+		}
+		job, err = loadReplacement(id, user.ID)
+		if err != nil || job.Status != "completed" || job.Result == "" || job.SubtitleOutput != "editable" {
+			c.running.Store(false)
+			Fail(w, "无字幕成片尚未完成")
+			return
+		}
+		if input.Revision != job.CaptionRevision {
+			c.running.Store(false)
+			Fail(w, "字幕已在其他页面更新，请重新载入后操作")
+			return
+		}
+		job.Reviewed = false
+		if action == "render-captions" {
+			if len(job.CaptionSegments) == 0 || validateReplacementCaptions(job.CaptionSegments, replacementDuration(&job)) != nil {
+				c.running.Store(false)
+				Fail(w, "请先保存有效字幕")
+				return
+			}
+			job.CaptionStatus = "rendering"
+			job.Step = "正在合成已校对的字幕"
+		} else {
+			if job.CaptionStatus != "recognizing" {
+				if job.CaptionResult != "" {
+					job.PreviousResults = append(job.PreviousResults, job.CaptionResult)
+				}
+				job.CaptionResult = ""
+				if job.CaptionStatus != "failed" || job.WorkerStep != "caption-transcribe" || job.WorkerID == "" {
+					job.WorkerStep, job.WorkerID = "", ""
+				}
+			}
+			job.CaptionStatus = "recognizing"
+			job.Step = "无字幕成片已保存，正在重新识别原音轨"
+		}
+		job.CaptionError = ""
+		if err := saveReplacement(&job); err != nil {
+			c.running.Store(false)
+			Fail(w, "保存字幕任务失败")
+			return
+		}
+		OK(w, job)
+		if action == "render-captions" {
+			go runReplacementCaptionRender(context.Background(), job)
+		} else {
+			go runReplacementCaptionRecognition(context.Background(), job)
+		}
 		return
 	}
 	if action == "quote-part" {
@@ -482,7 +619,14 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		if job.Result != "" {
 			job.PreviousResults = append(job.PreviousResults, job.Result)
 		}
+		if job.CaptionResult != "" {
+			job.PreviousResults = append(job.PreviousResults, job.CaptionResult)
+		}
 		job.Reviewed = false
+		job.CaptionResult, job.CaptionError = "", ""
+		if job.SubtitleOutput == "editable" {
+			job.CaptionStatus = "draft"
+		}
 		job.Assembled, job.Result, job.WorkerStep, job.WorkerID = "", "", "", ""
 		job.Status, job.Error, job.Step = "ready", "", "已保留其他片段，请确认预算后处理重做片段"
 		if err := saveReplacement(&job); err != nil {
@@ -606,6 +750,12 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 	needed := []string{"replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-finish"}
 	if job.Subtitles {
 		needed = append(needed, "replacement-prepare")
+		if job.SubtitleMethod == "audio-after-generation" {
+			needed = append(needed, "replacement-subtitles-v2")
+			if job.SubtitleOutput == "editable" {
+				needed = append(needed, "replacement-transcribe", "replacement-render-captions")
+			}
+		}
 	}
 	for _, name := range needed {
 		available := false
@@ -679,6 +829,32 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		job.Status, job.Step = "ready", "分段完成，等待确认整片模型费用"
 		return saveReplacement(job)
 	}
+	// New jobs clean the complete source before any paid generation, then slice
+	// the cleaned timeline. Silent shots and segment overlaps need no separate ASR.
+	if job.Subtitles && job.SubtitleMethod == "audio-after-generation" && job.PreparedSource == "" {
+		if replacementControlFor(job.ID).pause.Load() {
+			return fmt.Errorf("已暂停，尚未开始字幕清理")
+		}
+		job.Step = "清理完整原片口播字幕并检查残字"
+		if err := saveReplacement(job); err != nil {
+			return err
+		}
+		result, err := replacementWorkerStep(ctx, job, "prepare-source", "replacement-prepare", map[string]any{"video": job.Source}, map[string]any{"subtitleMethod": job.SubtitleMethod})
+		if err != nil {
+			return err
+		}
+		if result.File == "" || result.Metadata.SubtitleMethod != job.SubtitleMethod {
+			job.WorkerStep, job.WorkerID = "", ""
+			if err := saveReplacement(job); err != nil {
+				return err
+			}
+			return fmt.Errorf("字幕处理服务未返回新流程的清理结果；未提交收费生成，请管理员更新服务")
+		}
+		job.PreparedSource = result.File
+		if err := saveReplacement(job); err != nil {
+			return err
+		}
+	}
 	for index := range job.Parts {
 		if replacementControlFor(job.ID).pause.Load() {
 			return fmt.Errorf("已暂停，成功片段和当前任务编号已保留")
@@ -731,19 +907,182 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			}
 		}
 	}
-	job.Step = "恢复完整原音轨并合成字幕"
+	job.Step = "恢复原音轨并完成视频后处理"
 	if err := saveReplacement(job); err != nil {
 		return err
 	}
-	result, err := replacementWorkerStep(ctx, job, "finish", "replacement-finish", map[string]any{"source": job.Source, "video": job.Assembled}, map[string]any{"subtitles": captions, "subtitleSize": job.SubtitleSize, "subtitleColor": job.SubtitleColor})
+	options := map[string]any{"subtitles": captions, "subtitleSize": job.SubtitleSize, "subtitleColor": job.SubtitleColor}
+	if job.SubtitleMethod == "audio-after-generation" {
+		options["subtitleMethod"] = job.SubtitleMethod
+		if job.SubtitleOutput == "editable" {
+			options["subtitleOutput"] = "editable"
+			options["subtitleBottom"] = job.SubtitleBottom
+		}
+	}
+	result, err := replacementWorkerStep(ctx, job, "finish", "replacement-finish", map[string]any{"source": job.Source, "video": job.Assembled}, options)
 	if err != nil {
 		return err
+	}
+	if job.SubtitleOutput == "editable" && result.Metadata.SubtitleOutput != "editable" {
+		job.WorkerStep, job.WorkerID = "", ""
+		if err := saveReplacement(job); err != nil {
+			return err
+		}
+		return fmt.Errorf("处理服务未返回独立的无字幕成片，请更新视频处理服务")
+	}
+	if job.SubtitleMethod == "audio-after-generation" && job.SubtitleOutput != "editable" && result.Metadata.SubtitleMethod != job.SubtitleMethod {
+		job.WorkerStep, job.WorkerID = "", ""
+		if err := saveReplacement(job); err != nil {
+			return err
+		}
+		return fmt.Errorf("字幕服务未按原音轨生成字幕，已保留生成结果，请管理员检查服务版本")
 	}
 	if err := saveWorkerOwner(job.UserID, "media", result.File); err != nil {
 		return err
 	}
 	job.Result, job.Status, job.Step = result.File, "completed", "已合成，请验收人物、口型与接缝"
-	return saveReplacement(job)
+	if job.SubtitleOutput == "editable" {
+		if len(job.CaptionSegments) > 0 {
+			job.CaptionStatus, job.Step = "draft", "无字幕成片已保存，原字幕草稿待校对"
+		} else {
+			job.CaptionStatus, job.Step = "recognizing", "无字幕成片已保存，正在识别原音轨"
+		}
+	}
+	if err := saveReplacement(job); err != nil {
+		return err
+	}
+	if job.SubtitleOutput == "editable" && job.CaptionStatus == "recognizing" {
+		captionResult, err := replacementWorkerStep(ctx, job, "caption-transcribe", "replacement-transcribe", map[string]any{"video": job.Source}, map[string]any{})
+		if err != nil {
+			job.CaptionStatus, job.CaptionError = "failed", "字幕识别失败；无字幕成片已保留。可重试识别，不会重新生成视频。"
+			job.WorkerStep, job.WorkerID = "", ""
+			return saveReplacement(job)
+		}
+		encoded, _ := json.Marshal(captionResult.Segments)
+		var segments []replacementCaption
+		if err := json.Unmarshal(encoded, &segments); err != nil || validateReplacementCaptions(segments, replacementDuration(job)) != nil {
+			job.CaptionStatus, job.CaptionError = "failed", "识别字幕格式不完整或没有识别到口播；无字幕成片已保留，可重新识别或手动添加字幕。"
+			job.WorkerStep, job.WorkerID = "", ""
+			return saveReplacement(job)
+		}
+		job.CaptionSegments = segments
+		job.CaptionRevision++
+		job.CaptionStatus, job.CaptionError = "draft", ""
+		job.Step = "无字幕成片已保存，字幕草稿待校对"
+		return saveReplacement(job)
+	}
+	return nil
+}
+
+func replacementDuration(job *replacementJob) float64 {
+	var duration float64
+	for _, part := range job.Parts {
+		if part.End > duration {
+			duration = part.End
+		}
+	}
+	return duration
+}
+
+func validReplacementColor(color string) bool {
+	if len(color) != 7 || color[0] != '#' {
+		return false
+	}
+	for _, char := range color[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return false
+		}
+	}
+	return true
+}
+
+func validReplacementFont(font string) bool {
+	return font == "Noto Sans CJK SC" || font == "Noto Serif CJK SC"
+}
+
+func validateReplacementCaptions(captions []replacementCaption, duration float64) error {
+	if len(captions) == 0 {
+		return fmt.Errorf("请先添加字幕")
+	}
+	previousEnd := 0.0
+	for _, caption := range captions {
+		if math.IsNaN(caption.Start) || math.IsNaN(caption.End) || math.IsInf(caption.Start, 0) || math.IsInf(caption.End, 0) || caption.Start < 0 || caption.End <= caption.Start || caption.Start < previousEnd || (duration > 0 && caption.End > duration) || strings.TrimSpace(caption.Text) == "" {
+			return fmt.Errorf("字幕时间轴或文案不正确；检查起止时间、顺序、视频长度和空字幕")
+		}
+		previousEnd = caption.End
+	}
+	return nil
+}
+
+func runReplacementCaptionRecognition(ctx context.Context, job replacementJob) {
+	defer replacementControlFor(job.ID).running.Store(false)
+	if err := resetFailedReplacementCaptionWorker(ctx, &job, "caption-transcribe"); err != nil {
+		job.CaptionStatus, job.CaptionError = "failed", fmt.Sprintf("无法检查上次字幕识别任务：%v；无字幕成片已保留。", err)
+		_ = saveReplacement(&job)
+		return
+	}
+	result, err := replacementWorkerStep(ctx, &job, "caption-transcribe", "replacement-transcribe", map[string]any{"video": job.Source}, map[string]any{})
+	if err != nil {
+		job.CaptionStatus, job.CaptionError = "failed", fmt.Sprintf("字幕识别失败：%v；无字幕成片已保留。可重试识别，不会重新生成视频。", err)
+		_ = saveReplacement(&job)
+		return
+	}
+	encoded, _ := json.Marshal(result.Segments)
+	var segments []replacementCaption
+	if err := json.Unmarshal(encoded, &segments); err != nil || validateReplacementCaptions(segments, replacementDuration(&job)) != nil {
+		job.CaptionStatus, job.CaptionError = "failed", "识别字幕格式不完整或没有识别到口播；无字幕成片已保留，可重新识别或手动添加字幕。"
+		job.WorkerStep, job.WorkerID = "", ""
+		_ = saveReplacement(&job)
+		return
+	}
+	job.CaptionSegments = segments
+	job.CaptionRevision++
+	job.CaptionStatus, job.CaptionError = "draft", ""
+	job.Step = "无字幕成片已保存，字幕草稿待校对"
+	_ = saveReplacement(&job)
+}
+
+func runReplacementCaptionRender(ctx context.Context, job replacementJob) {
+	defer replacementControlFor(job.ID).running.Store(false)
+	if err := resetFailedReplacementCaptionWorker(ctx, &job, "caption-render"); err != nil {
+		job.CaptionStatus, job.CaptionError = "failed", fmt.Sprintf("无法检查上次字幕合成任务：%v；无字幕成片和字幕稿均已保留。", err)
+		_ = saveReplacement(&job)
+		return
+	}
+	options := map[string]any{"subtitles": job.CaptionSegments, "subtitleSize": job.SubtitleSize, "subtitleColor": job.SubtitleColor, "subtitleBottom": job.SubtitleBottom, "subtitleFont": job.SubtitleFont}
+	result, err := replacementWorkerStep(ctx, &job, "caption-render", "replacement-render-captions", map[string]any{"video": job.Result, "source": job.Source}, options)
+	if err == nil && result.Metadata.SubtitleOutput != "burned-in" {
+		job.WorkerStep, job.WorkerID = "", ""
+		err = fmt.Errorf("字幕处理服务未返回带字幕成片")
+	}
+	if err == nil {
+		err = saveWorkerOwner(job.UserID, "media", result.File)
+	}
+	if err != nil {
+		job.CaptionStatus, job.CaptionError = "failed", fmt.Sprintf("字幕合成失败：%v；无字幕成片和已校对字幕都已保留。可修改后重试。", err)
+		_ = saveReplacement(&job)
+		return
+	}
+	job.CaptionResult, job.CaptionStatus, job.CaptionError = result.File, "completed", ""
+	job.Step = "无字幕版和带字幕版均已保存"
+	_ = saveReplacement(&job)
+}
+
+func resetFailedReplacementCaptionWorker(ctx context.Context, job *replacementJob, step string) error {
+	if job.WorkerStep != step || job.WorkerID == "" {
+		return nil
+	}
+	var state struct {
+		Status string `json:"status"`
+	}
+	if err := replacementWorkerJSON(ctx, "GET", "/jobs/"+url.PathEscape(job.WorkerID), nil, &state); err != nil {
+		return err
+	}
+	if state.Status == "failed" || state.Status == "cancelled" {
+		job.WorkerStep, job.WorkerID = "", ""
+		return saveReplacement(job)
+	}
+	return nil
 }
 func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replacementPart) (int, error) {
 	ctx = context.WithValue(ctx, replacementChannelKey{}, job.ChannelID)
@@ -780,7 +1119,14 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 	part := &job.Parts[index]
 	prefix := strconv.Itoa(index) + ":"
 	if part.Input == "" {
-		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": job.Source}, part)
+		source := job.Source
+		if job.SubtitleMethod == "audio-after-generation" {
+			if job.PreparedSource == "" {
+				return fmt.Errorf("原片字幕尚未完成清理，未提交收费生成")
+			}
+			source = job.PreparedSource
+		}
+		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": source}, part)
 		if err != nil {
 			return err
 		}
@@ -790,7 +1136,7 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 		}
 	}
 	if part.Prepared == "" {
-		if job.Subtitles {
+		if job.Subtitles && job.SubtitleMethod != "audio-after-generation" {
 			result, err := replacementWorkerStep(ctx, job, prefix+"prepare", "replacement-prepare", map[string]any{"video": part.Input}, map[string]any{})
 			if err != nil {
 				part.Prepared = ""

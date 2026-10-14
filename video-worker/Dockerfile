@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-no
 WORKDIR /worker
 COPY requirements*.txt ./
 RUN pip install --no-cache-dir -r requirements-ai.txt
-COPY app.py subtitle_matching.py replacement.py remote_subtitles.py ./
+COPY app.py subtitle_matching.py replacement.py replacement_subtitles.py replacement_masks.py remote_subtitles.py ./
 COPY adapters ./adapters
 ENV VIDEO_WORKER_DATA=/data
 ENV SUBTITLE_FONT="Noto Sans CJK SC"

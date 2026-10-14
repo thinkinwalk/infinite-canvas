@@ -11,6 +11,7 @@ import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "@/services/api/video";
 import { createReplacementJob, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
 import { contentReplacementPrompt } from "./content-replace-prompt";
 import { replacementDurationSummary } from "./replacement-summary";
+import { ReplacementCaptionEditor } from "./replacement-caption-editor";
 
 const worker = { url: "/api/v1/video-worker", token: "" };
 const wanReplace = "wan-video/wan-2.2-animate-replace";
@@ -31,6 +32,8 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
     const [seconds, setSeconds] = useState("");
     const [resolution, setResolution] = useState("");
     const [jobs, setJobs] = useState<ReplacementJob[]>([]);
+    const [captionEditorJobId, setCaptionEditorJobId] = useState("");
+    const [previewChoice, setPreviewChoice] = useState<{ jobId: string; result: string } | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const submitting = useRef(false);
@@ -67,13 +70,15 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
         return () => { disposed = true; controller.abort(); clearTimeout(timer); };
     }, [token]);
     const currentJob = jobs.find((job) => job.id === d.replacementJobId);
+    const captionEditorJob = jobs.find((job) => job.id === captionEditorJobId);
+    const selectedResult = currentJob ? (previewChoice?.jobId === currentJob.id ? previewChoice.result : currentJob.captionResult || currentJob.result) : undefined;
     useEffect(() => {
-        if (!hydrated || !currentJob?.result || !token) return;
-        const key = `${token}:${currentJob.id}:${currentJob.result}`;
-        if (attemptedResult.current === key || (d.replacementResultKey === currentJob.result && d.final)) return;
+        if (!hydrated || !currentJob || !selectedResult || !token || captionEditorJobId) return;
+        const key = `${token}:${currentJob.id}:${selectedResult}`;
+        if (attemptedResult.current === key || (d.replacementResultKey === selectedResult && d.final)) return;
         attemptedResult.current = key;
-        void showResult(currentJob, true);
-    }, [hydrated, token, currentJob?.id, currentJob?.result, d.replacementResultKey, d.final]);
+        void showResult(currentJob, true, selectedResult);
+    }, [hydrated, token, currentJob?.id, selectedResult, captionEditorJobId, d.replacementResultKey, d.final]);
     useEffect(() => () => { previewRevision.current++; }, [token]);
     const prepare = async () => {
         if (submitting.current || subtitleBlocked || !source || !image || !duration || !size) return;
@@ -89,6 +94,7 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
                 prompt: contentReplacementPrompt("person", d.instructions, d.replaceSubtitles), subtitles: d.replaceSubtitles,
                 subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
             useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: created.id, replacementResultKey: undefined, replacementSource: undefined, final: null });
+            setPreviewChoice(null);
             pendingRequest.current = undefined;
             await refresh();
         } catch (e) { setError(e instanceof Error ? e.message : "整片分析失败"); }
@@ -96,9 +102,9 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
     };
     const start = (job: ReplacementJob) => modal.confirm({
         title: job.planned ? "确认整片处理费用" : "恢复视频分析",
-        content: job.planned ? `${job.model}，${replacementDurationSummary(job)}，模型累计预算 ${job.credits} 算力点（含历史重做预算）。${job.subtitles ? "清理原字幕后重新合成统一样式字幕。" : "未启用字幕修复，原字幕可能被模型重画。"}按段扣费，恢复复用已有任务；不自动重试或切换模型。字幕处理与存储的外部资源费用未计入。` : "继续分析镜头与报价，此步骤不调用收费生成模型。",
+        content: job.planned ? `${job.model}，${replacementDurationSummary(job)}，模型累计预算 ${job.credits} 算力点（含历史重做预算）。${job.subtitles ? job.subtitleOutput === "editable" ? "先清理原片字幕，生成后交付保留原音轨的无字幕视频；语音识别稿可在线校对，再另行生成带字幕版。" : "按原任务记录清理并重做字幕。" : "未启用字幕修复，原字幕可能被模型重画。"}按段扣费，恢复复用已有任务；不自动重试或切换模型。字幕处理与存储的外部资源费用未计入。` : "继续分析镜头与报价，此步骤不调用收费生成模型。",
         okText: job.status === "ready" ? "开始处理" : "恢复处理",
-        onOk: async () => { try { await startReplacementJob(job); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
+        onOk: async () => { try { await startReplacementJob(job); setPreviewChoice(null); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
     });
     const retryPart = async (job: ReplacementJob, part: number) => {
         try {
@@ -114,15 +120,18 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
     const showResult = async (job: ReplacementJob, automatic = false, result = job.result) => {
         if (!result) return;
         const revision = ++previewRevision.current;
-        if (!automatic) useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id });
-        attemptedResult.current = `${token}:${job.id}:${job.result}`;
+        if (!automatic) {
+            setPreviewChoice({ jobId: job.id, result });
+            useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id });
+        }
+        attemptedResult.current = `${token}:${job.id}:${result}`;
         setBusy(true);
         try {
             const final = await storeWorkerResult(worker, result);
             const original = await storeWorkerResult(worker, job.source);
             if (revision !== previewRevision.current || useVideoWorkbenchStore.getState().drafts["content-replace"]?.replacementJobId !== job.id) return;
             useVideoWorkbenchStore.getState().patchDraft("content-replace", { final, replacementResultKey: result, replacementSource: original });
-            if (!automatic) message.success("已载入整片结果，请检查人物、字幕和接缝");
+            if (!automatic) message.success(result === job.captionResult ? "已载入带字幕版本" : job.subtitleOutput === "editable" && result === job.result ? "已载入无字幕整片，请检查人物与接缝" : "已载入整片结果，请检查人物、字幕与接缝");
         } catch (e) { if (revision === previewRevision.current) setError(`结果载入失败，可点击查看完整视频重试：${e instanceof Error ? e.message : "读取失败"}`); }
         finally { if (revision === previewRevision.current) setBusy(false); }
     };
@@ -142,18 +151,32 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
             <div className="text-sm">{job.model} · {labels[job.status]}</div>
             <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{job.step} · {job.parts?.filter((p) => p.validated).length || 0}/{job.parts?.length || 0} 段</div>
             {job.planned && <div className="text-xs">模型累计预算 {job.credits} 点 · {job.resolution}<br />{replacementDurationSummary(job)}</div>}
-            {job.result && <Alert type={job.reviewed ? "success" : "info"} title={job.reviewed ? "已人工验收" : "合成完成，效果待验收"} description="请检查第一帧、转场后人物、无人镜头、口型、字幕与接缝。时间轴校验通过不代表人物或文字正确。" />}
+            {job.result && <Alert type={job.reviewed ? "success" : "info"} title={job.reviewed ? "已人工验收" : "合成完成，效果待验收"} description={job.subtitleOutput === "editable" ? "无字幕版已保留，请检查第一帧、转场后人物、口型与接缝；识别稿需校对后再生成带字幕版。" : "请检查第一帧、转场后人物、无人镜头、口型、字幕与接缝。时间轴校验通过不代表人物或文字正确。"} />}
+            {job.subtitleOutput === "editable" && job.status === "completed" && <div className="space-y-2 rounded-md p-2" style={{ background: colors.colorFillQuaternary }}>
+                <div className="text-sm font-medium">字幕：{job.captionStatus === "recognizing" ? "识别中" : job.captionStatus === "rendering" ? "合成中" : job.captionStatus === "completed" ? "带字幕版已生成" : job.captionStatus === "draft" ? `${job.captionSegments?.length || 0} 条待校对` : job.captionStatus === "failed" ? "处理未完成，可恢复" : "待识别"}</div>
+                <div className="flex flex-wrap gap-2">
+                    <Button size="small" onClick={() => { setCaptionEditorJobId(job.id); if (d.replacementResultKey !== job.result) void showResult(job, false, job.result); }} disabled={job.captionStatus === "recognizing" || job.captionStatus === "rendering"}>在线校对字幕</Button>
+                    {job.result && <Button size="small" disabled={busy} onClick={() => void showResult(job, false, job.result)}>查看无字幕版</Button>}
+                    {job.captionResult && <Button size="small" disabled={busy} onClick={() => void showResult(job, false, job.captionResult)}>查看带字幕版</Button>}
+                </div>
+                {job.captionError && <div className="text-xs" style={{ color: colors.colorWarningText }}>{job.captionError}</div>}
+            </div>}
             {job.error && <Alert type="warning" title={job.error} />}
             <div className="flex flex-wrap gap-2">
                 {(job.status === "ready" || job.status === "paused") && <Button size="small" onClick={() => start(job)}>{job.status === "ready" ? "确认费用并开始" : "恢复处理"}</Button>}
                 {job.status === "paused" && job.planned && <Button size="small" onClick={() => void repriceReplacementJob(job.id).then(refresh).catch((e) => message.error(e.message))}>刷新剩余费用</Button>}
                 {job.status === "running" && <Button size="small" onClick={() => void pauseReplacementJob(job.id).then((v) => message.info(v.message)).catch((e) => message.error(e.message))}>暂停后续处理</Button>}
                 {job.status === "paused" && job.parts?.some((p) => !p.validated && p.submitted && !!p.taskId) && <Button size="small" onClick={() => retryPart(job, job.parts!.findIndex((p) => !p.validated && p.submitted && !!p.taskId))}>重做问题片段</Button>}
-                {job.result && <Button size="small" disabled={busy} onClick={() => void showResult(job)}>查看完整视频</Button>}
-                {job.previousResults?.map((result, index) => <Button key={result} size="small" disabled={busy} onClick={() => void showResult(job, false, result)}>查看重做前版本 {index + 1}</Button>)}
-                {job.result && !job.reviewed && <Button size="small" onClick={() => modal.confirm({ title: "确认效果验收通过", content: "已对照检查开头与转场人物、无人镜头、口型、字幕和接缝？此操作不会生成或收费。", onOk: async () => { await reviewReplacementJob(job.id); await refresh(); } })}>标记验收通过</Button>}
+                {job.result && job.subtitleOutput !== "editable" && <Button size="small" disabled={busy} onClick={() => void showResult(job)}>查看完整视频</Button>}
+                {job.previousResults?.map((result, index) => <Button key={result} size="small" disabled={busy} onClick={() => void showResult(job, false, result)}>查看历史版本 {index + 1}</Button>)}
+                {job.result && !job.reviewed && <Button size="small" onClick={() => modal.confirm({ title: "确认效果验收通过", content: `已对照检查开头与转场人物、无人镜头、口型和接缝${job.subtitleOutput === "editable" ? "；如需带字幕版，也已校对其文案、样式与时间轴" : "、字幕"}？此操作不会生成或收费。`, onOk: async () => { await reviewReplacementJob(job.id); await refresh(); } })}>标记验收通过</Button>}
                 {(job.status === "completed" || job.status === "paused") && job.parts?.some((p) => p.taskId) && <Select<number> aria-label={`重做片段 ${job.id}`} placeholder="选择效果不合格的片段重做" value={undefined} className="w-full" options={job.parts.flatMap((p, i) => p.taskId ? [{value:i,label:`第 ${i+1} 段 · ${p.start.toFixed(2)}–${p.end.toFixed(2)} 秒`}] : [])} onChange={(index) => void retryPart(job, index)} />}
             </div>
         </div>)}
+        {captionEditorJob && <ReplacementCaptionEditor key={captionEditorJob.id} job={captionEditorJob}
+            videoUrl={d.replacementResultKey === captionEditorJob.result ? d.final?.url : undefined}
+            onClose={() => setCaptionEditorJobId("")}
+            onRefresh={refresh}
+            onRendered={() => { setCaptionEditorJobId(""); setPreviewChoice(null); void refresh(); }} />}
     </div>;
 }

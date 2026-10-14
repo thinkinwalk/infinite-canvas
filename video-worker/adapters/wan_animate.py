@@ -3,6 +3,7 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+from wan_materials import validate_wan_materials
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--repo", required=True)
@@ -24,6 +25,7 @@ subprocess.run([
     "--resolution_area", str(args.width), str(args.height),
     "--iterations", "3", "--k", "7", "--w_len", "1", "--h_len", "1", "--replace_flag",
 ], cwd=repo, check=True)
+validate_wan_materials(processed, args.video)
 subprocess.run([
     sys.executable, "generate.py", "--task", "animate-14B", "--ckpt_dir", args.weights,
     "--src_root_path", str(processed), "--refert_num", "1", "--replace_flag",
