@@ -15,9 +15,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.47
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.48
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.48 historical task archive deployment
+
+- Release commit `96cb03c3cb598caf0298ee99ba6c091b13d3bf2b`, tag `v0.19.48`, and [GitHub Release](https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.48). Docker image workflow [38600754128](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38600754128), docs image workflow [38600754063](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38600754063), and official plugins workflow [38600754141](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38600754141) succeeded; GitHub Pages was skipped by its repository condition.
+- Deployed image `ghcr.io/thinkinwalk/infinite-canvas:v0.19.48`, digest `sha256:605f166f6988e27a2ec0d438e420fb782fe4db8a425f238dcc8985e5cb365561`; container `/app/VERSION` and image revision match the tag and release commit. Internal and external health return `ok`; `/video/content-replace` returns HTTP 200 and serves the history/archive controls and v0.19.48 bundle.
+- SQLite `quick_check` passed; `video_tasks`, `replicate_tasks`, and `settings` counts remain 29, 13, and 2. Online SQLite backup: `/opt/infinite-canvas/backups/database-before-v0.19.48-20261014-184745.sqlite`; deployment data and Compose backups: `/opt/infinite-canvas/backups/data-before-deploy-20261014-185606.tgz` and `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261014-185606.bak`.
+- App deployment used the existing image helper. The video worker remained running with its original start time; no paid model call was submitted. Evidence is beside the checkout in `artifacts/release-v0.19.48/`. Real-account cross-browser archive synchronization and historical media loading remain for user acceptance.
 
 ## v0.19.47 editable captions release
 
