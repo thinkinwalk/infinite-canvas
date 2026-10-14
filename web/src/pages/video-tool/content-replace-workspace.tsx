@@ -66,6 +66,7 @@ export default function ContentReplaceWorkspace() {
     const [drawRegions, setDrawRegions] = useState(false);
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
+    const subtitleManuallyEnabled = useRef(false);
     const [wholeVideo, setWholeVideo] = useState(true);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
@@ -152,8 +153,8 @@ export default function ContentReplaceWorkspace() {
             .then((value) => {
                 if (!disposed) {
                     setCapabilities(value);
-                    const prepare = value.find((item) => item.name === "replacement-prepare");
-                    if (d.replaceSubtitles && !prepare?.available) wb.edit({ replaceSubtitles: false }, "video");
+                    const subtitleReady = ["replacement-prepare", "replacement-finish"].every((name) => value.some((item) => item.name === name && item.available));
+                    if (d.replaceSubtitles && !subtitleReady && !subtitleManuallyEnabled.current) wb.edit({ replaceSubtitles: false });
                 }
             })
             .catch((error) => {
@@ -491,11 +492,12 @@ export default function ContentReplaceWorkspace() {
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">
-                                    <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
+                                    <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => { if (replaceSubtitles) subtitleManuallyEnabled.current = true; wb.edit({ replaceSubtitles }, "video"); }} />
                                     <span className="text-sm">自动清理并重做口播字幕</span>
                                 </div>
                                 <p className="m-0 text-xs" style={muted}>自动识别并清理口播硬字幕，替换后按原音轨时间重做字幕。若处理服务或修复引擎未就绪，处理将暂停在收费生成之前。关闭此项会将原字幕一起交给生成模型，不能保证字幕不被改动。</p>
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
+                                {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>
                             {cloud && person && !wholeVideo && <Alert showIcon type="info" title="Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。" />}
                             {(!cloud || !person || wholeVideo) && (
@@ -557,7 +559,7 @@ export default function ContentReplaceWorkspace() {
                                 </div>
                             </div>}
                             {person && <Segmented block aria-label="人物替换处理模式" value={wholeVideo ? "whole" : "single"} options={[{ value: "whole", label: "整片后台处理" }, { value: "single", label: "单片处理" }]} onChange={(v) => setWholeVideo(v === "whole")} />}
-                            {person && wholeVideo && <ReplacementBatchPanel />}
+                            {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} />}
                             {!(person && wholeVideo) && <Collapse
                                 size="small"
                                 items={[

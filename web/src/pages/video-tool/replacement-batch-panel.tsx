@@ -16,7 +16,7 @@ const wanReplace = "wan-video/wan-2.2-animate-replace";
 const preferred = ["wan30-720p", "grok-imagine-video-1.5-preview", "seedance-2.0-mini", "h3video-768", "h3video-2k"];
 const labels = { planning: "分析中", ready: "待确认费用", running: "处理中", paused: "已暂停", completed: "已合成" };
 
-export function ReplacementBatchPanel() {
+export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: string }) {
     const draft = useVideoWorkbenchStore((s) => s.drafts["content-replace"]);
     const d = { ...emptyVideoDraft("content-replace"), ...draft };
     const token = useUserStore((s) => s.token);
@@ -64,7 +64,7 @@ export function ReplacementBatchPanel() {
         return () => { disposed = true; controller.abort(); clearTimeout(timer); };
     }, [token]);
     const prepare = async () => {
-        if (submitting.current || !source || !image || !duration || !size) return;
+        if (submitting.current || subtitleBlocked || !source || !image || !duration || !size) return;
         submitting.current = true; setBusy(true); setError("");
         try {
             const key = JSON.stringify([source, image, selected, size, duration, d.instructions, d.replaceSubtitles, d.subtitleSize, d.subtitleColor]);
@@ -118,7 +118,7 @@ export function ReplacementBatchPanel() {
             <Select aria-label="每段模型时长" value={duration} disabled={busy} options={durations.map((v) => ({ value: v, label: `每段最长 ${v} 秒` }))} onChange={setSeconds} />
         </div>
         <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>仅列出渠道已配置视频参考的候选模型，精准换人效果待实测。分析后显示整片报价；连续镜头重叠 0.5 秒，短镜头补齐后裁回原长度。</p>
-        <Button block type="primary" loading={busy} disabled={!hydrated || !token || !source || !image || !duration || !size} onClick={() => void prepare()}>分析整片并计算费用</Button>
+        <Button block type="primary" loading={busy} disabled={!hydrated || !token || !source || !image || !duration || !size || Boolean(subtitleBlocked)} onClick={() => void prepare()}>分析整片并计算费用</Button>
         {error && <Alert type="warning" showIcon title={error} closable onClose={() => setError("")} />}
         {jobs.map((job) => <div key={job.id} className="space-y-2 border-t pt-3" style={{ borderColor: colors.colorBorderSecondary }}>
             <div className="text-sm">{job.model} · {labels[job.status]}</div>
