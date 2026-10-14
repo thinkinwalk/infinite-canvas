@@ -15,11 +15,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Release target image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.47 (deployment verification pending; previous runtime v0.19.46)
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.47
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
 ## v0.19.47 editable captions release
+
+- Deployed revision `7e26f4e5433cf2448420f68b8e9be0d675e4b491`, image digest `sha256:416e0cb90a9d912ab5e8c9f97b87b084557a56dd616fa1a945ca46b0f606481f`. App CI https://github.com/thinkinwalk/infinite-canvas/actions/runs/38594017768 succeeded; docs and plugins also succeeded. Release https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.47.
+- Production health returns text `ok`; content replacement returns HTTP 200 and serves `/assets/index-B2S5CBWW.js` containing the caption editor/actions/version. SQLite quick_check is `ok`; 29 video tasks, 13 Replicate tasks and 2 settings rows match the database backup. No paid model call was submitted. Browser interaction and actual edited-caption render remain for user acceptance.
+- Worker source mounts now point to `/opt/infinite-canvas/releases/v0.19.47-worker/`; new modules and adapters are mounted read-only. All 47 worker JSON task records remained byte-identical. Required cleanup/transcribe/render capabilities are available. Worker backup: `/opt/infinite-canvas/backups/worker-v0.19.47-20261014-175958/`.
+- App backups: `/opt/infinite-canvas/backups/database-before-v0.19.47-20261014-180340.sqlite`, `/opt/infinite-canvas/backups/data-before-deploy-20261014-180341.tgz`, `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261014-180341.bak`. Worker rollback uses the separate worker backup; preserve the selected app image when restoring worker mounts. Deployment evidence: `/opt/infinite-canvas/releases/v0.19.47-app-deployment.json` and `v0.19.47-worker-deployment.json`; local copies beside the repository in `artifacts/release-v0.19.47/`.
 
 - New whole-video person jobs preserve the clean video and original audio, store editable ASR captions, and render a separate captioned copy after online correction. Single-clip and existing jobs retain their saved workflows. Caption edits/rendering do not invoke paid person generation.
 - Worker must mount the complete released Python source, including replacement_subtitles.py, replacement_masks.py and remote_subtitles.py, while preserving CPU LaMa, OCR cache, text dependencies and model/data mounts. SAM 2 / Wan / VACE GPU engines remain unconfigured.
