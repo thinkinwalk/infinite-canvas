@@ -143,14 +143,18 @@ export default function ContentReplaceWorkspace() {
         };
     }, []);
     useEffect(() => {
-        if (!wb.hydrated || (d.route !== "worker" && !d.replaceSubtitles)) return;
+        if (!wb.hydrated || (d.route !== "worker" && !d.replaceSubtitles && !(person && wholeVideo))) return;
         let disposed = false;
         setCapabilities(null);
         setServiceError("");
         setChecking(true);
         void getWorkerCapabilities(wb.worker)
             .then((value) => {
-                if (!disposed) setCapabilities(value);
+                if (!disposed) {
+                    setCapabilities(value);
+                    const prepare = value.find((item) => item.name === "replacement-prepare");
+                    if (d.replaceSubtitles && !prepare?.available) wb.edit({ replaceSubtitles: false }, "video");
+                }
             })
             .catch((error) => {
                 if (!disposed) setServiceError(publicServiceText(error instanceof Error ? error.message : "处理服务未连接"));
@@ -161,7 +165,7 @@ export default function ContentReplaceWorkspace() {
         return () => {
             disposed = true;
         };
-    }, [wb.hydrated, d.route, d.replaceSubtitles, wb.worker.url, wb.worker.token, platformToken, serviceRevision]);
+    }, [wb.hydrated, d.route, d.replaceSubtitles, person, wholeVideo, wb.worker.url, wb.worker.token, platformToken, serviceRevision]);
     useEffect(() => {
         quoteController.current?.abort();
         quoteController.current = null;
@@ -196,6 +200,7 @@ export default function ContentReplaceWorkspace() {
     const subtitleUnavailable = d.replaceSubtitles
         ? checking || !capabilities && !serviceError ? "正在检查自动字幕处理能力" : serviceError || (capabilities?.some((item) => item.name === "replacement-prepare" && item.available) && capabilities?.some((item) => item.name === "replacement-finish" && item.available) ? "" : subtitleCapability?.reason || "自动字幕处理尚未启用，请管理员更新处理服务")
         : "";
+    const subtitleNotice = !d.replaceSubtitles && (serviceError || subtitleCapability?.reason || (capabilities && !capabilities.some((item) => item.name === "replacement-prepare" && item.available) ? "自动字幕清理暂未启用，当前保留原字幕并继续人物替换。" : ""));
     const missing = !wb.hydrated
         ? "正在恢复本浏览器草稿"
         : uploading
@@ -490,6 +495,7 @@ export default function ContentReplaceWorkspace() {
                                     <span className="text-sm">自动清理并重做口播字幕</span>
                                 </div>
                                 <p className="m-0 text-xs" style={muted}>自动识别并清理口播硬字幕，替换后按原音轨时间重做字幕。若处理服务或修复引擎未就绪，处理将暂停在收费生成之前。关闭此项会将原字幕一起交给生成模型，不能保证字幕不被改动。</p>
+                                {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                             </div>
                             {cloud && person && !wholeVideo && <Alert showIcon type="info" title="Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。" />}
                             {(!cloud || !person || wholeVideo) && (

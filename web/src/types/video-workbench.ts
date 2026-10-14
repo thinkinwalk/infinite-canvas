@@ -274,5 +274,6 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     highlightColor: "#ffe066",
     cutSilence: false,
     addSubtitles: true,
-    replaceSubtitles: true,
+    // Subtitle repair is opt-in until OCR + a temporal inpainting engine are ready.
+    replaceSubtitles: false,
 });
