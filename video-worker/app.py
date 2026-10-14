@@ -250,8 +250,8 @@ async def create_job(request: JobRequest):
     if request.operation == "subtitle-remove" and not request.options.get("regions") and not available["ocr"]["available"]:
         raise HTTPException(422, "自动检测需要 PaddleOCR，或请先在视频上框选字幕区域")
     for value in request.inputs.values():
-        for identifier in value if isinstance(value, list) else [value]:
-            media_path(identifier)
+        for media_identifier in value if isinstance(value, list) else [value]:
+            media_path(media_identifier)
     # A second caller may have created the same job during the health await.
     if path.exists():
         previous = read_job(identifier)
