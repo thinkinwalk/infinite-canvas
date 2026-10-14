@@ -5,10 +5,23 @@ import re
 from pathlib import Path
 
 
-def plan_segments(duration, seconds, cuts=(), overlap=0.5):
+def plan_segments(duration, seconds, cuts=(), overlap=0.5, preserve_scenes=True):
     if not all(math.isfinite(v) for v in (duration, seconds, overlap)) or duration <= 0 or seconds <= overlap or overlap < 0:
         raise ValueError("视频时长或分段规格不正确")
     boundaries = [0.0, *sorted(set(float(t) for t in cuts if 0 < float(t) < duration)), duration]
+    if not preserve_scenes:
+        # Pack consecutive detected scenes up to the existing input limit.
+        # Keep hard cuts when a group overflows; long continuous shots still overlap.
+        grouped = [0.0]
+        for start, end in zip(boundaries, boundaries[1:]):
+            if end - grouped[-1] > seconds:
+                if start > grouped[-1]:
+                    grouped.append(start)
+                if end - start > seconds:
+                    grouped.append(end)
+        if grouped[-1] != duration:
+            grouped.append(duration)
+        boundaries = grouped
     parts = []
     for scene_start, scene_end in zip(boundaries, boundaries[1:]):
         start = scene_start
@@ -63,8 +76,9 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
         # FFmpeg's scdet detector uses its documented default threshold.
         _, log = await ffmpeg(identifier, "-i", source, "-an", "-vf", "scdet,metadata=print", "-f", "null", "-")
         cuts = [float(t) for t in re.findall(r"lavfi\.scd\.time=([0-9.]+)", log)]
-        parts = plan_segments(info["duration"], seconds, cuts)
-        return {"metadata": {**info, "parts": parts, "overlap": 0.5, "identityChecked": False}}
+        preserve_scenes = options.get("preserveScenes", True)
+        parts = plan_segments(info["duration"], seconds, cuts, preserve_scenes=preserve_scenes)
+        return {"metadata": {**info, "parts": parts, "overlap": 0.5, "preserveScenes": preserve_scenes, "identityChecked": False}}
     if operation == "replacement-extract":
         info = await probe_video(identifier, source)
         start, end, seconds = (float(options[k]) for k in ("inputStart", "inputEnd", "seconds"))

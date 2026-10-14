@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel
 import remote_subtitles
 from replacement import probe as probe_replacement_video, process as process_replacement, validate_timeline
-from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments
+from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
 
 
 ROOT = Path(os.environ.get("VIDEO_WORKER_DATA", Path(__file__).parent / "data")).resolve()
@@ -335,7 +335,7 @@ async def transcribe(identifier: str, video: Path, work: Path):
     audio = work / "transcription.wav"
     output = work / "transcription.json"
     try:
-        await ffmpeg(identifier, "-hide_banner", "-loglevel", "error", "-i", video, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", audio)
+        await ffmpeg(identifier, "-hide_banner", "-loglevel", "error", "-i", video, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio)
     except RuntimeError as error:
         print(str(error), file=sys.stderr, flush=True)
         if "matches no streams" in str(error):
@@ -464,8 +464,9 @@ async def repair_frames(identifier, source, work, options):
     validate_regions(regions)
     ocr = None
     if not regions:
-        from paddleocr import PaddleOCR
-        ocr = await asyncio.to_thread(PaddleOCR, use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)
+        ocr_file = work / "ocr.jsonl"
+        await command(identifier, [sys.executable, str(Path(__file__).parent / "adapters" / "ocr.py"), "--frames", str(frames), "--output", str(ocr_file)])
+        ocr = {entry["file"]: entry["items"] for entry in (json.loads(line) for line in ocr_file.read_text(encoding="utf-8").splitlines())}
     captions = options.get("detectedSubtitles", [])
     detected_text = False
     matched_text = False
@@ -473,8 +474,8 @@ async def repair_frames(identifier, source, work, options):
     previous_runs = {}
     for frame_index, image_path in enumerate(images):
         frame_items, next_runs = [], {}
-        if ocr:
-            predictions = await asyncio.to_thread(lambda: list(ocr.predict(str(image_path))))
+        if ocr is not None:
+            predictions = ocr[image_path.name]
             for prediction in predictions:
                 polygons, texts = prediction["rec_polys"], prediction.get("rec_texts", [])
                 normalized = [normalize_text(text) for text in texts]
@@ -500,6 +501,12 @@ async def repair_frames(identifier, source, work, options):
         previous_runs = next_runs
         detections.append(frame_items)
         await asyncio.sleep(0)
+    if subtitle_segments is not None:
+        lines = {(min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
+                 for items in detections for points, text, run in items if run["matched"]}
+        for frame_index, items in enumerate(detections):
+            if any(normalize_text(text) and not run["matched"] and overlaps_caption_line(points, lines) for points, text, run in items):
+                raise ValueError(f"约 {frame_index / fps:.2f} 秒的字幕区域仍有无法确认的文字（可能为动态花字或识别错误），已暂停且未提交该段收费生成，请平台核查")
     caption_run = None
     for frame_index, image_path in enumerate(images):
         matched_lines = sorted([(points, text) for points, text, run in detections[frame_index] if run["matched"]], key=lambda item: (min(p[1] for p in item[0]), min(p[0] for p in item[0])))
@@ -526,6 +533,9 @@ async def repair_frames(identifier, source, work, options):
                             continue
                         matched_text = True
                     painter.polygon(points, fill=255)
+                    # Include glyph outlines/shadows beyond the OCR polygon.
+                    stroke = max(1, round((max(p[1] for p in points) - min(p[1] for p in points)) * 0.1))
+                    painter.line(points + [points[0]], fill=255, width=stroke * 2 + 1, joint="curve")
             mask.save(frames / f"{image_path.stem}_mask.png")
         await asyncio.sleep(0)
     if subtitle_segments is not None:
@@ -536,6 +546,18 @@ async def repair_frames(identifier, source, work, options):
     repaired = await run_engine(identifier, "lama", {"frames": str(frames), "input": str(source)}, work)
     if len(repaired) != len(images):
         raise RuntimeError("修复帧数量与原视频不一致，已停止导出")
+    if subtitle_segments is not None:
+        # Detect readable original captions remaining after repair before any model charge.
+        checked = work / "repaired-ocr.jsonl"
+        await command(identifier, [sys.executable, str(Path(__file__).parent / "adapters" / "ocr.py"), "--frames", str(repaired[0].parent), "--output", str(checked)])
+        for frame_index, line in enumerate(checked.read_text(encoding="utf-8").splitlines()):
+            remaining = json.loads(line)
+            with Image.open(frames / f"{images[frame_index].stem}_mask.png") as mask:
+                for item in remaining["items"]:
+                    for text, polygon in zip(item["rec_texts"], item["rec_polys"]):
+                        x, y = (sum(point[axis] for point in polygon) / len(polygon) for axis in (0, 1))
+                        if normalize_text(text) and mask.getpixel((min(mask.width-1, max(0, int(x))), min(mask.height-1, max(0, int(y))))) > 0:
+                            raise ValueError("字幕清理区域仍检测到文字，已停止收费生成，请管理员检查修复效果")
     return await assemble_frames(identifier, repaired, source, work, info["fps"])
 
 

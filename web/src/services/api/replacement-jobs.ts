@@ -11,8 +11,12 @@ export type ReplacementJob = {
     credits: number;
     planned: boolean;
     result?: string;
+    source: string;
+    subtitles: boolean;
+    reviewed?: boolean;
+    previousResults?: string[];
     createdAt: string;
-    parts: { start: number; end: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; credits: number }[] | null;
+    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; credits: number }[] | null;
 };
 
 async function request<T>(path: string, input?: unknown, signal?: AbortSignal): Promise<T> {
@@ -38,3 +42,4 @@ export const pauseReplacementJob = (id: string) => request<{ message: string }>(
 export const quoteReplacementPart = (id: string, part: number) => request<{ credits: number }>(`/${id}/quote-part`, { part });
 export const repriceReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/reprice`, {});
 export const retryReplacementPart = (job: ReplacementJob, part: number, expectedCredits: number) => request<ReplacementJob>(`/${job.id}/retry`, { part, expectedCredits });
+export const reviewReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/review`, {});

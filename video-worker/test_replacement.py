@@ -4,6 +4,23 @@ from replacement import plan_segments, validate_timeline
 
 
 class ReplacementTimelineTests(unittest.TestCase):
+    def test_wan_short_video_keeps_one_part_despite_detected_cuts(self):
+        cuts = [0.6, 2.866667, 3.233333, 4.933333, 6.6, 8.166667, 9.633333, 10.933333, 12.766667]
+        parts = plan_segments(15, 15, cuts, preserve_scenes=False)
+        self.assertEqual(len(parts), 1)
+        self.assertEqual((parts[0]["inputStart"], parts[0]["inputEnd"]), (0, 15))
+        self.assertEqual(len(plan_segments(15, 15, cuts)), 10)
+
+    def test_packing_keeps_long_video_coverage_and_input_limits(self):
+        for cuts in ([1, 2, 9, 16, 17, 30, 31], [1, 40, 41], []):
+            parts = plan_segments(180, 15, cuts, preserve_scenes=False)
+            self.assertEqual(parts[0]["start"], 0)
+            self.assertEqual(parts[-1]["end"], 180)
+            for part in parts:
+                self.assertLessEqual(part["inputEnd"] - part["inputStart"], 15)
+            for left, right in zip(parts, parts[1:]):
+                self.assertEqual(left["end"], right["start"])
+
     def test_three_minutes_keeps_every_interval_and_overlap_in_api_limit(self):
         parts = plan_segments(180, 10)
         self.assertEqual(parts[0]["start"], 0)

@@ -150,6 +150,9 @@ export type VideoDraft = {
     addSubtitles: boolean;
     /** 内容替换时，自动清理原硬字幕并按音频重新合成字幕。 */
     replaceSubtitles: boolean;
+    replacementJobId?: string;
+    replacementResultKey?: string;
+    replacementSource?: UploadedFile;
     activeRecord?: string;
     digitalRevision?: number;
     upscaleOutputInput?: UpscaleInput;
@@ -275,5 +278,5 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     cutSilence: false,
     addSubtitles: true,
     // Subtitle repair is opt-in until OCR + a temporal inpainting engine are ready.
-    replaceSubtitles: false,
+    replaceSubtitles: true,
 });

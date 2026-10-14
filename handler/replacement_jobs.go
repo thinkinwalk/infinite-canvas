@@ -47,31 +47,33 @@ type replacementPart struct {
 	Credits       int              `json:"credits"`
 }
 type replacementJob struct {
-	ID            string            `json:"id"`
-	UserID        string            `json:"userId"`
-	Source        string            `json:"source"`
-	Image         string            `json:"image"`
-	Model         string            `json:"model"`
-	ChannelID     int               `json:"channelId"`
-	Resolution    string            `json:"resolution"`
-	Seconds       string            `json:"seconds"`
-	Prompt        string            `json:"prompt"`
-	Subtitles     bool              `json:"subtitles"`
-	SubtitleSize  float64           `json:"subtitleSize"`
-	SubtitleColor string            `json:"subtitleColor"`
-	Status        string            `json:"status"`
-	Step          string            `json:"step"`
-	Error         string            `json:"error,omitempty"`
-	Credits       int               `json:"credits"`
-	Parts         []replacementPart `json:"parts"`
-	Planned       bool              `json:"planned"`
-	AspectRatio   string            `json:"aspectRatio"`
-	WorkerStep    string            `json:"workerStep,omitempty"`
-	WorkerID      string            `json:"workerId,omitempty"`
-	Assembled     string            `json:"assembled,omitempty"`
-	Result        string            `json:"result,omitempty"`
-	CreatedAt     string            `json:"createdAt"`
-	UpdatedAt     string            `json:"updatedAt"`
+	ID              string            `json:"id"`
+	UserID          string            `json:"userId"`
+	Source          string            `json:"source"`
+	Image           string            `json:"image"`
+	Model           string            `json:"model"`
+	ChannelID       int               `json:"channelId"`
+	Resolution      string            `json:"resolution"`
+	Seconds         string            `json:"seconds"`
+	Prompt          string            `json:"prompt"`
+	Subtitles       bool              `json:"subtitles"`
+	SubtitleSize    float64           `json:"subtitleSize"`
+	SubtitleColor   string            `json:"subtitleColor"`
+	Status          string            `json:"status"`
+	Step            string            `json:"step"`
+	Error           string            `json:"error,omitempty"`
+	Credits         int               `json:"credits"`
+	Parts           []replacementPart `json:"parts"`
+	Planned         bool              `json:"planned"`
+	AspectRatio     string            `json:"aspectRatio"`
+	WorkerStep      string            `json:"workerStep,omitempty"`
+	WorkerID        string            `json:"workerId,omitempty"`
+	Assembled       string            `json:"assembled,omitempty"`
+	Result          string            `json:"result,omitempty"`
+	PreviousResults []string          `json:"previousResults,omitempty"`
+	Reviewed        bool              `json:"reviewed"`
+	CreatedAt       string            `json:"createdAt"`
+	UpdatedAt       string            `json:"updatedAt"`
 }
 type replacementControl struct {
 	running atomic.Bool
@@ -362,6 +364,25 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		OK(w, map[string]any{"message": "将在当前步骤结束并保存结果后暂停"})
 		return
 	}
+	if action == "review" {
+		if !c.running.CompareAndSwap(false, true) {
+			Fail(w, "请等待任务完成")
+			return
+		}
+		defer c.running.Store(false)
+		job, err = loadReplacement(id, user.ID)
+		if err != nil || job.Status != "completed" || job.Result == "" {
+			Fail(w, "任务尚未完成")
+			return
+		}
+		job.Reviewed = true
+		if err := saveReplacement(&job); err != nil {
+			Fail(w, "保存验收状态失败")
+			return
+		}
+		OK(w, job)
+		return
+	}
 	if action == "quote-part" {
 		var input struct {
 			Part int `json:"part"`
@@ -458,6 +479,10 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		part.PreviousTasks = append(part.PreviousTasks, part.TaskID)
 		part.Credits, part.TaskID, part.Generated, part.Submitted, part.Validated = price, "", "", false, false
 		job.Credits += price
+		if job.Result != "" {
+			job.PreviousResults = append(job.PreviousResults, job.Result)
+		}
+		job.Reviewed = false
 		job.Assembled, job.Result, job.WorkerStep, job.WorkerID = "", "", "", ""
 		job.Status, job.Error, job.Step = "ready", "", "已保留其他片段，请确认预算后处理重做片段"
 		if err := saveReplacement(&job); err != nil {
@@ -610,7 +635,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 	ctx = context.WithValue(ctx, replacementChannelKey{}, job.ChannelID)
 	if planning {
 		seconds, _ := strconv.ParseFloat(job.Seconds, 64)
-		result, err := replacementWorkerStep(ctx, job, "plan", "replacement-plan", map[string]any{"video": job.Source}, map[string]any{"seconds": seconds})
+		result, err := replacementWorkerStep(ctx, job, "plan", "replacement-plan", map[string]any{"video": job.Source}, map[string]any{"seconds": seconds, "preserveScenes": !strings.EqualFold(job.Model, "wan30-720p")})
 		if err != nil {
 			return err
 		}

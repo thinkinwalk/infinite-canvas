@@ -100,6 +100,16 @@ $env:COSYVOICE_SAMPLE_RATE = '24000'
 
 ## 本地记录与任务恢复
 
+### CPU 字幕适配器
+
+`adapters/ocr.py` 在独立进程运行 PaddleOCR，并关闭会触发当前 CPU Paddle PIR 错误的 MKLDNN；OCR 退出后再加载 LaMa，减少同时驻留的模型内存。`adapters/transcribe.py` 接收 FFmpeg 输出的单声道 16 kHz PCM16 WAV，直接传入波形，避免 PyAV `metadata_errors` 版本不兼容。
+
+`engines.lama.example.json` 使用 `simple-lama-inpainting==0.1.2` 的 TorchScript 适配器。已验证独立 venv 中的 `torch==2.5.1+cpu` / `torchvision==0.20.1+cpu`；权重 `big-lama.pt` 来自该适配器的 v0.1.0 release。安装在持久目录 `/data/engines/lama`，引擎配置通过 `VIDEO_ENGINE_CONFIG` 指定。模型、虚拟环境和 Paddle 模型缓存都必须持久化，不能仅保存在容器层。LaMa 只处理字幕周围的裁剪区域，只写回掩膜内像素；仍需评估运动闪烁。
+
+自动字幕默认开启且不会因缺少能力静默关闭；已保存草稿保留自己的开关设置。文字与语音匹配允许较长连续文字锚点，最终重排使用 OCR 文字。发现同一字幕区域有未匹配的疑似文字，或修复后该区域仍识别到文字，暂停当前片段且不提交该段收费生成。此检查不是完整的字幕语义验收：花字、动态背景、漏检、招牌误匹配和模型重新生成文字仍需人工验收。正式结果采用统一样式，不保留原花字动画。
+
+Wan30 在所选输入时长内合并短镜头；其他模型继续逐镜头分段。完成结果会自动载入当前任务的作品区，支持人工验收标记和选择已完成片段重做，保留重做前整片；人工验收不等于自动人脸识别。
+
 - 前端素材、草稿、阶段结果与任务记录存储在当前浏览器的 localforage；「保存素材」和「加入新画布」也保存在当前浏览器，没有云同步。
 - 工作者服务的上传、结果及 JSON 任务清单存放在 `data/media` 和 `data/jobs`。
 - 页面刷新后可从任务记录恢复已提交任务的查询。更改处理服务地址后，旧任务不会自动使用当前令牌请求旧地址。

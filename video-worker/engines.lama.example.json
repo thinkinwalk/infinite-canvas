@@ -1,0 +1,7 @@
+{
+  "lama": {
+    "required_paths": ["/data/engines/lama/venv/bin/python", "/data/engines/lama/big-lama.pt"],
+    "command": ["/data/engines/lama/venv/bin/python", "{adapter_dir}/lama.py", "--frames", "{frames}", "--output", "{output_dir}", "--model", "/data/engines/lama/big-lama.pt"],
+    "output_glob": "*.png"
+  }
+}

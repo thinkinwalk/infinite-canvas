@@ -66,7 +66,6 @@ export default function ContentReplaceWorkspace() {
     const [drawRegions, setDrawRegions] = useState(false);
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
-    const subtitleManuallyEnabled = useRef(false);
     const [wholeVideo, setWholeVideo] = useState(true);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
@@ -95,7 +94,7 @@ export default function ContentReplaceWorkspace() {
     currentInputKey.current = inputKey;
     const currentQuote = quote?.key === inputKey ? quote.value : null;
     const result = historyPreview?.result || d.final || d.edited || d.video;
-    const previewSource = historyPreview ? historyPreview.source : reference;
+    const previewSource = historyPreview ? historyPreview.source : d.replacementSource || reference;
     const surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
     const muted = { color: token.colorTextSecondary };
 
@@ -153,8 +152,6 @@ export default function ContentReplaceWorkspace() {
             .then((value) => {
                 if (!disposed) {
                     setCapabilities(value);
-                    const subtitleReady = ["replacement-prepare", "replacement-finish"].every((name) => value.some((item) => item.name === name && item.available));
-                    if (d.replaceSubtitles && !subtitleReady && !subtitleManuallyEnabled.current) wb.edit({ replaceSubtitles: false });
                 }
             })
             .catch((error) => {
@@ -177,6 +174,9 @@ export default function ContentReplaceWorkspace() {
         return () => quoteController.current?.abort();
     }, [inputKey, platformToken]);
     useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
+    useEffect(() => {
+        if (d.replacementResultKey) { setHistoryPreview(null); setTab("current"); }
+    }, [d.replacementResultKey, d.final?.storageKey]);
     useEffect(() => setSourcePreviewError(false), [reference?.storageKey, reference?.url]);
     useEffect(() => {
         if (!platformToken || active?.status !== "failed" || !active.replicateTask || active.replicateBilling) return;
@@ -492,10 +492,10 @@ export default function ContentReplaceWorkspace() {
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">
-                                    <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => { if (replaceSubtitles) subtitleManuallyEnabled.current = true; wb.edit({ replaceSubtitles }, "video"); }} />
+                                    <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
                                     <span className="text-sm">自动清理并重做口播字幕</span>
                                 </div>
-                                <p className="m-0 text-xs" style={muted}>自动识别并清理口播硬字幕，替换后按原音轨时间重做字幕。若处理服务或修复引擎未就绪，处理将暂停在收费生成之前。关闭此项会将原字幕一起交给生成模型，不能保证字幕不被改动。</p>
+                                <p className="m-0 text-xs" style={muted}>自动清理口播硬字幕，按识别到的原字幕文字和时间重做统一样式字幕，不保留原花字特效。服务不可用或清理校验失败时暂停，不会自动关闭此项。关闭后原字幕会交给生成模型，可能被重画。</p>
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>

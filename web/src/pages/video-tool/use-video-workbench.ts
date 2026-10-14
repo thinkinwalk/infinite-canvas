@@ -110,6 +110,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             const media = await Promise.all(current.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
             const frames = await Promise.all(current.frames.map(restoreWorkbenchFile));
             const outputs: Partial<VideoDraft> = {};
+            if (current.replacementSource) outputs.replacementSource = await restoreWorkbenchFile(current.replacementSource);
             for (const key of ["speech", "voicePreview", "video", "edited", "final", "cover"] as const) {
                 const file = current[key];
                 if (file) outputs[key] = await restoreWorkbenchFile(file);
@@ -125,7 +126,7 @@ export function useVideoWorkbench(tool: VideoTool) {
 
     const edit = (value: Partial<VideoDraft>, invalidate?: Invalidation) => {
         if (store().busyTools[tool]) return;
-        if (tool === "content-replace") value = { ...value, activeRecord: undefined };
+        if (tool === "content-replace") value = { ...value, activeRecord: undefined, ...(invalidate ? { replacementJobId: undefined, replacementResultKey: undefined, replacementSource: undefined } : {}) };
         if (digital && invalidate) value = { ...value, digitalRevision: (read(tool).digitalRevision || 0) + 1 };
         if (digital && ["brief", "learning", "preview"].includes(invalidate || "")) {
             patch({ ...(invalidate === "learning" ? { transcript: "", digitalTranscriptSource: "" } : {}), ...(invalidate === "preview" ? { voicePreview: null } : {}), ...value });
@@ -462,7 +463,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             else if (existing.workerJob) value = await applyWorkerResult("video", await localStep("replace", {}), ctx.worker);
             else {
                 const prepared = await restoreWorkbenchFile(state.prepared!);
-                value = await execute("video", ctx, { ...d, media: d.media.map((m) => m.id === source.id ? { ...m, ...prepared } : m) });
+                value = await execute("video", ctx, { ...d, media: d.media.map((m) => m === source ? { ...m, ...prepared } : m) });
             }
             if (!value.video) throw new Error("内容替换未返回视频");
             save({ generated: value.video, phase: "finish" }, true);

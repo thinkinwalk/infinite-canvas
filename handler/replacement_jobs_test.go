@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,12 +58,51 @@ func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testin
 	if job.Status != "ready" || job.Credits != 588 || job.Parts[0].Seconds != 4 || job.Parts[1].Seconds != 10 || job.AspectRatio != "16:9" {
 		t.Fatalf("wrong plan or channel quote: %+v", job)
 	}
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		var request struct {
+			Options map[string]any `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Options["preserveScenes"] != false {
+			t.Fatalf("Wan30 should pack short scenes: %+v, %v", request, err)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","result":{"metadata":{"size":[720,1280],"parts":[{"start":0,"end":15,"inputStart":0,"inputEnd":15,"seconds":15}]}}}`))}, nil
+	})}
+	whole := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "source", Model: "wan30-720p", ChannelID: 711, Seconds: "15", Resolution: "720"}
+	if err := executeReplacement(ctx, &whole, true); err != nil || len(whole.Parts) != 1 || whole.Credits != 630 {
+		t.Fatalf("15-second whole quote should be 630: %+v, %v", whole, err)
+	}
 	settings.Private.Channels[0].Enabled = false
 	if _, err := repository.SaveSettings(settings, "test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := quoteReplacementPart(ctx, &job, &job.Parts[0]); err == nil {
 		t.Fatal("disabled original channel silently switched")
+	}
+}
+
+func TestReplacementReviewRequiresOwnedCompletedResult(t *testing.T) {
+	replacementTestStorage(t)
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Status: "paused"}
+	if err := saveReplacement(&job); err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range []string{"other", "owner"} {
+		request := httptest.NewRequest(http.MethodPost, "/review", nil).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: user}))
+		ReplacementJobAction(httptest.NewRecorder(), request, job.ID, "review")
+		saved, _ := loadReplacement(job.ID, "owner")
+		if saved.Reviewed {
+			t.Fatal("incomplete/unauthorized job marked reviewed")
+		}
+	}
+	job.Status, job.Result = "completed", "result.mp4"
+	if err := saveReplacement(&job); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/review", nil).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: "owner"}))
+	ReplacementJobAction(httptest.NewRecorder(), request, job.ID, "review")
+	saved, _ := loadReplacement(job.ID, "owner")
+	if !saved.Reviewed || saved.Result != job.Result {
+		t.Fatal("completed result review was not persisted")
 	}
 }
 
