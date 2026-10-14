@@ -148,6 +148,8 @@ export type VideoDraft = {
     highlightColor: string;
     cutSilence: boolean;
     addSubtitles: boolean;
+    /** 内容替换时，自动清理原硬字幕并按音频重新合成字幕。 */
+    replaceSubtitles: boolean;
     activeRecord?: string;
     digitalRevision?: number;
     upscaleOutputInput?: UpscaleInput;
@@ -194,7 +196,18 @@ export type VideoRecord = {
     text?: string;
     step?: string;
     draftPatch?: Partial<VideoDraft>;
-    replacementInput?: Pick<VideoDraft, "replacement" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media">;
+    replacementInput?: Pick<VideoDraft, "replacement" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementPipeline?: {
+        phase: "prepare" | "generate" | "finish";
+        workerUrl: string;
+        model: string;
+        channelMode: AiConfig["channelMode"];
+        baseUrl: string;
+        generation: Pick<AiConfig, "size" | "vquality" | "videoSeconds" | "videoInputMode" | "videoGenerateAudio">;
+        prepared?: UploadedFile;
+        generated?: UploadedFile;
+        subtitles?: SubtitleSegment[];
+    };
     storeExploreInput?: StoreExploreInput;
     viralInput?: ViralRecreateInput;
     digitalHumanInput?: DigitalHumanInput;
@@ -261,4 +274,5 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     highlightColor: "#ffe066",
     cutSilence: false,
     addSubtitles: true,
+    replaceSubtitles: true,
 });

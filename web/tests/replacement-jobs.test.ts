@@ -1,0 +1,43 @@
+import { afterEach, expect, test } from "bun:test";
+
+const memory = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+    getItem: (key: string) => memory.get(key) ?? null,
+    setItem: (key: string, value: string) => memory.set(key, value),
+    removeItem: (key: string) => memory.delete(key),
+} });
+const { useUserStore } = await import("../src/stores/use-user-store");
+const { createReplacementJob, startReplacementJob, retryReplacementPart, listReplacementJobs } = await import("../src/services/api/replacement-jobs");
+const originalFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = originalFetch; useUserStore.setState({ token: "" }); });
+
+test("planning never starts paid execution and failed requests are not retried", async () => {
+    useUserStore.setState({ token: "test" });
+    const paths: string[] = [];
+    globalThis.fetch = async (url) => { paths.push(String(url)); throw new Error("connection lost"); };
+    await expect(createReplacementJob({ id: "fixed", source: "video", image: "image", model: "wan30-720p", resolution: "720", seconds: "15", prompt: "", subtitles: true, subtitleSize: 42, subtitleColor: "#ffffff" })).rejects.toThrow("connection lost");
+    expect(paths).toEqual(["/api/v1/replacement-jobs"]);
+});
+
+test("start and manual retry send their separately confirmed budgets", async () => {
+    useUserStore.setState({ token: "test" });
+    const requests: unknown[] = [];
+    globalThis.fetch = async (url, options) => {
+        requests.push([String(url), JSON.parse(String(options?.body))]);
+        return new Response(JSON.stringify({ code: 0, data: {} }));
+    };
+    const job = { id: "saved-job", credits: 588 } as Parameters<typeof startReplacementJob>[0];
+    await startReplacementJob(job);
+    await retryReplacementPart(job, 1, 210);
+    expect(requests).toEqual([
+        ["/api/v1/replacement-jobs/saved-job/start", { expectedCredits: 588 }],
+        ["/api/v1/replacement-jobs/saved-job/retry", { part: 1, expectedCredits: 210 }],
+    ]);
+});
+
+test("logged out clients cannot access server jobs", async () => {
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw new Error("unexpected network"); };
+    await expect(listReplacementJobs()).rejects.toThrow("请登录");
+    expect(calls).toBe(0);
+});

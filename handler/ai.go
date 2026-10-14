@@ -146,7 +146,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		proxyAIImageRequest(w, r, path, body, contentType, modelName, user, credits)
 		return
 	}
-	channel, err := service.SelectModelChannelForGroup(modelName, user.Group)
+	channel, err := replacementModelChannel(r.Context(), modelName, user.Group, false)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		FailError(w, err)

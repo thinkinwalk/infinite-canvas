@@ -20,6 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from PIL import Image, ImageDraw
 from pydantic import BaseModel
+import remote_subtitles
+from replacement import probe as probe_replacement_video, process as process_replacement, validate_timeline
+from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments
 
 
 ROOT = Path(os.environ.get("VIDEO_WORKER_DATA", Path(__file__).parent / "data")).resolve()
@@ -32,6 +35,7 @@ TOKEN = os.environ.get("VIDEO_WORKER_TOKEN", "")
 ORIGINS = os.environ.get("VIDEO_WORKER_ORIGINS", "http://127.0.0.1:8081,http://localhost:8081,http://127.0.0.1:3000,http://localhost:3000").split(",")
 ENGINE_FILE = Path(os.environ.get("VIDEO_ENGINE_CONFIG", Path(__file__).parent / "engines.json"))
 FFMPEG = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe()
+FFPROBE = os.environ.get("FFPROBE_PATH") or shutil.which("ffprobe")
 TASKS: dict[str, asyncio.Task] = {}
 PROCESSES: dict[str, asyncio.subprocess.Process] = {}
 
@@ -52,6 +56,7 @@ app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["GET", 
 
 class JobRequest(BaseModel):
     operation: str
+    id: str | None = None
     inputs: dict[str, str | list[str]] = {}
     options: dict = {}
 
@@ -87,6 +92,7 @@ def capabilities():
     ffmpeg = Path(FFMPEG).exists()
     model_path = os.environ.get("WHISPER_MODEL", "")
     whisper = bool(importlib.util.find_spec("faster_whisper") and model_path and Path(model_path, "model.bin").is_file())
+    ocr = bool(importlib.util.find_spec("paddleocr") and importlib.util.find_spec("paddle"))
     return [
         {"name": "frames", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "compose", "available": ffmpeg, "reason": "需要 FFmpeg"},
@@ -99,13 +105,27 @@ def capabilities():
         {"name": "replace-person", "available": engine_ready("wan-animate"), "reason": "需要配置 Wan-Animate 引擎及权重"},
         {"name": "replace-product", "available": engine_ready("vace"), "reason": "需要配置 VACE 视频编辑引擎及权重"},
         {"name": "voice-clone", "available": bool(os.environ.get("COSYVOICE_URL") and os.environ.get("COSYVOICE_SAMPLE_RATE")), "reason": "需要部署 CosyVoice HTTP 服务并配置实际输出采样率"},
-        {"name": "ocr", "available": bool(importlib.util.find_spec("paddleocr")), "reason": "需要部署 PaddleOCR"},
+        {"name": "ocr", "available": ocr, "reason": "需要安装 PaddlePaddle 与 PaddleOCR"},
+        {"name": "replacement-prepare", "available": ffmpeg and bool(FFPROBE) and whisper and ocr and engine_ready("lama"), "reason": "自动字幕处理需要平台配置语音识别、PaddlePaddle、PaddleOCR 和字幕修复引擎"},
+        *[{"name": operation, "available": ffmpeg and bool(FFPROBE), "reason": "需要 FFmpeg 和 FFprobe"} for operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble")],
+        {"name": "replacement-finish", "available": ffmpeg and bool(FFPROBE), "reason": "自动字幕合成需要 FFmpeg"},
     ]
+
+
+async def available_capabilities():
+    items = capabilities()
+    if os.environ.get("GPU_WORKER_URL"):
+        ready = await remote_subtitles.available()
+        for item in items:
+            if item["name"] == "replacement-prepare":
+                item["available"] = ready and bool(FFPROBE)
+                item["reason"] = "云端字幕处理服务未就绪，请管理员检查 GPU_WORKER_URL、令牌和 OCR / 修复引擎"
+    return items
 
 
 @app.get("/health")
 async def health():
-    return {"capabilities": capabilities()}
+    return {"capabilities": await available_capabilities()}
 
 
 def media_path(identifier: str):
@@ -183,6 +203,13 @@ async def recover():
 
 def validate_options(request: JobRequest):
     try:
+        if request.operation in ("replacement-prepare", "replacement-finish"):
+            if not isinstance(request.inputs.get("video"), str):
+                raise ValueError("请提供需要处理的视频")
+            if request.operation == "replacement-finish":
+                if not isinstance(request.inputs.get("source"), str):
+                    raise ValueError("请提供保留音轨与时间轴的原视频")
+                validate_segments(request.options.get("subtitles", []))
         if request.operation == "trim":
             start, end = float(request.options["start"]), float(request.options["end"])
             if not math.isfinite(start) or not math.isfinite(end) or start < 0 or not 1 <= end - start <= 15:
@@ -208,7 +235,14 @@ def validate_options(request: JobRequest):
 
 @app.post("/jobs")
 async def create_job(request: JobRequest):
-    available = {item["name"]: item for item in capabilities()}
+    identifier = request.id or str(uuid.uuid4())
+    path = job_path(identifier)
+    if path.exists():
+        previous = read_job(identifier)
+        if previous["request"] != request.model_dump():
+            raise HTTPException(409, "任务编号已用于其他输入")
+        return {key: value for key, value in previous.items() if key != "request"}
+    available = {item["name"]: item for item in await available_capabilities()}
     capability = "replace-person" if request.operation == "replace" and request.options.get("replacement") == "person" else "replace-product" if request.operation == "replace" else request.operation
     if capability not in available or not available[capability]["available"]:
         raise HTTPException(422, available.get(capability, {}).get("reason", "不支持该处理操作"))
@@ -218,7 +252,12 @@ async def create_job(request: JobRequest):
     for value in request.inputs.values():
         for identifier in value if isinstance(value, list) else [value]:
             media_path(identifier)
-    identifier = str(uuid.uuid4())
+    # A second caller may have created the same job during the health await.
+    if path.exists():
+        previous = read_job(identifier)
+        if previous["request"] != request.model_dump():
+            raise HTTPException(409, "任务编号已用于其他输入")
+        return {key: value for key, value in previous.items() if key != "request"}
     data = {"id": identifier, "status": "running", "step": "准备素材", "request": request.model_dump()}
     atomic_json(job_path(identifier), data)
     TASKS[identifier] = asyncio.create_task(run_job(identifier, request))
@@ -284,6 +323,12 @@ def metadata(path: Path):
         return next(reader)
     finally:
         reader.close()
+
+
+async def probe_video(identifier, source):
+    if not FFPROBE:
+        raise ValueError("平台需要安装 FFprobe 后才能校验视频时间轴")
+    return await probe_replacement_video(identifier, source, command, FFPROBE)
 
 
 async def transcribe(identifier: str, video: Path, work: Path):
@@ -401,15 +446,73 @@ async def repair_frames(identifier, source, work, options):
     info = await asyncio.to_thread(metadata, source)
     frames = work / "input-frames"
     frames.mkdir()
-    await ffmpeg(identifier, "-i", source, "-fps_mode", "passthrough", frames / "%08d.png")
+    subtitle_segments = options.get("subtitleSegments") if options.get("matchSpokenSubtitles") else None
+    fps = float(info.get("fps") or 0)
+    if subtitle_segments is not None:
+        validate_segments(subtitle_segments)
+        if not math.isfinite(fps) or fps <= 0:
+            raise ValueError("无法读取视频帧率，字幕预处理已停止")
+        # Sample VFR input on a fixed timeline; frame index / fps now refers to
+        # the actual sampling time, rather than assuming input frames are CFR.
+        await ffmpeg(identifier, "-i", source, "-vf", f"fps={fps}", "-fps_mode", "passthrough", frames / "%08d.png")
+    else:
+        await ffmpeg(identifier, "-i", source, "-fps_mode", "passthrough", frames / "%08d.png")
     images = sorted(frames.glob("*.png"))
+    if not images:
+        raise ValueError("原视频未能解码出画面")
     regions = options.get("regions", [])
     validate_regions(regions)
     ocr = None
     if not regions:
         from paddleocr import PaddleOCR
         ocr = await asyncio.to_thread(PaddleOCR, use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)
-    for image_path in images:
+    captions = options.get("detectedSubtitles", [])
+    detected_text = False
+    matched_text = False
+    detections = []
+    previous_runs = {}
+    for frame_index, image_path in enumerate(images):
+        frame_items, next_runs = [], {}
+        if ocr:
+            predictions = await asyncio.to_thread(lambda: list(ocr.predict(str(image_path))))
+            for prediction in predictions:
+                polygons, texts = prediction["rec_polys"], prediction.get("rec_texts", [])
+                normalized = [normalize_text(text) for text in texts]
+                matches = matched_ocr_indices(texts, subtitle_segments, frame_index / fps) if subtitle_segments is not None else range(len(polygons))
+                detected_text = detected_text or bool(len(texts))
+                for index, polygon in enumerate(polygons):
+                    points = [(float(point[0]), float(point[1])) for point in polygon]
+                    if not points:
+                        continue
+                    text = str(texts[index]) if index < len(texts) else ""
+                    key = normalized[index] if index < len(normalized) else ""
+                    unique = bool(key) and normalized.count(key) == 1
+                    old = previous_runs.get(key) if unique else None
+                    bounds = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
+                    # Same wording elsewhere in the frame must not inherit a subtitle match.
+                    intersects = old and min(old["bounds"][2], bounds[2]) > max(old["bounds"][0], bounds[0]) and min(old["bounds"][3], bounds[3]) > max(old["bounds"][1], bounds[1])
+                    run = old if intersects else {"matched": False}
+                    run["bounds"] = bounds
+                    run["matched"] = run["matched"] or index in matches
+                    if unique:
+                        next_runs[key] = run
+                    frame_items.append((points, text, run))
+        previous_runs = next_runs
+        detections.append(frame_items)
+        await asyncio.sleep(0)
+    caption_run = None
+    for frame_index, image_path in enumerate(images):
+        matched_lines = sorted([(points, text) for points, text, run in detections[frame_index] if run["matched"]], key=lambda item: (min(p[1] for p in item[0]), min(p[0] for p in item[0])))
+        caption_text = "\n".join(text for _, text in matched_lines)
+        if subtitle_segments is not None and caption_text:
+            start, end = frame_index / fps, min((frame_index + 1) / fps, float(info["duration"]))
+            if caption_run is not None and caption_run["text"] == caption_text and caption_run["end"] == start:
+                caption_run["end"] = end
+            elif end > start:
+                caption_run = {"start": start, "end": end, "text": caption_text}
+                captions.append(caption_run)
+        else:
+            caption_run = None
         with Image.open(image_path) as image:
             mask = Image.new("L", image.size)
             painter = ImageDraw.Draw(mask)
@@ -417,12 +520,19 @@ async def repair_frames(identifier, source, work, options):
                 for region in regions:
                     painter.rectangle((region["x"] * image.width, region["y"] * image.height, (region["x"] + region["width"]) * image.width, (region["y"] + region["height"]) * image.height), fill=255)
             else:
-                predictions = await asyncio.to_thread(lambda: list(ocr.predict(str(image_path))))
-                for prediction in predictions:
-                    for polygon in prediction["rec_polys"]:
-                        painter.polygon([(float(point[0]), float(point[1])) for point in polygon], fill=255)
+                for points, text, run in detections[frame_index]:
+                    if subtitle_segments is not None:
+                        if not run["matched"]:
+                            continue
+                        matched_text = True
+                    painter.polygon(points, fill=255)
             mask.save(frames / f"{image_path.stem}_mask.png")
         await asyncio.sleep(0)
+    if subtitle_segments is not None:
+        if detected_text and not matched_text:
+            raise ValueError("画面文字与口播未能可靠匹配，自动处理已停止，未提交收费替换；请管理员核对字幕检测结果和修复引擎。")
+        if not matched_text:
+            return source
     repaired = await run_engine(identifier, "lama", {"frames": str(frames), "input": str(source)}, work)
     if len(repaired) != len(images):
         raise RuntimeError("修复帧数量与原视频不一致，已停止导出")
@@ -447,7 +557,9 @@ async def run_job(identifier: str, request: JobRequest):
         inputs = {key: [media_path(item) for item in value] if isinstance(value, list) else media_path(value) for key, value in request.inputs.items()}
         operation = request.operation
         result = {}
-        if operation == "frames":
+        if operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble"):
+            result = await process_replacement(operation, identifier, inputs, options, work, ffmpeg=ffmpeg, probe_video=probe_video, publish=publish)
+        elif operation == "frames":
             source = inputs["video"]
             info = await asyncio.to_thread(metadata, source)
             if not info.get("duration"):
@@ -514,6 +626,35 @@ async def run_job(identifier: str, request: JobRequest):
         elif operation == "subtitle-remove":
             video = await repair_frames(identifier, inputs["video"], work, options)
             result = {"file": publish(video)}
+        elif operation == "replacement-prepare":
+            source = inputs["video"]
+            info = await probe_video(identifier, source)
+            if os.environ.get("GPU_WORKER_URL"):
+                video, captions = await remote_subtitles.prepare(source, work, lambda step: update_job(identifier, step=step))
+            else:
+                segments = await transcribe(identifier, source, work) if info["audio"] else []
+                captions = []
+                update_job(identifier, step="逐帧识别并比对口播与画面文字")
+                video = await repair_frames(identifier, source, work, {"matchSpokenSubtitles": True, "subtitleSegments": segments, "detectedSubtitles": captions})
+            validate_timeline(info, await probe_video(identifier, video))
+            result = {"file": publish(video), "segments": captions, "metadata": {"subtitleMethod": "speech-matched-ocr"}}
+        elif operation == "replacement-finish":
+            source, generated = inputs["source"], inputs["video"]
+            output_info = await probe_video(identifier, generated)
+            source_info = await probe_video(identifier, source)
+            validate_timeline(source_info, output_info)
+            if any(float(segment["end"]) > source_info["duration"] for segment in options.get("subtitles", [])):
+                raise ValueError("字幕超出原视频时间轴，已停止合成")
+            arguments = ["-i", generated, "-i", source, "-map", "0:v:0", "-map", "1:a?"]
+            if options.get("subtitles"):
+                subtitle = work / "captions.ass"
+                write_subtitles(subtitle, options["subtitles"], options, output_info["size"])
+                escaped = str(subtitle).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+                arguments.extend(["-vf", f"ass='{escaped}'"])
+            update_job(identifier, step="恢复原音轨并合成字幕")
+            output = work / "final.mp4"
+            await ffmpeg(identifier, *arguments, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", output)
+            result = {"file": publish(output), "segments": options.get("subtitles", []), "metadata": {"identityChecked": False, "timelineChecked": True}}
         elif operation == "upscale":
             source = inputs["video"]
             info = await asyncio.to_thread(metadata, source)

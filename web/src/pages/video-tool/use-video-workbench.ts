@@ -15,7 +15,8 @@ import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMater
 import { viralInput, viralMaterialLabels, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
-import { cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
+import { contentReplacementPrompt } from "./content-replace-prompt";
+import { readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -48,18 +49,18 @@ export const stageLabels: Record<string, string> = {
 };
 const controllers = new Map<VideoTool, AbortController>();
 const store = () => useVideoWorkbenchStore.getState();
-const read = (tool: VideoTool) => isTalkingVideoTool(tool) ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
+const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-replace" ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
 const imagesOf = (media: WorkbenchMedia[]): ReferenceImage[] => media.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name, type: m.mimeType, dataUrl: m.url, storageKey: m.storageKey }));
 const mediaOf = (media: WorkbenchMedia[], kind: "video" | "audio") =>
     media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs }));
-function replacementRequest(d: VideoDraft): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
+function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const image = d.media.find((m) => m.role === (d.replacement === "background" ? "background" : "model") && m.kind === "image");
     if (!video) throw new Error("请先上传原视频");
     if (!image) throw new Error("请先上传替换参考图片");
     if (d.replacement === "person") return { operation: "replace-person", fields: { resolution: d.replicateResolution.replace("p", ""), merge_audio: true }, materials: { video, character_image: image } };
     if (!d.instructions.trim()) throw new Error("请填写具体替换要求");
-    const prompt = `${d.instructions} Replace only the ${d.replacement} using the reference image. Preserve the remaining people, actions and camera movement.`;
+    const prompt = contentReplacementPrompt(d.replacement, d.instructions, cleanSubtitles);
     if (d.maskedEdit) {
         const mask = d.media.find((m) => m.role === "mask");
         if (!mask) throw new Error("请先上传编辑掩膜");
@@ -418,8 +419,63 @@ export function useVideoWorkbench(tool: VideoTool) {
         );
         return cloudResult(stage, task);
     };
-    const execute = async (stage: string, ctx: Context): Promise<Partial<VideoDraft>> => {
-        const d = read(tool);
+    const replacementPipeline = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
+        const record = () => store().records.find((r) => r.id === ctx.recordId)!;
+        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { phase: "prepare", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
+        const save = (value: Partial<NonNullable<VideoRecord["replacementPipeline"]>>, finishedStep = false) => {
+            state = { ...state, ...value };
+            store().patchRecord(ctx.recordId, { replacementPipeline: state, ...(finishedStep ? { workerJob: undefined } : {}) });
+        };
+        save({});
+        if (resolveWorkerUrl(ctx.worker) !== state.workerUrl) throw new Error("请连接原任务的字幕处理服务后继续");
+        const source = required(d.media.find((m) => m.role === "reference" && m.kind === "video"), "上传原视频");
+        const localStep = async (operation: string, inputs: Record<string, UploadedFile>, options: Record<string, unknown> = {}) => {
+            const pending = record().workerJob;
+            if (!pending) return workerJob(ctx, operation, inputs, options);
+            const current = await readWorkerJob(ctx.worker, pending.id, ctx.signal);
+            if (current.status === "failed" || current.status === "cancelled") {
+                store().patchRecord(ctx.recordId, { workerJob: undefined });
+                return workerJob(ctx, operation, inputs, options);
+            }
+            return waitForWorkerJob(ctx.worker, pending.id, ctx.signal, (job) => {
+                store().patchRecord(ctx.recordId, { step: job.step });
+                if (job.status === "failed" || job.status === "cancelled") store().patchRecord(ctx.recordId, { workerJob: undefined });
+            });
+        };
+        if (!state.prepared) {
+            const capabilities = await getWorkerCapabilities(ctx.worker);
+            for (const name of ["replacement-prepare", "replacement-finish"]) {
+                const capability = capabilities.find((item) => item.name === name);
+                if (!capability?.available) throw new Error(`${capability?.reason || "平台自动字幕处理尚未启用，请管理员更新处理服务"}；尚未提交收费替换`);
+            }
+            const prepared = await localStep("replacement-prepare", { video: source });
+            if (!prepared.result?.file) throw new Error("字幕预处理未返回视频");
+            save({ prepared: await storeWorkerResult(ctx.worker, prepared.result.file), subtitles: prepared.result.segments || [], phase: "generate" }, true);
+        }
+        ctx.signal.throwIfAborted();
+        if (!state.generated) {
+            if (d.route === "model" && (state.channelMode !== config.channelMode || state.model !== config.videoModel || state.baseUrl !== resolveModelRequestConfig(config, state.model).baseUrl)) throw new Error("请切换回原任务的视频模型渠道后继续");
+            const existing = record();
+            let value: Partial<VideoDraft>;
+            if (existing.replicateTask) value = await cloudResult("video", await waitForReplicateTask(existing.replicateTask.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: publicServiceText(job.error || job.status), replicateBilling: { credits: job.credits, refunded: job.refunded }, ...(["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })));
+            else if (existing.modelTask) value = { video: await storeGeneratedVideo(await waitForVideoGenerationTask(config, existing.modelTask, { signal: ctx.signal })) };
+            else if (existing.workerJob) value = await applyWorkerResult("video", await localStep("replace", {}), ctx.worker);
+            else {
+                const prepared = await restoreWorkbenchFile(state.prepared!);
+                value = await execute("video", ctx, { ...d, media: d.media.map((m) => m.id === source.id ? { ...m, ...prepared } : m) });
+            }
+            if (!value.video) throw new Error("内容替换未返回视频");
+            save({ generated: value.video, phase: "finish" }, true);
+            store().patchRecord(ctx.recordId, { result: value.video });
+        }
+        const generated = await restoreWorkbenchFile(state.generated!);
+        const finished = await localStep("replacement-finish", { video: generated, source }, { subtitles: state.subtitles || [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
+        if (!finished.result?.file) throw new Error("字幕合成未返回视频，已保留内容替换结果");
+        return { video: generated, final: await storeWorkerResult(ctx.worker, finished.result.file), subtitles: state.subtitles || [] };
+    };
+    const execute = async (stage: string, ctx: Context, replacementDraft?: VideoDraft): Promise<Partial<VideoDraft>> => {
+        const d = replacementDraft || read(tool);
+        if (tool === "content-replace" && stage === "video" && d.replaceSubtitles !== false && !replacementDraft) return replacementPipeline(ctx, d);
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
             const cfg = viralVideoConfig(d, config),
                 labels = viralMaterialLabels(d);
@@ -598,7 +654,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     return cloud(ctx, stage, operation, fields, materials);
                 }
                 if (tool === "content-replace") {
-                    const { operation, fields, materials } = replacementRequest(read(tool));
+                    const { operation, fields, materials } = replacementRequest(d, Boolean(replacementDraft));
                     return cloud(ctx, stage, operation, fields, materials);
                 }
                 if (!d.script.trim()) throw new Error("请先填写或生成视频脚本");
@@ -641,7 +697,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                             ...(d.replacement !== "person" && d.media.find((m) => m.role === "mask") ? { mask: d.media.find((m) => m.role === "mask")! } : {}),
                             ...(d.replacement !== "background" && d.media.find((m) => m.role === "background") ? { background: d.media.find((m) => m.role === "background")! } : {}),
                         },
-                        { replacement: d.replacement, prompt: d.instructions, regions: d.regions },
+                        { replacement: d.replacement, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions },
                     ),
                     ctx.worker,
                 );
@@ -653,16 +709,15 @@ export function useVideoWorkbench(tool: VideoTool) {
                     "上传替换图片",
                 );
             }
-            const prompt =
-                tool === "content-replace"
-                    ? `对参考视频进行${{ person: "人物", product: "商品", background: "背景" }[d.replacement]}替换。使用对应参考图，保持原视频动作、构图、节奏及其他内容。${d.instructions}`
-                    : `${d.script}\n实际素材信息：${d.instructions}\n${d.analysis}`;
+            const prompt = tool === "content-replace" ? contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)) : `${d.script}\n实际素材信息：${d.instructions}\n${d.analysis}`;
             const materials = d.media.filter((m) => (tool === "content-replace" ? m.role === "reference" || m.role === (d.replacement === "background" ? "background" : "model") : ["reference", "model", "background"].includes(m.role)));
-            const task = await createVideoGenerationTask(modelConfig("video"), prompt, imagesOf(materials), mediaOf(materials, "video"), mediaOf(materials, "audio"), { signal: ctx.signal });
+            const generation = tool === "content-replace" ? store().records.find((r) => r.id === ctx.recordId)?.replacementPipeline?.generation : undefined;
+            const requestConfig = modelConfig("video", generation);
+            const task = await createVideoGenerationTask(requestConfig, prompt, imagesOf(materials), mediaOf(materials, "video"), mediaOf(materials, "audio"), { signal: ctx.signal });
             store().patchRecord(ctx.recordId, { modelTask: task });
             return {
                 video: await storeGeneratedVideo(
-                    await waitForVideoGenerationTask(modelConfig("video"), task, {
+                    await waitForVideoGenerationTask(requestConfig, task, {
                         signal: ctx.signal,
                         onWaitState: (value) => store().patchRecord(ctx.recordId, { step: value === "background" ? "模型处理中，已转后台查询" : value === "query_interrupted" ? "查询被打断，可恢复查询" : "模型正在生成" }),
                     }),
@@ -761,6 +816,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                           replacement: d.replacement,
                           route: d.route,
                           instructions: d.instructions,
+                          replaceSubtitles: d.replaceSubtitles !== false,
+                          subtitleSize: d.subtitleSize,
+                          subtitleColor: d.subtitleColor,
                           maskedEdit: d.maskedEdit,
                           replicateResolution: d.replicateResolution,
                           regions: d.regions,
@@ -882,18 +940,19 @@ export function useVideoWorkbench(tool: VideoTool) {
             const stopped = signal.aborted;
             const detail = stopped ? "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
             const submitted = store().records.find((r) => r.id === id);
-            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
+            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.replacementPipeline?.prepared && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
             }
             store().patchRecord(id, {
                 status:
-                    stopped || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || (digital && submitted?.workerJob && submitted.status !== "failed") || (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
+                    stopped || (submitted?.replacementPipeline?.prepared && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || (digital && submitted?.workerJob && submitted.status !== "failed") || (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
                         ? "interrupted"
                         : "failed",
                 error: detail,
             });
+            if (submitted?.replacementPipeline?.prepared && error instanceof DOMException && error.name === "AbortError") throw error;
             throw new Error(detail);
         }
     };
@@ -1023,7 +1082,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                     patch({ ...clearAfter(record.stage), ...record.subtitleRemoveInput, media, activeRecord: record.id, video: null, final: null });
                 } else patch({ activeRecord: record.id });
                 let value: Partial<VideoDraft>;
-                if (record.replicateTask)
+                if (tool === "content-replace" && record.stage === "video" && record.replacementPipeline)
+                    value = await replacementPipeline({ signal, recordId: record.id, worker }, read(tool));
+                else if (record.replicateTask)
                     value = await cloudResult(
                         record.stage,
                         await waitForReplicateTask(record.replicateTask.id, signal, (job) =>
@@ -1049,7 +1110,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                           }
                         : {};
                 patch({ ...clearAfter(record.stage), ...value, ...mentions });
-                const result = value.video ?? value.final ?? value.edited ?? value.speech ?? value.cover ?? undefined;
+                const result = value.final ?? value.video ?? value.edited ?? value.speech ?? value.cover ?? undefined;
                 store().patchRecord(record.id, { status: "completed", draftPatch: value, result, step: "已完成" });
             } catch (error) {
                 store().patchRecord(record.id, {
@@ -1068,7 +1129,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     const stop = () => controllers.get(tool)?.abort();
     const cancel = async () => {
         const record = store().records.find((r) => r.id === read(tool).activeRecord);
-        if (record?.replicateTask) {
+        if (record?.replicateTask && !record.replacementPipeline?.generated) {
             try {
                 const task = await cancelReplicateTask(record.replicateTask.id);
                 stop();
@@ -1078,7 +1139,13 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             return;
         }
-        if (!record?.workerJob) return;
+        if (!record?.workerJob) {
+            if (record?.replacementPipeline?.generated) {
+                stop();
+                message.info("已停止等待后期处理，可恢复任务继续");
+            }
+            return;
+        }
         try {
             if (resolveWorkerUrl({ ...store().worker, url: record.workerJob.url }) !== resolveWorkerUrl(store().worker)) throw new Error("请先连接该任务所属服务");
             await cancelWorkerJob(store().worker, record.workerJob.id);

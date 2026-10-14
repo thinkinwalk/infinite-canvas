@@ -22,6 +22,8 @@ import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { MediaRole, SubtitleRegion, VideoDraft, VideoRecord, WorkerCapabilities } from "@/types/video-workbench";
 import { restoreWorkbenchFile, useVideoWorkbench } from "./use-video-workbench";
 
+import { ReplacementBatchPanel } from "./replacement-batch-panel";
+
 const replacementNames = { person: "人物", product: "商品", background: "背景" };
 const recordNames = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
 
@@ -64,6 +66,7 @@ export default function ContentReplaceWorkspace() {
     const [drawRegions, setDrawRegions] = useState(false);
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
+    const [wholeVideo, setWholeVideo] = useState(true);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
     const locked = busy || uploading || repairingSource || trimming;
@@ -73,12 +76,13 @@ export default function ContentReplaceWorkspace() {
     const operation: ReplicateOperation = person ? "replace-person" : d.maskedEdit ? "masked-edit" : "video-edit";
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
-    const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask));
+    const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask || r.replacementPipeline));
     const inputKey = JSON.stringify([
         d.route,
         d.replacement,
         d.maskedEdit,
         d.replicateResolution,
+        d.replaceSubtitles,
         cloud && person ? "" : d.instructions,
         d.media.map((m) => [m.id, m.storageKey, m.role, m.durationMs]),
         config.videoModel,
@@ -126,6 +130,7 @@ export default function ContentReplaceWorkspace() {
         const refresh = () => {
             setQuote(null);
             setModelRevision((v) => v + 1);
+            setServiceRevision((v) => v + 1);
         };
         const visible = () => {
             if (document.visibilityState === "visible") refresh();
@@ -138,7 +143,7 @@ export default function ContentReplaceWorkspace() {
         };
     }, []);
     useEffect(() => {
-        if (!wb.hydrated || d.route !== "worker") return;
+        if (!wb.hydrated || (d.route !== "worker" && !d.replaceSubtitles)) return;
         let disposed = false;
         setCapabilities(null);
         setServiceError("");
@@ -156,7 +161,7 @@ export default function ContentReplaceWorkspace() {
         return () => {
             disposed = true;
         };
-    }, [wb.hydrated, d.route, wb.worker.url, wb.worker.token, platformToken, serviceRevision]);
+    }, [wb.hydrated, d.route, d.replaceSubtitles, wb.worker.url, wb.worker.token, platformToken, serviceRevision]);
     useEffect(() => {
         quoteController.current?.abort();
         quoteController.current = null;
@@ -187,6 +192,10 @@ export default function ContentReplaceWorkspace() {
         const capability = capabilities?.find((c) => c.name === (person ? "replace-person" : "replace-product"));
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
     } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
+    const subtitleCapability = ["replacement-prepare", "replacement-finish"].map((name) => capabilities?.find((item) => item.name === name)).find((item) => !item?.available);
+    const subtitleUnavailable = d.replaceSubtitles
+        ? checking || !capabilities && !serviceError ? "正在检查自动字幕处理能力" : serviceError || (capabilities?.some((item) => item.name === "replacement-prepare" && item.available) && capabilities?.some((item) => item.name === "replacement-finish" && item.available) ? "" : subtitleCapability?.reason || "自动字幕处理尚未启用，请管理员更新处理服务")
+        : "";
     const missing = !wb.hydrated
         ? "正在恢复本浏览器草稿"
         : uploading
@@ -202,7 +211,7 @@ export default function ContentReplaceWorkspace() {
                   : cloud && !person && !d.maskedEdit && reference.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                     ? "当前视频编辑模型要求原视频为 2–10 秒，请先裁剪"
                     : "";
-    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || (pending ? "已有已提交任务，请先恢复查询结果" : "");
+    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
     const prepareQuote = async () => {
         if (blocked || busy || quoteController.current) return;
         const key = inputKey;
@@ -328,7 +337,7 @@ export default function ContentReplaceWorkspace() {
                         </div>
                         {media.kind === "image" ? <img src={media.url} alt={media.name} className="max-h-40 w-full rounded-lg object-contain" /> : <video key={media.url} src={media.url} controls preload="metadata" onError={() => { if (role === "reference") setSourcePreviewError(true); }} onLoadedMetadata={(event) => { if (role === "reference" && !event.currentTarget.videoWidth) setSourcePreviewError(true); }} className="max-h-44 w-full rounded-lg" />}
                         {uploading && <div role="status" className="flex items-center gap-2 text-xs" style={muted}><Spin size="small" />正在检查并处理素材</div>}
-                        {media.kind === "video" && d.route === "model" && isWan30(config.videoModel) && <VideoReferenceTrimmer media={media} disabled={locked} onBusyChange={setTrimming} onApply={(file) => wb.edit({ media: (useVideoWorkbenchStore.getState().drafts["content-replace"]?.media || []).map((item) => item.id === media.id ? { ...item, ...file } : item) }, "materials")} />}
+                        {media.kind === "video" && !(person && wholeVideo) && d.route === "model" && isWan30(config.videoModel) && <VideoReferenceTrimmer media={media} disabled={locked} onBusyChange={setTrimming} onApply={(file) => wb.edit({ media: (useVideoWorkbenchStore.getState().drafts["content-replace"]?.media || []).map((item) => item.id === media.id ? { ...item, ...file } : item) }, "materials")} />}
                     </div>
                 ) : <Upload.Dragger
                     {...uploadProps}
@@ -475,7 +484,15 @@ export default function ContentReplaceWorkspace() {
                             />
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
-                            {(!cloud || !person) && (
+                            <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
+                                <div className="flex items-center gap-2">
+                                    <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
+                                    <span className="text-sm">自动清理并重做口播字幕</span>
+                                </div>
+                                <p className="m-0 text-xs" style={muted}>自动识别并清理口播硬字幕，替换后按原音轨时间重做字幕。若处理服务或修复引擎未就绪，处理将暂停在收费生成之前。关闭此项会将原字幕一起交给生成模型，不能保证字幕不被改动。</p>
+                            </div>
+                            {cloud && person && !wholeVideo && <Alert showIcon type="info" title="Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。" />}
+                            {(!cloud || !person || wholeVideo) && (
                                 <label className="block">
                                     <div className="mb-2 font-medium">替换要求{!person ? "（必填）" : "（可选）"}</div>
                                     <Input.TextArea
@@ -491,7 +508,7 @@ export default function ContentReplaceWorkspace() {
                                 </label>
                             )}
                             {cloud && !person && d.maskedEdit && materialField("mask", "image/*,video/*", "编辑掩膜（必填）", "白色区域改动，黑色区域保留")}
-                            <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
+                            {!(person && wholeVideo) && <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center justify-between gap-2 text-sm">
                                     <span>{cloud ? REPLICATE_MODEL_NAMES[operation] : d.route === "worker" ? "增强处理服务" : "平台视频服务"}</span>
                                     {cloud && (
@@ -532,8 +549,10 @@ export default function ContentReplaceWorkspace() {
                                 <div className="text-xs" style={muted}>
                                     {publicServiceText(unavailable || (cloud ? model?.billingDescription || "平台按当前规格计费" : "按当前处理方式执行"))}
                                 </div>
-                            </div>
-                            <Collapse
+                            </div>}
+                            {person && <Segmented block aria-label="人物替换处理模式" value={wholeVideo ? "whole" : "single"} options={[{ value: "whole", label: "整片后台处理" }, { value: "single", label: "单片处理" }]} onChange={(v) => setWholeVideo(v === "whole")} />}
+                            {person && wholeVideo && <ReplacementBatchPanel />}
+                            {!(person && wholeVideo) && <Collapse
                                 size="small"
                                 items={[
                                     {
@@ -661,10 +680,10 @@ export default function ContentReplaceWorkspace() {
                                         ),
                                     },
                                 ]}
-                            />
+                            />}
                         </div>
                         <div className="hidden shrink-0 border-t p-4 lg:block" style={{ borderColor: token.colorBorderSecondary }}>
-                            {submit}
+                            {!(person && wholeVideo) && submit}
                         </div>
                     </section>
                     <section className="flex min-h-0 min-w-0 flex-col rounded-xl border lg:overflow-y-auto" style={surface} aria-label="作品区">
@@ -705,7 +724,7 @@ export default function ContentReplaceWorkspace() {
                                 <Alert
                                     type="info"
                                     showIcon
-                                    title="已有任务可恢复查询"
+                                    title="已有任务可继续处理"
                                     description={
                                         <Button
                                             size="small"
@@ -715,7 +734,7 @@ export default function ContentReplaceWorkspace() {
                                                 void wb.resume(pending);
                                             }}
                                         >
-                                            恢复任务结果
+                                            {pending.replacementPipeline ? "继续处理" : "恢复任务结果"}
                                         </Button>
                                     }
                                 />
@@ -842,7 +861,7 @@ export default function ContentReplaceWorkspace() {
                                                         </Button>
                                                     </>
                                                 )}
-                                                {record.status !== "completed" && (record.replicateTask || record.modelTask || record.workerJob) && (
+                                                {record.status !== "completed" && (record.replicateTask || record.modelTask || record.workerJob || record.replacementPipeline) && (
                                                     <Button
                                                         size="small"
                                                         disabled={locked}
@@ -852,7 +871,7 @@ export default function ContentReplaceWorkspace() {
                                                             void wb.resume(record);
                                                         }}
                                                     >
-                                                        恢复查询
+                                                        {record.replacementPipeline ? "继续处理" : "恢复查询"}
                                                     </Button>
                                                 )}
                                                 {administrator && record.replicateTask && record.status === "interrupted" && (
@@ -887,7 +906,7 @@ export default function ContentReplaceWorkspace() {
                 </div>
             </div>
             <div className="shrink-0 border-t p-3 lg:hidden" style={surface}>
-                {submit}
+                {!(person && wholeVideo) && submit}
             </div>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
             <Modal title="视频模型参数" open={settingsOpen} onCancel={() => setSettingsOpen(false)} footer={null}>

@@ -137,7 +137,7 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "算力点报价已变化，请重新确认")
 		return
 	}
-	channel, err := service.SelectReplicateChannel(spec.Model, user.Group)
+	channel, err := replacementModelChannel(r.Context(), spec.Model, user.Group, true)
 	if err != nil {
 		FailError(w, err)
 		return

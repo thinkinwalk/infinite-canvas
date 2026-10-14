@@ -96,7 +96,7 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "该 Replicate 模型尚未适配通用报价，请使用对应工具入口")
 		return
 	}
-	channel, err := service.SelectModelChannelForGroup(input.Model, user.Group)
+	channel, err := replacementModelChannel(r.Context(), input.Model, user.Group, false)
 	if err != nil {
 		FailError(w, err)
 		return

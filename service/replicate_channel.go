@@ -143,6 +143,11 @@ func replicateChannelsForGroup(channels []model.ModelChannel, modelName, group s
 }
 
 func SelectReplicateChannel(modelName, group string) (model.ModelChannel, error) {
+	return SelectReplicateChannelForID(modelName, group, 0)
+}
+
+// A durable workflow pins a channel while still checking current access and availability.
+func SelectReplicateChannelForID(modelName, group string, id int) (model.ModelChannel, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.ModelChannel{}, err
@@ -157,6 +162,14 @@ func SelectReplicateChannel(modelName, group string) (model.ModelChannel, error)
 			return model.ModelChannel{}, modelGroupAccessError(modelName, group, private.Groups, settings.Public.AdminContact)
 		}
 		return model.ModelChannel{}, safeMessageError{message: "没有可用的 Replicate 渠道，请管理员配置并启用该模型"}
+	}
+	if id != 0 {
+		for _, channel := range channels {
+			if channel.ID == id {
+				return channel, nil
+			}
+		}
+		return model.ModelChannel{}, safeMessageError{message: "整片任务原渠道已不可用，已暂停；不会切换渠道"}
 	}
 	return orderModelChannels(channels)[0], nil
 }
