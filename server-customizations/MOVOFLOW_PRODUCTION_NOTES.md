@@ -15,16 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.48
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.49
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
-## v0.19.49 source release — deployment blocked
+## v0.19.49 cloud masked replacement deployment
 
 - Source commit `89b9d808343892d7f2e0fea25988af0636056a58` and annotated tag `v0.19.49` are pushed. Experimental prerelease: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.49.
-- Tag push produced no new Actions run. Authenticated dispatch of the Docker, docs, plugin and Pages workflows returned HTTP 422, `Actions has been disabled for this repository.` Repository Actions permissions report `enabled: true`, workflows report `active`, and reapplying `enabled: true` was accepted but did not restore dispatch. The underlying account/service restriction has not been established.
-- No v0.19.49 image was deployed and no worker mounts were changed. Production remains v0.19.48; SAM 2/VACE pricing remains disabled and no paid prediction was created.
-- After Actions scheduling is restored, dispatch workflows against tag `v0.19.49`, verify the application image tag/revision, back up the database/data/Compose, update the worker source mounts while preserving existing dependencies and jobs, then deploy the application with the existing image helper. Verify `replacement-masked-composite`, internal/external health, database integrity and task preservation before a separately confirmed short paid sample.
+- The owner re-enabled inherited workflows on the fork's Actions homepage. This resolved HTTP 422 `Actions has been disabled for this repository` despite repository permissions already reporting `enabled: true` and individual workflows `active`. The existing tag was retained and workflows were dispatched against `v0.19.49`.
+- Application image workflow [38711448279](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38711448279), docs image workflow [38711454718](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38711454718), and official plugins workflow [38711460878](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38711460878) all succeeded. GitHub Pages was not dispatched for this deployment.
+- Deployed application image `ghcr.io/thinkinwalk/infinite-canvas:v0.19.49`, digest `sha256:d7f050cc3b47c858b51a582c165d134d6d2bdef248b7e9e43567e5d3ad2049d0`; container `/app/VERSION` and OCI revision match the release tag and source commit. Internal/external health return HTTP 200 `ok`. The production content-replacement page serves `/assets/index-igrN4Yn7.js` containing v0.19.49, the masked-person toggle, cloud-mode copy and masked-composite operation. These resource checks do not replace interactive or real-model acceptance.
+- Worker source mounts now point to `/opt/infinite-canvas/releases/v0.19.49-worker/`; existing image, CPU dependencies, model/data mounts and environment were retained. `replacement-masked-composite` and the previously available subtitle preparation, transcription and rendering capabilities are available. The separate local GPU masked-person engine remains unconfigured; the new cloud route uses Replicate for SAM 2/VACE and the CPU worker for compositing.
+- Consistent SQLite backup, full data/environment/Compose backup, previous worker source and task snapshots are in `/opt/infinite-canvas/backups/v0.19.49-20261015-111842/`. The image helper additionally saved `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261015-111901.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261015-111901.tgz`. SQLite `quick_check` passed; settings/video-task/Replicate-task counts remain 2/32/13. All 57 worker JSON records and 6 replacement-job records remained byte-identical, and stored settings remained unchanged.
+- SAM 2 has no stored pricing override and defaults to disabled; VACE stored pricing remains disabled. No paid prediction was submitted. Configure and confirm model pricing before a separately authorized short sample; identity consistency, boundaries, background/subtitles/audio preservation and actual cost remain for acceptance. Deployment evidence is beside the checkout in `artifacts/release-v0.19.49/` and on the host in `/opt/infinite-canvas/releases/v0.19.49-deployment.json`.
 
 ## v0.19.48 historical task archive deployment
 
