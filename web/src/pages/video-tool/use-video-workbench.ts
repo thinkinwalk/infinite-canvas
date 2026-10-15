@@ -58,10 +58,17 @@ function vaceSize(video: UploadedFile, resolution: VideoDraft["replicateResoluti
     if (resolution === "720p") return portrait ? "720*1280" : "1280*720";
     return portrait ? "480*832" : "832*480";
 }
-function vaceFrameCount(video: UploadedFile) {
+function vaceFrames(video: UploadedFile) {
     const seconds = video.durationMs && video.durationMs > 0 ? video.durationMs / 1000 : 5;
     const frames = Math.max(5, Math.round(seconds * 16));
     return Math.ceil((frames - 1) / 4) * 4 + 1;
+}
+// VACE-14B 单次 81 帧（16 fps 约 5 秒），超过会在云端显存不足失败
+export const vaceDurationError = (video: UploadedFile) => (vaceFrames(video) > 81 ? "局部替换单次最多约 5 秒，请先裁剪视频" : "");
+function vaceFrameCount(video: UploadedFile) {
+    const error = vaceDurationError(video);
+    if (error) throw new Error(error);
+    return vaceFrames(video);
 }
 function replacementRequest(d: VideoDraft, cleanSubtitles = false, selectedMask?: UploadedFile): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");

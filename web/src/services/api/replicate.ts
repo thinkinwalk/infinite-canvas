@@ -118,6 +118,7 @@ function sessionToken() {
 }
 export function publicServiceText(value: string) {
     return value
+        .replace(/(?:\S*OutOfMemoryError:\s*)?CUDA out of memory[\s\S]*/gi, "云端显存不足，任务未完成。请将视频裁剪到 5 秒以内或改用 480p 后重试。")
         .replace(/zero-size array to reduction operation minimum which has no identity/gi, "人物跟踪失败，部分画面未检测到可处理的人物区域。请按镜头拆分视频，只提交人物持续可见的片段后重试。")
         .replace(/Replicate/gi, "平台服务")
         .replace(/\b(?:wan(?:-video)?|wan\s*2(?:\.\d+)?)\b/gi, "标准视频服务")

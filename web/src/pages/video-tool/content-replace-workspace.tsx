@@ -20,7 +20,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { MediaRole, SubtitleRegion, VideoDraft, VideoRecord, WorkerCapabilities } from "@/types/video-workbench";
-import { restoreWorkbenchFile, useVideoWorkbench } from "./use-video-workbench";
+import { restoreWorkbenchFile, useVideoWorkbench, vaceDurationError } from "./use-video-workbench";
 
 import { ReplacementBatchPanel } from "./replacement-batch-panel";
 
@@ -236,7 +236,9 @@ export default function ContentReplaceWorkspace() {
                   ? "请上传编辑掩膜"
                   : cloud && !person && !d.maskedEdit && reference.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                     ? "当前视频编辑模型要求原视频为 2–10 秒，请先裁剪"
-                    : "";
+                    : cloud && person && d.maskedPerson
+                      ? vaceDurationError(reference)
+                      : "";
     const regionMissing = ((d.route === "worker" && (d.maskedPerson || !person)) || (cloud && person && d.maskedPerson)) && !d.media.some((m) => m.role === "mask") && d.regions.length !== 1
         ? d.maskedPerson ? "请在高级设置中暂停视频并框选一个清晰可见的人物，系统将自动跟踪" : d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
     const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
