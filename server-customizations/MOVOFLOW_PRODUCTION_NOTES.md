@@ -19,6 +19,13 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
+## v0.19.49 source release — deployment blocked
+
+- Source commit `89b9d808343892d7f2e0fea25988af0636056a58` and annotated tag `v0.19.49` are pushed. Experimental prerelease: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.49.
+- Tag push produced no new Actions run. Authenticated dispatch of the Docker, docs, plugin and Pages workflows returned HTTP 422, `Actions has been disabled for this repository.` Repository Actions permissions report `enabled: true`, workflows report `active`, and reapplying `enabled: true` was accepted but did not restore dispatch. The underlying account/service restriction has not been established.
+- No v0.19.49 image was deployed and no worker mounts were changed. Production remains v0.19.48; SAM 2/VACE pricing remains disabled and no paid prediction was created.
+- After Actions scheduling is restored, dispatch workflows against tag `v0.19.49`, verify the application image tag/revision, back up the database/data/Compose, update the worker source mounts while preserving existing dependencies and jobs, then deploy the application with the existing image helper. Verify `replacement-masked-composite`, internal/external health, database integrity and task preservation before a separately confirmed short paid sample.
+
 ## v0.19.48 historical task archive deployment
 
 - Release commit `96cb03c3cb598caf0298ee99ba6c091b13d3bf2b`, tag `v0.19.48`, and [GitHub Release](https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.48). Docker image workflow [38600754128](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38600754128), docs image workflow [38600754063](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38600754063), and official plugins workflow [38600754141](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38600754141) succeeded; GitHub Pages was skipped by its repository condition.

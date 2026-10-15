@@ -7,6 +7,7 @@ description: Implemented changes that still need manual verification
 
 ## 只替换人物区域实验链路
 
+- v0.19.49 源码及 tag 已推送，GitHub 预发布已创建；Actions 调度返回 HTTP 422「Actions has been disabled for this repository」，仓库设置开启后仍未恢复。新镜像与处理服务未部署，生产仍为 v0.19.48；本节新增功能暂不能线上验收。恢复构建后需同时部署应用和 CPU 合成服务，核对能力与报价后再进行单次 5 秒样片测试。
 - 本地增强处理服务增加独立开关：SAM 2 从操作者框选的人物帧生成逐帧掩膜，VACE 依掩膜和参考图生成，再将人物区域合回原画面；其他人物替换仍走 Wan-Animate。
 - 后端增加 `replacement-masked-composite` 能力检查；Replicate 的 SAM 2 / VACE 报价或 FFprobe/FFmpeg 任一能力未就绪都会在任务开始前拦截，不回退到改写整幅画面的路线。合成校验保留原画面并只接收掩膜内生成结果，任务标记为未自动验收人物身份。
 - 已完成合成器静态测试代码；尚未用真实 Replicate 凭据对用户 5 秒素材提交模型任务。实际效果、边缘、字幕与人物交叠、动作连续性和端到端耗时/费用待测。服务器只需要 FFmpeg/FFprobe 做 CPU 合成，不需要安装 GPU、SAM 2 或 VACE 权重。
