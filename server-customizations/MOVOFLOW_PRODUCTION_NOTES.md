@@ -15,9 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.49
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.50
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.50 masked replacement duration guard deployment
+
+- Source commit `4dda8dc1bb1f83c07e8cc822cb1da7dad19d904e`, annotated tag `v0.19.50`. Application image workflow [38755042901](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38755042901), docs image workflow [38755042891](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38755042891) and official plugins workflow [38755042884](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38755042884) succeeded; GitHub Pages was skipped by its repository condition. No GitHub Release page was created because `gh` is not authenticated on this workstation. The upstream `v0.20.0` tag fetched from `basketikun` is not on this fork's `main` and does not define this release line.
+- Deployed image digest `sha256:1d793784204c7b7742d029326fb000f19a1d964b46313fa659c304f10a0e07ed`; container `/app/VERSION` is `v0.19.50` and the OCI revision matches the commit. Internal and external health return HTTP 200 `ok`. `/video/content-replace` serves `/assets/index-CNj3hqwn.js` containing the 5-second masked-replacement block and the out-of-memory hint.
+- Change: frontend only. Cloud masked person replacement now blocks inputs above 81 frames (16 fps, about 5 seconds) before quotation/submission, and `CUDA out of memory` is shown as a Chinese hint. The cause was a VACE-14B prediction that hit out-of-memory on an 80 GB GPU after the full source duration was submitted; credits were refunded. The worker was not changed and kept its original start time.
+- Online SQLite backup: `/opt/infinite-canvas/backups/database-before-v0.19.50-20261015-165900.sqlite`. Image helper backups: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261015-170247.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261015-170247.tgz`. The first helper run aborted before changing Compose because `tar` exited on a live SQLite write; that partial archive was removed and the helper was rerun from a temporary copy with tar file-change/removal warnings tolerated (the host script is unchanged). The consistent SQLite backup above is the authoritative database copy. SQLite `quick_check` passed; settings/video-task/Replicate-task counts remain 2/32/15. No Replicate task was running and no paid prediction was submitted.
+- Awaiting user acceptance: inputs over 5 seconds are blocked, inputs within 5 seconds still quote, and 480p vs 720p at 81 frames to see whether 720p also runs out of memory.
 
 ## v0.19.49 cloud masked replacement deployment
 
