@@ -7,7 +7,7 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw
 
 import app as worker
-from replacement_masks import validate_mask_frames
+from replacement_masks import composite_masked_frames, validate_mask_frames
 from adapters.wan_materials import validate_wan_materials
 
 
@@ -28,6 +28,22 @@ class MaskTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_mask_frames([path], 1, (64, 64))
             self.assertTrue(validate_mask_frames([path], 1, (64, 64), allow_full=True))
+
+    def test_masked_composite_preserves_source_outside_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root / "original.png"
+            generated = root / "generated.png"
+            mask = root / "mask.png"
+            Image.new("RGB", (4, 2), "blue").save(original)
+            Image.new("RGB", (4, 2), "red").save(generated)
+            target = Image.new("L", (4, 2))
+            ImageDraw.Draw(target).rectangle((1, 0, 2, 1), fill=255)
+            target.save(mask)
+            frames = composite_masked_frames([original], [generated], [mask], root / "out", (4, 2), feather=0)
+            with Image.open(frames[0]) as result:
+                self.assertEqual(result.getpixel((0, 0)), (0, 0, 255))
+                self.assertEqual(result.getpixel((1, 0)), (255, 0, 0))
 
 
 class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
@@ -68,6 +84,24 @@ class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
         final = await worker.probe_video("test", worker.MEDIA / job["result"]["file"])
         self.assertEqual(final["duration"], 1.12)
         self.assertTrue(final["audio"])
+
+    async def test_masked_person_replacement_composites_generated_subject_over_original(self):
+        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=red:s=160x96:r=25:d=1.12", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.12", "-c:v", "libx264", "-c:a", "aac", worker.MEDIA / "source.mp4")
+
+        async def engine(identifier, name, bindings, work):
+            self.assertEqual(name, "vace")
+            output = work / "model-output.mp4"
+            await worker.ffmpeg(identifier, "-f", "lavfi", "-i", "color=c=green:s=160x96:r=16", "-frames:v", bindings["frame_count"], "-c:v", "libx264", "-pix_fmt", "yuv420p", output)
+            return output
+
+        job = await self.run_replacement(engine, options={"replacement": "person", "maskedPerson": True})
+        self.assertEqual(job["status"], "completed", job)
+        self.assertTrue(job["result"]["metadata"]["maskedComposite"])
+        frame = self.root / "result.png"
+        await worker.ffmpeg("fixture", "-i", worker.MEDIA / job["result"]["file"], "-frames:v", "1", frame)
+        with Image.open(frame) as image:
+            self.assertGreater(image.getpixel((10, 10))[0], 200)
+            self.assertGreater(image.getpixel((55, 40))[1], 100)
 
     async def test_invalid_mask_never_calls_generator(self):
         Image.new("L", (160, 96), 0).save(worker.MEDIA / "mask.png")

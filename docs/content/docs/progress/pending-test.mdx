@@ -5,6 +5,13 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 只替换人物区域实验链路
+
+- 本地增强处理服务增加独立开关：SAM 2 从操作者框选的人物帧生成逐帧掩膜，VACE 依掩膜和参考图生成，再将人物区域合回原画面；其他人物替换仍走 Wan-Animate。
+- 后端增加 `replacement-masked-composite` 能力检查；Replicate 的 SAM 2 / VACE 报价或 FFprobe/FFmpeg 任一能力未就绪都会在任务开始前拦截，不回退到改写整幅画面的路线。合成校验保留原画面并只接收掩膜内生成结果，任务标记为未自动验收人物身份。
+- 已完成合成器静态测试代码；尚未用真实 Replicate 凭据对用户 5 秒素材提交模型任务。实际效果、边缘、字幕与人物交叠、动作连续性和端到端耗时/费用待测。服务器只需要 FFmpeg/FFprobe 做 CPU 合成，不需要安装 GPU、SAM 2 或 VACE 权重。
+- 测试前确认 Replicate 的 `track-mask` 与 `masked-edit` 报价已明确开启，并连接具备 `replacement-masked-composite` 能力的处理服务；打开 `/video/content-replace`，选择「人物替换」和云端 API，开启「只替换人物区域（实验）」；暂停在人物清晰无遮挡的一帧框选人物，上传参考人物图及短视频，对比原画背景/字幕/音轨、首帧到末帧人物一致性和边缘。确认只生成一个样片，不自动重试；保存模型、时长、运行时间与实际费用后再与 Wan-Animate 同素材对照。
+
 ## 整片任务历史收纳与归档（v0.19.48）
 
 - 左侧仅展开当前选择的后台任务，未选择时不自动展开旧记录；历史入口显示任务总数及处理中数量。弹窗按任务列表、已归档分组，显示创建时间、任务短编号、状态和进度。

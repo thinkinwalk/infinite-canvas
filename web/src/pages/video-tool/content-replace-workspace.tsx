@@ -75,7 +75,7 @@ export default function ContentReplaceWorkspace() {
     const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
-    const operation: ReplicateOperation = person ? "replace-person" : d.maskedEdit ? "masked-edit" : "video-edit";
+    const operation: ReplicateOperation = person ? (d.maskedPerson ? "masked-edit" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask || r.replacementPipeline));
@@ -83,6 +83,7 @@ export default function ContentReplaceWorkspace() {
         d.route,
         d.replacement,
         d.maskedEdit,
+        d.maskedPerson,
         d.replicateResolution,
         d.replaceSubtitles,
         d.regions,
@@ -196,9 +197,22 @@ export default function ContentReplaceWorkspace() {
     }, [platformToken, active?.id, active?.status, active?.replicateTask?.id, active?.replicateBilling]);
 
     let unavailable = "";
-    if (cloud) unavailable = !platformToken ? "登录后使用平台智能处理" : modelsLoading ? "正在读取服务状态" : !model?.available ? publicServiceText(model?.reason || modelError || "当前平台服务暂不可用") : "";
+    if (cloud) {
+        const localMaskReady = d.media.some((item) => item.role === "mask");
+        unavailable = !platformToken
+            ? "登录后使用平台智能处理"
+            : modelsLoading
+              ? "正在读取服务状态"
+              : d.maskedPerson && person
+                ? models.some((item) => item.operation === "masked-edit" && item.available) && (localMaskReady || models.some((item) => item.operation === "track-mask" && item.available))
+                    ? ""
+                    : publicServiceText(models.find((item) => item.operation === (localMaskReady ? "masked-edit" : "track-mask"))?.reason || modelError || "局部人物替换服务暂不可用")
+                : !model?.available
+                  ? publicServiceText(model?.reason || modelError || "当前平台服务暂不可用")
+                  : "";
+    }
     else if (d.route === "worker") {
-        const capability = capabilities?.find((c) => c.name === (person ? "replace-person" : "replace-product"));
+        const capability = capabilities?.find((c) => c.name === (person ? (d.maskedPerson ? "replace-person-masked" : "replace-person") : "replace-product"));
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
         if (!unavailable && d.replacement === "product" && !d.media.some((m) => m.role === "mask") && !capabilities?.some((c) => c.name === "track-product" && c.available)) unavailable = "商品自动跟踪尚未就绪，请管理员配置跟踪服务";
     } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
@@ -223,8 +237,8 @@ export default function ContentReplaceWorkspace() {
                   : cloud && !person && !d.maskedEdit && reference.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                     ? "当前视频编辑模型要求原视频为 2–10 秒，请先裁剪"
                     : "";
-    const regionMissing = d.route === "worker" && !person && !d.media.some((m) => m.role === "mask") && (d.replacement === "product" ? d.regions.length !== 1 : !d.regions.length)
-        ? d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
+    const regionMissing = ((d.route === "worker" && (d.maskedPerson || !person)) || (cloud && person && d.maskedPerson)) && !d.media.some((m) => m.role === "mask") && d.regions.length !== 1
+        ? d.maskedPerson ? "请在高级设置中暂停视频并框选一个清晰可见的人物，系统将自动跟踪" : d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
     const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
     const prepareQuote = async () => {
         if (blocked || busy || quoteController.current) return;
@@ -494,7 +508,7 @@ export default function ContentReplaceWorkspace() {
                                 value={d.replacement}
                                 disabled={locked}
                                 options={Object.entries(replacementNames).map(([value, label]) => ({ value, label: `换${label}` }))}
-                                onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"], regions: [], replacementSeedTime: undefined }, "video")}
+                                onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"], maskedPerson: false, regions: [], replacementSeedTime: undefined }, "video")}
                             />
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
@@ -507,7 +521,7 @@ export default function ContentReplaceWorkspace() {
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>
-                            {cloud && person && !wholeVideo && <Alert showIcon type="info" title="Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。" />}
+                            {cloud && person && !wholeVideo && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式会先跟踪一次人物，再用掩膜生成并回填人物区域；服务器只做合成和音轨恢复。" : "Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。"} />}
                             {(!cloud || !person || wholeVideo) && (
                                 <label className="block">
                                     <div className="mb-2 font-medium">替换要求{!person ? "（必填）" : "（可选）"}</div>
@@ -588,6 +602,36 @@ export default function ContentReplaceWorkspace() {
                                                     ]}
                                                     onChange={(route) => wb.edit({ route }, "video")}
                                                 />
+                                                {cloud && person && !wholeVideo && (
+                                                    <div className="space-y-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
+                                                        <div className="flex items-center gap-2">
+                                                            <Switch aria-label="只替换人物区域" disabled={locked} checked={d.maskedPerson} onChange={(maskedPerson) => wb.edit({ maskedPerson, regions: [], replacementSeedTime: undefined }, "video")} />
+                                                            <span>只替换人物区域（云端跟踪）</span>
+                                                        </div>
+                                                        {d.maskedPerson && (
+                                                            <>
+                                                                {materialField("mask", "image/*,video/*", "动态人物掩膜（可选）", "提供动态掩膜可跳过云端跟踪；未提供时点选一次人物自动跟踪")}
+                                                                <div className="flex items-center gap-2">
+                                                                    <Switch aria-label="框选跟踪人物" disabled={locked || !reference || Boolean(d.media.some((m) => m.role === "mask"))} checked={drawRegions} onChange={setDrawRegions} />
+                                                                    <span>框选跟踪人物</span>
+                                                                    <Button type="text" size="small" disabled={locked || !d.regions.length} onClick={() => wb.edit({ regions: [], replacementSeedTime: undefined }, "video")}>清空</Button>
+                                                                </div>
+                                                                {reference && <div className="relative overflow-hidden rounded">
+                                                                    <video ref={selectionVideo} className="block h-auto w-full" controls={!drawRegions} src={reference.url} />
+                                                                    <div className="absolute inset-0" style={{ pointerEvents: drawRegions && !locked ? "auto" : "none", cursor: "crosshair" }}
+                                                                        onPointerDown={(event) => { selectionVideo.current?.pause(); selectionTime.current = selectionVideo.current?.currentTime || 0; event.currentTarget.setPointerCapture(event.pointerId); anchor.current = point(event); setDrawing({ ...anchor.current, width: 0, height: 0 }); }}
+                                                                        onPointerMove={(event) => { if (!anchor.current) return; const b = point(event); setDrawing({ x: Math.min(anchor.current.x, b.x), y: Math.min(anchor.current.y, b.y), width: Math.abs(b.x - anchor.current.x), height: Math.abs(b.y - anchor.current.y) }); }}
+                                                                        onPointerUp={(event) => { if (drawing?.width && drawing.height) wb.edit({ regions: [drawing], replacementSeedTime: selectionTime.current }, "video"); anchor.current = null; setDrawing(null); event.currentTarget.releasePointerCapture(event.pointerId); }}
+                                                                        onPointerCancel={() => { anchor.current = null; setDrawing(null); }}
+                                                                    >
+                                                                        {[...d.regions, ...(drawing ? [drawing] : [])].map((region, index) => <div key={index} className="absolute border-2" style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.width * 100}%`, height: `${region.height * 100}%`, borderColor: token.colorPrimary, background: token.colorPrimaryBg, opacity: 0.55 }} />)}
+                                                                    </div>
+                                                                </div>}
+                                                                <div className="text-xs" style={muted}>暂停在人物清晰的一帧框选，系统会在云端生成逐帧掩膜，再只回填人物区域。</div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 {cloud && !person && (
                                                     <div className="space-y-2">
                                                         <div className="flex items-center gap-2">
@@ -630,12 +674,18 @@ export default function ContentReplaceWorkspace() {
                                                         </Button>
                                                         {serviceError && <Alert type="warning" showIcon title={serviceError} />}
                                                         {d.replacement === "product" && materialField("background", "image/*", "背景参考图（可选）", "仅增强处理服务使用此额外背景")}
-                                                        {!person && (
+                                                        {person && (
+                                                            <div className="flex items-center gap-2">
+                                                                <Switch aria-label="只替换人物区域" disabled={locked} checked={d.maskedPerson} onChange={(maskedPerson) => wb.edit({ maskedPerson, regions: [], replacementSeedTime: undefined }, "video")} />
+                                                                <span>只替换人物区域（实验）</span>
+                                                            </div>
+                                                        )}
+                                                        {(!person || d.maskedPerson) && (
                                                             <>
                                                                 {materialField("mask", "image/*,video/*", "编辑掩膜（可选）", "移动主体建议使用动态掩膜，白色区域改动")}
                                                                 <div className="flex items-center gap-2">
                                                                     <Switch aria-label="框选编辑区域" disabled={locked || !reference} checked={drawRegions} onChange={setDrawRegions} />
-                                                                    <span>{d.replacement === "product" ? "框选要跟踪的商品" : "框选固定区域"}</span>
+                                                                    <span>{d.maskedPerson ? "框选要跟踪的人物" : d.replacement === "product" ? "框选要跟踪的商品" : "框选固定区域"}</span>
                                                                     <Button type="text" size="small" disabled={locked || !d.regions.length} onClick={() => wb.edit({ regions: [], replacementSeedTime: undefined }, "video")}>
                                                                         清空
                                                                     </Button>
@@ -659,7 +709,7 @@ export default function ContentReplaceWorkspace() {
                                                                                 setDrawing({ x: Math.min(anchor.current.x, b.x), y: Math.min(anchor.current.y, b.y), width: Math.abs(b.x - anchor.current.x), height: Math.abs(b.y - anchor.current.y) });
                                                                             }}
                                                                             onPointerUp={(event) => {
-                                                                                if (drawing?.width && drawing.height) wb.edit(d.replacement === "product" ? { regions: [drawing], replacementSeedTime: selectionTime.current } : { regions: [...d.regions, drawing] }, "video");
+                                                                                if (drawing?.width && drawing.height) wb.edit(d.replacement === "product" || d.maskedPerson ? { regions: [drawing], replacementSeedTime: selectionTime.current } : { regions: [...d.regions, drawing] }, "video");
                                                                                 anchor.current = null;
                                                                                 setDrawing(null);
                                                                                 event.currentTarget.releasePointerCapture(event.pointerId);
@@ -688,7 +738,7 @@ export default function ContentReplaceWorkspace() {
                                                                     </div>
                                                                 )}
                                                                 <div className="text-xs" style={muted}>
-                                                                    {d.replacement === "product" ? `先暂停在商品清晰的画面，再打开框选。已选 ${d.regions.length} 个商品，选取时间 ${(d.replacementSeedTime || 0).toFixed(2)} 秒；系统跟踪整段视频，跟踪失败会在生成前停止。` : `已选 ${d.regions.length} 个固定区域；固定框会覆盖整个视频。`}
+                                                                    {d.maskedPerson ? `先暂停在人物清晰的画面，再打开框选。已选 ${d.regions.length} 个人物，选取时间 ${(d.replacementSeedTime || 0).toFixed(2)} 秒；系统只回填人物区域，跟踪失败会在生成前停止。` : d.replacement === "product" ? `先暂停在商品清晰的画面，再打开框选。已选 ${d.regions.length} 个商品，选取时间 ${(d.replacementSeedTime || 0).toFixed(2)} 秒；系统跟踪整段视频，跟踪失败会在生成前停止。` : `已选 ${d.regions.length} 个固定区域；固定框会覆盖整个视频。`}
                                                                 </div>
                                                             </>
                                                         )}

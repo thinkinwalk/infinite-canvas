@@ -24,7 +24,7 @@ import remote_subtitles
 from replacement import probe as probe_replacement_video, process as process_replacement, validate_timeline
 from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
 from replacement_subtitles import locate_caption_masks, audio_captions
-from replacement_masks import validate_mask_frames
+from replacement_masks import composite_masked_frames, validate_mask_frames
 
 
 ROOT = Path(os.environ.get("VIDEO_WORKER_DATA", Path(__file__).parent / "data")).resolve()
@@ -105,6 +105,7 @@ def capabilities():
         {"name": "subtitle-remove", "available": ffmpeg and engine_ready("lama"), "reason": "需要配置已获得相应使用许可的修复引擎及权重"},
         {"name": "digital-human", "available": ffmpeg and engine_ready("musetalk"), "reason": "需要配置 MuseTalk 引擎及权重"},
         {"name": "replace-person", "available": ffmpeg and bool(FFPROBE) and engine_ready("wan-animate"), "reason": "需要配置 Wan-Animate 引擎、权重和 FFprobe"},
+        {"name": "replace-person-masked", "available": ffmpeg and bool(FFPROBE) and engine_ready("sam2") and engine_ready("vace"), "reason": "只替换人物实验需要配置 SAM 2 跟踪、VACE 局部生成、显存充足的 GPU 和 FFprobe"},
         {"name": "replace-product", "available": ffmpeg and bool(FFPROBE) and engine_ready("vace"), "reason": "需要配置 VACE 视频编辑引擎、权重和 FFprobe"},
         {"name": "track-product", "available": ffmpeg and bool(FFPROBE) and engine_ready("sam2"), "reason": "自动跟踪移动商品需要配置 SAM 2 引擎及权重"},
         {"name": "voice-clone", "available": bool(os.environ.get("COSYVOICE_URL") and os.environ.get("COSYVOICE_SAMPLE_RATE")), "reason": "需要部署 CosyVoice HTTP 服务并配置实际输出采样率"},
@@ -112,6 +113,7 @@ def capabilities():
         {"name": "replacement-prepare", "available": ffmpeg and bool(FFPROBE) and whisper and ocr and engine_ready("lama"), "reason": "自动字幕处理需要平台配置语音识别、PaddlePaddle、PaddleOCR 和字幕修复引擎"},
         *[{"name": operation, "available": ffmpeg and bool(FFPROBE), "reason": "需要 FFmpeg 和 FFprobe"} for operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble")],
         {"name": "replacement-finish", "available": ffmpeg and bool(FFPROBE), "reason": "自动字幕合成需要 FFmpeg"},
+        {"name": "replacement-masked-composite", "available": ffmpeg and bool(FFPROBE), "reason": "局部替换合成需要 FFmpeg 和 FFprobe"},
         {"name": "replacement-subtitles-v2", "available": ffmpeg and bool(FFPROBE) and whisper and ocr and engine_ready("lama"), "reason": "先清理后按原音轨重做字幕需要更新处理服务并配置语音识别、OCR 和修复引擎"},
         {"name": "replacement-transcribe", "available": ffmpeg and bool(FFPROBE) and whisper, "reason": "在线字幕编辑需要配置语音识别"},
         {"name": "replacement-render-captions", "available": ffmpeg and bool(FFPROBE), "reason": "字幕合成需要 FFmpeg"},
@@ -239,6 +241,14 @@ def validate_options(request: JobRequest):
             raise ValueError("请提供原视频和替换参考图片")
         if request.operation == "replace" and request.options.get("replacement") != "person" and not request.options.get("regions") and "mask" not in request.inputs:
             raise ValueError("VACE 编辑需要框选改动区域")
+        if request.operation == "replace" and request.options.get("maskedPerson") and request.options.get("replacement") != "person":
+            raise ValueError("人物局部替换模式仅适用于人物")
+        if request.operation == "replace" and request.options.get("maskedPerson") and "mask" not in request.inputs:
+            if len(request.options.get("regions", [])) != 1:
+                raise ValueError("人物局部替换需要框选一个清晰可见的人物，或提供动态人物掩膜")
+            seed_time = float(request.options.get("seedTime", 0))
+            if not math.isfinite(seed_time) or seed_time < 0:
+                raise ValueError("人物选取时间不正确")
         if request.operation == "replace" and request.options.get("replacement") == "product" and "mask" not in request.inputs:
             if len(request.options.get("regions", [])) != 1:
                 raise ValueError("自动跟踪商品需要在画面中框选一个目标商品")
@@ -263,7 +273,8 @@ async def create_job(request: JobRequest):
             raise HTTPException(409, "任务编号已用于其他输入")
         return {key: value for key, value in previous.items() if key != "request"}
     available = {item["name"]: item for item in await available_capabilities()}
-    capability = "replace-person" if request.operation == "replace" and request.options.get("replacement") == "person" else "replace-product" if request.operation == "replace" else request.operation
+    masked_person = request.operation == "replace" and request.options.get("replacement") == "person" and request.options.get("maskedPerson")
+    capability = "replace-person-masked" if masked_person else "replace-person" if request.operation == "replace" and request.options.get("replacement") == "person" else "replace-product" if request.operation == "replace" else request.operation
     if capability not in available or not available[capability]["available"]:
         raise HTTPException(422, available.get(capability, {}).get("reason", "不支持该处理操作"))
     validate_options(request)
@@ -725,7 +736,8 @@ async def run_job(identifier: str, request: JobRequest):
         elif operation == "replace":
             source = inputs["video"]
             info = await probe_video(identifier, source)
-            engine = "wan-animate" if options["replacement"] == "person" else "vace"
+            masked_person = options["replacement"] == "person" and bool(options.get("maskedPerson"))
+            engine = "vace" if options["replacement"] != "person" or masked_person else "wan-animate"
             bindings = {**{key: str(value) for key, value in inputs.items()}, "prompt": str(options.get("prompt", "")), "replacement": options["replacement"], "mask": ""}
             checks = {}
             if engine == "vace":
@@ -750,15 +762,15 @@ async def run_job(identifier: str, request: JobRequest):
                     except Image.UnidentifiedImageError:
                         validate_timeline(info, await probe_video(identifier, mask_source))
                         await ffmpeg(identifier, "-i", mask_source, "-vf", f"fps=16,scale={info['size'][0]}:{info['size'][1]}:flags=neighbor", mask_frames / "%08d.png")
-                elif options["replacement"] == "product":
+                elif options["replacement"] == "product" or masked_person:
                     seed_time = float(options.get("seedTime", 0))
                     if seed_time >= info["duration"]:
-                        raise ValueError("框选商品的时间超出原视频")
+                        raise ValueError("框选目标的时间超出原视频")
                     region = options["regions"][0]
                     tracking_frames = work / "tracking-frames"
                     tracking_frames.mkdir()
                     await ffmpeg(identifier, "-framerate", 16, "-i", frames / "%08d.png", tracking_frames / "%08d.jpg")
-                    update_job(identifier, step="自动跟踪所选商品，生成逐帧编辑区域")
+                    update_job(identifier, step="自动跟踪所选目标，生成逐帧编辑区域")
                     tracked = await run_engine(identifier, "sam2", {
                         "frames": str(tracking_frames),
                         "box": ",".join(str(region[key]) for key in ("x", "y", "width", "height")),
@@ -787,11 +799,24 @@ async def run_job(identifier: str, request: JobRequest):
                 await ffmpeg(identifier, "-framerate", 16, "-i", frames / "%08d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", normalized)
                 await ffmpeg(identifier, "-framerate", 16, "-i", mask_frames / "%08d.png", "-c:v", "libx264", "-crf", 0, "-pix_fmt", "yuv420p", mask_video)
                 bindings.update(video=str(normalized), mask=str(mask_video))
-                checks["tracking"] = "sam2" if "mask" not in inputs and options["replacement"] == "product" else "provided"
+                checks["tracking"] = "sam2" if "mask" not in inputs and (options["replacement"] == "product" or masked_person) else "provided"
             video = await run_engine(identifier, engine, bindings, work)
             if engine == "vace":
                 generated_info = await probe_video(identifier, video)
                 validate_timeline(await probe_video(identifier, Path(bindings["video"])), generated_info)
+                if masked_person:
+                    generated_frames = work / "masked-generated-frames"
+                    generated_frames.mkdir()
+                    await ffmpeg(identifier, "-i", video, "-vf", f"fps=16,scale={info['size'][0]}:{info['size'][1]}", "-frames:v", len(images), generated_frames / "%08d.png")
+                    originals = [frames / f"{index:08d}.png" for index in range(1, len(images) + 1)]
+                    masks = [mask_frames / f"{index:08d}.png" for index in range(1, len(images) + 1)]
+                    composited = await asyncio.to_thread(validate_mask_frames, masks, len(images), info["size"])
+                    composited_frames = await asyncio.to_thread(composite_masked_frames, originals, sorted(generated_frames.glob("*.png")), masks, work / "masked-composite-frames", info["size"])
+                    composite_video = work / "masked-composite.mp4"
+                    await ffmpeg(identifier, "-framerate", 16, "-i", Path(composited_frames[0]).parent / "%08d.png", "-frames:v", len(images), "-c:v", "libx264", "-pix_fmt", "yuv420p", composite_video)
+                    video = composite_video
+                    checks["maskedComposite"] = True
+                    checks.update(composited)
                 restored = work / "restored-timeline.mp4"
                 await ffmpeg(identifier, "-i", video, "-an", "-vf", f"scale={info['size'][0]}:{info['size'][1]},fps={info['fps']}",
                              "-frames:v", round(info["duration"] * info["fps"]), "-c:v", "libx264", "-pix_fmt", "yuv420p", restored)
@@ -852,6 +877,38 @@ async def run_job(identifier: str, request: JobRequest):
             await ffmpeg(identifier, *arguments, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", output)
             validate_timeline(source_info, await probe_video(identifier, output))
             result = {"file": publish(output), "segments": captions, "metadata": {"identityChecked": False, "timelineChecked": True, "subtitleMethod": options.get("subtitleMethod", "speech-matched-ocr"), "subtitleOutput": "editable" if editable else "burned-in"}}
+        elif operation == "replacement-masked-composite":
+            source, generated, mask = inputs["source"], inputs["video"], inputs["mask"]
+            source_info = await probe_video(identifier, source)
+            generated_info = await probe_video(identifier, generated)
+            validate_timeline(source_info, generated_info)
+            # Composite at the source cadence. The model result and SAM mask
+            # may use another cadence, but the final video must preserve the
+            # original frame count and playback speed.
+            sample_fps = source_info["fps"]
+            originals_dir = work / "masked-source-frames"
+            generated_dir = work / "masked-generated-frames"
+            masks_dir = work / "masked-mask-frames"
+            for directory in (originals_dir, generated_dir, masks_dir):
+                directory.mkdir()
+            await ffmpeg(identifier, "-i", source, "-vf", f"fps={sample_fps}", originals_dir / "%08d.png")
+            await ffmpeg(identifier, "-i", generated, "-vf", f"fps={sample_fps}", generated_dir / "%08d.png")
+            originals = sorted(originals_dir.glob("*.png"))
+            generated_frames = sorted(generated_dir.glob("*.png"))
+            try:
+                with Image.open(mask) as mask_image:
+                    mask_image.convert("L").resize(source_info["size"], Image.Resampling.NEAREST).save(masks_dir / "00000001.png")
+                for index in range(2, len(originals) + 1):
+                    shutil.copyfile(masks_dir / "00000001.png", masks_dir / f"{index:08d}.png")
+            except (OSError, Image.UnidentifiedImageError):
+                mask_info = await probe_video(identifier, mask)
+                validate_timeline(source_info, mask_info)
+                await ffmpeg(identifier, "-i", mask, "-vf", f"fps={sample_fps},scale={source_info['size'][0]}:{source_info['size'][1]}:flags=neighbor", masks_dir / "%08d.png")
+            mask_frames = sorted(masks_dir.glob("*.png"))
+            checked = validate_mask_frames(mask_frames, len(originals), source_info["size"])
+            composited = await asyncio.to_thread(composite_masked_frames, originals, generated_frames, mask_frames, work / "masked-composite-frames", source_info["size"])
+            output = await assemble_frames(identifier, composited, source, work, source_info["fps"])
+            result = {"file": publish(output), "metadata": {**checked, "maskedComposite": True, "timelineChecked": True}}
         elif operation == "replacement-render-captions":
             generated, source = inputs["video"], inputs["source"]
             output_info = await probe_video(identifier, generated)

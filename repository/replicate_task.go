@@ -85,7 +85,7 @@ func UpdateReplicateTask(task model.ReplicateTask) error {
 	if task.Status == "running" || task.Status == "uncertain" {
 		query = query.Where("status <> ?", "generated")
 	}
-	return query.Updates(map[string]any{"prediction_id": task.PredictionID, "provider_key": replicateProviderKey(task.PredictionID), "status": task.Status, "output_url": task.OutputURL, "result_file": task.ResultFile, "result_json": task.ResultJSON, "mime_type": task.MimeType, "error": task.Error, "metrics": task.Metrics, "pricing_snapshot": task.PricingSnapshot, "updated_at": task.UpdatedAt}).Error
+	return query.Updates(map[string]any{"prediction_id": task.PredictionID, "provider_key": replicateProviderKey(task.PredictionID), "status": task.Status, "output_url": task.OutputURL, "output_urls": task.OutputURLs, "result_file": task.ResultFile, "result_json": task.ResultJSON, "mime_type": task.MimeType, "error": task.Error, "metrics": task.Metrics, "pricing_snapshot": task.PricingSnapshot, "updated_at": task.UpdatedAt}).Error
 }
 
 func FailReplicateTask(task model.ReplicateTask, log model.CreditLog) error {

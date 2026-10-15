@@ -412,8 +412,16 @@ func applyReplicatePrediction(task *model.ReplicateTask, prediction cloudPredict
 		case string:
 			task.OutputURL = output
 		case []any:
-			if len(output) > 0 {
-				task.OutputURL, _ = output[0].(string)
+			urls := make([]string, 0, len(output))
+			for _, item := range output {
+				if value, ok := item.(string); ok && strings.TrimSpace(value) != "" {
+					urls = append(urls, value)
+				}
+			}
+			if len(urls) > 0 {
+				task.OutputURL = urls[0]
+				encoded, _ := json.Marshal(urls)
+				task.OutputURLs = string(encoded)
 			}
 		}
 		if task.OutputURL == "" {
@@ -455,8 +463,15 @@ func replicateDeliveryAllowed(address *url.URL) bool {
 	return address.Scheme == "https" && address.User == nil && (address.Hostname() == "replicate.delivery" || strings.HasSuffix(address.Hostname(), ".replicate.delivery"))
 }
 func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
-	parsed, err := url.Parse(task.OutputURL)
-	if err != nil || !replicateDeliveryAllowed(parsed) {
+	urls := []string{task.OutputURL}
+	if strings.TrimSpace(task.OutputURLs) != "" {
+		var stored []string
+		if err := json.Unmarshal([]byte(task.OutputURLs), &stored); err != nil || len(stored) == 0 {
+			return fmt.Errorf("模型文件列表无法解析，请恢复查询")
+		}
+		urls = stored
+	}
+	if len(urls) == 0 || strings.TrimSpace(urls[0]) == "" {
 		return fmt.Errorf("模型文件地址无法验证，请联系管理员")
 	}
 	client := *aiHTTPClient
@@ -469,32 +484,90 @@ func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
 		}
 		return nil
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	known := map[string]string{".mp4": "video/mp4", ".webm": "video/webm", ".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+	directory := filepath.Join(referenceDataDir(), "replicate-results")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	fingerprint := sha256.Sum256([]byte(task.ID))
+	base := hex.EncodeToString(fingerprint[:])
+	filename := base + ".mp4"
+	target := filepath.Join(directory, filename)
+	if _, err := os.Stat(target); err == nil {
+		task.ResultFile, task.MimeType = filename, "video/mp4"
+		if task.Operation == "speech" {
+			task.MimeType = "audio/mpeg"
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if len(urls) > 1 {
+		return fmt.Errorf("模型返回了多个掩膜文件；当前要求 SAM 2 开启视频输出后返回单个视频地址")
+	}
+	temporary, err := os.CreateTemp(directory, "download-*")
 	if err != nil {
 		return err
 	}
+	tempName := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(tempName)
+		return err
+	}
+	defer os.Remove(tempName)
+	mimeType, extension, err := downloadReplicateFile(ctx, client, urls[0], tempName, known)
+	if err != nil {
+		return err
+	}
+	if task.Operation == "speech" {
+		if !strings.HasPrefix(mimeType, "audio/") {
+			return fmt.Errorf("模型返回了不支持的媒体类型")
+		}
+		filename = base + extension
+		target = filepath.Join(directory, filename)
+	} else {
+		if !strings.HasPrefix(mimeType, "video/") {
+			return fmt.Errorf("模型返回了不支持的视频媒体类型")
+		}
+		// All video results are normalized to a browser-safe MP4 path, including
+		// SAM 2's binary mask video.
+		if err := normalizeReplicateVideo(tempName); err != nil {
+			return fmt.Errorf("生成文件转码失败，可恢复查询：%w", err)
+		}
+		mimeType = "video/mp4"
+	}
+	if err := os.Rename(tempName, target); err != nil {
+		if _, existingErr := os.Stat(target); existingErr != nil {
+			return err
+		}
+	}
+	task.ResultFile, task.MimeType = filename, mimeType
+	return nil
+}
+
+func downloadReplicateFile(ctx context.Context, client http.Client, address, target string, known map[string]string) (string, string, error) {
+	parsed, err := url.Parse(address)
+	if err != nil || !replicateDeliveryAllowed(parsed) {
+		return "", "", fmt.Errorf("模型文件地址无法验证，请联系管理员")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "", "", err
+	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("模型已生成，文件下载暂时失败，可恢复查询")
+		return "", "", fmt.Errorf("模型已生成，文件下载暂时失败，可恢复查询")
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 400 {
-		return fmt.Errorf("模型已生成，文件下载失败，可恢复查询")
+		return "", "", fmt.Errorf("模型已生成，文件下载失败，可恢复查询")
 	}
 	mimeType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	extension := strings.ToLower(filepath.Ext(parsed.Path))
-	known := map[string]string{".mp4": "video/mp4", ".webm": "video/webm", ".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".ogg": "audio/ogg"}
-	if !strings.HasPrefix(mimeType, "video/") && !strings.HasPrefix(mimeType, "audio/") {
+	if mimeType == "" || mimeType == "application/octet-stream" {
 		mimeType = known[extension]
 	}
-	prefix := "video/"
-	if task.Operation == "speech" {
-		prefix = "audio/"
-	}
-	if !strings.HasPrefix(mimeType, prefix) {
-		return fmt.Errorf("模型返回了不支持的媒体类型")
-	}
-	if known[extension] != mimeType {
+	if extension == "" || known[extension] == "" {
 		for ext, typ := range known {
 			if typ == mimeType {
 				extension = ext
@@ -502,42 +575,19 @@ func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
 			}
 		}
 	}
-	if _, ok := known[extension]; !ok {
-		return fmt.Errorf("模型媒体格式无法识别")
+	if known[extension] == "" {
+		return "", "", fmt.Errorf("模型媒体格式无法识别")
 	}
-	directory := filepath.Join(referenceDataDir(), "replicate-results")
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return err
+	temporary, err := os.OpenFile(target, os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", "", err
 	}
-	fingerprint := sha256.Sum256([]byte(task.ID))
-	filename := hex.EncodeToString(fingerprint[:]) + extension
-	target := filepath.Join(directory, filename)
-	if _, err := os.Stat(target); os.IsNotExist(err) {
-		temporary, err := os.CreateTemp(directory, "download-*")
-		if err != nil {
-			return err
-		}
-		tempName := temporary.Name()
-		defer os.Remove(tempName)
-		count, copyErr := io.Copy(temporary, response.Body)
-		closeErr := temporary.Close()
-		if copyErr != nil || closeErr != nil || count == 0 {
-			return fmt.Errorf("生成文件保存失败，可恢复查询")
-		}
-		if err := os.Rename(tempName, target); err != nil {
-			if _, existingErr := os.Stat(target); existingErr != nil {
-				return err
-			}
-		}
+	count, copyErr := io.Copy(temporary, response.Body)
+	closeErr := temporary.Close()
+	if copyErr != nil || closeErr != nil || count == 0 {
+		return "", "", fmt.Errorf("生成文件保存失败，可恢复查询")
 	}
-	if strings.HasPrefix(mimeType, "video/") {
-		if err := normalizeReplicateVideo(target); err != nil {
-			return fmt.Errorf("生成文件转码失败，可恢复查询：%w", err)
-		}
-	}
-	task.ResultFile = filename
-	task.MimeType = mimeType
-	return nil
+	return mimeType, extension, nil
 }
 
 func normalizeReplicateVideo(path string) error {

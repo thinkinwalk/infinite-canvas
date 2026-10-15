@@ -128,6 +128,8 @@ export type VideoDraft = {
     subtitleMode: SubtitleMarkMode;
     regions: SubtitleRegion[];
     replacement: "person" | "product" | "background";
+    /** 仅处理人物掩膜，保留人物以外的原画面；仅增强处理服务实验模式。 */
+    maskedPerson: boolean;
     replacementSeedTime?: number;
     maskedEdit: boolean;
     route: "replicate" | "model" | "worker";
@@ -196,21 +198,35 @@ export type VideoRecord = {
     workerJob?: { id: string; url: string };
     replicateTask?: { id: string; operation: string };
     replicateBilling?: { credits: number; refunded: boolean };
+    replacementMask?: UploadedFile;
+    replacementMaskTask?: { id: string; operation: "track-mask" };
+    maskedReplacement?: {
+        phase: "mask" | "generate" | "composite";
+        workerUrl: string;
+        mask?: UploadedFile;
+        generated?: UploadedFile;
+        maskTask?: { id: string; operation: "track-mask" };
+        generationTask?: { id: string; operation: "masked-edit" };
+    };
     result?: UploadedFile;
     text?: string;
     step?: string;
     draftPatch?: Partial<VideoDraft>;
-    replacementInput?: Pick<VideoDraft, "replacement" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementInput?: Pick<VideoDraft, "replacement" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
     replacementPipeline?: {
         subtitleMethod?: "audio-after-generation";
-        phase: "prepare" | "generate" | "finish";
+        phase: "prepare" | "mask" | "generate" | "finish";
         workerUrl: string;
         model: string;
         channelMode: AiConfig["channelMode"];
         baseUrl: string;
         generation: Pick<AiConfig, "size" | "vquality" | "videoSeconds" | "videoInputMode" | "videoGenerateAudio">;
         prepared?: UploadedFile;
+        mask?: UploadedFile;
         generated?: UploadedFile;
+        composited?: UploadedFile;
+        maskTask?: { id: string; operation: "track-mask" };
+        generationTask?: { id: string; operation: "masked-edit" };
         subtitles?: SubtitleSegment[];
     };
     storeExploreInput?: StoreExploreInput;
@@ -259,6 +275,7 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     subtitleMode: "auto",
     regions: [],
     replacement: "person",
+    maskedPerson: false,
     maskedEdit: false,
     route: "replicate",
     replicateSpeaker: "Serena",
@@ -279,6 +296,6 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     highlightColor: "#ffe066",
     cutSilence: false,
     addSubtitles: true,
-    // Subtitle repair is opt-in until OCR + a temporal inpainting engine are ready.
-    replaceSubtitles: true,
+    // Subtitle repair is opt-in; the CPU server can compose audio and captions but does not run OCR/inpainting.
+    replaceSubtitles: false,
 });

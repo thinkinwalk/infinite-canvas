@@ -49,6 +49,7 @@ func TestReplicatePricingUsesOwnedMediaDuration(t *testing.T) {
 		{ID: "voice.wav", UserID: "user", MimeType: "audio/wav", DurationSeconds: 7.25},
 		{ID: "video.mp4", UserID: "user", MimeType: "video/mp4", DurationSeconds: 10.1},
 		{ID: "other.mp4", UserID: "other", MimeType: "video/mp4", DurationSeconds: 120},
+		{ID: "mask.mp4", UserID: "user", MimeType: "video/mp4", DurationSeconds: 10.1},
 		{ID: "photo.png", UserID: "user", MimeType: "image/png"},
 	} {
 		if err := repository.SaveReferenceMediaOwner(item); err != nil {
@@ -83,6 +84,22 @@ func TestReplicatePricingUsesOwnedMediaDuration(t *testing.T) {
 	if err := ValidateReplicateQuoteInput("other", spec, localInput); err == nil {
 		t.Fatal("quotes must retain ownership checks")
 	}
+	config.Cfg.PublicBaseURL = "https://test.example"
+	track, err := FindReplicateModel("track-mask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	trackInput := map[string]any{"input_video": "https://test.example/api/media/references/mask.mp4", "click_coordinates": "[[10,20]]"}
+	pricingInput, duration = replicatePricingInput("user", track, trackInput)
+	if duration != 10.1 || pricingInput["durationSeconds"] != 10.1 {
+		t.Fatalf("SAM 2 must use owned input-video duration: %v", duration)
+	}
+	if err := ValidateReplicateQuoteInput("user", track, trackInput); err != nil {
+		t.Fatalf("valid SAM 2 input rejected: %v", err)
+	}
+	if err := ValidateReplicateInput("other", track, trackInput); err == nil {
+		t.Fatal("SAM 2 must reject another user's video")
+	}
 }
 
 func TestNormalizeReplicatePricingIncludesPinnedModels(t *testing.T) {
@@ -95,6 +112,9 @@ func TestNormalizeReplicatePricingIncludesPinnedModels(t *testing.T) {
 	}
 	if settings.Pricing["prunaai/vace-14b"].Enabled {
 		t.Fatal("VACE should remain disabled until runtime billing is verified")
+	}
+	if settings.Pricing["meta/sam-2-video"].Enabled {
+		t.Fatal("SAM 2 should remain disabled until runtime billing is verified")
 	}
 }
 

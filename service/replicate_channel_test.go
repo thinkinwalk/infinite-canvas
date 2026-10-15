@@ -14,7 +14,7 @@ func TestReplicateChannelImportPreservesCredentialsPricingAndID(t *testing.T) {
 	t.Setenv("REPLICATE_API_TOKEN", "")
 	setting := normalizePrivateSetting(model.PrivateSetting{NextChannelID: 8, Channels: []model.ModelChannel{{ID: 4, Protocol: "openai"}}, Replicate: model.ReplicateSetting{APIKey: "old-secret", Pricing: map[string]model.ReplicatePricing{"qwen/qwen3-tts": {Version: "original-version", UnitCredits: 123, Enabled: false}}}})
 	channel := setting.Channels[1]
-	if channel.ID != 8 || channel.APIKey != "old-secret" || channel.Protocol != "replicate" || len(channel.Models) != 13 {
+	if channel.ID != 8 || channel.APIKey != "old-secret" || channel.Protocol != "replicate" || len(channel.Models) != 14 {
 		t.Fatal("credential import lost the original channel configuration")
 	}
 	if setting.Replicate.APIKey != "" || setting.Replicate.LegacyChannelID != channel.ID || setting.Replicate.Pricing["qwen/qwen3-tts"].Version != "original-version" || setting.Replicate.Pricing["qwen/qwen3-tts"].UnitCredits != 123 {

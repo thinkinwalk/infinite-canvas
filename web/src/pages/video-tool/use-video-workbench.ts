@@ -22,7 +22,7 @@ import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-s
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { resolveModelRequestConfig, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
-import { cancelReplicateTask, createReplicateTask, getReplicateModels, quoteReplicate, readReplicateTask, storeReplicateResult, uploadReplicateReference, waitForReplicateTask, type ReplicateOperation, type ReplicateTask } from "@/services/api/replicate";
+import { cancelReplicateTask, createReplicateTask, getReplicateModels, quoteReplicate, readReplicateTask, storeReplicateResult, uploadReplicateReference, waitForReplicateTask, type ReplicateOperation, type ReplicateQuote, type ReplicateTask } from "@/services/api/replicate";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { CanvasNodeType } from "@/types/canvas";
@@ -53,12 +53,33 @@ const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-
 const imagesOf = (media: WorkbenchMedia[]): ReferenceImage[] => media.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name, type: m.mimeType, dataUrl: m.url, storageKey: m.storageKey }));
 const mediaOf = (media: WorkbenchMedia[], kind: "video" | "audio") =>
     media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs }));
-function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
+function vaceSize(video: UploadedFile, resolution: VideoDraft["replicateResolution"]) {
+    const portrait = Boolean(video.width && video.height && video.height > video.width);
+    if (resolution === "720p") return portrait ? "720*1280" : "1280*720";
+    return portrait ? "480*832" : "832*480";
+}
+function vaceFrameCount(video: UploadedFile) {
+    const seconds = video.durationMs && video.durationMs > 0 ? video.durationMs / 1000 : 5;
+    const frames = Math.max(5, Math.round(seconds * 16));
+    return Math.ceil((frames - 1) / 4) * 4 + 1;
+}
+function replacementRequest(d: VideoDraft, cleanSubtitles = false, selectedMask?: UploadedFile): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const image = d.media.find((m) => m.role === (d.replacement === "background" ? "background" : "model") && m.kind === "image");
     if (!video) throw new Error("请先上传原视频");
     if (!image) throw new Error("请先上传替换参考图片");
-    if (d.replacement === "person") return { operation: "replace-person", fields: { resolution: d.replicateResolution.replace("p", ""), merge_audio: true }, materials: { video, character_image: image } };
+    if (d.replacement === "person") {
+        const mask = selectedMask || d.media.find((m) => m.role === "mask");
+        if (d.maskedPerson) {
+            if (!mask) throw new Error("人物局部替换需要动态人物掩膜");
+            return {
+                operation: "masked-edit",
+                fields: { size: vaceSize(video, d.replicateResolution), frame_num: vaceFrameCount(video), prompt: contentReplacementPrompt("person", d.instructions, cleanSubtitles) },
+                materials: { src_video: video, src_mask: mask, src_ref_images: [image] },
+            };
+        }
+        return { operation: "replace-person", fields: { resolution: d.replicateResolution.replace("p", ""), merge_audio: true }, materials: { video, character_image: image } };
+    }
     if (!d.instructions.trim()) throw new Error("请填写具体替换要求");
     const prompt = contentReplacementPrompt(d.replacement, d.instructions, cleanSubtitles);
     if (d.maskedEdit) {
@@ -68,6 +89,28 @@ function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation:
     }
     if (video.durationMs && (video.durationMs < 2000 || video.durationMs > 10000)) throw new Error("当前视频编辑模型要求原视频为 2–10 秒，请先裁剪素材");
     return { operation: "video-edit", fields: { prompt, resolution: "720p", audio_setting: "origin" }, materials: { video, reference_image: image } };
+}
+function trackMaskRequest(d: VideoDraft): { operation: "track-mask"; fields: Record<string, unknown>; materials: Record<string, UploadedFile> } {
+    const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
+    const region = d.regions[0];
+    if (!video || !region) throw new Error("请先上传视频并框选要替换的人物");
+    if (!video.width || !video.height) throw new Error("无法读取原视频画幅，暂不能自动跟踪人物");
+    const x = Math.round((region.x + region.width / 2) * video.width);
+    const y = Math.round((region.y + region.height / 2) * video.height);
+    return {
+        operation: "track-mask",
+        fields: {
+            click_coordinates: JSON.stringify([[x, y]]),
+            click_frames: String(Math.max(0, Math.round((d.replacementSeedTime || 0) * 30))),
+            click_labels: "1",
+            click_object_ids: "person",
+            mask_type: "binary",
+            output_video: true,
+            video_fps: 30,
+            output_frame_interval: 1,
+        },
+        materials: { input_video: video },
+    };
 }
 function subtitleRemoveRequest(d: VideoDraft): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
@@ -306,7 +349,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
         return result;
     };
-    const required = (file: UploadedFile | null | undefined, label: string) => {
+    const required = (file: UploadedFile | null | undefined, label: string): UploadedFile => {
         if (!file) throw new Error(`请先${label}`);
         return file;
     };
@@ -378,7 +421,33 @@ export function useVideoWorkbench(tool: VideoTool) {
         return input;
     };
     const quoteReplacement = async (signal?: AbortSignal) => {
-        const { operation, fields, materials } = replacementRequest(read(tool));
+        const d = read(tool);
+        if (d.replacement === "person" && d.maskedPerson && !d.media.some((item) => item.role === "mask")) {
+            const track = trackMaskRequest(d);
+            const video = d.media.find((item) => item.role === "reference" && item.kind === "video");
+            const image = d.media.find((item) => item.role === "model" && item.kind === "image");
+            if (!video || !image) throw new Error("请先上传原视频和人物参考图");
+            const trackInput = await cloudInput(track.fields, track.materials, signal);
+            const editInput = await cloudInput(
+                { size: vaceSize(video, d.replicateResolution), frame_num: vaceFrameCount(video), prompt: contentReplacementPrompt("person", d.instructions, false) },
+                { src_video: video, src_ref_images: [image] },
+                signal,
+            );
+            const [trackQuote, editQuote] = await Promise.all([quoteReplicate("track-mask", trackInput, signal), quoteReplicate("masked-edit", editInput, signal)]);
+            return {
+                ...editQuote,
+                operation: "masked-edit",
+                label: "人物局部替换（跟踪 + 生成）",
+                credits: trackQuote.credits + editQuote.credits,
+                configured: trackQuote.configured && editQuote.configured,
+                available: trackQuote.available && editQuote.available,
+                reason: trackQuote.reason || editQuote.reason,
+                submissionBlocked: trackQuote.submissionBlocked || editQuote.submissionBlocked,
+                calculation: `目标跟踪 ${trackQuote.credits.toLocaleString()} 点 + 局部生成 ${editQuote.credits.toLocaleString()} 点`,
+                inputSummary: "先云端跟踪一次，再用掩膜局部替换人物；不会在本机运行 GPU 模型",
+            } satisfies ReplicateQuote;
+        }
+        const { operation, fields, materials } = replacementRequest(d);
         return quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
     };
     const quoteDigitalHuman = async (signal?: AbortSignal) => {
@@ -391,38 +460,119 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (d.route !== "replicate") throw new Error("增强处理费用以当前处理服务为准");
         return quoteReplicate("upscale", await cloudInput({ target_resolution: d.replicateTargetResolution, target_fps: d.replicateFps }, { video: input.media[0] }, signal), signal);
     };
-    const cloud = async (ctx: Context, stage: string, operation: ReplicateOperation, fields: Record<string, unknown>, materials: Record<string, UploadedFile | UploadedFile[]>): Promise<Partial<VideoDraft>> => {
-        if (operation === "transcribe") {
-            const model = (await getReplicateModels(ctx.signal)).find((item) => item.operation === operation);
-            const reason = transcriptionUnavailable(model);
-            if (reason) throw new Error(reason);
-        }
-        const input = await cloudInput(fields, materials, ctx.signal, operation === "transcribe" ? "transcribe" : undefined);
-        const quote = await quoteReplicate(operation, input, ctx.signal);
-        await confirmReplicate(quote, ctx.signal);
-        ctx.signal.throwIfAborted();
-        if (digital) store().patchRecord(ctx.recordId, { digitalHumanQuote: quote });
-        store().patchRecord(ctx.recordId, { replicateTask: { id: ctx.recordId, operation } });
-        try {
-            const task = await createReplicateTask(ctx.recordId, operation, input, quote.credits, ctx.signal);
-            store().patchRecord(ctx.recordId, { replicateBilling: { credits: task.credits, refunded: task.refunded } });
-        } catch (error) {
-            if (operation === "transcribe" && !ctx.signal.aborted) {
-                try { await readReplicateTask(ctx.recordId, ctx.signal); }
-                catch (lookupError) {
-                    if (lookupError instanceof Error && lookupError.name === "ReplicateTaskNotFound") store().patchRecord(ctx.recordId, { replicateTask: undefined, status: "failed" });
-                }
-            }
-            throw error;
-        }
-        const task = await waitForReplicateTask(ctx.recordId, ctx.signal, (job) =>
+    const submitCloudTask = async (ctx: Context, operation: ReplicateOperation, input: Record<string, unknown>, quote: ReplicateQuote, taskId: string) => {
+        store().patchRecord(ctx.recordId, { replicateTask: { id: taskId, operation } });
+        const task = await createReplicateTask(taskId, operation, input, quote.credits, ctx.signal);
+        store().patchRecord(ctx.recordId, { replicateBilling: { credits: task.credits, refunded: task.refunded } });
+        return waitForReplicateTask(taskId, ctx.signal, (job) =>
             store().patchRecord(ctx.recordId, {
                 step: job.status === "generated" ? "模型已完成，正在保存作品" : job.status === "creating" ? "平台任务正在提交" : job.status === "running" ? "平台服务正在处理" : publicServiceText(job.error || job.status),
                 replicateBilling: { credits: job.credits, refunded: job.refunded },
                 ...(job.status === "failed" || job.status === "cancelled" ? { status: "failed" as const } : {}),
             }),
         );
+    };
+    const cloud = async (ctx: Context, stage: string, operation: ReplicateOperation, fields: Record<string, unknown>, materials: Record<string, UploadedFile | UploadedFile[]>, taskId = ctx.recordId, confirmedQuote?: ReplicateQuote): Promise<Partial<VideoDraft>> => {
+        if (operation === "transcribe") {
+            const model = (await getReplicateModels(ctx.signal)).find((item) => item.operation === operation);
+            const reason = transcriptionUnavailable(model);
+            if (reason) throw new Error(reason);
+        }
+        const input = await cloudInput(fields, materials, ctx.signal, operation === "transcribe" ? "transcribe" : undefined);
+        const quote = confirmedQuote || await quoteReplicate(operation, input, ctx.signal);
+        if (!confirmedQuote) await confirmReplicate(quote, ctx.signal);
+        ctx.signal.throwIfAborted();
+        if (digital) store().patchRecord(ctx.recordId, { digitalHumanQuote: quote });
+        const task = await submitCloudTask(ctx, operation, input, quote, taskId);
         return cloudResult(stage, task);
+    };
+    const maskedPersonCloud = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
+        const record = () => store().records.find((item) => item.id === ctx.recordId)!;
+        const source = required(d.media.find((item) => item.role === "reference" && item.kind === "video"), "上传原视频");
+        const image = required(d.media.find((item) => item.role === "model" && item.kind === "image"), "上传替换主体图");
+        const uploadedMask = d.media.find((item) => item.role === "mask");
+        const existingState = record().maskedReplacement;
+        if (existingState && resolveWorkerUrl(ctx.worker) !== existingState.workerUrl) throw new Error("请连接原任务的局部合成服务后继续");
+        let mask = existingState?.mask ? await restoreWorkbenchFile(existingState.mask) : record().replacementMask ? await restoreWorkbenchFile(record().replacementMask!) : undefined;
+        const save = (value: Partial<NonNullable<VideoRecord["maskedReplacement"]>>) => {
+            const current = record().maskedReplacement || { phase: "mask" as const, workerUrl: resolveWorkerUrl(ctx.worker) };
+            store().patchRecord(ctx.recordId, { maskedReplacement: { ...current, ...value } });
+        };
+        const compositeCapability = (await getWorkerCapabilities(ctx.worker)).find((item) => item.name === "replacement-masked-composite");
+        if (!compositeCapability?.available) throw new Error(`${compositeCapability?.reason || "局部合成服务尚未就绪"}；尚未提交收费生成`);
+        let trackQuote: ReplicateQuote | undefined;
+        if (!mask && !uploadedMask) {
+            const track = trackMaskRequest(d);
+            const trackInput = await cloudInput(track.fields, track.materials, ctx.signal);
+            trackQuote = await quoteReplicate("track-mask", trackInput, ctx.signal);
+        }
+        if (!mask && uploadedMask) mask = uploadedMask;
+        const editInput = await cloudInput(
+            { size: vaceSize(source, d.replicateResolution), frame_num: vaceFrameCount(source), prompt: contentReplacementPrompt("person", d.instructions, false) },
+            { src_video: source, ...(mask ? { src_mask: mask } : {}), src_ref_images: [image] },
+            ctx.signal,
+        );
+        const editQuote = await quoteReplicate("masked-edit", editInput, ctx.signal);
+        const totalQuote = {
+            ...editQuote,
+            operation: "masked-edit" as const,
+            label: "人物局部替换（跟踪 + 生成）",
+            credits: editQuote.credits + (trackQuote?.credits || 0),
+            configured: editQuote.configured && (trackQuote ? trackQuote.configured : true),
+            available: editQuote.available && (trackQuote ? trackQuote.available : true),
+            reason: trackQuote?.reason || editQuote.reason,
+            submissionBlocked: trackQuote?.submissionBlocked || editQuote.submissionBlocked,
+            calculation: trackQuote ? `目标跟踪 ${trackQuote.credits.toLocaleString()} 点 + 局部生成 ${editQuote.credits.toLocaleString()} 点` : editQuote.calculation,
+            inputSummary: "云端跟踪并局部替换人物，其他画面由服务器按掩膜保留",
+        } satisfies ReplicateQuote;
+        await confirmReplicate(totalQuote, ctx.signal);
+        if (!mask) {
+            const track = trackMaskRequest(d);
+            const trackInput = await cloudInput(track.fields, track.materials, ctx.signal);
+            const taskId = record().maskedReplacement?.maskTask?.id || record().replacementMaskTask?.id || `${ctx.recordId}-mask`;
+            let task: ReplicateTask;
+            if (record().maskedReplacement?.maskTask || record().replacementMaskTask) {
+                task = await waitForReplicateTask(taskId, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: `云端目标跟踪：${job.status}` }));
+            } else {
+                save({ phase: "mask", maskTask: { id: taskId, operation: "track-mask" } });
+                store().patchRecord(ctx.recordId, { replacementMaskTask: { id: taskId, operation: "track-mask" }, replicateTask: { id: taskId, operation: "track-mask" } });
+                task = await submitCloudTask(ctx, "track-mask", trackInput, trackQuote!, taskId);
+            }
+            mask = await storeReplicateResult(task);
+            save({ phase: "generate", mask, maskTask: undefined });
+            store().patchRecord(ctx.recordId, { replacementMask: mask, replacementMaskTask: undefined });
+        }
+        const finalInput = await cloudInput(
+            { size: vaceSize(source, d.replicateResolution), frame_num: vaceFrameCount(source), prompt: contentReplacementPrompt("person", d.instructions, false) },
+            { src_video: source, src_mask: mask, src_ref_images: [image] },
+            ctx.signal,
+        );
+        const editTaskId = `${ctx.recordId}-edit`;
+        const existing = record().maskedReplacement?.generationTask || (record().replicateTask?.operation === "masked-edit" ? record().replicateTask : undefined);
+        let generated: UploadedFile;
+        const savedGenerated = record().maskedReplacement?.generated;
+        if (savedGenerated) generated = await restoreWorkbenchFile(savedGenerated);
+        else {
+            const generatedTask = existing ? await waitForReplicateTask(existing.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: `云端局部替换：${job.status}` })) : await submitCloudTask(ctx, "masked-edit", finalInput, editQuote, editTaskId);
+            const generatedFile = await storeReplicateResult(generatedTask);
+            save({ phase: "composite", generated: generatedFile, generationTask: { id: generatedTask.id, operation: "masked-edit" } });
+            generated = generatedFile;
+        }
+        let composited: WorkerJob;
+        const pendingComposite = record().workerJob;
+        if (pendingComposite) {
+            const current = await readWorkerJob(ctx.worker, pendingComposite.id, ctx.signal);
+            if (current.status === "failed" || current.status === "cancelled") {
+                store().patchRecord(ctx.recordId, { workerJob: undefined });
+                composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, {});
+            } else {
+                composited = await waitForWorkerJob(ctx.worker, pendingComposite.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: job.step }));
+            }
+        } else composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, {});
+        if (!composited.result?.file) throw new Error("局部合成服务未返回视频，已保留云端生成结果");
+        const result = await storeWorkerResult(ctx.worker, composited.result.file);
+        store().patchRecord(ctx.recordId, { maskedReplacement: undefined, replacementMask: undefined, replacementMaskTask: undefined, replicateTask: undefined, workerJob: undefined });
+        return { video: result };
     };
     const replacementPipeline = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
         const record = () => store().records.find((r) => r.id === ctx.recordId)!;
@@ -667,6 +817,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     return cloud(ctx, stage, operation, fields, materials);
                 }
                 if (tool === "content-replace") {
+                    if (d.maskedPerson) return maskedPersonCloud(ctx, d);
                     const { operation, fields, materials } = replacementRequest(d, Boolean(replacementDraft));
                     return cloud(ctx, stage, operation, fields, materials);
                 }
@@ -707,10 +858,10 @@ export function useVideoWorkbench(tool: VideoTool) {
                                           "上传替换主体图",
                                       ),
                                   }),
-                            ...(d.replacement !== "person" && d.media.find((m) => m.role === "mask") ? { mask: d.media.find((m) => m.role === "mask")! } : {}),
+                            ...((d.replacement !== "person" || d.maskedPerson) && d.media.find((m) => m.role === "mask") ? { mask: d.media.find((m) => m.role === "mask")! } : {}),
                             ...(d.replacement === "product" && d.media.find((m) => m.role === "background") ? { background: d.media.find((m) => m.role === "background")! } : {}),
                         },
-                        { replacement: d.replacement, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions, seedTime: d.replacementSeedTime || 0 },
+                        { replacement: d.replacement, maskedPerson: d.maskedPerson, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions, seedTime: d.replacementSeedTime || 0 },
                     ),
                     ctx.worker,
                 );
@@ -827,6 +978,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ? {
                       replacementInput: {
                           replacement: d.replacement,
+                          maskedPerson: d.maskedPerson,
                           replacementSeedTime: d.replacementSeedTime,
                           route: d.route,
                           instructions: d.instructions,
@@ -840,7 +992,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                               (m) =>
                                   m.role === "reference" ||
                                   m.role === (d.replacement === "background" ? "background" : "model") ||
-                                  (m.role === "mask" && d.replacement !== "person" && (d.maskedEdit || d.route === "worker")) ||
+                                  (m.role === "mask" && (d.replacement !== "person" || d.maskedPerson) && (d.maskedEdit || d.maskedPerson || d.route === "worker")) ||
                                   (m.role === "background" && d.route === "worker"),
                           ),
                       },
@@ -1020,7 +1172,11 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (error) throw new Error(error);
                 if (store().records.some((r) => r.tool === tool && r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask))) throw new Error("已有视频任务，请恢复查询原任务，避免重复付费");
             }
-            if (tool === "content-replace" && stage === "video" && read(tool).route === "replicate") replacementRequest(read(tool));
+            if (tool === "content-replace" && stage === "video" && read(tool).route === "replicate") {
+                const current = read(tool);
+                if (current.maskedPerson && !current.media.some((item) => item.role === "mask")) trackMaskRequest(current);
+                else replacementRequest(current);
+            }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
             if (stage === "analyze" && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
                 await perform("frames", signal);
@@ -1096,7 +1252,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                     patch({ ...clearAfter(record.stage), ...record.subtitleRemoveInput, media, activeRecord: record.id, video: null, final: null });
                 } else patch({ activeRecord: record.id });
                 let value: Partial<VideoDraft>;
-                if (tool === "content-replace" && record.stage === "video" && record.replacementPipeline)
+                if (tool === "content-replace" && record.stage === "video" && record.maskedReplacement)
+                    value = await maskedPersonCloud({ signal, recordId: record.id, worker }, read(tool));
+                else if (tool === "content-replace" && record.stage === "video" && record.replacementPipeline)
                     value = await replacementPipeline({ signal, recordId: record.id, worker }, read(tool));
                 else if (record.replicateTask)
                     value = await cloudResult(

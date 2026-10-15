@@ -907,6 +907,76 @@
     }
   },
   {
+    "operation": "track-mask",
+    "label": "视频目标跟踪掩膜",
+    "model": "meta/sam-2-video",
+    "version": "33432afdfc06a10da6b4018932893d39b0159f838b6d11dd1236dff85cc5ec1d",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": [
+        "input_video",
+        "click_coordinates"
+      ],
+      "properties": {
+        "input_video": {
+          "type": "string",
+          "title": "Input Video",
+          "format": "uri",
+          "description": "Input video file path"
+        },
+        "click_coordinates": {
+          "type": "string",
+          "title": "Click Coordinates",
+          "description": "Click coordinates as '[x,y]'."
+        },
+        "click_frames": {
+          "type": "string",
+          "title": "Click Frames",
+          "default": "0",
+          "description": "Frame indices for clicks"
+        },
+        "click_labels": {
+          "type": "string",
+          "title": "Click Labels",
+          "default": "1",
+          "description": "Click types (1=foreground, 0=background)"
+        },
+        "click_object_ids": {
+          "type": "string",
+          "title": "Click Object Ids",
+          "default": "person",
+          "description": "Object label for the selected target"
+        },
+        "mask_type": {
+          "enum": [
+            "binary",
+            "highlighted",
+            "greenscreen"
+          ],
+          "type": "string",
+          "default": "binary"
+        },
+        "output_video": {
+          "type": "boolean",
+          "default": true
+        },
+        "video_fps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 16
+        },
+        "output_frame_interval": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      }
+    },
+    "enums": {}
+  },
+  {
     "operation": "masked-edit",
     "label": "局部视频编辑",
     "model": "prunaai/vace-14b",

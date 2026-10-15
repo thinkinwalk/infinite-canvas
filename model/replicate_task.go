@@ -17,13 +17,17 @@ type ReplicateTask struct {
 	PricingSnapshot string  `json:"pricingSnapshot" gorm:"type:text"`
 	Refunded        bool    `json:"refunded"`
 	OutputURL       string  `json:"-"`
-	ResultFile      string  `json:"-"`
-	ResultJSON      string  `json:"-" gorm:"type:text"`
-	MimeType        string  `json:"mimeType"`
-	Error           string  `json:"error,omitempty"`
-	Metrics         string  `json:"metrics" gorm:"type:text"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	// OutputURLs preserves iterator-style provider output (for example SAM 2
+	// may return one URI per mask frame). OutputURL remains the single-file
+	// fast path used by the other models.
+	OutputURLs string `json:"-" gorm:"type:text"`
+	ResultFile string `json:"-"`
+	ResultJSON string `json:"-" gorm:"type:text"`
+	MimeType   string `json:"mimeType"`
+	Error      string `json:"error,omitempty"`
+	Metrics    string `json:"metrics" gorm:"type:text"`
+	CreatedAt  string `json:"createdAt"`
+	UpdatedAt  string `json:"updatedAt"`
 }
 
 // ReferenceMediaOwner records ownership of public opaque reference URLs.

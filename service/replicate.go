@@ -185,6 +185,8 @@ func replicateDescription(operation string) string {
 		return "让已有视频中的人物口型与新音频同步"
 	case "replace-person":
 		return "将视频中的人物替换为指定角色并保留动作"
+	case "track-mask":
+		return "根据一次点选在云端跟踪人物或商品，生成逐帧编辑掩膜"
 	case "upscale":
 		return "提升视频清晰度，可输出 720p、1080p 或 4K"
 	case "image-to-video":
@@ -216,6 +218,8 @@ func replicateBillingDescription(operation string) string {
 		return "按输出视频秒数计费"
 	case "replace-person":
 		return "按输出秒数和分辨率计费"
+	case "track-mask":
+		return "按输入视频时长计费；只做目标跟踪，不生成替换画面"
 	case "upscale":
 		return "按视频时长、输出分辨率和帧率计费"
 	case "image-to-video":
@@ -260,6 +264,11 @@ func defaultReplicatePricing(spec ReplicateModel) model.ReplicatePricing {
 		pricing.BlockSeconds = 1
 		pricing.Tiers["480"] = 70
 		pricing.Tiers["720"] = 180
+	case "track-mask":
+		pricing.BillingMode = "runtime_seconds"
+		pricing.UnitCredits = 6
+		pricing.DefaultUnits = 10
+		pricing.Enabled = false
 	case "upscale":
 		pricing.BillingMode = "duration_resolution"
 		pricing.DefaultUnits = 60
@@ -477,6 +486,12 @@ func replicatePricingInput(userID string, spec ReplicateModel, input map[string]
 		}
 	}
 	keys := []string{"video"}
+	if spec.Operation == "track-mask" {
+		keys = []string{"input_video"}
+	}
+	if spec.Operation == "masked-edit" {
+		keys = []string{"src_video"}
+	}
 	if spec.Operation == "digital-human" || spec.Operation == "transcribe" {
 		keys = []string{"audio"}
 	}
@@ -553,7 +568,7 @@ func validateReplicateInput(userID string, spec ReplicateModel, input map[string
 			return fmt.Errorf("声音克隆需要上传声音样本")
 		}
 	}
-	if spec.Operation == "masked-edit" && (input["src_video"] == nil || input["src_mask"] == nil) {
+	if spec.Operation == "masked-edit" && (input["src_video"] == nil || (submitting && input["src_mask"] == nil)) {
 		return fmt.Errorf("掩膜编辑需要原视频及掩膜")
 	}
 	if spec.Operation == "hailuo-video" && input["resolution"] == "1080p" && replicateString(input["duration"]) == "10" {
@@ -680,7 +695,7 @@ func validateReplicateReference(userID, address, key string, submitting bool) er
 	switch key {
 	case "audio", "reference_audio":
 		expected = "audio/"
-	case "video", "src_video":
+	case "video", "src_video", "input_video":
 		expected = "video/"
 	case "src_mask":
 		if strings.HasPrefix(item.MimeType, "video/") {
