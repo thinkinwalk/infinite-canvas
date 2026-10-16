@@ -400,6 +400,24 @@ export function useVideoWorkbench(tool: VideoTool) {
         return input;
     };
     // 局部人物替换：SAM 2 跟踪人物掩膜，Wan-Animate 生成换人视频，再由处理服务只把掩膜内人物回填到原画面
+    // 编号就是服务端的幂等键：同一个编号重复提交只会创建一次、只扣一次费。
+    // 上次创建被拒（例如算力点不足）时服务端没有这条任务，这里用同一编号补交。
+    const resumeOrSubmit = async (
+        ctx: Context,
+        operation: ReplicateOperation,
+        input: Record<string, unknown>,
+        quote: ReplicateQuote,
+        pending: { id: string } | undefined,
+        onProgress: (job: ReplicateTask) => void,
+    ) => {
+        if (!pending) return submitCloudTask(ctx, operation, input, quote, `${ctx.recordId}-${operation}`);
+        try {
+            return await waitForReplicateTask(pending.id, ctx.signal, onProgress);
+        } catch (error) {
+            if (!(error instanceof Error) || error.name !== "ReplicateTaskNotFound") throw error;
+            return submitCloudTask(ctx, operation, input, quote, pending.id);
+        }
+    };
     const maskedPersonQuote = (track: ReplicateQuote | undefined, animate: ReplicateQuote): ReplicateQuote => ({
         ...animate,
         label: "人物局部替换（跟踪 + 生成）",
@@ -431,7 +449,22 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const submitCloudTask = async (ctx: Context, operation: ReplicateOperation, input: Record<string, unknown>, quote: ReplicateQuote, taskId: string) => {
         store().patchRecord(ctx.recordId, { replicateTask: { id: taskId, operation } });
-        const task = await createReplicateTask(taskId, operation, input, quote.credits, ctx.signal);
+        let task: ReplicateTask;
+        try {
+            task = await createReplicateTask(taskId, operation, input, quote.credits, ctx.signal);
+        } catch (error) {
+            // 创建被拒（如算力点不足）时服务端没有这条任务；清掉本地编号，避免之后恢复时反复查询一个不存在的任务
+            const current = store().records.find((item) => item.id === ctx.recordId);
+            const masked = current?.maskedReplacement;
+            store().patchRecord(ctx.recordId, {
+                replicateTask: current?.replicateTask?.id === taskId ? undefined : current?.replicateTask,
+                replacementMaskTask: current?.replacementMaskTask?.id === taskId ? undefined : current?.replacementMaskTask,
+                ...(masked?.maskTask?.id === taskId || masked?.generationTask?.id === taskId
+                    ? { maskedReplacement: { ...masked, maskTask: masked.maskTask?.id === taskId ? undefined : masked.maskTask, generationTask: masked.generationTask?.id === taskId ? undefined : masked.generationTask } }
+                    : {}),
+            });
+            throw error;
+        }
         store().patchRecord(ctx.recordId, { replicateBilling: { credits: task.credits, refunded: task.refunded } });
         return waitForReplicateTask(taskId, ctx.signal, (job) =>
             store().patchRecord(ctx.recordId, {
@@ -485,7 +518,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             const taskId = record().maskedReplacement?.maskTask?.id || record().replacementMaskTask?.id || `${ctx.recordId}-mask`;
             let task: ReplicateTask;
             if (record().maskedReplacement?.maskTask || record().replacementMaskTask) {
-                task = await waitForReplicateTask(taskId, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: `云端目标跟踪：${job.status}` }));
+                task = await resumeOrSubmit(ctx, "track-mask", trackInput, trackQuote!, { id: taskId }, (job) => store().patchRecord(ctx.recordId, { step: `云端目标跟踪：${job.status}` }));
             } else {
                 save({ phase: "mask", maskTask: { id: taskId, operation: "track-mask" } });
                 store().patchRecord(ctx.recordId, { replacementMaskTask: { id: taskId, operation: "track-mask" }, replicateTask: { id: taskId, operation: "track-mask" } });
@@ -502,7 +535,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (animateState?.generated) generated = await restoreWorkbenchFile(animateState.generated);
         else {
             const generatedTask = existing
-                ? await waitForReplicateTask(existing.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: `云端人物生成：${job.status}` }))
+                ? await resumeOrSubmit(ctx, "replace-person", animateInput, animateQuote, existing, (job) => store().patchRecord(ctx.recordId, { step: `云端人物生成：${job.status}` }))
                 : await submitCloudTask(ctx, "replace-person", animateInput, animateQuote, `${ctx.recordId}-animate`);
             generated = await storeReplicateResult(generatedTask);
             save({ phase: "composite", generated, generationTask: { id: generatedTask.id, operation: "replace-person" } });
