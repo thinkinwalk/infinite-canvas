@@ -15,10 +15,22 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.52
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.51-worker/
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.53
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.53-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.53 masked-composite mask growth and caption protection deployment
+
+- Source commit `e5afc3f513f6ac73483177cead3d919efce4d39b`, annotated tag `v0.19.53`. Application image workflow succeeded (Docker image and Publish Official Plugins). No GitHub Release page was created (`gh` unauthenticated).
+- Two user-reported defects on the v0.19.51 online sample (task `4POhIkY1Wy04i_jYkzm1Z`): a caption burned onto the subject was erased, and a ghost outline of the old subject showed around the person.
+- Diagnosis, measured on the actual sample (source `b57b9cb8731145178e1ba0ff887beb01.mp4`, Wan-Animate output `e68ef5e83c094125ba5199ca2fb21133.mp4`, SAM 2 mask `c2a1b09499014754a58bb4795e61cca4.mp4` at 480x848): the caption sat 98% inside the tracked mask, so the generated redraw replaced it; 42.7% of the pixels the model changed strongly lay outside the tracked mask, 37% of the subject was cropped, and the tracked mask followed the OLD silhouette (the new subject sat offset), which left the old outline visible. Feather was a fixed 2 px.
+- Fix (worker): `composite_masked_frames` unions the tracked mask with the pixels the model actually redrew near it (`grow_mask_to_subject`: mean-channel threshold 40, 8 px dilation window around the tracked mask, hard stop above 1.5x tracked area), feathers by frame width (1.5%, ~7 px at 480) instead of a fixed 2 px, and restores burned-in caption glyphs from the source (`protect`). Caption lookup (`caption_lane_boxes` + `caption_boxes_for_composite`) is best effort and never fails the job; it reuses the existing PaddleOCR adapter. Application passes `protectCaptions: true` for this path.
+- Honest limitation, told to the user: mask growth only reaches the pixels the model redrew within 8 px of the tracked mask. On this sample the union grew 30.8% -> 32.6%, so the ghost fades rather than disappears where the new subject is offset from the old. Full removal needs a soft alpha from a matting model; RVM on Replicate (~$0.029/run) is the chosen next step, still to do.
+- Tests: 37 worker tests pass in the production image (14 in `test_replacement_engines`, 23 across `test_replacement` / `test_replacement_subtitles`), run from a copy under `/tmp` with `VIDEO_WORKER_DATA` pointed at a temp dir, so no production data was touched.
+- Worker deploy: new source dir `/opt/infinite-canvas/releases/v0.19.53-worker/` (the 6 mounted modules plus a copy of `adapters/`), all 6 files SHA-256 matched to the repo, 7 Compose mounts sed-replaced from `v0.19.51-worker`, `docker compose up -d --no-deps video-worker`. Health returns 24 available capabilities including `replacement-masked-composite`, `ocr` and `replacement-prepare`.
+- App: image digest `sha256:5e7ac5f650efc9c7e449b03eeef006129ce321f01281c7b3af6d86c8b65f133b`; `/app/VERSION` is `v0.19.53` and the OCI revision matches the commit. Internal and external health HTTP 200 `ok`. `/video/content-replace` serves `/assets/index-Bzb5bOOj.js`.
+- Backups: `/opt/infinite-canvas/backups/v0.19.53-20261016-123735/` (online SQLite backup + record hashes) plus the image helper backups. SQLite `quick_check` passed; settings/video-task/Replicate-task counts 2/32/21; all 59 worker job records byte-identical after deployment. No paid task was submitted by this deployment.
 
 ## v0.19.52 rejected cloud task resubmission deployment
 
