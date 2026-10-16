@@ -15,10 +15,23 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.53
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.53-worker/
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.54
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.54-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.54 new-subject mask union deployment
+
+- Source commit `5ee3672421d2434b8937c98f7601143d8cf321eb`, annotated tag `v0.19.54`. Docker image and Publish Official Plugins workflows succeeded. No GitHub Release page (`gh` unauthenticated).
+- Follow-up to v0.19.53 after the user reported the ghost was still below delivery standard. Root cause re-measured on the user's own sample (source `c70cbcdb8b94407e87b90d11627ab69d.mp4`, Wan-Animate output `bc88f9c0141c447290be0a81076b526e.mp4`, original-subject mask `162e74216f5244c6999905ee5d81ff09.mp4`, 480x848): the model repaints the whole frame, not just the subject, so pixel difference cannot separate the new subject from a repainted background; the tracked mask follows the OLD silhouette; the remaining ghost is a hairline seam along the subject outline.
+- Fix: the workflow now runs a SECOND SAM 2 track (`track-mask`) on the generated video using the same click region, and the worker unions the two masks, then grows the union 2px outward. The pixel-difference heuristic (`grow_mask_to_subject`) is skipped when a real second segmentation is present. The 2px value was measured: it removed ~77% of the seam pixels on the real sample with zero background pulled in.
+- Measured result on the user's sample (single frame, using the production composite_masked_frames): ghost pixels dropped from 8756 (2.15% of frame) to 1128 (0.28%), a ~87% reduction.
+- New boundary values, reported to and approved by the user: union outward growth `SUBJECT_EDGE_GROW = 2` px; two tracks plus one generation in quoting.
+- Cost note: this adds a second `track-mask` charge (~100 credits) per masked-person job. The user approved this.
+- Tests: 39 worker tests pass in the production image (16 in `test_replacement_engines`, including two new union/empty-subject cases, plus 23 across `test_replacement`/`test_replacement_subtitles`), run from a `/tmp` copy with `VIDEO_WORKER_DATA` in a temp dir. Frontend `tsc --noEmit` shows only the 3 pre-existing unrelated errors.
+- Worker deploy: `/opt/infinite-canvas/releases/v0.19.54-worker/` (6 mounted modules + adapters copy), all 6 SHA-256 matched, 7 Compose mounts sed-replaced, worker restarted; 24 capabilities available and `composite_masked_frames` exposes the `secondary` parameter.
+- App: digest `sha256:4f0e32b18542eb1e5c1a1cf1eeceac43186dec74b709b39357c241f1db9b2db8`; `/app/VERSION` `v0.19.54`, OCI revision matches. Internal/external health 200. SQLite `quick_check` passed; counts 2/32/23; all 60 worker job records byte-identical.
+- A temporary public copy of the generated video used for the SAM 2 validation was created under `data/reference-media/_tmp_verify_subject.mp4` and has been deleted. The validation prediction was made directly against the Replicate API with channel 17's key and did not create a站内 task or charge user credits.
 
 ## v0.19.53 masked-composite mask growth and caption protection deployment
 
