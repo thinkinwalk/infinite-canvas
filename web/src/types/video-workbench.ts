@@ -201,11 +201,13 @@ export type VideoRecord = {
     replacementMask?: UploadedFile;
     replacementMaskTask?: { id: string; operation: "track-mask" };
     maskedReplacement?: {
-        phase: "mask" | "generate" | "composite";
+        phase: "mask" | "generate" | "subject" | "composite";
         workerUrl: string;
         mask?: UploadedFile;
         generated?: UploadedFile;
+        subjectMask?: UploadedFile;
         maskTask?: { id: string; operation: "track-mask" };
+        subjectMaskTask?: { id: string; operation: "track-mask" };
         generationTask?: { id: string; operation: "masked-edit" | "replace-person" };
     };
     result?: UploadedFile;

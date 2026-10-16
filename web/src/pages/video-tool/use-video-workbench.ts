@@ -69,18 +69,15 @@ function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation:
     if (video.durationMs && (video.durationMs < 2000 || video.durationMs > 10000)) throw new Error("当前视频编辑模型要求原视频为 2–10 秒，请先裁剪素材");
     return { operation: "video-edit", fields: { prompt, resolution: "720p", audio_setting: "origin" }, materials: { video, reference_image: image } };
 }
-function trackMaskRequest(d: VideoDraft): { operation: "track-mask"; fields: Record<string, unknown>; materials: Record<string, UploadedFile> } {
-    const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
-    const region = d.regions[0];
-    if (!video || !region) throw new Error("请先上传视频并框选要替换的人物");
-    if (!video.width || !video.height) throw new Error("无法读取原视频画幅，暂不能自动跟踪人物");
+function trackMaskFor(video: UploadedFile, region: VideoDraft["regions"][number], seedTime: number | undefined): { operation: "track-mask"; fields: Record<string, unknown>; materials: Record<string, UploadedFile> } {
+    if (!video.width || !video.height) throw new Error("无法读取视频画幅，暂不能自动跟踪人物");
     const x = Math.round((region.x + region.width / 2) * video.width);
     const y = Math.round((region.y + region.height / 2) * video.height);
     return {
         operation: "track-mask",
         fields: {
             click_coordinates: JSON.stringify([[x, y]]),
-            click_frames: String(Math.max(0, Math.round((d.replacementSeedTime || 0) * 30))),
+            click_frames: String(Math.max(0, Math.round((seedTime || 0) * 30))),
             click_labels: "1",
             click_object_ids: "person",
             mask_type: "binary",
@@ -90,6 +87,19 @@ function trackMaskRequest(d: VideoDraft): { operation: "track-mask"; fields: Rec
         },
         materials: { input_video: video },
     };
+}
+function trackMaskRequest(d: VideoDraft): { operation: "track-mask"; fields: Record<string, unknown>; materials: Record<string, UploadedFile> } {
+    const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
+    const region = d.regions[0];
+    if (!video || !region) throw new Error("请先上传视频并框选要替换的人物");
+    return trackMaskFor(video, region, d.replacementSeedTime);
+}
+// 生成视频里的人物位置/体型可能与原片不同，用同一框选位置在生成画面上再跟踪一次，
+// 得到“新人物掩膜”；合成时与原掩膜取并集，避免新人被旧轮廓裁掉、旧人被留下。
+function subjectMaskRequest(d: VideoDraft, generated: UploadedFile): { operation: "track-mask"; fields: Record<string, unknown>; materials: Record<string, UploadedFile> } {
+    const region = d.regions[0];
+    if (!region) throw new Error("请先框选要替换的人物");
+    return trackMaskFor(generated, region, d.replacementSeedTime);
 }
 function subtitleRemoveRequest(d: VideoDraft): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
@@ -418,24 +428,31 @@ export function useVideoWorkbench(tool: VideoTool) {
             return submitCloudTask(ctx, operation, input, quote, pending.id);
         }
     };
-    const maskedPersonQuote = (track: ReplicateQuote | undefined, animate: ReplicateQuote): ReplicateQuote => ({
-        ...animate,
-        label: "人物局部替换（跟踪 + 生成）",
-        credits: animate.credits + (track?.credits || 0),
-        configured: animate.configured && (track ? track.configured : true),
-        available: animate.available && (track ? track.available : true),
-        reason: track?.reason || animate.reason,
-        submissionBlocked: track?.submissionBlocked || animate.submissionBlocked,
-        calculation: track ? `目标跟踪 ${track.credits.toLocaleString()} 点 + 人物生成 ${animate.credits.toLocaleString()} 点` : animate.calculation,
-        inputSummary: "云端跟踪人物并生成换人视频，人物区域外保留原画面",
-    });
+    // 跟踪一次原片人物 + 生成换人视频 + 在生成画面再跟踪一次新人物，最后取两次掩膜的并集回填原画面
+    const maskedPersonQuote = (track: ReplicateQuote | undefined, animate: ReplicateQuote, subject: ReplicateQuote | undefined): ReplicateQuote => {
+        const trackCredits = (track?.credits || 0) + (subject?.credits || 0);
+        const parts = [track?.credits ? `原人物跟踪 ${track.credits.toLocaleString()} 点` : "", subject?.credits ? `新人物跟踪 ${subject.credits.toLocaleString()} 点` : "", `人物生成 ${animate.credits.toLocaleString()} 点`].filter(Boolean);
+        return {
+            ...animate,
+            label: "人物局部替换（跟踪 + 生成 + 新人物跟踪）",
+            credits: animate.credits + trackCredits,
+            configured: animate.configured && (track ? track.configured : true) && (subject ? subject.configured : true),
+            available: animate.available && (track ? track.available : true) && (subject ? subject.available : true),
+            reason: track?.reason || subject?.reason || animate.reason,
+            submissionBlocked: track?.submissionBlocked || subject?.submissionBlocked || animate.submissionBlocked,
+            calculation: parts.join(" + ") || animate.calculation,
+            inputSummary: "云端跟踪人物并生成换人视频，人物区域外保留原画面",
+        };
+    };
     const quoteReplacement = async (signal?: AbortSignal) => {
         const d = read(tool);
         const { operation, fields, materials } = replacementRequest(d);
         const quote = await quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
         if (d.replacement !== "person" || !d.maskedPerson || d.media.some((item) => item.role === "mask")) return quote;
         const track = trackMaskRequest(d);
-        return maskedPersonQuote(await quoteReplicate("track-mask", await cloudInput(track.fields, track.materials, signal), signal), quote);
+        // 原片一次跟踪 + 生成后新人物一次跟踪，报价预览按两次跟踪计
+        const trackQuote = await quoteReplicate("track-mask", await cloudInput(track.fields, track.materials, signal), signal);
+        return maskedPersonQuote(trackQuote, quote, trackQuote);
     };
     const quoteDigitalHuman = async (signal?: AbortSignal) => {
         const { operation, fields, materials } = digitalHumanRequest(read(tool));
@@ -511,7 +528,11 @@ export function useVideoWorkbench(tool: VideoTool) {
         const animate = replacementRequest(d);
         const animateInput = await cloudInput(animate.fields, animate.materials, ctx.signal);
         const animateQuote = await quoteReplicate("replace-person", animateInput, ctx.signal);
-        await confirmReplicate(maskedPersonQuote(trackQuote, animateQuote), ctx.signal);
+        // 生成后还要在生成画面上再跟踪一次新人物；track-mask 按素材时长计价，
+        // 生成视频与原片时长一致，用原片预报价即可。
+        const subjectTrack = trackMaskRequest(d);
+        const subjectQuote = await quoteReplicate("track-mask", await cloudInput(subjectTrack.fields, subjectTrack.materials, ctx.signal), ctx.signal);
+        await confirmReplicate(maskedPersonQuote(trackQuote, animateQuote, subjectQuote), ctx.signal);
         if (!mask) {
             const track = trackMaskRequest(d);
             const trackInput = await cloudInput(track.fields, track.materials, ctx.signal);
@@ -538,21 +559,40 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ? await resumeOrSubmit(ctx, "replace-person", animateInput, animateQuote, existing, (job) => store().patchRecord(ctx.recordId, { step: `云端人物生成：${job.status}` }))
                 : await submitCloudTask(ctx, "replace-person", animateInput, animateQuote, `${ctx.recordId}-animate`);
             generated = await storeReplicateResult(generatedTask);
-            save({ phase: "composite", generated, generationTask: { id: generatedTask.id, operation: "replace-person" } });
+            save({ phase: "subject", generated, generationTask: { id: generatedTask.id, operation: "replace-person" } });
+        }
+        // 新人物掩膜：用同一框选位置在生成画面上再跟踪一次。换人后体型/位置会变，
+        // 只用原人物掩膜会把新人物裁掉并留下旧轮廓；两张掩膜取并集才贴合新人物。
+        let subjectMask: UploadedFile | undefined = record().maskedReplacement?.subjectMask ? await restoreWorkbenchFile(record().maskedReplacement!.subjectMask!) : undefined;
+        if (!subjectMask) {
+            const subjectTrack = subjectMaskRequest(d, generated);
+            const subjectInput = await cloudInput(subjectTrack.fields, subjectTrack.materials, ctx.signal);
+            const subjectTaskId = record().maskedReplacement?.subjectMaskTask?.id || `${ctx.recordId}-subject`;
+            const pendingSubject = record().maskedReplacement?.subjectMaskTask;
+            let task2: ReplicateTask;
+            if (pendingSubject) {
+                task2 = await resumeOrSubmit(ctx, "track-mask", subjectInput, subjectQuote, pendingSubject, (job) => store().patchRecord(ctx.recordId, { step: `云端新人物跟踪：${job.status}` }));
+            } else {
+                save({ phase: "subject", subjectMaskTask: { id: subjectTaskId, operation: "track-mask" } });
+                task2 = await submitCloudTask(ctx, "track-mask", subjectInput, subjectQuote, subjectTaskId);
+            }
+            subjectMask = await storeReplicateResult(task2);
+            save({ phase: "composite", subjectMask, subjectMaskTask: undefined });
         }
         let composited: WorkerJob;
         const pendingComposite = record().workerJob;
         // 原片字幕压在人物身上时会被新画面覆盖，这里让合成保留原字幕笔画
         const compositeOptions = { protectCaptions: true };
+        const compositeInputs = { source, video: generated, mask, subject: subjectMask };
         if (pendingComposite) {
             const current = await readWorkerJob(ctx.worker, pendingComposite.id, ctx.signal);
             if (current.status === "failed" || current.status === "cancelled") {
                 store().patchRecord(ctx.recordId, { workerJob: undefined });
-                composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, compositeOptions);
+                composited = await workerJob(ctx, "replacement-masked-composite", compositeInputs, compositeOptions);
             } else {
                 composited = await waitForWorkerJob(ctx.worker, pendingComposite.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: job.step }));
             }
-        } else composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, compositeOptions);
+        } else composited = await workerJob(ctx, "replacement-masked-composite", compositeInputs, compositeOptions);
         if (!composited.result?.file) throw new Error("局部合成服务未返回视频，已保留云端生成结果");
         const result = await storeWorkerResult(ctx.worker, composited.result.file);
         store().patchRecord(ctx.recordId, { maskedReplacement: undefined, replacementMask: undefined, replacementMaskTask: undefined, replicateTask: undefined, workerJob: undefined });

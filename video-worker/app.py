@@ -224,6 +224,10 @@ def validate_options(request: JobRequest):
                 if not isinstance(request.inputs.get("source"), str):
                     raise ValueError("请提供保留音轨与时间轴的原视频")
                 validate_segments(request.options.get("subtitles", []))
+        if request.operation == "replacement-masked-composite":
+            for key in ("source", "video", "mask"):
+                if not isinstance(request.inputs.get(key), str):
+                    raise ValueError("局部替换合成需要原画面、生成画面和人物掩膜")
         if request.operation == "trim":
             start, end = float(request.options["start"]), float(request.options["end"])
             if not math.isfinite(start) or not math.isfinite(end) or start < 0 or not 1 <= end - start <= 15:
@@ -930,10 +934,31 @@ async def run_job(identifier: str, request: JobRequest):
                 await ffmpeg(identifier, "-i", mask, "-vf", f"fps={sample_fps},scale={source_info['size'][0]}:{source_info['size'][1]}:flags=neighbor", masks_dir / "%08d.png")
             mask_frames = sorted(masks_dir.glob("*.png"))
             checked = validate_mask_frames(mask_frames, len(originals), source_info["size"])
+            # The tracked mask follows the ORIGINAL subject. When the caller also
+            # tracked the new subject on the generated video, its mask is unioned
+            # in so a subject that moved or grew is not cropped by the old outline.
+            new_subject_frames = None
+            if "subject" in inputs:
+                subject_frames_dir = work / "masked-new-subject-frames"
+                subject_frames_dir.mkdir()
+                try:
+                    with Image.open(inputs["subject"]) as subject_image:
+                        subject_image.convert("L").resize(source_info["size"], Image.Resampling.NEAREST).save(subject_frames_dir / "00000001.png")
+                    for index in range(2, len(originals) + 1):
+                        shutil.copyfile(subject_frames_dir / "00000001.png", subject_frames_dir / f"{index:08d}.png")
+                except (OSError, Image.UnidentifiedImageError):
+                    subject_info = await probe_video(identifier, inputs["subject"])
+                    validate_timeline(source_info, subject_info)
+                    await ffmpeg(identifier, "-i", inputs["subject"], "-vf", f"fps={sample_fps},scale={source_info['size'][0]}:{source_info['size'][1]}:flags=neighbor", subject_frames_dir / "%08d.png")
+                new_subject_frames = fit_frame_count(sorted(subject_frames_dir.glob("*.png")), len(originals), int(0.25 * sample_fps))
             protect = await caption_boxes_for_composite(identifier, originals, work, source_info["size"], sample_fps) if options.get("protectCaptions") else [[] for _ in originals]
-            composited = await asyncio.to_thread(composite_masked_frames, originals, generated_frames, mask_frames, work / "masked-composite-frames", source_info["size"], None, protect)
+            composited = await asyncio.to_thread(
+                composite_masked_frames, originals, generated_frames, mask_frames,
+                work / "masked-composite-frames", source_info["size"],
+                protect=protect, secondary=new_subject_frames,
+            )
             output = await assemble_frames(identifier, composited, source, work, source_info["fps"])
-            result = {"file": publish(output), "metadata": {**checked, "maskedComposite": True, "captionProtected": any(protect), "timelineChecked": True}}
+            result = {"file": publish(output), "metadata": {**checked, "maskedComposite": True, "subjectUnion": new_subject_frames is not None, "captionProtected": any(protect), "timelineChecked": True}}
         elif operation == "replacement-render-captions":
             generated, source = inputs["video"], inputs["source"]
             output_info = await probe_video(identifier, generated)

@@ -71,6 +71,41 @@ class MaskTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             grow_mask_to_subject(tracked, original, generated)
 
+    def test_secondary_subject_mask_is_unioned_and_not_cropped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            size = (100, 100)
+            original = Image.new("RGB", size, "blue")
+            generated = Image.new("RGB", size, "green")
+            # Original tracked mask sits on the left of the frame.
+            mask = Image.new("L", size)
+            ImageDraw.Draw(mask).rectangle((10, 30, 30, 70), fill=255)
+            # The new subject moved right, well outside the original silhouette.
+            subject = Image.new("L", size)
+            ImageDraw.Draw(subject).rectangle((55, 30, 80, 70), fill=255)
+            for name, image in (("o", original), ("g", generated), ("m", mask), ("s", subject)):
+                image.save(root / f"{name}.png")
+            frames = composite_masked_frames([root / "o.png"], [root / "g.png"], [root / "m.png"], root / "out", size, feather=0, secondary=[root / "s.png"])
+            with Image.open(frames[0]) as result:
+                # Both the old area and the moved new subject take the generated frame.
+                self.assertEqual(result.getpixel((20, 50)), (0, 128, 0))
+                self.assertEqual(result.getpixel((65, 50)), (0, 128, 0))
+                # Far from either mask the source is kept.
+                self.assertEqual(result.getpixel((95, 5)), (0, 0, 255))
+
+    def test_secondary_subject_mask_empty_frame_stops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            size = (64, 64)
+            Image.new("RGB", size, "blue").save(root / "o.png")
+            Image.new("RGB", size, "green").save(root / "g.png")
+            mask = Image.new("L", size)
+            ImageDraw.Draw(mask).rectangle((5, 5, 20, 20), fill=255)
+            mask.save(root / "m.png")
+            Image.new("L", size, 0).save(root / "s.png")
+            with self.assertRaisesRegex(ValueError, "新人物掩膜为空"):
+                composite_masked_frames([root / "o.png"], [root / "g.png"], [root / "m.png"], root / "out", size, feather=0, secondary=[root / "s.png"])
+
     def test_caption_glyphs_are_restored_from_the_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
