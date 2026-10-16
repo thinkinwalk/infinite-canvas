@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.51
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.52
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.51-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.52 rejected cloud task resubmission deployment
+
+- Source commit `caa128207876d1e6d81eb6becad83c262b82f70f`, annotated tag `v0.19.52`. Application image workflow [38852428814](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38852428814); docs image and official plugins workflows also succeeded and GitHub Pages was skipped. No GitHub Release page was created (`gh` unauthenticated).
+- Cause: `submitCloudTask` wrote the task id into the local record before calling the create API. When creation was rejected (task `4POhIkY1Wy04i_jYkzm1Z-animate`, "算力点不足": the 100-credit SAM 2 track had left 112 credits against a 350-credit Wan-Animate charge), no server task existed, so "恢复任务结果" polled a missing id, got HTTP 404 and stayed interrupted. The same stuck record also blocked new submissions.
+- Fix: clear the local task id and masked-replacement phase when creation fails, and on a `ReplicateTaskNotFound` during recovery resubmit with the same idempotency key (the id is the server-side key, so a repeat creates and charges only once). Application-only change; the worker was not touched and stays on the v0.19.51 source mount.
+- App: image digest `sha256:77b7f1da235a8488121664e104fa0b06435af6fce88ca678578ade11be8496e0`; `/app/VERSION` is `v0.19.52` and the OCI revision matches the commit. Internal and external health return HTTP 200 `ok`. `/video/content-replace` serves `/assets/index-BylAeIC8.js`.
+- Backups: `/opt/infinite-canvas/backups/v0.19.52-20261016-071913/` (online SQLite backup, previous Compose, worker job and replacement job archives, SHA-256 of 64 task records). Image helper backups `docker-compose.deploy.yml.20261016-073241.bak` and `data-before-deploy-20261016-073241.tgz` (run from a temporary copy tolerating tar live-file warnings; host script unchanged). SQLite `quick_check` passed; settings/video-task/Replicate-task counts 2/32/20; all 64 task records byte-identical after deployment. No paid task was submitted by this deployment.
+- Outstanding for the user: the stuck record's 100-credit SAM 2 track mask is still saved, so recovery only needs to resubmit the 350-credit Wan-Animate generation with the user's confirmation. The earlier VACE chain (`i6iRv3H6x9-TGorJsFSbm`, 100 + 100 credits, completed, not auto-refunded) still awaits a manual refund decision.
 
 ## v0.19.51 masked person replacement via Wan-Animate deployment
 
