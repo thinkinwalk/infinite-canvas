@@ -53,40 +53,12 @@ const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-
 const imagesOf = (media: WorkbenchMedia[]): ReferenceImage[] => media.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name, type: m.mimeType, dataUrl: m.url, storageKey: m.storageKey }));
 const mediaOf = (media: WorkbenchMedia[], kind: "video" | "audio") =>
     media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs }));
-function vaceSize(video: UploadedFile, resolution: VideoDraft["replicateResolution"]) {
-    const portrait = Boolean(video.width && video.height && video.height > video.width);
-    if (resolution === "720p") return portrait ? "720*1280" : "1280*720";
-    return portrait ? "480*832" : "832*480";
-}
-function vaceFrames(video: UploadedFile) {
-    const seconds = video.durationMs && video.durationMs > 0 ? video.durationMs / 1000 : 5;
-    const frames = Math.max(5, Math.round(seconds * 16));
-    return Math.ceil((frames - 1) / 4) * 4 + 1;
-}
-// VACE-14B 单次 81 帧（16 fps 约 5 秒），超过会在云端显存不足失败
-export const vaceDurationError = (video: UploadedFile) => (vaceFrames(video) > 81 ? "局部替换单次最多约 5 秒，请先裁剪视频" : "");
-function vaceFrameCount(video: UploadedFile) {
-    const error = vaceDurationError(video);
-    if (error) throw new Error(error);
-    return vaceFrames(video);
-}
-function replacementRequest(d: VideoDraft, cleanSubtitles = false, selectedMask?: UploadedFile): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
+function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const image = d.media.find((m) => m.role === (d.replacement === "background" ? "background" : "model") && m.kind === "image");
     if (!video) throw new Error("请先上传原视频");
     if (!image) throw new Error("请先上传替换参考图片");
-    if (d.replacement === "person") {
-        const mask = selectedMask || d.media.find((m) => m.role === "mask");
-        if (d.maskedPerson) {
-            if (!mask) throw new Error("人物局部替换需要动态人物掩膜");
-            return {
-                operation: "masked-edit",
-                fields: { size: vaceSize(video, d.replicateResolution), frame_num: vaceFrameCount(video), prompt: contentReplacementPrompt("person", d.instructions, cleanSubtitles) },
-                materials: { src_video: video, src_mask: mask, src_ref_images: [image] },
-            };
-        }
-        return { operation: "replace-person", fields: { resolution: d.replicateResolution.replace("p", ""), merge_audio: true }, materials: { video, character_image: image } };
-    }
+    if (d.replacement === "person") return { operation: "replace-person", fields: { resolution: d.replicateResolution.replace("p", ""), merge_audio: true }, materials: { video, character_image: image } };
     if (!d.instructions.trim()) throw new Error("请填写具体替换要求");
     const prompt = contentReplacementPrompt(d.replacement, d.instructions, cleanSubtitles);
     if (d.maskedEdit) {
@@ -427,35 +399,25 @@ export function useVideoWorkbench(tool: VideoTool) {
         for (const [key, files] of Object.entries(materials)) input[key] = Array.isArray(files) ? await Promise.all(files.map(upload)) : await upload(files);
         return input;
     };
+    // 局部人物替换：SAM 2 跟踪人物掩膜，Wan-Animate 生成换人视频，再由处理服务只把掩膜内人物回填到原画面
+    const maskedPersonQuote = (track: ReplicateQuote | undefined, animate: ReplicateQuote): ReplicateQuote => ({
+        ...animate,
+        label: "人物局部替换（跟踪 + 生成）",
+        credits: animate.credits + (track?.credits || 0),
+        configured: animate.configured && (track ? track.configured : true),
+        available: animate.available && (track ? track.available : true),
+        reason: track?.reason || animate.reason,
+        submissionBlocked: track?.submissionBlocked || animate.submissionBlocked,
+        calculation: track ? `目标跟踪 ${track.credits.toLocaleString()} 点 + 人物生成 ${animate.credits.toLocaleString()} 点` : animate.calculation,
+        inputSummary: "云端跟踪人物并生成换人视频，人物区域外保留原画面",
+    });
     const quoteReplacement = async (signal?: AbortSignal) => {
         const d = read(tool);
-        if (d.replacement === "person" && d.maskedPerson && !d.media.some((item) => item.role === "mask")) {
-            const track = trackMaskRequest(d);
-            const video = d.media.find((item) => item.role === "reference" && item.kind === "video");
-            const image = d.media.find((item) => item.role === "model" && item.kind === "image");
-            if (!video || !image) throw new Error("请先上传原视频和人物参考图");
-            const trackInput = await cloudInput(track.fields, track.materials, signal);
-            const editInput = await cloudInput(
-                { size: vaceSize(video, d.replicateResolution), frame_num: vaceFrameCount(video), prompt: contentReplacementPrompt("person", d.instructions, false) },
-                { src_video: video, src_ref_images: [image] },
-                signal,
-            );
-            const [trackQuote, editQuote] = await Promise.all([quoteReplicate("track-mask", trackInput, signal), quoteReplicate("masked-edit", editInput, signal)]);
-            return {
-                ...editQuote,
-                operation: "masked-edit",
-                label: "人物局部替换（跟踪 + 生成）",
-                credits: trackQuote.credits + editQuote.credits,
-                configured: trackQuote.configured && editQuote.configured,
-                available: trackQuote.available && editQuote.available,
-                reason: trackQuote.reason || editQuote.reason,
-                submissionBlocked: trackQuote.submissionBlocked || editQuote.submissionBlocked,
-                calculation: `目标跟踪 ${trackQuote.credits.toLocaleString()} 点 + 局部生成 ${editQuote.credits.toLocaleString()} 点`,
-                inputSummary: "先云端跟踪一次，再用掩膜局部替换人物；不会在本机运行 GPU 模型",
-            } satisfies ReplicateQuote;
-        }
         const { operation, fields, materials } = replacementRequest(d);
-        return quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
+        const quote = await quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
+        if (d.replacement !== "person" || !d.maskedPerson || d.media.some((item) => item.role === "mask")) return quote;
+        const track = trackMaskRequest(d);
+        return maskedPersonQuote(await quoteReplicate("track-mask", await cloudInput(track.fields, track.materials, signal), signal), quote);
     };
     const quoteDigitalHuman = async (signal?: AbortSignal) => {
         const { operation, fields, materials } = digitalHumanRequest(read(tool));
@@ -496,7 +458,6 @@ export function useVideoWorkbench(tool: VideoTool) {
     const maskedPersonCloud = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
         const record = () => store().records.find((item) => item.id === ctx.recordId)!;
         const source = required(d.media.find((item) => item.role === "reference" && item.kind === "video"), "上传原视频");
-        const image = required(d.media.find((item) => item.role === "model" && item.kind === "image"), "上传替换主体图");
         const uploadedMask = d.media.find((item) => item.role === "mask");
         const existingState = record().maskedReplacement;
         if (existingState && resolveWorkerUrl(ctx.worker) !== existingState.workerUrl) throw new Error("请连接原任务的局部合成服务后继续");
@@ -514,25 +475,10 @@ export function useVideoWorkbench(tool: VideoTool) {
             trackQuote = await quoteReplicate("track-mask", trackInput, ctx.signal);
         }
         if (!mask && uploadedMask) mask = uploadedMask;
-        const editInput = await cloudInput(
-            { size: vaceSize(source, d.replicateResolution), frame_num: vaceFrameCount(source), prompt: contentReplacementPrompt("person", d.instructions, false) },
-            { src_video: source, ...(mask ? { src_mask: mask } : {}), src_ref_images: [image] },
-            ctx.signal,
-        );
-        const editQuote = await quoteReplicate("masked-edit", editInput, ctx.signal);
-        const totalQuote = {
-            ...editQuote,
-            operation: "masked-edit" as const,
-            label: "人物局部替换（跟踪 + 生成）",
-            credits: editQuote.credits + (trackQuote?.credits || 0),
-            configured: editQuote.configured && (trackQuote ? trackQuote.configured : true),
-            available: editQuote.available && (trackQuote ? trackQuote.available : true),
-            reason: trackQuote?.reason || editQuote.reason,
-            submissionBlocked: trackQuote?.submissionBlocked || editQuote.submissionBlocked,
-            calculation: trackQuote ? `目标跟踪 ${trackQuote.credits.toLocaleString()} 点 + 局部生成 ${editQuote.credits.toLocaleString()} 点` : editQuote.calculation,
-            inputSummary: "云端跟踪并局部替换人物，其他画面由服务器按掩膜保留",
-        } satisfies ReplicateQuote;
-        await confirmReplicate(totalQuote, ctx.signal);
+        const animate = replacementRequest(d);
+        const animateInput = await cloudInput(animate.fields, animate.materials, ctx.signal);
+        const animateQuote = await quoteReplicate("replace-person", animateInput, ctx.signal);
+        await confirmReplicate(maskedPersonQuote(trackQuote, animateQuote), ctx.signal);
         if (!mask) {
             const track = trackMaskRequest(d);
             const trackInput = await cloudInput(track.fields, track.materials, ctx.signal);
@@ -549,21 +495,17 @@ export function useVideoWorkbench(tool: VideoTool) {
             save({ phase: "generate", mask, maskTask: undefined });
             store().patchRecord(ctx.recordId, { replacementMask: mask, replacementMaskTask: undefined });
         }
-        const finalInput = await cloudInput(
-            { size: vaceSize(source, d.replicateResolution), frame_num: vaceFrameCount(source), prompt: contentReplacementPrompt("person", d.instructions, false) },
-            { src_video: source, src_mask: mask, src_ref_images: [image] },
-            ctx.signal,
-        );
-        const editTaskId = `${ctx.recordId}-edit`;
-        const existing = record().maskedReplacement?.generationTask || (record().replicateTask?.operation === "masked-edit" ? record().replicateTask : undefined);
+        // 只沿用 Wan-Animate 的生成结果；早期 VACE 结果没有替换人物，不再参与合成
+        const animateState = record().maskedReplacement?.generationTask?.operation === "replace-person" ? record().maskedReplacement : undefined;
+        const existing = animateState?.generationTask || (record().replicateTask?.operation === "replace-person" ? record().replicateTask : undefined);
         let generated: UploadedFile;
-        const savedGenerated = record().maskedReplacement?.generated;
-        if (savedGenerated) generated = await restoreWorkbenchFile(savedGenerated);
+        if (animateState?.generated) generated = await restoreWorkbenchFile(animateState.generated);
         else {
-            const generatedTask = existing ? await waitForReplicateTask(existing.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: `云端局部替换：${job.status}` })) : await submitCloudTask(ctx, "masked-edit", finalInput, editQuote, editTaskId);
-            const generatedFile = await storeReplicateResult(generatedTask);
-            save({ phase: "composite", generated: generatedFile, generationTask: { id: generatedTask.id, operation: "masked-edit" } });
-            generated = generatedFile;
+            const generatedTask = existing
+                ? await waitForReplicateTask(existing.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: `云端人物生成：${job.status}` }))
+                : await submitCloudTask(ctx, "replace-person", animateInput, animateQuote, `${ctx.recordId}-animate`);
+            generated = await storeReplicateResult(generatedTask);
+            save({ phase: "composite", generated, generationTask: { id: generatedTask.id, operation: "replace-person" } });
         }
         let composited: WorkerJob;
         const pendingComposite = record().workerJob;

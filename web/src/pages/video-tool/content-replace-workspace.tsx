@@ -20,7 +20,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { MediaRole, SubtitleRegion, VideoDraft, VideoRecord, WorkerCapabilities } from "@/types/video-workbench";
-import { restoreWorkbenchFile, useVideoWorkbench, vaceDurationError } from "./use-video-workbench";
+import { restoreWorkbenchFile, useVideoWorkbench } from "./use-video-workbench";
 
 import { ReplacementBatchPanel } from "./replacement-batch-panel";
 
@@ -75,7 +75,7 @@ export default function ContentReplaceWorkspace() {
     const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
-    const operation: ReplicateOperation = person ? (d.maskedPerson ? "masked-edit" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
+    const operation: ReplicateOperation = person ? "replace-person" : d.maskedEdit ? "masked-edit" : "video-edit";
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask || r.replacementPipeline));
@@ -204,9 +204,9 @@ export default function ContentReplaceWorkspace() {
             : modelsLoading
               ? "正在读取服务状态"
               : d.maskedPerson && person
-                ? models.some((item) => item.operation === "masked-edit" && item.available) && (localMaskReady || models.some((item) => item.operation === "track-mask" && item.available))
+                ? models.some((item) => item.operation === "replace-person" && item.available) && (localMaskReady || models.some((item) => item.operation === "track-mask" && item.available))
                     ? ""
-                    : publicServiceText(models.find((item) => item.operation === (localMaskReady ? "masked-edit" : "track-mask"))?.reason || modelError || "局部人物替换服务暂不可用")
+                    : publicServiceText(models.find((item) => item.operation === (localMaskReady ? "replace-person" : "track-mask"))?.reason || modelError || "局部人物替换服务暂不可用")
                 : !model?.available
                   ? publicServiceText(model?.reason || modelError || "当前平台服务暂不可用")
                   : "";
@@ -236,9 +236,7 @@ export default function ContentReplaceWorkspace() {
                   ? "请上传编辑掩膜"
                   : cloud && !person && !d.maskedEdit && reference.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                     ? "当前视频编辑模型要求原视频为 2–10 秒，请先裁剪"
-                    : cloud && person && d.maskedPerson
-                      ? vaceDurationError(reference)
-                      : "";
+                    : "";
     const regionMissing = ((d.route === "worker" && (d.maskedPerson || !person)) || (cloud && person && d.maskedPerson)) && !d.media.some((m) => m.role === "mask") && d.regions.length !== 1
         ? d.maskedPerson ? "请在高级设置中暂停视频并框选一个清晰可见的人物，系统将自动跟踪" : d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
     const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
@@ -523,7 +521,7 @@ export default function ContentReplaceWorkspace() {
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>
-                            {cloud && person && !wholeVideo && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式会先跟踪一次人物，再用掩膜生成并回填人物区域；服务器只做合成和音轨恢复。" : "Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。"} />}
+                            {cloud && person && !wholeVideo && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式先跟踪一次人物，再用人物替换模型生成换人视频，最后只把人物区域回填到原画面，背景和字幕保留原片；不读取文字提示词。" : "Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。"} />}
                             {(!cloud || !person || wholeVideo) && (
                                 <label className="block">
                                     <div className="mb-2 font-medium">替换要求{!person ? "（必填）" : "（可选）"}</div>

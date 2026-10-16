@@ -1,6 +1,6 @@
 import unittest
 
-from replacement import plan_segments, validate_timeline
+from replacement import fit_frame_count, plan_segments, validate_masked_generation, validate_timeline
 
 
 class ReplacementTimelineTests(unittest.TestCase):
@@ -51,6 +51,21 @@ class ReplacementTimelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_timeline(source, {**source, **changed})
         validate_timeline(source, {**source, "fps": 25, "size": (720, 1280), "duration": 10.02})
+
+    def test_masked_generation_tolerates_model_size_and_tail_padding_only(self):
+        source = {"duration": 5.0, "fps": 30, "size": (480, 848)}
+        validate_masked_generation(source, {"duration": 4.966667, "fps": 30, "size": (464, 832)})
+        validate_masked_generation(source, {"duration": 5.0625, "fps": 16, "size": (480, 832)})
+        for changed in ({"size": (848, 480)}, {"size": (480, 640)}, {"duration": 4.5}, {"duration": 5.5}, {"fps": 0}):
+            with self.assertRaises(ValueError):
+                validate_masked_generation(source, {"duration": 5.0, "fps": 30, "size": (464, 832), **changed})
+
+    def test_frame_count_drops_padding_or_repeats_last_frame_within_limit(self):
+        self.assertEqual(fit_frame_count(range(152), 150, 7), list(range(150)))
+        self.assertEqual(fit_frame_count(range(149), 150, 7), [*range(149), 148])
+        for frames in (range(140), []):
+            with self.assertRaises(ValueError):
+                fit_frame_count(frames, 150, 7)
 
 
 if __name__ == "__main__":

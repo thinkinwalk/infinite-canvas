@@ -49,6 +49,27 @@ def validate_timeline(source, generated):
         raise ValueError("生成视频画幅比例发生变化，已停止合成")
 
 
+def validate_masked_generation(source, generated, max_aspect=0.03, max_seconds=0.25):
+    """Masked composites only keep the person area, so a model's fixed output
+    size and a few padded/dropped frames are tolerated; anything larger stops."""
+    for info in (source, generated):
+        if not math.isfinite(info["duration"]) or info["duration"] <= 0 or not math.isfinite(info["fps"]) or info["fps"] <= 0:
+            raise ValueError("无法读取视频画面时间轴，已停止合成")
+    if abs(source["duration"] - generated["duration"]) > max_seconds:
+        raise ValueError("生成视频时长与原视频相差过大，已保留结果并停止合成；不会强行变速或截断")
+    (sw, sh), (gw, gh) = source["size"], generated["size"]
+    if (sw > sh) != (gw > gh) or abs(sw / sh - gw / gh) / (sw / sh) > max_aspect:
+        raise ValueError("生成视频画幅比例与原视频相差过大，已停止合成")
+
+
+def fit_frame_count(frames, count, max_extra):
+    """Drop model tail padding or repeat the last frame so every source frame has a match."""
+    frames = list(frames)
+    if not frames or abs(len(frames) - count) > max_extra:
+        raise ValueError("原画面与生成画面帧数相差过大，已停止合成")
+    return frames[:count] + [frames[-1]] * (count - len(frames))
+
+
 async def probe(identifier, path, command, ffprobe):
     raw, _ = await command(identifier, [ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)])
     data = json.loads(raw)

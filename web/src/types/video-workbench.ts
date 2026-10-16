@@ -206,7 +206,7 @@ export type VideoRecord = {
         mask?: UploadedFile;
         generated?: UploadedFile;
         maskTask?: { id: string; operation: "track-mask" };
-        generationTask?: { id: string; operation: "masked-edit" };
+        generationTask?: { id: string; operation: "masked-edit" | "replace-person" };
     };
     result?: UploadedFile;
     text?: string;

@@ -152,6 +152,39 @@ class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "覆盖原视频时长"):
             validate_wan_materials(processed, worker.MEDIA / "source.mp4")
 
+    async def test_cloud_masked_composite_accepts_wan_animate_size_and_one_frame_short(self):
+        # Production shape: 480x848@30 source, 464x832 Wan-Animate output one frame short.
+        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=red:s=480x848:r=30:d=1", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", worker.MEDIA / "wide.mp4")
+        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=green:s=464x832:r=30", "-frames:v", 29, "-c:v", "libx264", "-pix_fmt", "yuv420p", worker.MEDIA / "animate.mp4")
+        mask = Image.new("L", (480, 848))
+        ImageDraw.Draw(mask).rectangle((150, 300, 330, 700), fill=255)
+        mask.save(worker.MEDIA / "person.png")
+        identifier = str(uuid.uuid4())
+        worker.atomic_json(worker.job_path(identifier), {"id": identifier, "status": "running"})
+        await worker.run_job(identifier, worker.JobRequest(operation="replacement-masked-composite", inputs={"source": "wide.mp4", "video": "animate.mp4", "mask": "person.png"}, options={}))
+        job = worker.read_job(identifier)
+        self.assertEqual(job["status"], "completed", job)
+        output = worker.MEDIA / job["result"]["file"]
+        final = await worker.probe_video("test", output)
+        self.assertEqual(final["size"], (480, 848))
+        self.assertAlmostEqual(final["duration"], 1, delta=1 / 30)
+        self.assertTrue(final["audio"])
+        frame = self.root / "last.png"
+        await worker.ffmpeg("fixture", "-ss", 0.95, "-i", output, "-frames:v", "1", frame)
+        with Image.open(frame) as image:
+            self.assertGreater(image.getpixel((20, 20))[0], 200)
+            self.assertGreater(image.getpixel((240, 500))[1], 100)
+
+    async def test_cloud_masked_composite_rejects_swapped_orientation(self):
+        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=red:s=480x848:r=30:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", worker.MEDIA / "wide.mp4")
+        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=green:s=832x464:r=30:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", worker.MEDIA / "animate.mp4")
+        identifier = str(uuid.uuid4())
+        worker.atomic_json(worker.job_path(identifier), {"id": identifier, "status": "running"})
+        await worker.run_job(identifier, worker.JobRequest(operation="replacement-masked-composite", inputs={"source": "wide.mp4", "video": "animate.mp4", "mask": "mask.png"}, options={}))
+        job = worker.read_job(identifier)
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("画幅比例", job["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

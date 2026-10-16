@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from PIL import Image, ImageDraw
 from pydantic import BaseModel
 import remote_subtitles
-from replacement import probe as probe_replacement_video, process as process_replacement, validate_timeline
+from replacement import fit_frame_count, probe as probe_replacement_video, process as process_replacement, validate_masked_generation, validate_timeline
 from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
 from replacement_subtitles import locate_caption_masks, audio_captions
 from replacement_masks import composite_masked_frames, validate_mask_frames
@@ -881,7 +881,10 @@ async def run_job(identifier: str, request: JobRequest):
             source, generated, mask = inputs["source"], inputs["video"], inputs["mask"]
             source_info = await probe_video(identifier, source)
             generated_info = await probe_video(identifier, generated)
-            validate_timeline(source_info, generated_info)
+            # Cloud person models emit fixed sizes (e.g. 464x832 for 480x848) and
+            # may differ by a frame; only the masked person area is kept, so the
+            # generated frame is scaled onto the source canvas.
+            validate_masked_generation(source_info, generated_info)
             # Composite at the source cadence. The model result and SAM mask
             # may use another cadence, but the final video must preserve the
             # original frame count and playback speed.
@@ -894,7 +897,7 @@ async def run_job(identifier: str, request: JobRequest):
             await ffmpeg(identifier, "-i", source, "-vf", f"fps={sample_fps}", originals_dir / "%08d.png")
             await ffmpeg(identifier, "-i", generated, "-vf", f"fps={sample_fps}", generated_dir / "%08d.png")
             originals = sorted(originals_dir.glob("*.png"))
-            generated_frames = sorted(generated_dir.glob("*.png"))
+            generated_frames = fit_frame_count(sorted(generated_dir.glob("*.png")), len(originals), int(0.25 * sample_fps))
             try:
                 with Image.open(mask) as mask_image:
                     mask_image.convert("L").resize(source_info["size"], Image.Resampling.NEAREST).save(masks_dir / "00000001.png")
