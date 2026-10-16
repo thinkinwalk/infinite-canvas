@@ -23,7 +23,7 @@ from pydantic import BaseModel
 import remote_subtitles
 from replacement import fit_frame_count, probe as probe_replacement_video, process as process_replacement, validate_masked_generation, validate_timeline
 from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
-from replacement_subtitles import locate_caption_masks, audio_captions
+from replacement_subtitles import caption_lane_boxes, locate_caption_masks, audio_captions
 from replacement_masks import composite_masked_frames, validate_mask_frames
 
 
@@ -677,6 +677,27 @@ async def assemble_frames(identifier, frames, source, work, fps):
     return output
 
 
+async def caption_boxes_for_composite(identifier: str, frames: list[Path], work: Path, size: tuple, fps: float) -> list[list[tuple]]:
+    """Locate burned-in caption boxes so the composite can restore their glyphs.
+
+    Best effort: a missing OCR build or an unclear layout returns no boxes, which
+    only means captions are not protected. It must never fail the replacement.
+    """
+    available = {item["name"]: item for item in await available_capabilities()}
+    if not available.get("ocr", {}).get("available") or not fps:
+        return [[] for _ in frames]
+    ocr_file = work / "composite-caption-ocr.jsonl"
+    update_job(identifier, step="定位原片字幕区域，供局部合成保护")
+    try:
+        await command(identifier, [sys.executable, str(Path(__file__).parent / "adapters" / "ocr.py"), "--frames", str(frames[0].parent), "--output", str(ocr_file)])
+        entries = {entry["file"]: entry["items"] for entry in (json.loads(line) for line in ocr_file.read_text(encoding="utf-8").splitlines())}
+        if set(entries) != {frame.name for frame in frames}:
+            return [[] for _ in frames]
+        return caption_lane_boxes([entries[frame.name] for frame in frames], size, fps)
+    except Exception:
+        return [[] for _ in frames]
+
+
 async def run_job(identifier: str, request: JobRequest):
     work = JOBS / identifier
     work.mkdir(exist_ok=True)
@@ -909,9 +930,10 @@ async def run_job(identifier: str, request: JobRequest):
                 await ffmpeg(identifier, "-i", mask, "-vf", f"fps={sample_fps},scale={source_info['size'][0]}:{source_info['size'][1]}:flags=neighbor", masks_dir / "%08d.png")
             mask_frames = sorted(masks_dir.glob("*.png"))
             checked = validate_mask_frames(mask_frames, len(originals), source_info["size"])
-            composited = await asyncio.to_thread(composite_masked_frames, originals, generated_frames, mask_frames, work / "masked-composite-frames", source_info["size"])
+            protect = await caption_boxes_for_composite(identifier, originals, work, source_info["size"], sample_fps) if options.get("protectCaptions") else [[] for _ in originals]
+            composited = await asyncio.to_thread(composite_masked_frames, originals, generated_frames, mask_frames, work / "masked-composite-frames", source_info["size"], None, protect)
             output = await assemble_frames(identifier, composited, source, work, source_info["fps"])
-            result = {"file": publish(output), "metadata": {**checked, "maskedComposite": True, "timelineChecked": True}}
+            result = {"file": publish(output), "metadata": {**checked, "maskedComposite": True, "captionProtected": any(protect), "timelineChecked": True}}
         elif operation == "replacement-render-captions":
             generated, source = inputs["video"], inputs["source"]
             output_info = await probe_video(identifier, generated)

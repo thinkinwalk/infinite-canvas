@@ -4,10 +4,11 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 import app as worker
-from replacement_masks import composite_masked_frames, validate_mask_frames
+from replacement_masks import composite_masked_frames, grow_mask_to_subject, validate_mask_frames
 from adapters.wan_materials import validate_wan_materials
 
 
@@ -36,7 +37,10 @@ class MaskTests(unittest.TestCase):
             generated = root / "generated.png"
             mask = root / "mask.png"
             Image.new("RGB", (4, 2), "blue").save(original)
-            Image.new("RGB", (4, 2), "red").save(generated)
+            # The model only redraws inside the mask; the rest matches the source.
+            model = Image.new("RGB", (4, 2), "blue")
+            ImageDraw.Draw(model).rectangle((1, 0, 2, 1), fill="red")
+            model.save(generated)
             target = Image.new("L", (4, 2))
             ImageDraw.Draw(target).rectangle((1, 0, 2, 1), fill=255)
             target.save(mask)
@@ -44,6 +48,53 @@ class MaskTests(unittest.TestCase):
             with Image.open(frames[0]) as result:
                 self.assertEqual(result.getpixel((0, 0)), (0, 0, 255))
                 self.assertEqual(result.getpixel((1, 0)), (255, 0, 0))
+
+    def test_grow_follows_new_subject_but_not_remote_background_edits(self):
+        tracked = np.zeros((100, 100), dtype=bool)
+        tracked[30:70, 30:60] = True
+        original = np.full((100, 100, 3), 20, dtype=np.int16)
+        generated = original.copy()
+        # The new subject is wider than the tracked mask: this limb must be kept.
+        generated[30:70, 60:72] = 200
+        # A far-away background edit must not be pulled into the person.
+        generated[0:6, 90:96] = 200
+        grown = grow_mask_to_subject(tracked, original, generated)
+        self.assertTrue(grown[50, 66])
+        self.assertFalse(grown[2, 92])
+        self.assertTrue(tracked[50, 40] and grown[50, 40])
+
+    def test_grow_stops_when_the_model_repaints_the_frame(self):
+        tracked = np.zeros((100, 100), dtype=bool)
+        tracked[30:70, 30:60] = True
+        original = np.full((100, 100, 3), 20, dtype=np.int16)
+        generated = np.full((100, 100, 3), 200, dtype=np.int16)
+        with self.assertRaises(ValueError):
+            grow_mask_to_subject(tracked, original, generated)
+
+    def test_caption_glyphs_are_restored_from_the_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            size = (64, 64)
+            original = Image.new("RGB", size, "black")
+            # Thin bright caption strokes sitting on top of the subject.
+            painter = ImageDraw.Draw(original)
+            for x in range(12, 31, 4):
+                painter.rectangle((x, 10, x + 1, 20), fill=(255, 240, 0))
+            generated = Image.new("RGB", size, "black")
+            # The model redraws a solid subject only inside the tracked mask.
+            ImageDraw.Draw(generated).rectangle((5, 5, 40, 40), fill=(0, 200, 0))
+            mask = Image.new("L", size)
+            ImageDraw.Draw(mask).rectangle((5, 5, 40, 40), fill=255)
+            original.save(root / "o.png")
+            generated.save(root / "g.png")
+            mask.save(root / "m.png")
+            frames = composite_masked_frames([root / "o.png"], [root / "g.png"], [root / "m.png"], root / "out", size, feather=0, protect=[[(8, 8, 34, 24)]])
+            with Image.open(frames[0]) as result:
+                stroke = result.getpixel((12, 15))
+                self.assertGreater(stroke[0], 200)
+                self.assertGreater(stroke[1], 180)
+                # Away from the caption the generated subject still wins.
+                self.assertGreater(result.getpixel((35, 35))[1], 150)
 
 
 class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
@@ -91,7 +142,11 @@ class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
         async def engine(identifier, name, bindings, work):
             self.assertEqual(name, "vace")
             output = work / "model-output.mp4"
-            await worker.ffmpeg(identifier, "-f", "lavfi", "-i", "color=c=green:s=160x96:r=16", "-frames:v", bindings["frame_count"], "-c:v", "libx264", "-pix_fmt", "yuv420p", output)
+            # Redraw only the masked subject area; the rest matches the source so
+            # the mask-growth guard sees a localized change, as in production.
+            await worker.ffmpeg(identifier, "-f", "lavfi", "-i", "color=c=red:s=160x96:r=16", "-frames:v", bindings["frame_count"],
+                                "-vf", "drawbox=x=30:y=20:w=50:h=40:color=green:t=fill",
+                                "-c:v", "libx264", "-pix_fmt", "yuv420p", output)
             return output
 
         job = await self.run_replacement(engine, options={"replacement": "person", "maskedPerson": True})
@@ -155,7 +210,9 @@ class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
     async def test_cloud_masked_composite_accepts_wan_animate_size_and_one_frame_short(self):
         # Production shape: 480x848@30 source, 464x832 Wan-Animate output one frame short.
         await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=red:s=480x848:r=30:d=1", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", worker.MEDIA / "wide.mp4")
-        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=green:s=464x832:r=30", "-frames:v", 29, "-c:v", "libx264", "-pix_fmt", "yuv420p", worker.MEDIA / "animate.mp4")
+        # The model output matches the source except inside the subject area, which
+        # is the realistic case the mask-growth guard is designed to accept.
+        await worker.ffmpeg("fixture", "-f", "lavfi", "-i", "color=c=red:s=464x832:r=30", "-frames:v", 29, "-vf", "drawbox=x=145:y=294:w=180:h=390:color=green:t=fill", "-c:v", "libx264", "-pix_fmt", "yuv420p", worker.MEDIA / "animate.mp4")
         mask = Image.new("L", (480, 848))
         ImageDraw.Draw(mask).rectangle((150, 300, 330, 700), fill=255)
         mask.save(worker.MEDIA / "person.png")

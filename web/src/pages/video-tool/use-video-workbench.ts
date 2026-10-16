@@ -542,15 +542,17 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
         let composited: WorkerJob;
         const pendingComposite = record().workerJob;
+        // 原片字幕压在人物身上时会被新画面覆盖，这里让合成保留原字幕笔画
+        const compositeOptions = { protectCaptions: true };
         if (pendingComposite) {
             const current = await readWorkerJob(ctx.worker, pendingComposite.id, ctx.signal);
             if (current.status === "failed" || current.status === "cancelled") {
                 store().patchRecord(ctx.recordId, { workerJob: undefined });
-                composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, {});
+                composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, compositeOptions);
             } else {
                 composited = await waitForWorkerJob(ctx.worker, pendingComposite.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: job.step }));
             }
-        } else composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, {});
+        } else composited = await workerJob(ctx, "replacement-masked-composite", { source, video: generated, mask }, compositeOptions);
         if (!composited.result?.file) throw new Error("局部合成服务未返回视频，已保留云端生成结果");
         const result = await storeWorkerResult(ctx.worker, composited.result.file);
         store().patchRecord(ctx.recordId, { maskedReplacement: undefined, replacementMask: undefined, replacementMaskTask: undefined, replicateTask: undefined, workerJob: undefined });

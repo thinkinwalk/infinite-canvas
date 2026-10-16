@@ -114,3 +114,59 @@ def locate_caption_masks(ocr_frames, size, fps, speech):
                 boxes.append((max(0, left - pad), max(0, top - pad), min(width, right + pad), min(height, bottom + pad)))
         masks.append(boxes)
     return masks
+
+
+def caption_lane_boxes(ocr_frames, size, fps, radius_seconds=0.12):
+    """Per-frame caption boxes for source-caption protection, never raising.
+
+    A masked composite must not fail because the caption layout is ambiguous,
+    so unlike locate_caption_masks this returns no boxes instead of stopping,
+    and it does not require speech: the lane is a lower-screen, screen-fixed,
+    changing text lane. Verified against the layout that locate_caption_masks
+    accepts, so protected frames match the spoken-caption flow.
+    """
+    width, height = size
+    try:
+        candidates = []
+        for frame, predictions in enumerate(ocr_frames):
+            for prediction in predictions:
+                for text, polygon in zip(prediction.get("rec_texts", []), prediction["rec_polys"]):
+                    if not polygon:
+                        continue
+                    xs, ys = [float(p[0]) for p in polygon], [float(p[1]) for p in polygon]
+                    left, top, right, bottom = min(xs), min(ys), max(xs), max(ys)
+                    box_height = bottom - top
+                    if (box_height < height * 0.012 or box_height > height * 0.24
+                            or not width * 0.18 <= (left + right) / 2 <= width * 0.82
+                            or bottom < height * 0.67):
+                        continue
+                    candidates.append({"frame": frame, "box": (left, top, right, bottom), "height": box_height,
+                                       "cx": (left + right) / 2, "cy": (top + bottom) / 2, "text": str(text)})
+        lanes = []
+        for item in sorted((item for item in candidates if normalize_text(item["text"]) and item["box"][2] - item["box"][0] >= item["height"] * 1.15), key=lambda value: value["cy"]):
+            lane = next((lane for lane in lanes if _near_lane(item, lane, height)), None)
+            if lane is None:
+                lane = []
+                lanes.append(lane)
+            lane.append(item)
+        # A single screen-fixed lane is required; several means the layout is
+        # unclear and protecting the wrong text would import the old subject.
+        if len(lanes) != 1:
+            return [[] for _ in ocr_frames]
+        lane = lanes[0]
+        selected = [[] for _ in ocr_frames]
+        for item in candidates:
+            if _near_lane(item, lane, height):
+                selected[item["frame"]].append(item["box"])
+        radius = max(1, math.ceil(fps * radius_seconds))
+        masks = []
+        for frame in range(len(selected)):
+            boxes = []
+            for nearby in range(max(0, frame - radius), min(len(selected), frame + radius + 1)):
+                for left, top, right, bottom in selected[nearby]:
+                    pad = (bottom - top) * 0.13
+                    boxes.append((max(0, left - pad), max(0, top - pad), min(width, right + pad), min(height, bottom + pad)))
+            masks.append(boxes)
+        return masks
+    except Exception:
+        return [[] for _ in ocr_frames]
