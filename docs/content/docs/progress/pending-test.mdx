@@ -13,7 +13,7 @@ description: Implemented changes that still need manual verification
 - 后端增加 `replacement-masked-composite` 能力检查；Replicate 的 SAM 2 / VACE 报价或 FFprobe/FFmpeg 任一能力未就绪都会在任务开始前拦截，不回退到改写整幅画面的路线。合成校验保留原画面并只接收掩膜内生成结果，任务标记为未自动验收人物身份。
 - 已完成合成器静态测试代码；尚未用真实 Replicate 凭据对用户 5 秒素材提交模型任务。实际效果、边缘、字幕与人物交叠、动作连续性和端到端耗时/费用待测。服务器只需要 FFmpeg/FFprobe 做 CPU 合成，不需要安装 GPU、SAM 2 或 VACE 权重。
 - 测试前确认 Replicate 的 `track-mask` 与 `masked-edit` 报价已明确开启，并连接具备 `replacement-masked-composite` 能力的处理服务；打开 `/video/content-replace`，选择「人物替换」和云端 API，开启「只替换人物区域（实验）」；暂停在人物清晰无遮挡的一帧框选人物，上传参考人物图及短视频，对比原画背景/字幕/音轨、首帧到末帧人物一致性和边缘。确认只生成一个样片，不自动重试；保存模型、时长、运行时间与实际费用后再与 Wan-Animate 同素材对照。
-- 云端局部人物替换改为 SAM 2 跟踪 + Wan-Animate（`replace-person`）生成 + 掩膜回填，不再调用 VACE。原因：VACE 收到含原人物像素的视频且未把掩膜区域置灰，生成结果人物未被替换（预测 `wtzwscbrfxrn80d180kvv1x5p8` 逐帧比对掩膜内外变化相近）。v0.19.50 的 VACE 5 秒拦截随之从人物局部模式移除；`CUDA out of memory` 中文提示保留。报价为跟踪 + Wan-Animate 现有价格；旧任务里已保存的 VACE 结果不会再参与合成，恢复时会重新提交 Wan-Animate。
+- （v0.19.51 已部署到生产，应用与处理服务均已更新）云端局部人物替换改为 SAM 2 跟踪 + Wan-Animate（`replace-person`）生成 + 掩膜回填，不再调用 VACE。原因：VACE 收到含原人物像素的视频且未把掩膜区域置灰，生成结果人物未被替换（预测 `wtzwscbrfxrn80d180kvv1x5p8` 逐帧比对掩膜内外变化相近）。v0.19.50 的 VACE 5 秒拦截随之从人物局部模式移除；`CUDA out of memory` 中文提示保留。报价为跟踪 + Wan-Animate 现有价格；旧任务里已保存的 VACE 结果不会再参与合成，恢复时会重新提交 Wan-Animate。
 - 合成服务对局部人物合成放宽两项校验：生成画幅与原片同方向且比例差不超过 3%（实测 480×848 原片对应 464×832 输出），生成画面缩放到原片尺寸后只取掩膜内人物；时长差不超过 0.25 秒，帧数多出时丢弃尾部、少时重复末帧。超出范围仍停止合成。处理服务单元与真实 FFmpeg 测试已在生产 worker 镜像中通过，尚未用真实 Wan-Animate 样片走完整链路。
 - 验收：5 秒竖屏口播视频框选人物后，确认报价为“目标跟踪 + 人物生成”，生成后人物已换成参考图身份，背景、字幕、音轨来自原片；注意人物边缘、手臂伸出掩膜处和换人后体型差异造成的残影。
 

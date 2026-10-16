@@ -15,9 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.50
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.51
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.51-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.51 masked person replacement via Wan-Animate deployment
+
+- Source commit `dd4a9e904923aac71fa1f9a787909a36817ca3aa`, annotated tag `v0.19.51`. Application image workflow [38834774583](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38834774583), docs image workflow [38834774495](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38834774495) and official plugins workflow [38834774568](https://github.com/thinkinwalk/infinite-canvas/actions/runs/38834774568) succeeded; GitHub Pages was skipped. No GitHub Release page was created (`gh` unauthenticated).
+- Cause: VACE prediction `wtzwscbrfxrn80d180kvv1x5p8` received the source video with the original person pixels and no gray fill in the masked area, so the person was not replaced (masked-area change comparable to the unmasked area). The cloud masked person route now uses SAM 2 tracking, Wan-Animate `replace-person` generation and worker compositing of only the tracked person over the source. VACE is no longer called for masked person replacement. Observed Wan-Animate output for 480x848@30 sources is 464x832@30 with 149 frames.
+- Worker: source extracted from the tag (`git archive`) into `/opt/infinite-canvas/releases/v0.19.51-worker/`; only `app.py` and `replacement.py` differ from v0.19.49. All seven Compose source mounts were switched from `v0.19.49-worker`; image, models, data mounts and environment were retained. The masked composite now accepts same-orientation output within 3% aspect difference (scaled onto the source canvas) and up to 0.25 s duration difference (tail frames dropped or last frame repeated); larger differences still stop. Worker restarted at `2026-10-16T01:29:53Z`; health returns 200 and all `replacement-*` capabilities, including `replacement-masked-composite`, are available. Before deployment, 41 worker tests passed in the production worker image against a scratch copy (no production data used).
+- App: image digest `sha256:31d7ed905bfd5c191f0003031c6320518570f071bd26a8ce4f258dccd98bcac9`; `/app/VERSION` is `v0.19.51` and the OCI revision matches the commit. Internal and external health return HTTP 200 `ok`. `/video/content-replace` serves `/assets/index-CCXBD5yp.js` containing the tracking + person generation quote and new masked-mode copy; the v0.19.50 VACE 5-second block is absent and the out-of-memory hint remains.
+- Backups: `/opt/infinite-canvas/backups/v0.19.51-20261016-032846/` (online SQLite backup, previous Compose, worker job and replacement job archives, SHA-256 of 64 task records). Image helper: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261016-041251.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261016-041251.tgz` (run from a temporary copy tolerating tar live-file warnings; host script unchanged). SQLite `quick_check` passed; settings/video-task/Replicate-task counts remain 2/32/19; all 64 task records are byte-identical after deployment. No worker or Replicate task was active and no paid prediction was submitted.
+- Awaiting user acceptance: a real tracked + Wan-Animate sample for identity, edges where the new person's outline differs from the source mask, background/subtitle/audio preservation and actual cost. The earlier VACE-based job (`i6iRv3H6x9-TGorJsFSbm`, 100 + 100 credits, not auto-refunded) will resubmit Wan-Animate if resumed; its VACE output is not reused.
 
 ## v0.19.50 masked replacement duration guard deployment
 
