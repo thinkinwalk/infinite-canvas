@@ -28,6 +28,18 @@ FEATHER_RATIO = 0.015
 # hug the subject, so the remaining ghost is the hairline seam along them;
 # measured on a real clip, 2px removed ~77% of it with no background pulled in.
 SUBJECT_EDGE_GROW = 2
+# The model repaints far more than the subject, so a feathered edge can blend
+# old dark hair into bright sky and leave a grey crescent that belongs to
+# neither frame. Video inpainting projects (ProPainter, E2FGVI) avoid this by
+# using a dilated HARD mask instead of a soft one. Where the model clearly
+# changed a pixel this close to the subject, take the generated frame outright
+# and re-soften only its outer rim, so no blend crosses two different contents.
+SUBJECT_REPAINT_THRESHOLD = 40
+SUBJECT_REPAINT_RADIUS = 16
+SUBJECT_RIM_BLUR = 2
+# A real Wan-Animate frame expanded the subject region to ~1.29x its union mask;
+# beyond 1.4x the model repainted the frame and the hard region is not trusted.
+SUBJECT_REPAINT_MAX_GROWTH = 1.4
 # Caption strokes are thin bright or dark structures; a wide blur removes them
 # from the reference and the difference is what is left.
 STROKE_BLUR_RATIO = 0.02
@@ -116,7 +128,8 @@ def _stroke_pixels(gray, boxes, blur, threshold, grow):
 
 
 def composite_masked_frames(originals, generated, masks, output_dir, size, feather=None, protect=None,
-                            grow=True, threshold=None, radius=None, max_growth=None, secondary=None):
+                            grow=True, threshold=None, radius=None, max_growth=None, secondary=None,
+                            repaint_threshold=None, repaint_growth=None):
     """Keep the source frame outside the tracked edit area.
 
     ``grow`` extends the tracked mask onto the pixels the model actually redrew,
@@ -138,6 +151,8 @@ def composite_masked_frames(originals, generated, masks, output_dir, size, feath
     width, height = size
     if feather is None:
         feather = max(2, round(width * FEATHER_RATIO))
+    if repaint_threshold is None and secondary is not None:
+        repaint_threshold = SUBJECT_REPAINT_THRESHOLD
     stroke_blur = max(3, round(width * STROKE_BLUR_RATIO))
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -174,6 +189,23 @@ def composite_masked_frames(originals, generated, masks, output_dir, size, feath
             alpha = Image.fromarray((combined * 255).astype(np.uint8))
             if feather > 0:
                 alpha = alpha.filter(ImageFilter.GaussianBlur(feather))
+            if secondary is not None and repaint_threshold is not None:
+                # Take the generated frame outright where the model visibly repainted
+                # right next to the subject, then re-soften only the outer rim. See
+                # SUBJECT_REPAINT_THRESHOLD: a feathered blend of old hair and new sky
+                # produces a grey crescent that neither frame contains. The change test
+                # alone would also swallow a distant cloud the model redrew, so the
+                # region is clipped to a narrow band around the subject.
+                repainted = (np.abs(np.asarray(generated, dtype=np.int16) - np.asarray(original, dtype=np.int16)).mean(axis=2)
+                             > repaint_threshold) & _dilate(combined, SUBJECT_REPAINT_RADIUS)
+                reached = combined | repainted
+                # A model that repainted the whole frame must not turn this into a
+                # full-frame switch; keep the feathered mask and add nothing.
+                limit = combined.sum() * (repaint_growth or SUBJECT_REPAINT_MAX_GROWTH)
+                if reached.sum() <= limit:
+                    hard = Image.fromarray((reached * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(5))
+                    hard = hard.filter(ImageFilter.GaussianBlur(SUBJECT_RIM_BLUR))
+                    alpha = Image.fromarray(np.maximum(np.asarray(alpha), np.asarray(hard)))
             result = Image.composite(generated, original, alpha)
             boxes = protect[index - 1] if protect and index - 1 < len(protect) else []
             if boxes:
