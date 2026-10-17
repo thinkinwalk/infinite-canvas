@@ -15,10 +15,24 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.55
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.55-worker/
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.56
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.56-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.56 hard repaint composite deployment
+
+- Source commit `84a36aeac2695b3db1ece177bfce41e21fe234ae`, annotated tag `v0.19.56`. Docker image workflow succeeded.
+- The user reported the ghost was still visible after v0.19.55 although the captions were kept. Re-measuring the delivered clip (source `700681524d474b2c9ab95353c177ed17.mp4`, generated `57261fcc264442ad832a4e041d7ae168.mp4`, mask `3bcb313181d94adbb0884053a81a9614.mp4`, subject mask `c96e8480f47241bbabde835211d83707.mp4`) showed the remaining ghost is a grey crescent above the hair that belongs to NEITHER frame: the 7px feather blends old dark hair (below the mask edge) with bright sky (inside it).
+- Reference study against mature projects (source read, not just described):
+  - FaceFusion `face_masker.py:create_box_mask` uses `blur_amount = int(crop_size[0]*0.5*face_mask_blur)` and `cv2.GaussianBlur`, then `face_helper.py:paste_back` does a plain `frame*(1-mask)+crop*mask`. That is the same feathered blend we already had, so it does not solve this.
+  - ProPainter `inference_propainter.py:read_mask(flow_mask_dilates=8, mask_dilates=5)` dilates the mask outward and blends with a HARD edge; no feather. E2FGVI and RVM follow the same pattern.
+  - Conclusion: feathering suits face swapping where both sides are nearly identical; video inpainting/compositing needs a dilated hard mask. We had applied the former to the latter.
+- Fix in `replacement_masks.py`: near the subject, pixels the model clearly repainted (mean channel diff > 40 within 16px of the union mask) are taken from the generated frame outright, then only a 2px rim is softened. Guard: if the taken region exceeds 1.4x the union mask area the model repainted the whole frame, so the hard region is rejected. New boundary values approved by the user: `SUBJECT_REPAINT_THRESHOLD=40`, `SUBJECT_REPAINT_RADIUS=16`, `SUBJECT_RIM_BLUR=2`, `SUBJECT_REPAINT_MAX_GROWTH=1.4`.
+- Measured on the user's clip with the worker's own LANCZOS resize: ghost pixels 6742 (1.66%) -> 1535 (0.38%); pixels more than 40 away from BOTH the source and the generated frame 270 (0.07%), down from a full visible ring.
+- A production re-run through the real worker endpoint (task `f1d908782f824bb2a91795d9411d1b74.mp4`, `subjectUnion: true`, `captionProtected: true`) reproduces the improvement. 39 worker tests pass; `test_cloud_masked_composite_accepts_wan_animate_size_and_one_frame_short` caught the full-frame-switch risk before release and drove the 1.4x guard.
+- Worker deploy: `/opt/infinite-canvas/releases/v0.19.56-worker/`, SHA-256 matched, 7 Compose mounts updated, live module reports the new constants. App digest `sha256:61a009b0dbf70d5eec0cf516577a1136b65039725ccd016b66064c32ed6bca41`; `/app/VERSION` `v0.19.56`, OCI revision matches, health 200 internal/external, SQLite `quick_check` ok, counts 2/32/26.
+- Caveat recorded for honesty: the model still repaints the whole background (background pixels differ by mean 17-20/255, p90 40-53), so the untouched background is not pixel-identical to the source. Only the subject region is guaranteed.
 
 ## v0.19.55 new-subject mask aspect tolerance deployment
 
