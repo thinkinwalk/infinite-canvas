@@ -15,10 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.54
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.54-worker/
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.55
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.55-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.55 new-subject mask aspect tolerance deployment
+
+- Source commit `156fc9ce2e81af44d439e0274af7558937a34702`, annotated tag `v0.19.55`. Docker image workflow succeeded.
+- Bug found in production on the user's first v0.19.54 run (task `Z4PayNuylLCTeQYUhcIc8`): the three paid steps (track-mask 100, replace-person 350, new-subject track-mask 100) all completed, then the composite failed with "生成视频画幅比例发生变化，已停止合成". Cause: SAM 2 tracks the new subject on the GENERATED video, so that mask carries the model's fixed size (464x832) while the source is 480x848; the new code validated it with the strict `validate_timeline` instead of the tolerant `validate_masked_generation` used for generated frames. Fixed by using the tolerant check for the new-subject mask too.
+- Verified against the same failing task's materials (source `2ae001833deb42dfbc6c28afc17569cd.mp4`, generated `5928fe904fdd42dfb916de275363f252.mp4`, mask `7b502f68efed4ac78022f3ec32cea6d4.mp4`, subject mask `fa9a2fe2980b40a7bde8eba4889c535d.mp4`): the composite now completes with `subjectUnion: true`, `captionProtected: true`, output `4a201652accd4294a2c617ab77279c.mp4`.
+- A failed record now resumes the composite only; the paid tracking and generation results are reused, so no re-charge. The test `test_cloud_masked_composite_accepts_wan_animate_size_and_one_frame_short` was extended to pass a 464x832 subject mask so this regression is covered (39 tests pass).
+- Worker deploy: `/opt/infinite-canvas/releases/v0.19.55-worker/`, all 6 modules SHA-256 matched, 7 Compose mounts updated, 24 capabilities available. App `/app/VERSION` `v0.19.55`, OCI revision matches, internal and external health 200, SQLite `quick_check` ok.
 
 ## v0.19.54 new-subject mask union deployment
 
