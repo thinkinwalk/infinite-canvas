@@ -251,11 +251,17 @@ class EngineMediaTests(unittest.IsolatedAsyncioTestCase):
         mask = Image.new("L", (480, 848))
         ImageDraw.Draw(mask).rectangle((150, 300, 330, 700), fill=255)
         mask.save(worker.MEDIA / "person.png")
+        # SAM 2 tracks the NEW subject on the generated video, so this mask carries
+        # the model's 464x832 size, not the source 480x848.
+        subject = Image.new("L", (464, 832))
+        ImageDraw.Draw(subject).rectangle((150, 290, 320, 690), fill=255)
+        subject.save(worker.MEDIA / "subject.png")
         identifier = str(uuid.uuid4())
         worker.atomic_json(worker.job_path(identifier), {"id": identifier, "status": "running"})
-        await worker.run_job(identifier, worker.JobRequest(operation="replacement-masked-composite", inputs={"source": "wide.mp4", "video": "animate.mp4", "mask": "person.png"}, options={}))
+        await worker.run_job(identifier, worker.JobRequest(operation="replacement-masked-composite", inputs={"source": "wide.mp4", "video": "animate.mp4", "mask": "person.png", "subject": "subject.png"}, options={}))
         job = worker.read_job(identifier)
         self.assertEqual(job["status"], "completed", job)
+        self.assertTrue(job["result"]["metadata"]["subjectUnion"])
         output = worker.MEDIA / job["result"]["file"]
         final = await worker.probe_video("test", output)
         self.assertEqual(final["size"], (480, 848))

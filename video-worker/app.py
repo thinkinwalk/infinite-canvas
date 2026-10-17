@@ -948,7 +948,11 @@ async def run_job(identifier: str, request: JobRequest):
                         shutil.copyfile(subject_frames_dir / "00000001.png", subject_frames_dir / f"{index:08d}.png")
                 except (OSError, Image.UnidentifiedImageError):
                     subject_info = await probe_video(identifier, inputs["subject"])
-                    validate_timeline(source_info, subject_info)
+                    # The new-subject mask is tracked on the GENERATED video, so it
+                    # carries that model's fixed size (e.g. 464x832 for a 480x848
+                    # source) exactly as the generated frames do; only aspect ratio
+                    # and a small duration drift are tolerated.
+                    validate_masked_generation(source_info, subject_info)
                     await ffmpeg(identifier, "-i", inputs["subject"], "-vf", f"fps={sample_fps},scale={source_info['size'][0]}:{source_info['size'][1]}:flags=neighbor", subject_frames_dir / "%08d.png")
                 new_subject_frames = fit_frame_count(sorted(subject_frames_dir.glob("*.png")), len(originals), int(0.25 * sample_fps))
             protect = await caption_boxes_for_composite(identifier, originals, work, source_info["size"], sample_fps) if options.get("protectCaptions") else [[] for _ in originals]
