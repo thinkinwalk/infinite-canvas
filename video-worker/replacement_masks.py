@@ -1,19 +1,28 @@
-"""Reject incomplete masks, then blend the generated subject onto the source.
+"""Reject incomplete masks, then paste the generated subject onto the source.
 
-The tracked mask follows the ORIGINAL subject, but person models redraw a
-subject whose silhouette can differ (wider shoulders, longer hair, a different
-garment). Keeping generated pixels only inside the tracked mask crops the new
-subject and leaves the old outline behind, which reads as a ghost around the
-person. The blend therefore grows the mask onto the pixels the model clearly
-changed, then feathers the result. A burned-in caption that sits on top of the
-subject is taken from the source so the model cannot erase it.
+Two rules decide every pixel, and both come from how the models actually behave:
+
+1. Inside the new subject, take the generated frame outright. The model painted
+   a whole subject; a soft edge across it mixes the model's hair into the old
+   hair and reads as a haze. Wan 2.2's own replacement preprocessing pads the
+   mask outward for exactly this reason ("a smaller, finer-contoured mask ... can
+   lead to some shape leakage"), and ProPainter/E2FGVI composite with dilated
+   hard masks, not feathers.
+2. Outside it, take the source. Person models repaint the whole frame, so their
+   background drifts; blending any of it in is what produces a halo ring around
+   the subject and moves trees, railings and sky.
+
+The boundary itself comes from the mask tracked on the GENERATED video when one
+is available. The mask tracked on the source hugs the old silhouette, and a
+tracker that leaks a little sky above the head would then paste that sky from
+the generated frame. A burned-in caption on top of the subject is restored from
+the source so the model cannot erase it.
 """
 import numpy as np
 from PIL import Image, ImageChops, ImageFilter
 
 # A pixel counts as "the model redrew this" past this mean channel difference.
-# Uniform background areas of a real clip measured ~2.5/255, so this is far
-# above encoder noise while still catching a garment or a limb.
+# Only the single-mask path still uses this heuristic.
 SUBJECT_THRESHOLD = 40
 # Only changed pixels this close to the tracked mask join it, so remote edits
 # the model made to the background are not pulled into the person.
@@ -21,25 +30,21 @@ SUBJECT_RADIUS = 8
 # A growth beyond this multiple of the tracked area means the model changed
 # most of the frame; stop instead of publishing a full-frame replacement.
 SUBJECT_MAX_GROWTH = 1.5
-# Feather as a fraction of the frame width: a 2px seam on a 480px frame is a
-# hard edge, ~7px blends the new subject into the source.
+# Feather as a fraction of the frame width, used only when the caller asks for a
+# soft edge. Measured on a real recap: 1.5% of the width (7px) mixed old hair and
+# new sky into a crescent belonging to neither frame, and the delivered edge was
+# 14% softer than the model's own output. The default is now a hard edge.
 FEATHER_RATIO = 0.015
-# Outward growth applied to the old∪new subject union. The two tracked outlines
-# hug the subject, so the remaining ghost is the hairline seam along them;
-# measured on a real clip, 2px removed ~77% of it with no background pulled in.
+# Outward growth applied to the subject boundary. Wan 2.2's own replacement
+# preprocessing dilates its mask (7x7 kernel, 3 iterations ~ 9px) before handing
+# it to the model; the generation needs room for hair and a slightly wider body.
+# Two measured pixels is enough to cover an anti-aliased silhouette without
+# pulling a visible strip of the model's drifted background in.
 SUBJECT_EDGE_GROW = 2
-# The model repaints far more than the subject, so a feathered edge can blend
-# old dark hair into bright sky and leave a grey crescent that belongs to
-# neither frame. Video inpainting projects (ProPainter, E2FGVI) avoid this by
-# using a dilated HARD mask instead of a soft one. Where the model clearly
-# changed a pixel this close to the subject, take the generated frame outright
-# and re-soften only its outer rim, so no blend crosses two different contents.
-SUBJECT_REPAINT_THRESHOLD = 40
-SUBJECT_REPAINT_RADIUS = 16
-SUBJECT_RIM_BLUR = 2
-# A real Wan-Animate frame expanded the subject region to ~1.29x its union mask;
-# beyond 1.4x the model repainted the frame and the hard region is not trusted.
-SUBJECT_REPAINT_MAX_GROWTH = 1.4
+# A sub-pixel feather on a hard edge, measured: it removes the stair steps the
+# segmentation boundary leaves without reintroducing a blend wide enough to
+# carry the old subject's colours.
+SUBJECT_EDGE_BLUR = 1
 # Caption strokes are thin bright or dark structures; a wide blur removes them
 # from the reference and the difference is what is left.
 STROKE_BLUR_RATIO = 0.02
@@ -129,16 +134,18 @@ def _stroke_pixels(gray, boxes, blur, threshold, grow):
 
 def composite_masked_frames(originals, generated, masks, output_dir, size, feather=None, protect=None,
                             grow=True, threshold=None, radius=None, max_growth=None, secondary=None,
-                            repaint_threshold=None, repaint_growth=None):
-    """Keep the source frame outside the tracked edit area.
+                            edge_grow=None):
+    """Paste the generated subject onto the source with a hard boundary.
 
-    ``grow`` extends the tracked mask onto the pixels the model actually redrew,
-    so a new subject wider than the original silhouette is not cropped. ``secondary``
-    is an optional per-frame second mask tracked on the GENERATED video; where the
-    new subject sits outside the original silhouette this carries the correct
-    boundary that pixel difference cannot separate from a repainted background.
-    ``protect`` is an optional per-frame list of caption boxes whose glyph pixels
-    are restored from the source, so a caption drawn on top of the subject survives.
+    ``grow`` extends the tracked mask onto the pixels the model actually redrew
+    when no ``secondary`` mask is given. ``secondary`` is an optional per-frame
+    mask tracked on the GENERATED video; it becomes the subject boundary, which
+    is where the new person actually is. ``protect`` is an optional per-frame
+    list of caption boxes whose glyph pixels are restored from the source, so a
+    caption drawn on top of the subject survives.
+
+    ``feather`` widens the edge into a blend. It defaults to a hard edge, and a
+    caller that passes a positive value is choosing to mix the two frames.
     """
     from pathlib import Path
 
@@ -150,9 +157,8 @@ def composite_masked_frames(originals, generated, masks, output_dir, size, feath
         raise ValueError("新人物掩膜与原画面帧数不一致，已停止合成")
     width, height = size
     if feather is None:
-        feather = max(2, round(width * FEATHER_RATIO))
-    if repaint_threshold is None and secondary is not None:
-        repaint_threshold = SUBJECT_REPAINT_THRESHOLD
+        feather = 0
+    edge_grow = SUBJECT_EDGE_GROW if edge_grow is None else edge_grow
     stroke_blur = max(3, round(width * STROKE_BLUR_RATIO))
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -169,43 +175,29 @@ def composite_masked_frames(originals, generated, masks, output_dir, size, feath
             low, high = mask_file.convert("L").getextrema()
             if high == 0 or low == 255:
                 raise ValueError(f"第 {index} 帧人物掩膜为空或覆盖整幅画面，已停止合成")
-            combined = tracked
             if secondary is not None:
-                secondary_path = list(secondary)[index - 1]
-                with Image.open(secondary_path) as secondary_file:
+                with Image.open(list(secondary)[index - 1]) as secondary_file:
                     if secondary_file.size != tuple(size):
                         raise ValueError(f"第 {index} 帧新人物掩膜尺寸不匹配，已停止合成")
-                    new_subject = np.asarray(secondary_file.convert("L")) > 127
-                if not new_subject.any():
+                    subject = np.asarray(secondary_file.convert("L")) > 127
+                if not subject.any():
                     raise ValueError(f"第 {index} 帧新人物掩膜为空，已停止合成，请平台核查跟踪结果")
-                # The tracked outlines follow the old and new subject closely, so the
-                # ghost is the seam along them. Two measured pixels of outward growth
-                # removed ~77% of it on a real clip with no background pulled in.
-                combined = _dilate(combined | new_subject, SUBJECT_EDGE_GROW)
-            # With a real segmentation of the new subject the union is already the
-            # right boundary, so the pixel-difference heuristic is skipped.
-            if grow and secondary is None:
-                combined = grow_mask_to_subject(combined, original, generated, threshold, radius, max_growth)
-            alpha = Image.fromarray((combined * 255).astype(np.uint8))
+                # The new subject's own outline is the boundary, plus whatever part of
+                # the OLD outline the model actually erased. Adding the whole old mask
+                # would re-import sky the tracker leaked above the head: measured on a
+                # real clip those leaked pixels barely changed, while erased old hair
+                # and clothing differ by a median of 70-127/255. A pixel of the old
+                # mask is kept only where the model clearly replaced its content.
+                erased = (np.abs(np.asarray(generated, dtype=np.int16) - np.asarray(original, dtype=np.int16)).mean(axis=2)
+                          > (SUBJECT_THRESHOLD if threshold is None else threshold))
+                boundary = subject | (tracked & erased)
+            else:
+                boundary = grow_mask_to_subject(tracked, original, generated, threshold, radius, max_growth) if grow else tracked
+            alpha = Image.fromarray((_dilate(boundary, edge_grow) * 255).astype(np.uint8))
             if feather > 0:
                 alpha = alpha.filter(ImageFilter.GaussianBlur(feather))
-            if secondary is not None and repaint_threshold is not None:
-                # Take the generated frame outright where the model visibly repainted
-                # right next to the subject, then re-soften only the outer rim. See
-                # SUBJECT_REPAINT_THRESHOLD: a feathered blend of old hair and new sky
-                # produces a grey crescent that neither frame contains. The change test
-                # alone would also swallow a distant cloud the model redrew, so the
-                # region is clipped to a narrow band around the subject.
-                repainted = (np.abs(np.asarray(generated, dtype=np.int16) - np.asarray(original, dtype=np.int16)).mean(axis=2)
-                             > repaint_threshold) & _dilate(combined, SUBJECT_REPAINT_RADIUS)
-                reached = combined | repainted
-                # A model that repainted the whole frame must not turn this into a
-                # full-frame switch; keep the feathered mask and add nothing.
-                limit = combined.sum() * (repaint_growth or SUBJECT_REPAINT_MAX_GROWTH)
-                if reached.sum() <= limit:
-                    hard = Image.fromarray((reached * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(5))
-                    hard = hard.filter(ImageFilter.GaussianBlur(SUBJECT_RIM_BLUR))
-                    alpha = Image.fromarray(np.maximum(np.asarray(alpha), np.asarray(hard)))
+            elif SUBJECT_EDGE_BLUR > 0:
+                alpha = alpha.filter(ImageFilter.GaussianBlur(SUBJECT_EDGE_BLUR))
             result = Image.composite(generated, original, alpha)
             boxes = protect[index - 1] if protect and index - 1 < len(protect) else []
             if boxes:
