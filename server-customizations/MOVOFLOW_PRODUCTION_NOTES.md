@@ -15,10 +15,22 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.56
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.56-worker/
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.57
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.57-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.57 hard subject boundary deployment
+
+- Source commit `37efc9b6c70461a5a666cdc75170fab86176cb9b`, annotated tag `v0.19.57`. Docker image workflow succeeded.
+- Root cause of the residual ghost, after reading upstream source rather than tuning: the composite feathered (GaussianBlur) across a boundary that separates two different contents. Wan 2.2's own `UserGuider.md` warns that a fine mask "may potentially limit the character's generation area ... this can lead to some shape leakage", and its `process_pipepline.py` dilates the mask with a 7x7 kernel three times (~9px) before generation. ProPainter/E2FGVI also composite with dilated hard masks. Feathering is the face-swap recipe (FaceFusion `paste_back`), not the video-composite recipe.
+- A second, independent defect surfaced: the tracked mask on the SOURCE leaks sky above the head (~17-31% of its pixels are sky-like). OR-ing it into the boundary pasted that sky from the generated frame, which is the bright blob seen at the forehead.
+- New rule: inside the new subject take the generated frame outright; outside take the source; one pixel of anti-aliasing on the boundary. Boundary = the subject mask tracked on the GENERATED video, plus the part of the old mask the model actually erased. Erased old hair/clothing differs by a median of 70-127/255 while leaked sky barely changes, so the existing threshold 40 separates them.
+- Measured on the reported 5s clip, all 149 frames: mud 1250 -> 521 (-58%); rim sharpness 15.60 -> 16.75 against the model's own 16.67. Before this change the delivered rim was 14% softer than the model output, which is the haze the user reported.
+- `feather` now defaults to 0; new `edge_grow` parameter; the v0.19.56 `repaint_*` heuristic is removed because its change-based trigger almost never fired on clips where old and new subjects resemble each other.
+- 16 worker tests pass, including `test_secondary_subject_mask_is_unioned_and_not_cropped`, which pins the requirement that a new subject narrower than the old silhouette must not leave the old one visible.
+- Worker deploy: `/opt/infinite-canvas/releases/v0.19.57-worker/`, content SHA-256 `f5e4442909...` matches after newline normalisation, 7 Compose mounts updated, live module reports the new constants. App digest deployed via `deploy_infinite_canvas_image.sh`; `/app/VERSION` v0.19.57, OCI revision matches, health 200 internal/external, SQLite `quick_check` ok, counts 2/32/29.
+- Not yet addressed, tracked separately: identity fidelity. The stored reference photo is a 3072x4096 front-facing portrait, yet the delivered face differs in hair, beard, face shape and the shirt logo. This run used the 480 tier (`resolution_target: 480`, output 464x832 — smaller than the 480x848 source), so the face cannot carry that detail. See `prunaai/p-video-replace` (1-3 identity images, 720p/1080p) as the next candidate.
 
 ## v0.19.56 hard repaint composite deployment
 
@@ -31,7 +43,7 @@ Do not commit private key material. The key path above is recorded only so futur
 - Fix in `replacement_masks.py`: near the subject, pixels the model clearly repainted (mean channel diff > 40 within 16px of the union mask) are taken from the generated frame outright, then only a 2px rim is softened. Guard: if the taken region exceeds 1.4x the union mask area the model repainted the whole frame, so the hard region is rejected. New boundary values approved by the user: `SUBJECT_REPAINT_THRESHOLD=40`, `SUBJECT_REPAINT_RADIUS=16`, `SUBJECT_RIM_BLUR=2`, `SUBJECT_REPAINT_MAX_GROWTH=1.4`.
 - Measured on the user's clip with the worker's own LANCZOS resize: ghost pixels 6742 (1.66%) -> 1535 (0.38%); pixels more than 40 away from BOTH the source and the generated frame 270 (0.07%), down from a full visible ring.
 - A production re-run through the real worker endpoint (task `f1d908782f824bb2a91795d9411d1b74.mp4`, `subjectUnion: true`, `captionProtected: true`) reproduces the improvement. 39 worker tests pass; `test_cloud_masked_composite_accepts_wan_animate_size_and_one_frame_short` caught the full-frame-switch risk before release and drove the 1.4x guard.
-- Worker deploy: `/opt/infinite-canvas/releases/v0.19.56-worker/`, SHA-256 matched, 7 Compose mounts updated, live module reports the new constants. App digest `sha256:61a009b0dbf70d5eec0cf516577a1136b65039725ccd016b66064c32ed6bca41`; `/app/VERSION` `v0.19.56`, OCI revision matches, health 200 internal/external, SQLite `quick_check` ok, counts 2/32/26.
+- Worker deploy: `/opt/infinite-canvas/releases/v0.19.57-worker/`, SHA-256 matched, 7 Compose mounts updated, live module reports the new constants. App digest `sha256:61a009b0dbf70d5eec0cf516577a1136b65039725ccd016b66064c32ed6bca41`; `/app/VERSION` `v0.19.56`, OCI revision matches, health 200 internal/external, SQLite `quick_check` ok, counts 2/32/26.
 - Caveat recorded for honesty: the model still repaints the whole background (background pixels differ by mean 17-20/255, p90 40-53), so the untouched background is not pixel-identical to the source. Only the subject region is guaranteed.
 
 ## v0.19.55 new-subject mask aspect tolerance deployment
