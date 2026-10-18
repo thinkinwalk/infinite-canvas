@@ -58,6 +58,10 @@ function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation:
     const image = d.media.find((m) => m.role === (d.replacement === "background" ? "background" : "model") && m.kind === "image");
     if (!video) throw new Error("请先上传原视频");
     if (!image) throw new Error("请先上传替换参考图片");
+    if (d.replacement === "person" && d.replacementModel === "headswap") {
+        if (video.durationMs && video.durationMs > 120000) throw new Error("换脸模型单次最长 120 秒，请先裁剪素材");
+        return { operation: "head-swap", fields: { resolution: d.replicateResolution }, materials: { video, face_image: image } };
+    }
     if (d.replacement === "person") return { operation: "replace-person", fields: { resolution: d.replicateResolution.replace("p", ""), merge_audio: true }, materials: { video, character_image: image } };
     if (!d.instructions.trim()) throw new Error("请填写具体替换要求");
     const prompt = contentReplacementPrompt(d.replacement, d.instructions, cleanSubtitles);
@@ -841,7 +845,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     return cloud(ctx, stage, operation, fields, materials);
                 }
                 if (tool === "content-replace") {
-                    if (d.maskedPerson) return maskedPersonCloud(ctx, d);
+                    if (d.maskedPerson && d.replacementModel !== "headswap") return maskedPersonCloud(ctx, d);
                     const { operation, fields, materials } = replacementRequest(d, Boolean(replacementDraft));
                     return cloud(ctx, stage, operation, fields, materials);
                 }
@@ -1002,6 +1006,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ? {
                       replacementInput: {
                           replacement: d.replacement,
+                          replacementModel: d.replacementModel,
                           maskedPerson: d.maskedPerson,
                           replacementSeedTime: d.replacementSeedTime,
                           route: d.route,

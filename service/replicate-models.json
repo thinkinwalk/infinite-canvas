@@ -1179,5 +1179,44 @@
         "completed"
       ]
     }
+  },
+  {
+    "operation": "head-swap",
+    "label": "视频人物换脸",
+    "model": "wavespeed-ai/video-head-swap",
+    "version": "v1",
+    "provider": "wavespeed",
+    "inputSchema": {
+      "type": "object",
+      "title": "Input",
+      "required": ["video", "face_image"],
+      "properties": {
+        "video": {
+          "type": "string",
+          "title": "Video",
+          "format": "uri",
+          "x-order": 0,
+          "description": "Source video whose head is replaced."
+        },
+        "face_image": {
+          "type": "string",
+          "title": "Face Image",
+          "format": "uri",
+          "x-order": 1,
+          "description": "Clear portrait of the target identity."
+        },
+        "resolution": {
+          "type": "string",
+          "title": "Resolution",
+          "default": "480p",
+          "x-order": 2,
+          "enum": ["480p", "720p"],
+          "description": "Output resolution. Billed per second with a 3-second minimum."
+        }
+      }
+    },
+    "enums": {
+      "resolution": ["480p", "720p"]
+    }
   }
 ]

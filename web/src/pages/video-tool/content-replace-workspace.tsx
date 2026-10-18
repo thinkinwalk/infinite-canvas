@@ -68,14 +68,18 @@ export default function ContentReplaceWorkspace() {
     const anchor = useRef<{ x: number; y: number } | null>(null);
     const selectionVideo = useRef<HTMLVideoElement | null>(null);
     const selectionTime = useRef(0);
-    const [wholeVideo, setWholeVideo] = useState(true);
+    const [wholeVideoMode, setWholeVideo] = useState(true);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
+    // 换脸只在平台智能处理链路生效；其他处理方式仍按各自模型执行。
+    const headSwap = person && cloud && d.replacementModel === "headswap";
+    // 换脸模型按单次请求处理整段素材，不支持整片后台分段流程。
+    const wholeVideo = wholeVideoMode && !headSwap;
     const locked = busy || uploading || repairingSource || trimming;
     const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
-    const operation: ReplicateOperation = person ? "replace-person" : d.maskedEdit ? "masked-edit" : "video-edit";
+    const operation: ReplicateOperation = person ? (headSwap ? "head-swap" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask || r.replacementPipeline));
@@ -108,7 +112,7 @@ export default function ContentReplaceWorkspace() {
         appliedSearch.current = location.search;
         const query = new URLSearchParams(location.search);
         const replacement = query.get("replacement");
-        if (replacement === "person" || replacement === "product" || replacement === "background") wb.edit({ replacement, route: "replicate", maskedEdit: query.get("masked") === "1" }, "video");
+        if (replacement === "person" || replacement === "product" || replacement === "background") wb.edit({ replacement, route: "replicate", maskedEdit: query.get("masked") === "1", ...(replacement === "person" ? { replacementModel: query.get("model") === "headswap" ? "headswap" as const : "wan" as const } : {}) }, "video");
     }, [wb.hydrated, location.search]);
     useEffect(() => {
         const controller = new AbortController();
@@ -521,7 +525,7 @@ export default function ContentReplaceWorkspace() {
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>
-                            {cloud && person && !wholeVideo && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式先跟踪一次人物，再用人物替换模型生成换人视频，最后只把人物区域回填到原画面，背景和字幕保留原片；不读取文字提示词。" : "Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。"} />}
+                            {cloud && person && !wholeVideo && !headSwap && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式先跟踪一次人物，再用人物替换模型生成换人视频，最后只把人物区域回填到原画面，背景和字幕保留原片；不读取文字提示词。" : "Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。"} />}
                             {(!cloud || !person || wholeVideo) && (
                                 <label className="block">
                                     <div className="mb-2 font-medium">替换要求{!person ? "（必填）" : "（可选）"}</div>
@@ -580,7 +584,19 @@ export default function ContentReplaceWorkspace() {
                                     {publicServiceText(unavailable || (cloud ? model?.billingDescription || "平台按当前规格计费" : "按当前处理方式执行"))}
                                 </div>
                             </div>}
-                            {person && <Segmented block aria-label="人物替换处理模式" value={wholeVideo ? "whole" : "single"} options={[{ value: "whole", label: "整片后台处理" }, { value: "single", label: "单片处理" }]} onChange={(v) => setWholeVideo(v === "whole")} />}
+                            {person && <Select
+                                className="w-full"
+                                aria-label="人物替换模型"
+                                disabled={locked}
+                                value={d.replacementModel}
+                                options={[
+                                    { value: "wan", label: "Wan 2.2 Animate · 保留动作的整人替换" },
+                                    { value: "headswap", label: "WaveSpeed 换脸 · 只替换头部，保留口型" },
+                                ]}
+                                onChange={(replacementModel) => wb.edit({ replacementModel, maskedPerson: false }, "video")}
+                            />}
+                            {person && !headSwap && <Segmented block aria-label="人物替换处理模式" value={wholeVideo ? "whole" : "single"} options={[{ value: "whole", label: "整片后台处理" }, { value: "single", label: "单片处理" }]} onChange={(v) => setWholeVideo(v === "whole")} />}
+                            {person && headSwap && <p className="m-0 text-xs" style={muted}>换脸模型一次处理整段素材，按整片提交；参考照片请使用清晰的真实正面照，避免逆光和 AI 重绘过的图片。</p>}
                             {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} />}
                             {!(person && wholeVideo) && <Collapse
                                 size="small"
@@ -602,7 +618,7 @@ export default function ContentReplaceWorkspace() {
                                                     ]}
                                                     onChange={(route) => wb.edit({ route }, "video")}
                                                 />
-                                                {cloud && person && !wholeVideo && (
+                                                {cloud && person && !wholeVideo && !headSwap && (
                                                     <div className="space-y-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                                         <div className="flex items-center gap-2">
                                                             <Switch aria-label="只替换人物区域" disabled={locked} checked={d.maskedPerson} onChange={(maskedPerson) => wb.edit({ maskedPerson, regions: [], replacementSeedTime: undefined }, "video")} />

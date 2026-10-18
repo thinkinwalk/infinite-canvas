@@ -21,11 +21,20 @@ type ReplicateModel struct {
 	Label       string `json:"label"`
 	Model       string `json:"model"`
 	Version     string `json:"version"`
+	Provider    string `json:"provider,omitempty"`
 	InputSchema struct {
 		Required   []string                  `json:"required"`
 		Properties map[string]map[string]any `json:"properties"`
 	} `json:"inputSchema"`
 	Enums map[string][]any `json:"enums"`
+}
+
+// Provider defaults to Replicate so existing catalog entries stay unchanged.
+func (spec ReplicateModel) ProviderName() string {
+	if spec.Provider == "" {
+		return "replicate"
+	}
+	return spec.Provider
 }
 
 type ReplicateQuote struct {
@@ -119,7 +128,15 @@ func QuoteReplicate(user model.AuthUser, spec ReplicateModel, input map[string]a
 					quote.BillableUnits = int(math.Ceil(float64(seconds) / float64(pricing.BlockSeconds)))
 				}
 			}
-			if pricing.BillingMode == "duration_resolution" && pricing.BlockSeconds > 1 {
+			// WaveSpeed 换脸按 3 秒起计费，报价按同一口径展示。
+			minimumSeconds := 0
+			if pricing.Model == "wavespeed-ai/video-head-swap" {
+				minimumSeconds = 3
+			}
+			if minimumSeconds > 0 && quote.BillableUnits < minimumSeconds {
+				quote.BillableUnits = minimumSeconds
+				quote.Calculation = fmt.Sprintf("不足 %d 秒按 %d 秒起计：%d 秒 × %d 点/秒", minimumSeconds, minimumSeconds, minimumSeconds, quote.UnitCredits)
+			} else if pricing.BillingMode == "duration_resolution" && pricing.BlockSeconds > 1 {
 				quote.Calculation = fmt.Sprintf("素材不足整秒先向上取整为 %d 秒，再按每 %d 秒一档：%d 档 × %d 点", seconds, pricing.BlockSeconds, quote.BillableUnits, quote.UnitCredits)
 			} else {
 				quote.Calculation = fmt.Sprintf("不足 1 秒按 1 秒计算：%d 秒 × %d 点/秒", seconds, quote.UnitCredits)
@@ -185,6 +202,8 @@ func replicateDescription(operation string) string {
 		return "让已有视频中的人物口型与新音频同步"
 	case "replace-person":
 		return "将视频中的人物替换为指定角色并保留动作"
+	case "head-swap":
+		return "用参考照片替换整颗头部（五官、发型、轮廓），保留身体动作、背景和口型"
 	case "track-mask":
 		return "根据一次点选在云端跟踪人物或商品，生成逐帧编辑掩膜"
 	case "upscale":
@@ -218,6 +237,8 @@ func replicateBillingDescription(operation string) string {
 		return "按输出视频秒数计费"
 	case "replace-person":
 		return "按输出秒数和分辨率计费"
+	case "head-swap":
+		return "按输入视频秒数和输出分辨率计费，不足 3 秒按 3 秒计算"
 	case "track-mask":
 		return "按输入视频时长计费；只做目标跟踪，不生成替换画面"
 	case "upscale":
@@ -264,6 +285,16 @@ func defaultReplicatePricing(spec ReplicateModel) model.ReplicatePricing {
 		pricing.BlockSeconds = 1
 		pricing.Tiers["480"] = 70
 		pricing.Tiers["720"] = 180
+	case "head-swap":
+		// 上游 480p $0.04/秒、720p $0.08/秒，按 4 倍定价并按 1 美元 = 7 元折算
+		// 为算力点（1 点 = 0.01 元）。上游 3 秒起计。
+		pricing.BillingMode = "duration_resolution"
+		pricing.UnitCredits = 224
+		pricing.DefaultUnits = 5
+		pricing.BlockSeconds = 1
+		pricing.MinimumCredits = 336
+		pricing.Tiers["480p"] = 112
+		pricing.Tiers["720p"] = 224
 	case "track-mask":
 		pricing.BillingMode = "runtime_seconds"
 		pricing.UnitCredits = 6
@@ -385,6 +416,10 @@ func calculateReplicateCredits(pricing model.ReplicatePricing, input map[string]
 	}
 	if units <= 0 {
 		units = 1
+	}
+	// WaveSpeed 换脸按 3 秒起计费，短素材不能按实际秒数少收。
+	if pricing.Model == "wavespeed-ai/video-head-swap" && units < 3 {
+		units = 3
 	}
 	credits := units * unitCredits
 	if credits < pricing.MinimumCredits {

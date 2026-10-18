@@ -128,6 +128,8 @@ export type VideoDraft = {
     subtitleMode: SubtitleMarkMode;
     regions: SubtitleRegion[];
     replacement: "person" | "product" | "background";
+    /** 人物替换使用的模型：wan 保留动作的整人替换，headswap 只换头部。 */
+    replacementModel: "wan" | "headswap";
     /** 仅处理人物掩膜，保留人物以外的原画面；仅增强处理服务实验模式。 */
     maskedPerson: boolean;
     replacementSeedTime?: number;
@@ -214,7 +216,7 @@ export type VideoRecord = {
     text?: string;
     step?: string;
     draftPatch?: Partial<VideoDraft>;
-    replacementInput?: Pick<VideoDraft, "replacement" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementInput?: Pick<VideoDraft, "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
     replacementPipeline?: {
         subtitleMethod?: "audio-after-generation";
         phase: "prepare" | "mask" | "generate" | "finish";
@@ -277,6 +279,7 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     subtitleMode: "auto",
     regions: [],
     replacement: "person",
+    replacementModel: "wan",
     maskedPerson: false,
     maskedEdit: false,
     route: "replicate",

@@ -69,7 +69,7 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 }
 
 func AdminChannelModels(index *int, channel model.ModelChannel) ([]string, error) {
-	if channel.Protocol == "replicate" {
+	if channel.Protocol == "replicate" || channel.Protocol == "wavespeed" {
 		return fetchAdminChannelModels(normalizeModelChannel(channel))
 	}
 	resolved, err := resolveAdminChannel(index, channel)
@@ -84,7 +84,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
-	if resolved.Protocol == "replicate" {
+	if resolved.Protocol == "replicate" || resolved.Protocol == "wavespeed" {
 		return testReplicateChannelModel(resolved, modelName)
 	}
 	if isArkAgentPlanChannel(resolved) {
@@ -214,7 +214,7 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	settings.Public.ModelChannel.Models = SupportedReplicateModels()
 	settings.Private.Channels = append([]model.ModelChannel(nil), settings.Private.Channels...)
 	for i := range settings.Private.Channels {
-		settings.Private.Channels[i].APIKeyConfigured = strings.TrimSpace(settings.Private.Channels[i].APIKey) != "" || (settings.Private.Channels[i].Protocol == "replicate" && replicateChannelKey(settings.Private.Channels[i]) != "")
+		settings.Private.Channels[i].APIKeyConfigured = strings.TrimSpace(settings.Private.Channels[i].APIKey) != "" || ((settings.Private.Channels[i].Protocol == "replicate" || settings.Private.Channels[i].Protocol == "wavespeed") && replicateChannelKey(settings.Private.Channels[i]) != "")
 		settings.Private.Channels[i].APIKey = ""
 		settings.Private.Channels[i].ClearAPIKey = false
 	}
@@ -369,7 +369,7 @@ func isArkAgentPlanChannel(channel model.ModelChannel) bool {
 func enabledChannelModels(channels []model.ModelChannel) []string {
 	models := []string{}
 	for _, channel := range channels {
-		if !channel.Enabled || channel.Protocol == "replicate" {
+		if !channel.Enabled || channel.Protocol == "replicate" || channel.Protocol == "wavespeed" {
 			continue
 		}
 		models = append(models, channel.Models...)
@@ -433,6 +433,12 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	}
 	if channel.Protocol == "replicate" {
 		channel.BaseURL = ReplicateBaseURL
+		channel.Models = uniqueModelNames(channel.Models)
+		channel.VideoModels = nil
+		return channel
+	}
+	if channel.Protocol == "wavespeed" {
+		channel.BaseURL = WaveSpeedBaseURL
 		channel.Models = uniqueModelNames(channel.Models)
 		channel.VideoModels = nil
 		return channel
@@ -506,7 +512,7 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 			}
 		}
 	}
-	if resolved.Protocol == "replicate" {
+	if resolved.Protocol == "replicate" || resolved.Protocol == "wavespeed" {
 		resolved.APIKey = replicateChannelKey(resolved)
 	}
 	if strings.TrimSpace(resolved.BaseURL) == "" {
@@ -519,10 +525,18 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
-	if channel.Protocol == "replicate" {
+	if channel.Protocol == "replicate" || channel.Protocol == "wavespeed" {
 		models := []string{}
 		for _, spec := range SupportedReplicateModels() {
-			models = append(models, spec.Model)
+			if spec.Protocol == "wavespeed" {
+				if channel.Protocol == "wavespeed" {
+					models = append(models, spec.Model)
+				}
+				continue
+			}
+			if channel.Protocol == "replicate" {
+				models = append(models, spec.Model)
+			}
 		}
 		return models, nil
 	}
@@ -736,7 +750,7 @@ func modelChannelsForModel(channels []model.ModelChannel, modelName string) []mo
 func modelChannelsForGroup(channels []model.ModelChannel, modelName string, userGroup string) []model.ModelChannel {
 	result := []model.ModelChannel{}
 	for _, channel := range channels {
-		if channel.Protocol == "replicate" || !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
+		if channel.Protocol == "replicate" || channel.Protocol == "wavespeed" || !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
 			continue
 		}
 		if userGroup != "" && len(channel.AllowedGroups) > 0 && !containsString(channel.AllowedGroups, userGroup) {

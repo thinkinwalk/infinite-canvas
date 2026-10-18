@@ -78,10 +78,12 @@ export default function AdminSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const channelProtocol = Form.useWatch("protocol", channelForm) || "openai";
+    // Replicate 与 WaveSpeed 都由后端固定接口地址和适配模型列表。
+    const cloudProtocol = channelProtocol === "replicate" || channelProtocol === "wavespeed";
     const channelUsesEnvironment = Form.useWatch("useEnvironmentKey", channelForm);
     const channelSelectedModels = (Form.useWatch("models", channelForm) || []) as string[];
     const replicatePrices = Form.useWatch("replicatePricing", { form: channelForm, preserve: true }) || {};
-    const channelVideoModels = (channelProtocol === "replicate" ? [] : channelSelectedModels).filter((name) => /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
+    const channelVideoModels = (cloudProtocol ? [] : channelSelectedModels).filter((name) => /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
@@ -209,7 +211,7 @@ export default function AdminSettingsPage() {
             const nextChannels = [...channels];
             if (editingChannelIndex === null) nextChannels.push(channel);
             else nextChannels[editingChannelIndex] = channel;
-            await persistChannels(nextChannels, channel.protocol === "replicate" ? draft.replicatePricing : undefined);
+            await persistChannels(nextChannels, cloudProtocol || channel.protocol === "replicate" ? draft.replicatePricing : undefined);
             closeChannelDrawer();
         } catch (error) {
             if (error instanceof Error) message.error(error.message);
@@ -253,13 +255,13 @@ export default function AdminSettingsPage() {
 
     const openChannelModelSelector = (sourceModels?: string[]) => {
         const current = uniqueModels(channelForm.getFieldValue("models") || []);
-        const source = uniqueModels(sourceModels !== undefined ? sourceModels : channelProtocol === "replicate" ? REPLICATE_SUPPORTED_MODELS.map((item) => item.model) : [...knownModels, ...current]);
+        const source = uniqueModels(sourceModels !== undefined ? sourceModels : cloudProtocol ? REPLICATE_SUPPORTED_MODELS.filter((item) => channelProtocol === "wavespeed" ? item.model.startsWith("wavespeed-ai/") : !item.model.startsWith("wavespeed-ai/")).map((item) => item.model) : [...knownModels, ...current]);
         setModelSelectExisting(current);
         setModelSelectSource(source);
         setModelSelectSelected(sourceModels ? uniqueModels([...current, ...source]) : current);
         setModelSelectKeyword("");
         setModelSelectNewModel("");
-        setModelSelectTab(sourceModels || channelProtocol === "replicate" ? "new" : "current");
+        setModelSelectTab(sourceModels || cloudProtocol ? "new" : "current");
         setIsModelSelectorOpen(true);
     };
 
@@ -732,7 +734,7 @@ export default function AdminSettingsPage() {
                             </Col>
                             <Col span={12}>
                                 <Form.Item name="protocol" label="协议" extra="按渠道接口协议选择，具体模型在下方配置。">
-                                    <Select options={[{ label: "OpenAI 兼容", value: "openai" }, { label: "Replicate", value: "replicate" }]} onChange={(protocol) => channelForm.setFieldsValue({ baseUrl: protocol === "replicate" ? "https://api.replicate.com/v1" : "", apiKey: "", apiKeyConfigured: false, clearApiKey: false, useEnvironmentKey: false, models: [], videoModels: {} })} />
+                                    <Select options={[{ label: "OpenAI 兼容", value: "openai" }, { label: "Replicate", value: "replicate" }, { label: "WaveSpeed", value: "wavespeed" }]} onChange={(protocol) => channelForm.setFieldsValue({ baseUrl: protocol === "replicate" ? "https://api.replicate.com/v1" : protocol === "wavespeed" ? "https://api.wavespeed.ai/api/v3" : "", apiKey: "", apiKeyConfigured: false, clearApiKey: false, useEnvironmentKey: false, models: [], videoModels: {} })} />
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
@@ -752,7 +754,7 @@ export default function AdminSettingsPage() {
                             </Col>
                             <Col span={24}>
                                 <Form.Item name="baseUrl" label="接口地址" rules={[{ required: true, message: "请输入接口地址" }]}>
-                                    <Input disabled={channelProtocol === "replicate"} />
+                                    <Input disabled={cloudProtocol} />
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
@@ -761,12 +763,12 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             {editingChannelIndex !== null && <Col span={24}><Form.Item name="clearApiKey" valuePropName="checked"><Checkbox>保存时移除该渠道密钥</Checkbox></Form.Item></Col>}
-                            {channelProtocol === "replicate" && <Col span={24}><Form.Item name="useEnvironmentKey" valuePropName="checked" extra="仅此渠道使用服务器环境令牌；停用渠道后不会用于新任务。"><Checkbox>无渠道密钥时使用服务器 REPLICATE_API_TOKEN</Checkbox></Form.Item></Col>}
+                            {cloudProtocol && <Col span={24}><Form.Item name="useEnvironmentKey" valuePropName="checked" extra="仅此渠道使用服务器环境令牌；停用渠道后不会用于新任务。"><Checkbox>{channelProtocol === "wavespeed" ? "无渠道密钥时使用服务器 WAVESPEED_API_KEY" : "无渠道密钥时使用服务器 REPLICATE_API_TOKEN"}</Checkbox></Form.Item></Col>}
                             <Col span={24}>
                                 <Form.Item label="渠道可用模型">
                                     <Space.Compact style={{ width: "100%" }}>
                                         <Form.Item name="models" noStyle>
-                                            <Select mode={channelProtocol === "replicate" ? "multiple" : "tags"} maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={channelProtocol === "replicate" ? REPLICATE_SUPPORTED_MODELS.map((item) => ({ label: `${item.label} · ${item.model}`, value: item.model })) : knownModels.map((model) => ({ label: model, value: model }))} />
+                                            <Select mode={cloudProtocol ? "multiple" : "tags"} maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={cloudProtocol ? REPLICATE_SUPPORTED_MODELS.filter((item) => channelProtocol === "wavespeed" ? item.model.startsWith("wavespeed-ai/") : !item.model.startsWith("wavespeed-ai/")).map((item) => ({ label: `${item.label} · ${item.model}`, value: item.model })) : knownModels.map((model) => ({ label: model, value: model }))} />
                                         </Form.Item>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
                                     </Space.Compact>
@@ -806,7 +808,7 @@ export default function AdminSettingsPage() {
                             ))}
                         </Row>
 
-                        {channelProtocol === "replicate" && <>
+                        {cloudProtocol && <>
                             <Typography.Paragraph type="secondary">下列报价为平台向用户收取的算力点，同一模型在多个 Replicate 渠道和工具中共享。模型版本使用已适配的固定版本；停用渠道仍可恢复原任务。</Typography.Paragraph>
                             <Collapse items={REPLICATE_FEATURES.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => {
                                 const billingMode = replicatePrices[feature.model]?.billingMode || feature.billingMode;
@@ -881,11 +883,11 @@ export default function AdminSettingsPage() {
                             <Space.Compact style={{ flex: "1 1 320px" }}>
                                 {channelProtocol !== "replicate" && <><Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} /><Button onClick={addModelInSelector}>增加模型</Button></>}
                                 <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
-                                    {channelProtocol === "replicate" ? "查看已适配模型" : "拉取模型列表"}
+                                    {cloudProtocol ? "查看已适配模型" : "拉取模型列表"}
                                 </Button>
                             </Space.Compact>
                         </Flex>
-                        <Typography.Text type="secondary">{channelProtocol === "replicate" ? "仅列出已适配模型；一个模型可支持多个工具功能。" : "如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。"}</Typography.Text>
+                        <Typography.Text type="secondary">{cloudProtocol ? "仅列出已适配模型；一个模型可支持多个工具功能。" : "如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。"}</Typography.Text>
                         <Tabs
                             activeKey={modelSelectTab}
                             onChange={(key) => setModelSelectTab(key as ModelSelectTabKey)}
@@ -1101,7 +1103,7 @@ function replicateTierLabel(tier: string) {
     const labels: Record<string, string> = {
         "base:480p": "基础版 · 480p", "base:720p": "基础版 · 720p", "interpolate:480p": "补帧版 · 480p", "interpolate:720p": "补帧版 · 720p",
         "720p:30": "720p · 30 FPS", "720p:60": "720p · 60 FPS", "1080p:30": "1080p · 30 FPS", "1080p:60": "1080p · 60 FPS", "4k:30": "4K · 30 FPS", "4k:60": "4K · 60 FPS",
-        "480": "480p", "720": "720p",
+        "480": "480p", "720": "720p", "480p": "480p · 每秒", "720p": "720p · 每秒",
         "768p:6": "768p · 6秒 / 条", "768p:10": "768p · 10秒 / 条", "1080p:6": "1080p · 6秒 / 条",
     };
     return labels[tier] || tier;
@@ -1110,7 +1112,7 @@ function replicateTierLabel(tier: string) {
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
     return {
         id: item.id || 0,
-        protocol: item.protocol === "replicate" ? "replicate" : "openai",
+        protocol: item.protocol === "replicate" ? "replicate" : item.protocol === "wavespeed" ? "wavespeed" : "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
@@ -1139,7 +1141,7 @@ function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => voi
 }
 
 function collectChannelModels(channels: AdminModelChannel[]) {
-    return uniqueModels(channels.filter((channel) => channel.enabled && channel.protocol !== "replicate").flatMap((channel) => channel.models || []));
+    return uniqueModels(channels.filter((channel) => channel.enabled && channel.protocol !== "replicate" && channel.protocol !== "wavespeed").flatMap((channel) => channel.models || []));
 }
 
 function collectKnownModels(settings: AdminSettings) {

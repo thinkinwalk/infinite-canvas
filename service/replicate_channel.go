@@ -12,6 +12,7 @@ import (
 )
 
 const ReplicateBaseURL = "https://api.replicate.com/v1"
+const WaveSpeedBaseURL = "https://api.wavespeed.ai/api/v3"
 
 func SupportedReplicateModels() []model.PublicChannelModel {
 	items := []model.PublicChannelModel{}
@@ -29,14 +30,14 @@ func SupportedReplicateModels() []model.PublicChannelModel {
 		}
 		capability := "video-processing"
 		switch spec.Operation {
-		case "image-to-video", "text-to-video", "hailuo-video":
+		case "image-to-video", "text-to-video", "hailuo-video", "head-swap":
 			capability = "video"
 		case "speech":
 			capability = "audio"
 		case "transcribe":
 			capability = "transcription"
 		}
-		items = append(items, model.PublicChannelModel{Version: spec.Version, Model: spec.Model, Label: spec.Label, Protocol: "replicate", Capabilities: []string{capability}, Operations: []string{spec.Operation}})
+		items = append(items, model.PublicChannelModel{Version: spec.Version, Model: spec.Model, Label: spec.Label, Protocol: spec.ProviderName(), Capabilities: []string{capability}, Operations: []string{spec.Operation}})
 	}
 	return append(items,
 		model.PublicChannelModel{Model: "men1scus/birefnet", Label: "图像抠图", Protocol: "replicate", Capabilities: []string{"image-processing"}, Operations: []string{"cutout-replicate"}},
@@ -73,7 +74,7 @@ func initializeReplicateChannels(setting *model.PrivateSetting) {
 
 func validateReplicateChannels(channels []model.ModelChannel, saved model.PrivateSetting) error {
 	for _, channel := range channels {
-		if channel.Protocol != "replicate" {
+		if channel.Protocol != "replicate" && channel.Protocol != "wavespeed" {
 			continue
 		}
 		for _, name := range channel.Models {
@@ -85,17 +86,21 @@ func validateReplicateChannels(channels []model.ModelChannel, saved model.Privat
 				}
 			}
 			if !supported {
-				return safeMessageError{message: fmt.Sprintf("Replicate 模型 %s 尚未适配，请从已支持模型中选择", name)}
+				return safeMessageError{message: fmt.Sprintf("云模型 %s 尚未适配，请从已支持模型中选择", name)}
+			}
+			// 模型与渠道协议必须匹配，否则会拿错密钥请求错的上游。
+			if provider := ProviderForModel(name); provider != channel.Protocol {
+				return safeMessageError{message: fmt.Sprintf("模型 %s 需要通过 %s 渠道调用", name, providerLabel(provider))}
 			}
 		}
 	}
 	for _, old := range saved.Channels {
-		if old.Protocol != "replicate" {
+		if old.Protocol != "replicate" && old.Protocol != "wavespeed" {
 			continue
 		}
 		retained := false
 		for _, channel := range channels {
-			if channel.ID == old.ID && channel.Protocol == "replicate" {
+			if channel.ID == old.ID && channel.Protocol == old.Protocol {
 				retained = true
 				break
 			}
@@ -108,7 +113,7 @@ func validateReplicateChannels(channels []model.ModelChannel, saved model.Privat
 			return err
 		}
 		if active {
-			return safeMessageError{message: fmt.Sprintf("渠道 #%d 还有未完成的 Replicate 任务，请先停用渠道并处理原任务，再删除或变更协议", old.ID)}
+			return safeMessageError{message: fmt.Sprintf("渠道 #%d 还有未完成的云模型任务，请先停用渠道并处理原任务，再删除或变更协议", old.ID)}
 		}
 	}
 	return nil
@@ -118,16 +123,37 @@ func replicateChannelKey(channel model.ModelChannel) string {
 	if key := strings.TrimSpace(channel.APIKey); key != "" {
 		return key
 	}
-	if channel.UseEnvironmentKey {
-		return strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN"))
+	if !channel.UseEnvironmentKey {
+		return ""
 	}
-	return ""
+	if channel.Protocol == "wavespeed" {
+		return strings.TrimSpace(os.Getenv("WAVESPEED_API_KEY"))
+	}
+	return strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN"))
+}
+
+// ProviderForModel returns the channel protocol a catalog entry requires.
+func ProviderForModel(modelName string) string {
+	for _, spec := range ReplicateModels() {
+		if spec.Model == modelName {
+			return spec.ProviderName()
+		}
+	}
+	return "replicate"
+}
+
+func providerLabel(provider string) string {
+	if provider == "wavespeed" {
+		return "WaveSpeed"
+	}
+	return "Replicate"
 }
 
 func replicateChannelsForGroup(channels []model.ModelChannel, modelName, group string) []model.ModelChannel {
 	items := []model.ModelChannel{}
+	provider := ProviderForModel(modelName)
 	for _, channel := range channels {
-		if channel.Protocol != "replicate" || !channel.Enabled || replicateChannelKey(channel) == "" {
+		if channel.Protocol != provider || !channel.Enabled || replicateChannelKey(channel) == "" {
 			continue
 		}
 		if group != "" && len(channel.AllowedGroups) > 0 && !containsString(channel.AllowedGroups, group) {
@@ -161,7 +187,7 @@ func SelectReplicateChannelForID(modelName, group string, id int) (model.ModelCh
 		if len(replicateChannelsForGroup(private.Channels, modelName, "")) > 0 {
 			return model.ModelChannel{}, modelGroupAccessError(modelName, group, private.Groups, settings.Public.AdminContact)
 		}
-		return model.ModelChannel{}, safeMessageError{message: "没有可用的 Replicate 渠道，请管理员配置并启用该模型"}
+		return model.ModelChannel{}, safeMessageError{message: fmt.Sprintf("没有可用的 %s 渠道，请管理员配置并启用该模型", providerLabel(ProviderForModel(modelName)))}
 	}
 	if id != 0 {
 		for _, channel := range channels {
@@ -186,12 +212,12 @@ func ResolveReplicateTaskChannel(task model.ReplicateTask) (model.ModelChannel, 
 		id = private.Replicate.LegacyChannelID
 	}
 	for _, channel := range private.Channels {
-		if channel.ID == id && channel.Protocol == "replicate" && replicateChannelKey(channel) != "" {
+		if channel.ID == id && (channel.Protocol == "replicate" || channel.Protocol == "wavespeed") && replicateChannelKey(channel) != "" {
 			channel.APIKey = replicateChannelKey(channel)
 			return channel, nil
 		}
 	}
-	return model.ModelChannel{}, safeMessageError{message: "任务原 Replicate 渠道不存在或密钥未配置，请管理员恢复原渠道；不会创建新任务"}
+	return model.ModelChannel{}, safeMessageError{message: "任务原云模型渠道不存在或密钥未配置，请管理员恢复原渠道；不会创建新任务"}
 }
 
 func testReplicateChannelModel(channel model.ModelChannel, name string) (string, error) {
@@ -203,7 +229,24 @@ func testReplicateChannelModel(channel model.ModelChannel, name string) (string,
 		}
 	}
 	if !supported {
-		return "", safeMessageError{message: "该 Replicate 模型尚未适配"}
+		return "", safeMessageError{message: "该云模型尚未适配"}
+	}
+	if channel.Protocol == "wavespeed" {
+		request, err := http.NewRequest(http.MethodGet, WaveSpeedBaseURL+"/balance", nil)
+		if err != nil {
+			return "", err
+		}
+		request.Header.Set("Authorization", "Bearer "+replicateChannelKey(channel))
+		response, err := adminModelHTTPClient.Do(request)
+		if err != nil {
+			return "", safeMessageError{message: "WaveSpeed 连接失败"}
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, response.Body)
+		if response.StatusCode != http.StatusOK {
+			return "", safeMessageError{message: fmt.Sprintf("WaveSpeed 令牌校验失败（%d），请检查密钥", response.StatusCode)}
+		}
+		return "令牌有效；未执行付费生成", nil
 	}
 	request, err := http.NewRequest(http.MethodGet, ReplicateBaseURL+"/models/"+name, nil)
 	if err != nil {

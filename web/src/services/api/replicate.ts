@@ -5,7 +5,7 @@ import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { workbenchMediaBlob } from "./video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "./video";
 
-export type ReplicateOperation = "transcribe" | "speech" | "digital-human" | "lipsync" | "replace-person" | "track-mask" | "upscale" | "image-to-video" | "text-to-video" | "hailuo-video" | "video-edit" | "masked-edit" | "subtitle-remove";
+export type ReplicateOperation = "transcribe" | "speech" | "digital-human" | "lipsync" | "replace-person" | "head-swap" | "track-mask" | "upscale" | "image-to-video" | "text-to-video" | "hailuo-video" | "video-edit" | "masked-edit" | "subtitle-remove";
 export const REPLICATE_VIDEO_MODEL = "replicate::wan-video/wan-2.2-i2v-fast";
 export const REPLICATE_TEXT_VIDEO_MODEL = "replicate::wan-video/wan-2.2-t2v-fast";
 export const HAILUO_VIDEO_MODEL = "replicate::minimax/hailuo-2.3";
@@ -16,6 +16,7 @@ export const REPLICATE_MODEL_NAMES: Record<ReplicateOperation, string> = {
     "digital-human": "照片口播",
     lipsync: "视频口型同步",
     "replace-person": "视频人物替换",
+    "head-swap": "视频人物换脸",
     "track-mask": "视频目标跟踪",
     upscale: "视频增强",
     "image-to-video": "图像生成视频",
@@ -33,7 +34,7 @@ export function replicateFeatureUrl(operation: ReplicateOperation) {
     if (operation === "upscale") return "/video/upscale";
     if (operation === "subtitle-remove") return "/video/subtitle-remove";
     if (["speech", "digital-human", "lipsync"].includes(operation)) return `/digital-human?mode=${operation === "lipsync" ? "video" : "photo"}&focus=${operation === "speech" ? "speech" : "avatar"}`;
-    return `/video/content-replace?replacement=${operation === "replace-person" ? "person" : "background"}${operation === "masked-edit" ? "&masked=1" : ""}`;
+    return `/video/content-replace?replacement=${operation === "replace-person" || operation === "head-swap" ? "person" : "background"}${operation === "masked-edit" ? "&masked=1" : ""}${operation === "head-swap" ? "&model=headswap" : ""}`;
 }
 export const REPLICATE_FEATURES: { operation: ReplicateOperation; label: string; model: string; description: string; billingMode: string; tierKeys?: string[] }[] = [
     { operation: "text-to-video", label: "Wan 2.2 · 文生视频", model: "wan-video/wan-2.2-t2v-fast", description: "仅输入文字生成视频，支持横屏/竖屏、480p/720p、约5/7.5秒；按分辨率收取每条费用，插帧不额外加价。", billingMode: "output_count", tierKeys: ["480p", "720p"] },
@@ -43,6 +44,7 @@ export const REPLICATE_FEATURES: { operation: ReplicateOperation; label: string;
     { operation: "digital-human", label: "照片数字人", model: "wan-video/wan-2.2-s2v", description: "上传人物照片和语音，生成会说话的数字人视频。", billingMode: "output_seconds" },
     { operation: "lipsync", label: "视频对口型", model: "sync/lipsync-2", description: "让已有视频中的人物口型与新音频同步。", billingMode: "output_seconds" },
     { operation: "replace-person", label: "视频人物替换", model: "wan-video/wan-2.2-animate-replace", description: "把视频中的人物替换为指定角色，同时保留动作。", billingMode: "duration_resolution", tierKeys: ["480", "720"] },
+    { operation: "head-swap", label: "视频人物换脸", model: "wavespeed-ai/video-head-swap", description: "用参考照片替换整颗头部（五官、发型、轮廓），保留身体动作、背景和口型。按视频秒数与输出分辨率计费，不足 3 秒按 3 秒计算。参考照片请使用清晰的真实正面照。", billingMode: "duration_resolution", tierKeys: ["480p", "720p"] },
     { operation: "track-mask", label: "视频目标跟踪", model: "meta/sam-2-video", description: "根据一次点选在云端生成逐帧目标掩膜，不生成替换画面。", billingMode: "runtime_seconds" },
     {
         operation: "upscale",

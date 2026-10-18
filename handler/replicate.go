@@ -168,8 +168,7 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	// Persist the provider ID even after the browser stops waiting.
 	ctx := context.WithoutCancel(r.Context())
-	payload, _ := json.Marshal(map[string]any{"version": spec.Version, "input": input.Input})
-	prediction, status, err := callReplicate(ctx, token, http.MethodPost, "/predictions", payload)
+	prediction, status, err := createProviderTask(ctx, spec, token, input.Input)
 	task.PredictionID = prediction.ID
 	if err != nil {
 		if prediction.ID == "" && (status == 400 || status == 401 || status == 402 || status == 403 || status == 404 || status == 422 || status == 429) {
@@ -181,7 +180,7 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			task.Status = "uncertain"
-			task.Error = "提交结果未确认，请管理员核对 Replicate 任务；恢复查询不会重新创建收费任务"
+			task.Error = "提交结果未确认，请管理员核对上游任务；恢复查询不会重新创建收费任务"
 			if err := repository.UpdateReplicateTask(task); err != nil {
 				FailError(w, err)
 				return
@@ -232,7 +231,7 @@ func ReadReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 			FailError(w, err)
 			return
 		}
-		prediction, _, err := callReplicate(r.Context(), channel.APIKey, http.MethodGet, "/predictions/"+url.PathEscape(task.PredictionID), nil)
+		prediction, _, err := pollProviderTask(r.Context(), service.ProviderForModel(task.Model), channel.APIKey, task.PredictionID)
 		if err != nil {
 			Fail(w, "任务查询暂时失败，可恢复查询；不会重新创建模型任务")
 			return
@@ -274,6 +273,10 @@ func CancelReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 	channel, err := service.ResolveReplicateTaskChannel(task)
 	if err != nil {
 		FailError(w, err)
+		return
+	}
+	if service.ProviderForModel(task.Model) == "wavespeed" {
+		Fail(w, "WaveSpeed 任务不支持上游取消，可恢复查询直到完成")
 		return
 	}
 	prediction, _, err := callReplicate(r.Context(), channel.APIKey, http.MethodPost, "/predictions/"+url.PathEscape(task.PredictionID)+"/cancel", []byte("{}"))
@@ -331,6 +334,25 @@ func ownedReplicateTask(w http.ResponseWriter, r *http.Request, id string) (mode
 	}
 	return task, true
 }
+
+// Provider request shapes differ: Replicate wraps input in a versioned
+// prediction, WaveSpeed posts the model's own flat input to /{model}.
+func createProviderTask(ctx context.Context, spec service.ReplicateModel, token string, input map[string]any) (cloudPrediction, int, error) {
+	if spec.ProviderName() == "wavespeed" {
+		payload, _ := json.Marshal(input)
+		return callWaveSpeed(ctx, token, http.MethodPost, "/"+spec.Model, payload)
+	}
+	payload, _ := json.Marshal(map[string]any{"version": spec.Version, "input": input})
+	return callReplicate(ctx, token, http.MethodPost, "/predictions", payload)
+}
+
+func pollProviderTask(ctx context.Context, provider, token, predictionID string) (cloudPrediction, int, error) {
+	if provider == "wavespeed" {
+		return callWaveSpeed(ctx, token, http.MethodGet, "/predictions/"+url.PathEscape(predictionID)+"/result", nil)
+	}
+	return callReplicate(ctx, token, http.MethodGet, "/predictions/"+url.PathEscape(predictionID), nil)
+}
+
 func callReplicate(ctx context.Context, token, method, path string, body []byte) (cloudPrediction, int, error) {
 	request, err := http.NewRequestWithContext(ctx, method, "https://api.replicate.com/v1"+path, bytes.NewReader(body))
 	if err != nil {
@@ -360,6 +382,83 @@ func callReplicate(ctx context.Context, token, method, path string, body []byte)
 	var prediction cloudPrediction
 	if err := json.Unmarshal(responseBody, &prediction); err != nil {
 		return prediction, response.StatusCode, err
+	}
+	return prediction, response.StatusCode, nil
+}
+
+// WaveSpeed uses its own task shape: POST /api/v3/{model} then poll
+// /api/v3/predictions/{id}/result. Map it onto the Replicate prediction shape so
+// task storage, billing and refunds stay unchanged.
+func callWaveSpeed(ctx context.Context, token, method, path string, body []byte) (cloudPrediction, int, error) {
+	request, err := http.NewRequestWithContext(ctx, method, service.WaveSpeedBaseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return cloudPrediction{}, 0, err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := aiHTTPClient.Do(request)
+	if err != nil {
+		return cloudPrediction{}, 0, err
+	}
+	defer response.Body.Close()
+	responseBody, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return cloudPrediction{}, response.StatusCode, readErr
+	}
+	if response.StatusCode == http.StatusTooManyRequests {
+		return cloudPrediction{}, response.StatusCode, fmt.Errorf("WaveSpeed 暂时限制创建频率，本次未创建模型任务，请稍后重试")
+	}
+	if response.StatusCode >= 400 {
+		message := fmt.Sprintf("WaveSpeed 请求未接受（%d），请检查参数、余额和模型权限", response.StatusCode)
+		if detail := replicateErrorDetail(responseBody); detail != "" {
+			message += "：" + detail
+		}
+		return cloudPrediction{}, response.StatusCode, errors.New(message)
+	}
+	var payload struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			ID      string   `json:"id"`
+			Status  string   `json:"status"`
+			Outputs []string `json:"outputs"`
+			Error   string   `json:"error"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		return cloudPrediction{}, response.StatusCode, err
+	}
+	prediction := cloudPrediction{ID: payload.Data.ID, Input: map[string]any{}}
+	switch payload.Data.Status {
+	case "completed":
+		prediction.Status = "succeeded"
+	case "failed", "cancelled", "canceled", "timeout":
+		prediction.Status = "failed"
+	case "processing", "running":
+		prediction.Status = "processing"
+	default:
+		prediction.Status = "starting"
+	}
+	if len(payload.Data.Outputs) == 1 {
+		prediction.Output = payload.Data.Outputs[0]
+	} else if len(payload.Data.Outputs) > 1 {
+		outputs := make([]any, 0, len(payload.Data.Outputs))
+		for _, item := range payload.Data.Outputs {
+			outputs = append(outputs, item)
+		}
+		prediction.Output = outputs
+	}
+	if payload.Code != 0 && payload.Code != 200 && payload.Data.ID == "" {
+		message := "WaveSpeed 请求未接受"
+		if payload.Message != "" {
+			message += "：" + safeUpstreamText(payload.Message)
+		}
+		return cloudPrediction{}, http.StatusBadRequest, errors.New(message)
+	}
+	if payload.Data.Error != "" {
+		prediction.Error = payload.Data.Error
+	} else if payload.Code != 0 && payload.Code != 200 && payload.Message != "" {
+		prediction.Error = payload.Message
 	}
 	return prediction, response.StatusCode, nil
 }
@@ -460,7 +559,14 @@ func refundReplicateTask(task *model.ReplicateTask) error {
 	return nil
 }
 func replicateDeliveryAllowed(address *url.URL) bool {
-	return address.Scheme == "https" && address.User == nil && (address.Hostname() == "replicate.delivery" || strings.HasSuffix(address.Hostname(), ".replicate.delivery"))
+	if address.Scheme != "https" || address.User != nil {
+		return false
+	}
+	host := address.Hostname()
+	return host == "replicate.delivery" || strings.HasSuffix(host, ".replicate.delivery") ||
+		host == "wavespeed.ai" || strings.HasSuffix(host, ".wavespeed.ai") ||
+		// WaveSpeed 的成品和素材都通过 CloudFront 分发。
+		host == "d2h7xmz5gqybh9.cloudfront.net"
 }
 func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
 	urls := []string{task.OutputURL}
@@ -651,6 +757,10 @@ func AdminReconcileReplicateTask(w http.ResponseWriter, r *http.Request, id stri
 	}
 	if task.Status != "uncertain" {
 		Fail(w, "只有提交结果未确认的任务可进行关联")
+		return
+	}
+	if service.ProviderForModel(task.Model) == "wavespeed" {
+		Fail(w, "WaveSpeed 任务不返回输入指纹，无法自动核对；请在 WaveSpeed 后台核对后手动处理")
 		return
 	}
 	channel, err := service.ResolveReplicateTaskChannel(task)

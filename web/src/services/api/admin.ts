@@ -235,7 +235,7 @@ export type AdminModelChannel = {
     clearApiKey?: boolean;
     useEnvironmentKey?: boolean;
     id: number;
-    protocol: "openai" | "replicate";
+    protocol: "openai" | "replicate" | "wavespeed";
     name: string;
     baseUrl: string;
     apiKey: string;
