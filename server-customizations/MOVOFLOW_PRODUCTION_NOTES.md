@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.57
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.58
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.57-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.58 WaveSpeed head-swap deployment
+
+- Source commit `dd5ede0570b359efc94080e5e2d61c1ffd221571`, tag `v0.19.58`. Docker image and Docs Docker image workflows succeeded.
+- Adds `wavespeed-ai/video-head-swap` as a second model in the person-replacement workflow. New channel protocol `wavespeed`; the client posts the model's flat input to `POST /api/v3/wavespeed-ai/video-head-swap` and polls `GET /api/v3/predictions/{id}/result`, mapped onto the existing `cloudPrediction` shape so task storage, idempotency, credits and refunds are unchanged.
+- Delivery allowlist extended to `*.wavespeed.ai` and `d2h7xmz5gqybh9.cloudfront.net`; without it the task stalls at `generated` and never saves.
+- Pricing defaults: 480p 112 credits/s, 720p 224 credits/s, minimum 336 credits (3 seconds), derived from upstream $0.04/$0.08 per second at 4x with USD 7.0 and 1 credit = 0.01 CNY.
+- Upstream constraints found during evaluation: 3-second minimum billing, 120-second input cap, output about 0.18s shorter than input (5.000s in, 4.821s out), audio track preserved (h264 + aac). WaveSpeed has no upstream cancel endpoint, so cancel returns an error and the task is polled to completion; the admin reconcile path refuses WaveSpeed tasks because they carry no input fingerprint.
+- Worker source was not changed; the v0.19.57 worker mount stays. App digest deployed via `deploy_infinite_canvas_image.sh`; `/app/VERSION` v0.19.58, container recreated, health 200 external.
+- Operational note for the operator: the WaveSpeed channel still has to be created in the admin console with its own key before users can see the model. The evaluation also showed the reference photo, not the model, drives identity fidelity — AI-regenerated, backlit, or near-identical-to-the-source portraits get beautified instead of replaced.
 
 ## v0.19.57 hard subject boundary deployment
 
