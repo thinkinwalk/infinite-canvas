@@ -15,11 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.60
-- Current production commit: 76d3d15d15d6aaabae78ceb8905b46559611c928
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.61
+- Current production commit: bb6e0d45841a633e566bcfab11e8f56ad2c9f2fc
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.60-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.61 subtitle regeneration release
+
+- Source commit `bb6e0d45841a633e566bcfab11e8f56ad2c9f2fc`, tag `v0.19.61`; release https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.61. Image workflow https://github.com/thinkinwalk/infinite-canvas/actions/runs/39424303601.
+- Subtitle removal and regeneration are separate controls; regeneration defaults off. Cleanup-only restores original audio and skips caption generation. Single-clip opt-in recognizes and burns new captions; whole-video opt-in recognizes editable captions for later rendering and retains the clean video.
+- Worker source unchanged, retaining `/opt/infinite-canvas/releases/v0.19.60-worker/`. No local builds or tests run; real-material acceptance pending.
+- Online SQLite backup: `/opt/infinite-canvas/backups/v0.19.61-20261020-144244/database.sqlite`; `quick_check` passed, settings/video/Replicate task counts 2/34/33. Previous Compose is saved beside the backup. Application deployed successfully. Image digest `sha256:03933fdbc709f144745cbe0d7abfeaa28d7ca7c7bd67435b5a2044288dc5476b`; container VERSION and OCI revision match the tag and source. Internal/external health return `ok`, post-deploy SQLite `quick_check` is `ok` and counts remain 2/34/33. Public `/video/content-replace` serves `/assets/index-sIzrZKtZ.js` containing both subtitle controls and the regeneration field. App and docs image workflows succeeded. Helper backups: `/opt/infinite-canvas/backups/docker-compose.deploy.yml.20261020-144634.bak` and `/opt/infinite-canvas/backups/data-before-deploy-20261020-144634.tgz`. Worker start time remains `2026-10-20T12:06:51.021923709Z`, restart count zero. No paid generation submitted.
 
 ## v0.19.60 Wan30 deployment
 
