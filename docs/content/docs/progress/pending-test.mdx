@@ -5,6 +5,12 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 偏好设置默认模型下拉读取平台模型目录
+
+- 配置弹窗「偏好设置」的默认生图模型下拉改为读取平台模型目录：登录用户在有平台目录时应能看到全部已开放的生图模型（当前线上为 gpt-image-2.5-sunburst、gpt-image-2-4k、gpt-image-2、gpt-image-2.5、gpt-image-2.5-flare、gpt-image-2-2k），不再只有本地默认的 gpt-image-2。
+- 平台目录没有对应能力的类型仍回落到自定义渠道，避免文本/视频下拉变空。
+- 验收：打开配置弹窗 → 偏好设置 → 展开默认生图模型，确认列出全部平台生图模型；选择一个非默认模型后刷新页面，确认选择保留；再进「渠道」随便改一下某个自定义渠道并保存，确认偏好设置里的平台模型选择没有被重置；未登录或平台目录加载失败时，确认下拉仍显示自定义渠道里的模型。
+
 ## 只替换人物区域实验链路
 
 - v0.19.49 应用和 CPU 合成服务已部署到 `https://studio.lingzhouai.com`；Fork 的工作流禁用已由仓库所有者在 Actions 首页解除，应用/文档镜像和插件发布均成功。线上版本、静态资源、内外健康检查及 `replacement-masked-composite` 能力已核对；部署时数据库完整性通过，57 条处理记录和 6 条人物替换记录保持不变。
