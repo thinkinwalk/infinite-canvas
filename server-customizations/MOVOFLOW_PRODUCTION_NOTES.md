@@ -20,6 +20,12 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
+## v0.19.60 Wan30 release preparation
+
+- Target app image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.60. Target worker source: /opt/infinite-canvas/releases/v0.19.60-worker/. Deployment verification pending.
+- Wan30 reference validation, trimming and whole-video segment options now allow 1–30 seconds. Channel 14 was read back at 80 credits/second with output durations 4–30 seconds; 30 seconds costs 2400 credits before group ratios.
+- Replicate Wan 2.2 and lipsync pricing are unchanged. Seedance and H3 duration limits remain unchanged. No local build or tests run under the release rules.
+
 ## v0.19.59 Preferences model picker fix
 
 - Source commit `66e7cc05a97b0f3e2944ecb2a47c281cdf6b7653`, tag `v0.19.59`. Docker image workflow succeeded.

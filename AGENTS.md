@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`，这是从 Docker labels 排查确认的目录；不要使用 `/opt/chatgpt2api`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产镜像记录为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.58`，处理服务源码挂载目录为 `/opt/infinite-canvas/releases/v0.19.57-worker/`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 本次发布目标镜像为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.60`，处理服务源码目标挂载目录为 `/opt/infinite-canvas/releases/v0.19.60-worker/`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 生产服务器没有 `sqlite3` 命令，部署前用 `python3` 的 `sqlite3.backup` 做在线数据库备份并核对 `quick_check`；`deploy_infinite_canvas_image.sh` 打包 `data` 时若因数据库写入导致 tar 报 “file changed as we read it” 退出，Compose 尚未修改，可删除残缺归档后用容忍该警告的临时副本重跑，不要直接改动服务器上的脚本。
 - Fork 仓库出现 Actions 调度 HTTP 422「Actions has been disabled for this repository」时，须核对仓库 Actions 首页是否要求重新启用工作流；仓库 `enabled: true` 和工作流 `active` 不能证明该限制已解除。启用后对原版本 tag 手动触发构建，不移动或重复创建 tag。
 - 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
@@ -117,3 +117,5 @@
 - 本地启动或浏览器验收时不要关闭用户已经打开的浏览器窗口或标签页；需要自动化验证时使用独立测试页面，避免打断用户当前页面和对话状态。
 
 - 排查生成媒体无法播放时，须核对实际播放来源（浏览器本地 Blob / 云端文件）和浏览器解码结果；服务器转码成功不能作为既有本地作品已修复的证据，不要要求用户清空作品缓存。
+
+- 修改指定模型前，必须按完整模型 ID 核对渠道、协议及计费配置；`wan30-720p` 属于渠道视频模型，其价格来自 `VideoModels`，不得与 Replicate 的 Wan 2.2 或 lipsync 配置混用。

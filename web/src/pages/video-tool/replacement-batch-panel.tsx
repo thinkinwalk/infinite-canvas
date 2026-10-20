@@ -49,8 +49,7 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
         .sort((a, b) => preferred.indexOf(modelOptionName(a).toLowerCase()) - preferred.indexOf(modelOptionName(b).toLowerCase()));
     const selected = candidates.includes(model) || model === wanReplace ? model : candidates[0] || wanReplace;
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
-    // Existing reference-video input range for Wan30; output duration is separate.
-    const durations = selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (modelOptionName(selected).toLowerCase() !== "wan30-720p" || Number(v) <= 15)).sort((a, b) => Number(b) - Number(a));
+    const durations = selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (modelOptionName(selected).toLowerCase() !== "wan30-720p" || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
     const sizes = selected === wanReplace ? ["720", "480"] : profile.resolutions;
     const duration = durations.includes(seconds) ? seconds : durations[0];
     const size = sizes.includes(resolution) ? resolution : sizes[0];

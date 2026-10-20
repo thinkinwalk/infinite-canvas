@@ -33,7 +33,7 @@ export function videoReferenceDurationError(model: string, videos: { durationMs?
     for (const [index, video] of videos.entries()) {
         const duration = video.durationMs;
         if (!duration || !Number.isFinite(duration)) return `第 ${index + 1} 个参考视频时长无法读取，请重新上传`;
-        if (duration < 1000 || duration > 15000) return `第 ${index + 1} 个参考视频需为 1–15 秒，请裁剪后再提交`;
+        if (duration < 1000 || duration > 30000) return `第 ${index + 1} 个参考视频需为 1–30 秒，请裁剪后再提交`;
     }
     return "";
 }

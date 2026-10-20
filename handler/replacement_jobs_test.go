@@ -55,7 +55,7 @@ func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testin
 	if err := executeReplacement(ctx, &job, true); err != nil {
 		t.Fatal(err)
 	}
-	if job.Status != "ready" || job.Credits != 588 || job.Parts[0].Seconds != 4 || job.Parts[1].Seconds != 10 || job.AspectRatio != "16:9" {
+	if job.Status != "ready" || job.Credits != 1120 || job.Parts[0].Seconds != 4 || job.Parts[1].Seconds != 10 || job.AspectRatio != "16:9" {
 		t.Fatalf("wrong plan or channel quote: %+v", job)
 	}
 	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
@@ -68,8 +68,8 @@ func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testin
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","result":{"metadata":{"size":[720,1280],"parts":[{"start":0,"end":15,"inputStart":0,"inputEnd":15,"seconds":15}]}}}`))}, nil
 	})}
 	whole := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "source", Model: "wan30-720p", ChannelID: 711, Seconds: "15", Resolution: "720"}
-	if err := executeReplacement(ctx, &whole, true); err != nil || len(whole.Parts) != 1 || whole.Credits != 630 {
-		t.Fatalf("15-second whole quote should be 630: %+v, %v", whole, err)
+	if err := executeReplacement(ctx, &whole, true); err != nil || len(whole.Parts) != 1 || whole.Credits != 1200 {
+		t.Fatalf("15-second whole quote should be 1200: %+v, %v", whole, err)
 	}
 	settings.Private.Channels[0].Enabled = false
 	if _, err := repository.SaveSettings(settings, "test"); err != nil {
