@@ -201,7 +201,7 @@ func TestReplacementNewSubtitleFlowPreservesCleanVideoWhenTranscriptionFails(t *
 	previous := aiHTTPClient
 	t.Cleanup(func() { aiHTTPClient = previous })
 	operations := []string{}
-	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Subtitles: true, SubtitleMethod: "audio-after-generation", SubtitleOutput: "editable", Planned: true,
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Subtitles: true, RegenerateSubtitles: true, SubtitleMethod: "audio-after-generation", SubtitleOutput: "editable", Planned: true,
 		Parts: []replacementPart{{Generated: "paid-output.mp4", Start: 0, End: 3, InputEnd: 3, Seconds: 3}}}
 	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "worker.invalid" {

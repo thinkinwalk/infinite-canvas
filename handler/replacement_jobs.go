@@ -52,44 +52,45 @@ type replacementCaption struct {
 	Text  string  `json:"text"`
 }
 type replacementJob struct {
-	ID              string               `json:"id"`
-	UserID          string               `json:"userId"`
-	Source          string               `json:"source"`
-	Image           string               `json:"image"`
-	Model           string               `json:"model"`
-	ChannelID       int                  `json:"channelId"`
-	Resolution      string               `json:"resolution"`
-	Seconds         string               `json:"seconds"`
-	Prompt          string               `json:"prompt"`
-	Subtitles       bool                 `json:"subtitles"`
-	SubtitleSize    float64              `json:"subtitleSize"`
-	SubtitleColor   string               `json:"subtitleColor"`
-	SubtitleFont    string               `json:"subtitleFont"`
-	SubtitleMethod  string               `json:"subtitleMethod,omitempty"`
-	SubtitleOutput  string               `json:"subtitleOutput,omitempty"`
-	CaptionSegments []replacementCaption `json:"captionSegments,omitempty"`
-	CaptionRevision int                  `json:"captionRevision"`
-	CaptionStatus   string               `json:"captionStatus,omitempty"`
-	CaptionError    string               `json:"captionError,omitempty"`
-	CaptionResult   string               `json:"captionResult,omitempty"`
-	SubtitleBottom  float64              `json:"subtitleBottom"`
-	PreparedSource  string               `json:"preparedSource,omitempty"`
-	Status          string               `json:"status"`
-	Step            string               `json:"step"`
-	Error           string               `json:"error,omitempty"`
-	Credits         int                  `json:"credits"`
-	Parts           []replacementPart    `json:"parts"`
-	Planned         bool                 `json:"planned"`
-	AspectRatio     string               `json:"aspectRatio"`
-	WorkerStep      string               `json:"workerStep,omitempty"`
-	WorkerID        string               `json:"workerId,omitempty"`
-	Assembled       string               `json:"assembled,omitempty"`
-	Result          string               `json:"result,omitempty"`
-	PreviousResults []string             `json:"previousResults,omitempty"`
-	Reviewed        bool                 `json:"reviewed"`
-	Archived        bool                 `json:"archived"`
-	CreatedAt       string               `json:"createdAt"`
-	UpdatedAt       string               `json:"updatedAt"`
+	ID                  string               `json:"id"`
+	UserID              string               `json:"userId"`
+	Source              string               `json:"source"`
+	Image               string               `json:"image"`
+	Model               string               `json:"model"`
+	ChannelID           int                  `json:"channelId"`
+	Resolution          string               `json:"resolution"`
+	Seconds             string               `json:"seconds"`
+	Prompt              string               `json:"prompt"`
+	Subtitles           bool                 `json:"subtitles"`
+	RegenerateSubtitles bool                 `json:"regenerateSubtitles"`
+	SubtitleSize        float64              `json:"subtitleSize"`
+	SubtitleColor       string               `json:"subtitleColor"`
+	SubtitleFont        string               `json:"subtitleFont"`
+	SubtitleMethod      string               `json:"subtitleMethod,omitempty"`
+	SubtitleOutput      string               `json:"subtitleOutput,omitempty"`
+	CaptionSegments     []replacementCaption `json:"captionSegments,omitempty"`
+	CaptionRevision     int                  `json:"captionRevision"`
+	CaptionStatus       string               `json:"captionStatus,omitempty"`
+	CaptionError        string               `json:"captionError,omitempty"`
+	CaptionResult       string               `json:"captionResult,omitempty"`
+	SubtitleBottom      float64              `json:"subtitleBottom"`
+	PreparedSource      string               `json:"preparedSource,omitempty"`
+	Status              string               `json:"status"`
+	Step                string               `json:"step"`
+	Error               string               `json:"error,omitempty"`
+	Credits             int                  `json:"credits"`
+	Parts               []replacementPart    `json:"parts"`
+	Planned             bool                 `json:"planned"`
+	AspectRatio         string               `json:"aspectRatio"`
+	WorkerStep          string               `json:"workerStep,omitempty"`
+	WorkerID            string               `json:"workerId,omitempty"`
+	Assembled           string               `json:"assembled,omitempty"`
+	Result              string               `json:"result,omitempty"`
+	PreviousResults     []string             `json:"previousResults,omitempty"`
+	Reviewed            bool                 `json:"reviewed"`
+	Archived            bool                 `json:"archived"`
+	CreatedAt           string               `json:"createdAt"`
+	UpdatedAt           string               `json:"updatedAt"`
 }
 type replacementControl struct {
 	running atomic.Bool
@@ -305,16 +306,17 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		ID            string  `json:"id"`
-		Source        string  `json:"source"`
-		Image         string  `json:"image"`
-		Model         string  `json:"model"`
-		Resolution    string  `json:"resolution"`
-		Seconds       string  `json:"seconds"`
-		Prompt        string  `json:"prompt"`
-		Subtitles     bool    `json:"subtitles"`
-		SubtitleSize  float64 `json:"subtitleSize"`
-		SubtitleColor string  `json:"subtitleColor"`
+		ID                  string  `json:"id"`
+		Source              string  `json:"source"`
+		Image               string  `json:"image"`
+		Model               string  `json:"model"`
+		Resolution          string  `json:"resolution"`
+		Seconds             string  `json:"seconds"`
+		Prompt              string  `json:"prompt"`
+		Subtitles           bool    `json:"subtitles"`
+		RegenerateSubtitles bool    `json:"regenerateSubtitles"`
+		SubtitleSize        float64 `json:"subtitleSize"`
+		SubtitleColor       string  `json:"subtitleColor"`
 	}
 	if json.NewDecoder(r.Body).Decode(&request) != nil {
 		Fail(w, "任务格式不正确")
@@ -343,7 +345,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := replacementJob{ID: request.ID, UserID: user.ID, Source: request.Source, Image: request.Image, Model: request.Model,
-		Resolution: request.Resolution, Seconds: request.Seconds, Prompt: request.Prompt, Subtitles: request.Subtitles,
+		Resolution: request.Resolution, Seconds: request.Seconds, Prompt: request.Prompt, Subtitles: request.Subtitles, RegenerateSubtitles: request.Subtitles && request.RegenerateSubtitles,
 		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if job.Subtitles {
 		job.SubtitleMethod = "audio-after-generation"
@@ -776,7 +778,7 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		needed = append(needed, "replacement-prepare")
 		if job.SubtitleMethod == "audio-after-generation" {
 			needed = append(needed, "replacement-subtitles-v2")
-			if job.SubtitleOutput == "editable" {
+			if job.SubtitleOutput == "editable" && job.RegenerateSubtitles {
 				needed = append(needed, "replacement-transcribe", "replacement-render-captions")
 			}
 		}
@@ -968,8 +970,11 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 	if job.SubtitleOutput == "editable" {
 		if len(job.CaptionSegments) > 0 {
 			job.CaptionStatus, job.Step = "draft", "无字幕成片已保存，原字幕草稿待校对"
-		} else {
+		} else if job.RegenerateSubtitles {
 			job.CaptionStatus, job.Step = "recognizing", "无字幕成片已保存，正在识别原音轨"
+		} else {
+			job.CaptionStatus, job.CaptionError = "", ""
+			job.Step = "无字幕成片已保存，请验收人物、口型与接缝"
 		}
 	}
 	if err := saveReplacement(job); err != nil {

@@ -153,8 +153,9 @@ export type VideoDraft = {
     highlightColor: string;
     cutSilence: boolean;
     addSubtitles: boolean;
-    /** 内容替换时，自动清理原硬字幕并按音频重新合成字幕。 */
+    /** 内容替换时清理原硬字幕；是否重新生成由 regenerateSubtitles 控制。 */
     replaceSubtitles: boolean;
+    regenerateSubtitles: boolean;
     replacementJobId?: string;
     replacementResultKey?: string;
     replacementSource?: UploadedFile;
@@ -216,9 +217,10 @@ export type VideoRecord = {
     text?: string;
     step?: string;
     draftPatch?: Partial<VideoDraft>;
-    replacementInput?: Pick<VideoDraft, "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementInput?: Pick<VideoDraft, "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "regenerateSubtitles" | "subtitleSize" | "subtitleColor">;
     replacementPipeline?: {
         subtitleMethod?: "audio-after-generation";
+        regenerateSubtitles?: boolean;
         phase: "prepare" | "mask" | "generate" | "finish";
         workerUrl: string;
         model: string;
@@ -303,4 +305,5 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     addSubtitles: true,
     // Subtitle repair is opt-in; the CPU server can compose audio and captions but does not run OCR/inpainting.
     replaceSubtitles: false,
+    regenerateSubtitles: false,
 });

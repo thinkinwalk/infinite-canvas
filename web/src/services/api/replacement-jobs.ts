@@ -23,6 +23,7 @@ export type ReplacementJob = {
     subtitleFont: string;
     source: string;
     subtitles: boolean;
+    regenerateSubtitles: boolean;
     subtitleMethod?: "audio-after-generation";
     reviewed?: boolean;
     archived?: boolean;
@@ -47,7 +48,7 @@ async function request<T>(path: string, input?: unknown, signal?: AbortSignal): 
 export const listReplacementJobs = (signal?: AbortSignal) => request<ReplacementJob[]>("", undefined, signal);
 export const createReplacementJob = (input: {
     id: string; source: string; image: string; model: string; resolution: string; seconds: string;
-    prompt: string; subtitles: boolean; subtitleSize: number; subtitleColor: string;
+    prompt: string; subtitles: boolean; regenerateSubtitles?: boolean; subtitleSize: number; subtitleColor: string;
 }) => request<ReplacementJob>("", input);
 export const startReplacementJob = (job: ReplacementJob) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits });
 export const pauseReplacementJob = (id: string) => request<{ message: string }>(`/${id}/pause`, {});

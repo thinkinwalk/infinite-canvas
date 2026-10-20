@@ -604,7 +604,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const replacementPipeline = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
         const record = () => store().records.find((r) => r.id === ctx.recordId)!;
-        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { subtitleMethod: "audio-after-generation", phase: "prepare", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
+        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { subtitleMethod: "audio-after-generation", regenerateSubtitles: d.regenerateSubtitles === true, phase: "prepare", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
         const save = (value: Partial<NonNullable<VideoRecord["replacementPipeline"]>>, finishedStep = false) => {
             state = { ...state, ...value };
             store().patchRecord(ctx.recordId, { replacementPipeline: state, ...(finishedStep ? { workerJob: undefined } : {}) });
@@ -656,11 +656,11 @@ export function useVideoWorkbench(tool: VideoTool) {
             store().patchRecord(ctx.recordId, { result: value.video });
         }
         const generated = await restoreWorkbenchFile(state.generated!);
-        const finished = await localStep("replacement-finish", { video: generated, source }, { ...(state.subtitleMethod ? { subtitleMethod: state.subtitleMethod } : {}), subtitles: state.subtitles || [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
+        const finished = await localStep("replacement-finish", { video: generated, source }, { ...(state.subtitleMethod ? { subtitleMethod: state.subtitleMethod } : {}), ...(state.regenerateSubtitles !== true ? { subtitleOutput: "editable" } : {}), subtitles: state.regenerateSubtitles !== true ? [] : state.subtitles || [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
         if (!finished.result?.file) throw new Error("字幕合成未返回视频，已保留内容替换结果");
-        if (state.subtitleMethod && finished.result.metadata?.subtitleMethod !== state.subtitleMethod) {
+        if (state.subtitleMethod && (finished.result.metadata?.subtitleMethod !== state.subtitleMethod || state.regenerateSubtitles !== true && finished.result.metadata?.subtitleOutput !== "editable")) {
             store().patchRecord(ctx.recordId, { workerJob: undefined });
-            throw new Error("字幕服务未按原音轨生成字幕，已保留替换结果，请管理员检查服务版本");
+            throw new Error("字幕服务未按所选方式输出视频，已保留替换结果，请管理员检查服务版本");
         }
         return { video: generated, final: await storeWorkerResult(ctx.worker, finished.result.file), subtitles: finished.result.segments || state.subtitles || [] };
     };
@@ -1012,6 +1012,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                           route: d.route,
                           instructions: d.instructions,
                           replaceSubtitles: d.replaceSubtitles !== false,
+                          regenerateSubtitles: d.regenerateSubtitles === true,
                           subtitleSize: d.subtitleSize,
                           subtitleColor: d.subtitleColor,
                           maskedEdit: d.maskedEdit,

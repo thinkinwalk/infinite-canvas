@@ -130,14 +130,14 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
         if (submitting.current || subtitleBlocked || !source || !image || !duration || !size) return;
         submitting.current = true; setBusy(true); setError("");
         try {
-            const key = JSON.stringify([source, image, selected, size, duration, d.instructions, d.replaceSubtitles, d.subtitleSize, d.subtitleColor]);
+            const key = JSON.stringify([source, image, selected, size, duration, d.instructions, d.replaceSubtitles, d.regenerateSubtitles, d.subtitleSize, d.subtitleColor]);
             if (pendingRequest.current?.key !== key) pendingRequest.current = { key, id: crypto.randomUUID() };
             const pending = pendingRequest.current;
             pending.source ||= await uploadWorkerMedia(worker, source);
             pending.image ||= await uploadReplicateReference(image);
             const created = await createReplacementJob({ id: pending.id, source: pending.source, image: pending.image,
                 model: modelOptionName(selected), resolution: size.replace(/p$/i, ""), seconds: duration,
-                prompt: contentReplacementPrompt("person", d.instructions, d.replaceSubtitles), subtitles: d.replaceSubtitles,
+                prompt: contentReplacementPrompt("person", d.instructions, d.replaceSubtitles), subtitles: d.replaceSubtitles, regenerateSubtitles: d.replaceSubtitles && d.regenerateSubtitles === true,
                 subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
             useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: created.id, replacementResultKey: undefined, replacementSource: undefined, final: null });
             setPreviewChoice(null);
@@ -148,7 +148,7 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
     };
     const start = (job: ReplacementJob) => modal.confirm({
         title: job.planned ? "确认整片处理费用" : "恢复视频分析",
-        content: job.planned ? `${job.model}，${replacementDurationSummary(job)}，模型累计预算 ${job.credits} 算力点（含历史重做预算）。${job.subtitles ? job.subtitleOutput === "editable" ? "先清理原片字幕，生成后交付保留原音轨的无字幕视频；语音识别稿可在线校对，再另行生成带字幕版。" : "按原任务记录清理并重做字幕。" : "未启用字幕修复，原字幕可能被模型重画。"}按段扣费，恢复复用已有任务；不自动重试或切换模型。字幕处理与存储的外部资源费用未计入。` : "继续分析镜头与报价，此步骤不调用收费生成模型。",
+        content: job.planned ? `${job.model}，${replacementDurationSummary(job)}，模型累计预算 ${job.credits} 算力点（含历史重做预算）。${job.subtitles ? job.subtitleOutput === "editable" ? job.regenerateSubtitles ? "先清理原片字幕，交付无字幕视频并识别字幕稿；校对后可另行生成带字幕版。" : "先清理原片字幕，交付保留原音轨的无字幕视频，不自动识别或添加新字幕。" : "按原任务记录清理并重做字幕。" : "未启用字幕修复，原字幕可能被模型重画。"}按段扣费，恢复复用已有任务；不自动重试或切换模型。字幕处理与存储的外部资源费用未计入。` : "继续分析镜头与报价，此步骤不调用收费生成模型。",
         okText: job.status === "ready" ? "开始处理" : "恢复处理",
         onOk: async () => { try { await startReplacementJob(job); setPreviewChoice(null); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
     });
@@ -207,7 +207,7 @@ export function ReplacementBatchPanel({ subtitleBlocked }: { subtitleBlocked: st
             </div>
             <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{job.step} · {job.parts?.filter((p) => p.validated).length || 0}/{job.parts?.length || 0} 段</div>
             {job.planned && <div className="text-xs">模型累计预算 {job.credits} 点 · {job.resolution}<br />{replacementDurationSummary(job)}</div>}
-            {job.result && <Alert type={job.reviewed ? "success" : "info"} title={job.reviewed ? "已人工验收" : "合成完成，效果待验收"} description={job.subtitleOutput === "editable" ? "无字幕版已保留，请检查第一帧、转场后人物、口型与接缝；识别稿需校对后再生成带字幕版。" : "请检查第一帧、转场后人物、无人镜头、口型、字幕与接缝。时间轴校验通过不代表人物或文字正确。"} />}
+            {job.result && <Alert type={job.reviewed ? "success" : "info"} title={job.reviewed ? "已人工验收" : "合成完成，效果待验收"} description={job.subtitleOutput === "editable" ? job.regenerateSubtitles ? "无字幕版已保留，请检查人物、口型与接缝；识别稿需校对后再生成带字幕版。" : "无字幕版已保留，请检查人物、口型与接缝；如需字幕，可手动识别后校对。" : "请检查第一帧、转场后人物、无人镜头、口型、字幕与接缝。时间轴校验通过不代表人物或文字正确。"} />}
             {job.subtitleOutput === "editable" && job.status === "completed" && <div className="space-y-2 rounded-md p-2" style={{ background: colors.colorFillQuaternary }}>
                 <div className="text-sm font-medium">字幕：{job.captionStatus === "recognizing" ? "识别中" : job.captionStatus === "rendering" ? "合成中" : job.captionStatus === "completed" ? "带字幕版已生成" : job.captionStatus === "draft" ? `${job.captionSegments?.length || 0} 条待校对` : job.captionStatus === "failed" ? "处理未完成，可恢复" : "待识别"}</div>
                 <div className="flex flex-wrap gap-2">

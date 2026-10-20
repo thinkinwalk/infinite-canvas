@@ -90,6 +90,7 @@ export default function ContentReplaceWorkspace() {
         d.maskedPerson,
         d.replicateResolution,
         d.replaceSubtitles,
+        d.regenerateSubtitles,
         d.regions,
         d.replacementSeedTime,
         cloud && person ? "" : d.instructions,
@@ -220,7 +221,7 @@ export default function ContentReplaceWorkspace() {
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
         if (!unavailable && d.replacement === "product" && !d.media.some((m) => m.role === "mask") && !capabilities?.some((c) => c.name === "track-product" && c.available)) unavailable = "商品自动跟踪尚未就绪，请管理员配置跟踪服务";
     } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
-    const subtitleCapabilities = ["replacement-prepare", "replacement-finish", "replacement-subtitles-v2", ...(person && wholeVideo ? ["replacement-transcribe", "replacement-render-captions"] : [])];
+    const subtitleCapabilities = ["replacement-prepare", "replacement-finish", "replacement-subtitles-v2", ...(person && wholeVideo && d.regenerateSubtitles ? ["replacement-transcribe", "replacement-render-captions"] : [])];
     const subtitleCapability = subtitleCapabilities.map((name) => capabilities?.find((item) => item.name === name)).find((item) => !item?.available);
     const subtitleUnavailable = d.replaceSubtitles
         ? checking || !capabilities && !serviceError ? "正在检查自动字幕处理能力" : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "自动字幕处理尚未启用，请管理员更新处理服务")
@@ -518,10 +519,17 @@ export default function ContentReplaceWorkspace() {
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">
-                                    <Switch aria-label="自动清理并重做字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
-                                    <span className="text-sm">自动清理口播字幕</span>
+                                    <Switch aria-label="去除原字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
+                                    <span className="text-sm">去除原字幕</span>
                                 </div>
-                                <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "先清理原片字幕，再替换人物；完成后保留原音轨，先交付无字幕版。从原音轨得到的字幕稿可在线校对文字、时间和样式，确认后另行生成带字幕版，也可下载 SRT。" : "先清理原片字幕并检查残字，再替换目标内容；当前单片模式会自动按原音轨识别并烧录字幕，识别文字可能需要校对。"} 无法可靠清理时暂停，由平台排查；关闭此项后原字幕可能被模型重画。</p>
+                                <p className="m-0 text-xs" style={muted}>先清理原片字幕，再替换内容，输出保留原音轨的无字幕视频。无法可靠清理时暂停；关闭此项后原字幕可能被模型重画。</p>
+                                {d.replaceSubtitles && <>
+                                    <div className="flex items-center gap-2">
+                                        <Switch aria-label="去除后重新生成字幕" disabled={locked} checked={d.regenerateSubtitles === true} onChange={(regenerateSubtitles) => wb.edit({ regenerateSubtitles }, "video")} />
+                                        <span className="text-sm">去除后重新生成字幕</span>
+                                    </div>
+                                    <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "根据原音轨识别字幕稿，在线校对后可单独生成带字幕版或下载 SRT；无字幕版仍会保留。" : "根据原音轨识别并烧录新字幕，识别文字可能需要校对。"}</p>
+                                </>}
                                 {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
                             </div>
