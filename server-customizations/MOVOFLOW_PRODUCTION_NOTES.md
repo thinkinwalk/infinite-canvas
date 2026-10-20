@@ -15,14 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.59
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.57-worker/
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.60
+- Current production commit: 76d3d15d15d6aaabae78ceb8905b46559611c928
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.60-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
-## v0.19.60 Wan30 release preparation
+## v0.19.60 Wan30 deployment
 
-- Target app image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.60. Target worker source: /opt/infinite-canvas/releases/v0.19.60-worker/. Deployment verification pending.
+- App image digest: `sha256:0f89640e04510ff2d402ffc067f3583f31dd3fa5e53cb9503ba62cec4ca0d7bd`; container `/app/VERSION` and OCI revision match v0.19.60 / commit `76d3d15d15d6aaabae78ceb8905b46559611c928`. External and internal `/api/health` return `ok`.
+- Worker mounts now use `/opt/infinite-canvas/releases/v0.19.60-worker/`; the mounted `app.py` SHA-256 matches `ac4585344a3337949aff16558985b2899b5b68d7c7505acf50b4d183f5938fe3`. Both app and video-worker containers are running; worker restart count is zero. Authenticated worker health succeeds, with trim and replacement processing capabilities available. Online SQLite backup `/opt/infinite-canvas/backups/database-before-switch-v0.19.60-20261020-140644.sqlite` passed `PRAGMA quick_check`; Compose backup: `/opt/infinite-canvas/backups/compose-before-switch-v0.19.60-20261020-140644.yml`.
+- No paid generation was submitted. Real 16–30-second Wan30 reference trimming, whole-video segmentation and browser interaction remain pending acceptance; see `docs/content/docs/progress/pending-test.mdx`.
 - Wan30 reference validation, trimming and whole-video segment options now allow 1–30 seconds. Channel 14 was read back at 80 credits/second with output durations 4–30 seconds; 30 seconds costs 2400 credits before group ratios.
 - Replicate Wan 2.2 and lipsync pricing are unchanged. Seedance and H3 duration limits remain unchanged. No local build or tests run under the release rules.
 
