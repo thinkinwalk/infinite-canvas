@@ -15,10 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.58
+- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.59
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.57-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.59 Preferences model picker fix
+
+- Source commit `66e7cc05a97b0f3e2944ecb2a47c281cdf6b7653`, tag `v0.19.59`. Docker image workflow succeeded.
+- Fixes preferences modal default model pickers: now read from platform model catalog when available; `remote::`-prefixed selections no longer reset on page refresh.
+- Changed files: `web/src/components/layout/app-config-modal.tsx`, `web/src/stores/use-config-store.ts`.
+- Worker source unchanged; still mounted from v0.19.57 worker directory.
+- Deployed via `deploy_infinite_canvas_image.sh` with `--ignore-failed-read` tar flag to tolerate concurrent database writes during backup; app digest v0.19.59, container recreated, health 200 external.
 
 ## v0.19.58 WaveSpeed head-swap deployment
 
