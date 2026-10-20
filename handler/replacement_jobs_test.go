@@ -33,7 +33,7 @@ func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = repository.SaveSettings(saved, "test") })
-	profile := model.VideoModelProfile{Interface: "relay", MaxImages: 1, MaxVideos: 1, Resolutions: []string{"720"}, Seconds: []string{"15", "4", "10"}, BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 42}}
+	profile := model.VideoModelProfile{Interface: "relay", MaxImages: 1, MaxVideos: 1, Resolutions: []string{"720"}, Seconds: []string{"15", "4", "10"}, BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 80}}
 	settings := model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{
 		{ID: 711, Name: "pinned", BaseURL: "https://pinned.invalid", APIKey: "test", Enabled: true, Models: []string{"wan30-720p"}, Weight: 1, VideoModels: map[string]model.VideoModelProfile{"wan30-720p": profile}},
 		{ID: 712, Name: "other", BaseURL: "https://other.invalid", APIKey: "test", Enabled: true, Models: []string{"wan30-720p"}, Weight: 100},

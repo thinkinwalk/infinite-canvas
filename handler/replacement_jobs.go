@@ -754,8 +754,8 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		if !allowed {
 			return fmt.Errorf("请使用渠道明确支持的输出时长")
 		}
-		if strings.EqualFold(job.Model, "wan30-720p") && seconds > 15 {
-			return fmt.Errorf("Wan30 当前参考视频接入支持 1–15 秒，请选择不超过 15 秒的分段")
+		if strings.EqualFold(job.Model, "wan30-720p") && seconds > 30 {
+			return fmt.Errorf("Wan30 当前参考视频接入支持 1–30 秒，请选择不超过 30 秒的分段")
 		}
 		if err := validateVideoProfileRequest(profile, mustReplacementJSON(map[string]any{"seconds": job.Seconds, "resolution": job.Resolution, "image_url": job.Image, "reference_videos": []string{"https://example.invalid/reference.mp4"}, "input_mode": "reference"}), "application/json"); err != nil {
 			return err
