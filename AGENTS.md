@@ -84,12 +84,15 @@
 - 当前生产服务器是 `37.221.196.102`，登录用户 `root`，端口 `22`，主机名 `v2202606374943476754`。
 - SSH 连接使用本机密钥路径 `C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519`；只记录路径，不要把私钥内容写入仓库或文档。
 - 推荐 SSH 命令：`ssh -o BatchMode=yes -o IdentitiesOnly=yes -i C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519 root@37.221.196.102`。
-- 当前生产项目目录是 `/opt/infinite-canvas`，这是从 Docker labels 排查确认的目录；不要使用 `/opt/chatgpt2api`。
+- 当前生产项目目录是 `/opt/infinite-canvas`（部署目录，只含配置和数据），完整源码仓库在 `/opt/infinite-canvas-repo`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产版本为 `ghcr.io/thinkinwalk/infinite-canvas:v0.19.61`（提交 `bb6e0d45841a633e566bcfab11e8f56ad2c9f2fc`），处理服务源码挂载目录为 `/opt/infinite-canvas/releases/v0.19.60-worker/`；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
-- 生产服务器没有 `sqlite3` 命令，部署前用 `python3` 的 `sqlite3.backup` 做在线数据库备份并核对 `quick_check`；`deploy_infinite_canvas_image.sh` 打包 `data` 时若因数据库写入导致 tar 报 “file changed as we read it” 退出，Compose 尚未修改，可删除残缺归档后用容忍该警告的临时副本重跑，不要直接改动服务器上的脚本。
-- Fork 仓库出现 Actions 调度 HTTP 422「Actions has been disabled for this repository」时，须核对仓库 Actions 首页是否要求重新启用工作流；仓库 `enabled: true` 和工作流 `active` 不能证明该限制已解除。启用后对原版本 tag 手动触发构建，不移动或重复创建 tag。
+- 当前生产版本为 `infinite-canvas:v0.19.62`（提交 `8b6d32f`），使用服务器本地构建的镜像；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 部署采用服务器本地构建方式，源码仓库位于 `/opt/infinite-canvas-repo`，不依赖 GitHub Actions 和 GHCR。
+- 生产部署不依赖 GitHub Actions，直接在服务器上从源码构建：执行 `/opt/infinite-canvas-repo/quick-deploy.sh [版本tag]` 即可完成代码更新、镜像构建、数据库备份、服务重启和健康检查全流程。
+- 本地快速发布和部署：`./scripts/release-and-deploy.sh` 完成版本创建、提交、推送和服务器部署全流程；仅部署已有版本用 `./scripts/deploy.sh [版本]`。
+- 服务器部署脚本自动备份数据库（`python3` 的 `sqlite3.backup` + `quick_check` 校验），无需手动备份；备份文件在 `/opt/infinite-canvas/data/backup-*.sqlite`。
+- Fork 仓库的 GitHub Actions 可能被禁用或跳过，不影响生产部署；生产镜像在服务器端直接构建，不依赖 Actions 或 GHCR 推送。
 - 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
 - 旧服务器 `47.104.6.6` 已迁移，不要向其部署或以其状态判断当前生产。
 
