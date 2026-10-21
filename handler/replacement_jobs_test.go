@@ -25,6 +25,28 @@ func replacementTestStorage(t *testing.T) {
 	t.Cleanup(func() { config.Cfg = previous })
 }
 
+func TestReplacementSelectionQuotesOnlyUnsubmittedSelectedParts(t *testing.T) {
+	job := replacementJob{Planned: true, Status: "ready", Parts: []replacementPart{
+		{Credits: 3360, Validated: true, Result: "part-1.mp4"},
+		{Credits: 3360},
+		{Credits: 3360},
+	}}
+	if err := selectReplacementParts(&job, []int{1, 2}, 6720); err != nil {
+		t.Fatal(err)
+	}
+	if !job.SelectionMode || len(job.SelectedParts) != 2 || job.SelectedParts[0] != 1 || job.SelectedParts[1] != 2 {
+		t.Fatalf("selection was not persisted: %+v", job)
+	}
+	if err := selectReplacementParts(&job, []int{0, 1}, 3360); err != nil {
+		t.Fatalf("already generated parts should not be charged twice: %v", err)
+	}
+	for _, indices := range [][]int{{1, 1}, {-1}, {3}} {
+		if err := selectReplacementParts(&job, indices, 0); err == nil {
+			t.Fatalf("invalid selection accepted: %v", indices)
+		}
+	}
+}
+
 func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testing.T) {
 	replacementTestStorage(t)
 	config.Cfg.DatabaseDSN = ":memory:"
