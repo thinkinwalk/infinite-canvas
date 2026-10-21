@@ -81,6 +81,10 @@ type replacementJob struct {
 	Credits             int                  `json:"credits"`
 	Parts               []replacementPart    `json:"parts"`
 	Planned             bool                 `json:"planned"`
+	PreviewRequired     bool                 `json:"previewRequired"`
+	PreviewReady        bool                 `json:"previewReady"`
+	PreviewApproved     bool                 `json:"previewApproved"`
+	PreviewResult       string               `json:"previewResult,omitempty"`
 	AspectRatio         string               `json:"aspectRatio"`
 	WorkerStep          string               `json:"workerStep,omitempty"`
 	WorkerID            string               `json:"workerId,omitempty"`
@@ -99,6 +103,24 @@ type replacementControl struct {
 }
 
 var replacementControls sync.Map
+
+func replacementCloudOperation(name string) string {
+	switch name {
+	case "wan-video/wan-2.2-animate-replace":
+		return "replace-person"
+	case "wavespeed-ai/video-head-swap":
+		return "head-swap"
+	default:
+		return ""
+	}
+}
+
+func replacementCloudInput(job *replacementJob, part *replacementPart) map[string]any {
+	if replacementCloudOperation(job.Model) == "head-swap" {
+		return map[string]any{"video": part.Reference, "face_image": job.Image, "resolution": job.Resolution + "p"}
+	}
+	return map[string]any{"video": part.Reference, "character_image": job.Image, "resolution": job.Resolution, "merge_audio": false}
+}
 
 func replacementControlFor(id string) *replacementControl {
 	v, _ := replacementControls.LoadOrStore(id, &replacementControl{})
@@ -317,6 +339,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		RegenerateSubtitles bool    `json:"regenerateSubtitles"`
 		SubtitleSize        float64 `json:"subtitleSize"`
 		SubtitleColor       string  `json:"subtitleColor"`
+		PreviewRequired     bool    `json:"previewRequired"`
 	}
 	if json.NewDecoder(r.Body).Decode(&request) != nil {
 		Fail(w, "任务格式不正确")
@@ -346,12 +369,13 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	job := replacementJob{ID: request.ID, UserID: user.ID, Source: request.Source, Image: request.Image, Model: request.Model,
 		Resolution: request.Resolution, Seconds: request.Seconds, Prompt: request.Prompt, Subtitles: request.Subtitles, RegenerateSubtitles: request.Subtitles && request.RegenerateSubtitles,
-		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, PreviewRequired: request.PreviewRequired, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if job.Subtitles {
-		job.SubtitleMethod = "audio-after-generation"
+		job.SubtitleMethod = "cloud-joint"
 		job.SubtitleOutput = "editable"
 		job.SubtitleBottom = 0.08
 		job.SubtitleFont = "Noto Sans CJK SC"
+		job.Prompt += " 同时去除原片画面叠加的全部口播字幕，补全被遮挡的衣服和背景，不生成新字幕、标题、水印。保留招牌、商标、商品包装与真实环境文字，保留动作、镜头、时长和原音轨。"
 	}
 	if err := validateReplacementRequest(r.Context(), &job); err != nil {
 		control.running.Store(false)
@@ -619,7 +643,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			return
 		}
 		status := ""
-		if job.Model == "wan-video/wan-2.2-animate-replace" {
+		if replacementCloudOperation(job.Model) != "" {
 			task, found, err := repository.GetReplicateTask(part.TaskID)
 			if err == nil && found && task.UserID == user.ID {
 				status = task.Status
@@ -641,6 +665,9 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		}
 		part.PreviousTasks = append(part.PreviousTasks, part.TaskID)
 		part.Credits, part.TaskID, part.Generated, part.Submitted, part.Validated = price, "", "", false, false
+		if input.Part == 0 && job.PreviewRequired && !job.PreviewApproved {
+			job.PreviewReady, job.PreviewResult = false, ""
+		}
 		job.Credits += price
 		if job.Result != "" {
 			job.PreviousResults = append(job.PreviousResults, job.Result)
@@ -667,7 +694,9 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		return
 	}
 	var input struct {
-		ExpectedCredits int `json:"expectedCredits"`
+		ExpectedCredits int    `json:"expectedCredits"`
+		ApprovePreview  bool   `json:"approvePreview"`
+		PreviewResult   string `json:"previewResult"`
 	}
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.ExpectedCredits != job.Credits {
 		Fail(w, "请核对整片报价后开始")
@@ -692,6 +721,18 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		OK(w, job)
 		return
 	}
+	if job.PreviewRequired && job.PreviewReady && !job.PreviewApproved {
+		if !input.ApprovePreview || job.PreviewResult == "" || input.PreviewResult != job.PreviewResult || len(job.Parts) == 0 || !job.Parts[0].Validated {
+			c.running.Store(false)
+			Fail(w, "请先确认预览效果，再继续处理剩余片段")
+			return
+		}
+		job.PreviewApproved = true
+	} else if input.ApprovePreview {
+		c.running.Store(false)
+		Fail(w, "预览片段尚未完成，暂时不能继续")
+		return
+	}
 	c.pause.Store(false)
 	job.Status, job.Error = "running", ""
 	if err := saveReplacement(&job); err != nil {
@@ -704,6 +745,9 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 }
 
 func validateReplacementRequest(ctx context.Context, job *replacementJob) error {
+	if err := validateReplacementSubtitles(job); err != nil {
+		return err
+	}
 	if !strings.HasPrefix(config.Cfg.PublicBaseURL, "https://") {
 		return fmt.Errorf("平台需要配置 HTTPS 素材地址")
 	}
@@ -728,14 +772,14 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		return fmt.Errorf("请选择有效分段时长")
 	}
 	user, _ := service.UserFromContext(ctx)
-	if job.Model == "wan-video/wan-2.2-animate-replace" {
+	if replacementCloudOperation(job.Model) != "" {
 		channel, err := service.SelectReplicateChannel(job.Model, user.Group)
 		if err != nil {
 			return err
 		}
 		job.ChannelID = channel.ID
 		if job.Resolution != "480" && job.Resolution != "720" {
-			return fmt.Errorf("Wan 2.2 支持 480 / 720")
+			return fmt.Errorf("当前替换模型支持 480 / 720")
 		}
 	} else {
 		channel, err := service.SelectModelChannelForGroup(job.Model, user.Group)
@@ -775,12 +819,8 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 	}
 	needed := []string{"replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-finish"}
 	if job.Subtitles {
-		needed = append(needed, "replacement-prepare")
-		if job.SubtitleMethod == "audio-after-generation" {
-			needed = append(needed, "replacement-subtitles-v2")
-			if job.SubtitleOutput == "editable" && job.RegenerateSubtitles {
-				needed = append(needed, "replacement-transcribe", "replacement-render-captions")
-			}
+		if job.RegenerateSubtitles {
+			needed = append(needed, "replacement-transcribe", "replacement-render-captions")
 		}
 	}
 	for _, name := range needed {
@@ -808,10 +848,14 @@ func runReplacement(ctx context.Context, job replacementJob, planning bool) {
 	}
 }
 func executeReplacement(ctx context.Context, job *replacementJob, planning bool) error {
+	if err := validateReplacementSubtitles(job); err != nil {
+		return err
+	}
 	ctx = context.WithValue(ctx, replacementChannelKey{}, job.ChannelID)
 	if planning {
 		seconds, _ := strconv.ParseFloat(job.Seconds, 64)
-		result, err := replacementWorkerStep(ctx, job, "plan", "replacement-plan", map[string]any{"video": job.Source}, map[string]any{"seconds": seconds, "preserveScenes": !strings.EqualFold(job.Model, "wan30-720p")})
+		seconds = math.Min(seconds, 15)
+		result, err := replacementWorkerStep(ctx, job, "plan", "replacement-plan", map[string]any{"video": job.Source}, map[string]any{"seconds": seconds, "preserveScenes": false})
 		if err != nil {
 			return err
 		}
@@ -825,8 +869,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		if len(job.Parts) == 0 {
 			return fmt.Errorf("没有可处理的片段")
 		}
+		job.PreviewRequired = job.PreviewRequired || len(job.Parts) > 1 || replacementDuration(job) > 15
 		job.Credits = 0
-		if job.Model != "wan-video/wan-2.2-animate-replace" {
+		if replacementCloudOperation(job.Model) == "" {
 			user, _ := service.UserFromContext(ctx)
 			channel, err := replacementModelChannel(ctx, job.Model, user.Group, false)
 			if err != nil {
@@ -835,11 +880,15 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			choices := service.VideoProfile(channel, job.Model).Seconds
 			for i := range job.Parts {
 				part := &job.Parts[i]
+				part.Seconds = math.Inf(1)
 				for _, choice := range choices {
 					value, err := strconv.ParseFloat(choice, 64)
 					if err == nil && value >= part.InputEnd-part.InputStart && value < part.Seconds {
 						part.Seconds = value
 					}
+				}
+				if math.IsInf(part.Seconds, 1) {
+					return fmt.Errorf("当前模型没有能够容纳此片段的时长档位")
 				}
 			}
 		}
@@ -855,31 +904,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		job.Status, job.Step = "ready", "分段完成，等待确认整片模型费用"
 		return saveReplacement(job)
 	}
-	// New jobs clean the complete source before any paid generation, then slice
-	// the cleaned timeline. Silent shots and segment overlaps need no separate ASR.
-	if job.Subtitles && job.SubtitleMethod == "audio-after-generation" && job.PreparedSource == "" {
-		if replacementControlFor(job.ID).pause.Load() {
-			return fmt.Errorf("已暂停，尚未开始字幕清理")
-		}
-		job.Step = "清理完整原片口播字幕并检查残字"
-		if err := saveReplacement(job); err != nil {
-			return err
-		}
-		result, err := replacementWorkerStep(ctx, job, "prepare-source", "replacement-prepare", map[string]any{"video": job.Source}, map[string]any{"subtitleMethod": job.SubtitleMethod})
-		if err != nil {
-			return err
-		}
-		if result.File == "" || result.Metadata.SubtitleMethod != job.SubtitleMethod {
-			job.WorkerStep, job.WorkerID = "", ""
-			if err := saveReplacement(job); err != nil {
-				return err
-			}
-			return fmt.Errorf("字幕处理服务未返回新流程的清理结果；未提交收费生成，请管理员更新服务")
-		}
-		job.PreparedSource = result.File
-		if err := saveReplacement(job); err != nil {
-			return err
-		}
+	// A saved first part must never allow a restart to bypass preview approval.
+	if job.PreviewRequired && !job.PreviewApproved && len(job.Parts) > 0 && job.Parts[0].Validated {
+		return finishReplacementPreview(ctx, job)
 	}
 	for index := range job.Parts {
 		if replacementControlFor(job.ID).pause.Load() {
@@ -895,6 +922,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		}
 		if err := executeReplacementPart(ctx, job, index); err != nil {
 			return err
+		}
+		if job.PreviewRequired && !job.PreviewApproved {
+			return finishReplacementPreview(ctx, job)
 		}
 	}
 	if replacementControlFor(job.ID).pause.Load() {
@@ -938,12 +968,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		return err
 	}
 	options := map[string]any{"subtitles": captions, "subtitleSize": job.SubtitleSize, "subtitleColor": job.SubtitleColor}
-	if job.SubtitleMethod == "audio-after-generation" {
-		options["subtitleMethod"] = job.SubtitleMethod
-		if job.SubtitleOutput == "editable" {
-			options["subtitleOutput"] = "editable"
-			options["subtitleBottom"] = job.SubtitleBottom
-		}
+	if job.Subtitles {
+		options["subtitleOutput"] = "editable"
+		options["subtitleBottom"] = job.SubtitleBottom
 	}
 	result, err := replacementWorkerStep(ctx, job, "finish", "replacement-finish", map[string]any{"source": job.Source, "video": job.Assembled}, options)
 	if err != nil {
@@ -955,13 +982,6 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			return err
 		}
 		return fmt.Errorf("处理服务未返回独立的无字幕成片，请更新视频处理服务")
-	}
-	if job.SubtitleMethod == "audio-after-generation" && job.SubtitleOutput != "editable" && result.Metadata.SubtitleMethod != job.SubtitleMethod {
-		job.WorkerStep, job.WorkerID = "", ""
-		if err := saveReplacement(job); err != nil {
-			return err
-		}
-		return fmt.Errorf("字幕服务未按原音轨生成字幕，已保留生成结果，请管理员检查服务版本")
 	}
 	if err := saveWorkerOwner(job.UserID, "media", result.File); err != nil {
 		return err
@@ -1001,6 +1021,22 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		return saveReplacement(job)
 	}
 	return nil
+}
+
+func finishReplacementPreview(ctx context.Context, job *replacementJob) error {
+	if job.PreviewResult == "" {
+		part := &job.Parts[0]
+		result, err := replacementWorkerStep(ctx, job, "preview-finish", "replacement-finish", map[string]any{"source": part.Input, "video": part.Generated}, map[string]any{})
+		if err != nil {
+			return err
+		}
+		job.PreviewResult = result.File
+	}
+	if err := saveWorkerOwner(job.UserID, "media", job.PreviewResult); err != nil {
+		return err
+	}
+	job.PreviewReady, job.Status, job.Step = true, "preview", "预览片段已完成，请确认效果后继续"
+	return saveReplacement(job)
 }
 
 func replacementDuration(job *replacementJob) float64 {
@@ -1115,16 +1151,20 @@ func resetFailedReplacementCaptionWorker(ctx context.Context, job *replacementJo
 }
 func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replacementPart) (int, error) {
 	ctx = context.WithValue(ctx, replacementChannelKey{}, job.ChannelID)
-	if job.Model == "wan-video/wan-2.2-animate-replace" {
+	if replacementCloudOperation(job.Model) != "" {
 		user, _ := service.UserFromContext(ctx)
 		if _, err := replacementModelChannel(ctx, job.Model, user.Group, true); err != nil {
 			return 0, err
 		}
-		spec, err := service.FindReplicateModel("replace-person")
+		spec, err := service.FindReplicateModel(replacementCloudOperation(job.Model))
 		if err != nil {
 			return 0, err
 		}
-		quote, err := service.QuoteReplicate(user, spec, map[string]any{"resolution": job.Resolution, "duration": part.Seconds})
+		resolution := job.Resolution
+		if replacementCloudOperation(job.Model) == "head-swap" {
+			resolution += "p"
+		}
+		quote, err := service.QuoteReplicate(user, spec, map[string]any{"resolution": resolution, "duration": part.Seconds})
 		if err != nil {
 			return 0, err
 		}
@@ -1144,18 +1184,27 @@ func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replac
 	return quote.Credits, err
 }
 
+func validateReplacementSubtitles(job *replacementJob) error {
+	if !job.Subtitles {
+		return nil
+	}
+	if job.SubtitleMethod != "cloud-joint" {
+		return fmt.Errorf("旧字幕清理流程已下线，已有结果保留；请重新创建云端联合处理任务")
+	}
+	if !strings.EqualFold(job.Model, "wan30-720p") {
+		return fmt.Errorf("当前模型不支持联合去字幕，请关闭此项或先使用云端硬字幕去除工具处理原片")
+	}
+	return nil
+}
+
 func executeReplacementPart(ctx context.Context, job *replacementJob, index int) error {
+	if err := validateReplacementSubtitles(job); err != nil {
+		return err
+	}
 	part := &job.Parts[index]
 	prefix := strconv.Itoa(index) + ":"
 	if part.Input == "" {
-		source := job.Source
-		if job.SubtitleMethod == "audio-after-generation" {
-			if job.PreparedSource == "" {
-				return fmt.Errorf("原片字幕尚未完成清理，未提交收费生成")
-			}
-			source = job.PreparedSource
-		}
-		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": source}, part)
+		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": job.Source}, part)
 		if err != nil {
 			return err
 		}
@@ -1165,16 +1214,7 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 		}
 	}
 	if part.Prepared == "" {
-		if job.Subtitles && job.SubtitleMethod != "audio-after-generation" {
-			result, err := replacementWorkerStep(ctx, job, prefix+"prepare", "replacement-prepare", map[string]any{"video": part.Input}, map[string]any{})
-			if err != nil {
-				part.Prepared = ""
-				return err
-			}
-			part.Prepared, part.Captions = result.File, result.Segments
-		} else {
-			part.Prepared = part.Input
-		}
+		part.Prepared = part.Input
 		if err := saveReplacement(job); err != nil {
 			return err
 		}
@@ -1207,15 +1247,15 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 				return fmt.Errorf("已暂停，尚未提交下一次收费生成")
 			}
 			part.Submitted = true
-			if job.Model == "wan-video/wan-2.2-animate-replace" {
+			if replacementCloudOperation(job.Model) != "" {
 				part.TaskID = uuid.NewString()
 			}
 			// Persist before sending. An ambiguous relay response never causes a resend.
 			if err := saveReplacement(job); err != nil {
 				return err
 			}
-			if job.Model == "wan-video/wan-2.2-animate-replace" {
-				_, err = replacementCall(ctx, CreateReplicateTask, "POST", "/api/v1/replicate/tasks", map[string]any{"id": part.TaskID, "operation": "replace-person", "expectedCredits": part.Credits, "input": map[string]any{"video": part.Reference, "character_image": job.Image, "resolution": job.Resolution, "merge_audio": false}}, nil)
+			if replacementCloudOperation(job.Model) != "" {
+				_, err = replacementCall(ctx, CreateReplicateTask, "POST", "/api/v1/replicate/tasks", map[string]any{"id": part.TaskID, "operation": replacementCloudOperation(job.Model), "expectedCredits": part.Credits, "input": replacementCloudInput(job, part)}, nil)
 			} else {
 				var raw json.RawMessage
 				resolution := job.Resolution
@@ -1282,7 +1322,7 @@ func publishReplacementReference(ctx context.Context, job *replacementJob, file 
 func collectReplacementPart(ctx context.Context, job *replacementJob, part *replacementPart) error {
 	for {
 		var done bool
-		if job.Model == "wan-video/wan-2.2-animate-replace" {
+		if replacementCloudOperation(job.Model) != "" {
 			raw, err := replacementCall(ctx, func(w http.ResponseWriter, r *http.Request) { ReadReplicateTask(w, r, part.TaskID) }, "GET", "/api/v1/replicate/tasks/"+url.PathEscape(part.TaskID), nil, nil)
 			if err != nil {
 				return err
@@ -1322,7 +1362,7 @@ func collectReplacementPart(ctx context.Context, job *replacementJob, part *repl
 	defer os.Remove(temporary.Name())
 	w := &replacementFileResponse{file: temporary, header: http.Header{}, status: 200}
 	r, _ := http.NewRequestWithContext(ctx, "GET", "/api/v1/videos/"+url.PathEscape(part.TaskID)+"/content?model="+url.QueryEscape(job.Model), nil)
-	if job.Model == "wan-video/wan-2.2-animate-replace" {
+	if replacementCloudOperation(job.Model) != "" {
 		ReplicateTaskContent(w, r, part.TaskID)
 	} else {
 		AIVideoContent(w, r, part.TaskID)

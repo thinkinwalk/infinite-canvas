@@ -11,6 +11,41 @@ import app as worker
 
 
 class JobIdentityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cpu_subtitle_routes_stay_disabled_with_remote_service(self):
+        retired = ("subtitle-remove", "replacement-prepare", "replacement-subtitles-v2")
+        remote = AsyncMock(return_value={name: True for name in (*retired, "transcribe")})
+        with patch.dict("os.environ", {"GPU_WORKER_URL": "http://remote"}), patch.object(worker.remote_subtitles, "capabilities", remote):
+            capabilities = {item["name"]: item for item in await worker.available_capabilities()}
+        self.assertTrue(all(not capabilities[name]["available"] for name in retired))
+        run = AsyncMock()
+        with tempfile.TemporaryDirectory() as directory, patch.object(worker, "JOBS", Path(directory)), patch.object(worker, "run_job", run):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=worker.app), base_url="http://worker", headers={"X-Canvas-Worker": "1"}) as client:
+                for operation in retired[:2]:
+                    with patch.object(worker, "available_capabilities", AsyncMock(return_value=list(capabilities.values()))):
+                        response = await client.post("/jobs", json={"operation": operation, "inputs": {"video": "source.mp4"}})
+                    self.assertEqual(response.status_code, 422, response.text)
+                    self.assertIn("已下线", response.json()["detail"])
+            self.assertEqual(list(Path(directory).iterdir()), [])
+        run.assert_not_awaited()
+
+    async def test_audio_restore_does_not_require_retired_subtitle_engines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            media, jobs = root / "media", root / "jobs"
+            media.mkdir()
+            jobs.mkdir()
+            for filename in ("source.mp4", "generated.mp4"):
+                (media / filename).write_bytes(b"test")
+            tasks = {}
+            run = AsyncMock()
+            capabilities = [{"name": "replacement-finish", "available": True}]
+            with patch.multiple(worker, MEDIA=media, JOBS=jobs, TASKS=tasks), patch.object(worker, "run_job", run), patch.object(worker, "available_capabilities", AsyncMock(return_value=capabilities)):
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=worker.app), base_url="http://worker", headers={"X-Canvas-Worker": "1"}) as client:
+                    response = await client.post("/jobs", json={"operation": "replacement-finish", "inputs": {"source": "source.mp4", "video": "generated.mp4"}, "options": {"subtitleMethod": "audio-after-generation", "subtitleOutput": "editable"}})
+                self.assertEqual(response.status_code, 200, response.text)
+                await asyncio.gather(*tasks.values())
+                run.assert_awaited_once()
+
     async def test_media_inputs_never_replace_job_id_and_recovery_reuses_job(self):
         for inputs in ({"video": "source.mp4"}, {"video": "source.mp4", "parts": ["part-a.mp4", "part-b.mp4"]}):
             for supplied_id in (None, str(uuid.uuid4())):

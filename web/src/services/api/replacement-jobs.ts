@@ -5,11 +5,15 @@ export type ReplacementJob = {
     model: string;
     resolution: string;
     seconds: string;
-    status: "planning" | "ready" | "running" | "paused" | "completed";
+    status: "planning" | "ready" | "preview" | "running" | "paused" | "completed";
     step: string;
     error?: string;
     credits: number;
     planned: boolean;
+    previewRequired: boolean;
+    previewReady: boolean;
+    previewApproved: boolean;
+    previewResult?: string;
     result?: string;
     subtitleOutput?: "editable";
     captionSegments?: ReplacementCaption[];
@@ -24,12 +28,12 @@ export type ReplacementJob = {
     source: string;
     subtitles: boolean;
     regenerateSubtitles: boolean;
-    subtitleMethod?: "audio-after-generation";
+    subtitleMethod?: "audio-after-generation" | "cloud-joint";
     reviewed?: boolean;
     archived?: boolean;
     previousResults?: string[];
     createdAt: string;
-    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; credits: number }[] | null;
+    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; generated?: string; credits: number }[] | null;
 };
 export type ReplacementCaption = { start: number; end: number; text: string };
 
@@ -48,9 +52,9 @@ async function request<T>(path: string, input?: unknown, signal?: AbortSignal): 
 export const listReplacementJobs = (signal?: AbortSignal) => request<ReplacementJob[]>("", undefined, signal);
 export const createReplacementJob = (input: {
     id: string; source: string; image: string; model: string; resolution: string; seconds: string;
-    prompt: string; subtitles: boolean; regenerateSubtitles?: boolean; subtitleSize: number; subtitleColor: string;
+    prompt: string; subtitles: boolean; regenerateSubtitles?: boolean; subtitleSize: number; subtitleColor: string; previewRequired?: boolean;
 }) => request<ReplacementJob>("", input);
-export const startReplacementJob = (job: ReplacementJob) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits });
+export const startReplacementJob = (job: ReplacementJob, approvePreview = false) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits, ...(approvePreview ? { approvePreview: true, previewResult: job.previewResult } : {}) });
 export const pauseReplacementJob = (id: string) => request<{ message: string }>(`/${id}/pause`, {});
 export const archiveReplacementJob = (id: string, archived: boolean) => request<ReplacementJob>(`/${id}/${archived ? "archive" : "unarchive"}`, {});
 

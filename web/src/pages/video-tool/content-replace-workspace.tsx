@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
-import { ArrowLeft, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, RefreshCw, Sparkles, Video, X } from "lucide-react";
+import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -26,6 +26,7 @@ import { ReplacementBatchPanel } from "./replacement-batch-panel";
 
 const replacementNames = { person: "人物", product: "商品", background: "背景" };
 const recordNames = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
+const longVideoPreviewThresholdMs = 15_000;
 
 export default function ContentReplaceWorkspace() {
     const wb = useVideoWorkbench("content-replace");
@@ -68,15 +69,15 @@ export default function ContentReplaceWorkspace() {
     const anchor = useRef<{ x: number; y: number } | null>(null);
     const selectionVideo = useRef<HTMLVideoElement | null>(null);
     const selectionTime = useRef(0);
-    const [wholeVideoMode, setWholeVideo] = useState(true);
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
+    const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
     // 换脸只在平台智能处理链路生效；其他处理方式仍按各自模型执行。
     const headSwap = person && cloud && d.replacementModel === "headswap";
-    // 换脸模型按单次请求处理整段素材，不支持整片后台分段流程。
-    const wholeVideo = wholeVideoMode && !headSwap;
+    const longVideo = Boolean(reference?.durationMs && reference.durationMs > longVideoPreviewThresholdMs);
+    // All full-person edits share one durable flow; short face swaps keep their direct request.
+    const wholeVideo = person && cloud && (!headSwap || longVideo) && !d.maskedPerson;
     const locked = busy || uploading || repairingSource || trimming;
-    const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
     const operation: ReplicateOperation = person ? (headSwap ? "head-swap" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
@@ -86,6 +87,7 @@ export default function ContentReplaceWorkspace() {
     const inputKey = JSON.stringify([
         d.route,
         d.replacement,
+        d.replacementModel,
         d.maskedEdit,
         d.maskedPerson,
         d.replicateResolution,
@@ -115,6 +117,10 @@ export default function ContentReplaceWorkspace() {
         const replacement = query.get("replacement");
         if (replacement === "person" || replacement === "product" || replacement === "background") wb.edit({ replacement, route: "replicate", maskedEdit: query.get("masked") === "1", ...(replacement === "person" ? { replacementModel: query.get("model") === "headswap" ? "headswap" as const : "wan" as const } : {}) }, "video");
     }, [wb.hydrated, location.search]);
+    useEffect(() => {
+        if (!wb.hydrated || administrator || d.route === "replicate") return;
+        wb.edit({ route: "replicate" }, "video");
+    }, [wb.hydrated, administrator, d.route]);
     useEffect(() => {
         const controller = new AbortController();
         setModels([]);
@@ -153,7 +159,12 @@ export default function ContentReplaceWorkspace() {
         };
     }, []);
     useEffect(() => {
-        if (!wb.hydrated || (d.route !== "worker" && !d.replaceSubtitles && !(person && wholeVideo))) return;
+        if (!wb.hydrated || (d.route !== "worker" && !(d.replaceSubtitles && d.regenerateSubtitles))) {
+            setCapabilities(null);
+            setServiceError("");
+            setChecking(false);
+            return;
+        }
         let disposed = false;
         setCapabilities(null);
         setServiceError("");
@@ -173,7 +184,7 @@ export default function ContentReplaceWorkspace() {
         return () => {
             disposed = true;
         };
-    }, [wb.hydrated, d.route, d.replaceSubtitles, person, wholeVideo, wb.worker.url, wb.worker.token, platformToken, serviceRevision]);
+    }, [wb.hydrated, d.route, d.replaceSubtitles, d.regenerateSubtitles, person, wholeVideo, wb.worker.url, wb.worker.token, platformToken, serviceRevision]);
     useEffect(() => {
         quoteController.current?.abort();
         quoteController.current = null;
@@ -221,12 +232,15 @@ export default function ContentReplaceWorkspace() {
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
         if (!unavailable && d.replacement === "product" && !d.media.some((m) => m.role === "mask") && !capabilities?.some((c) => c.name === "track-product" && c.available)) unavailable = "商品自动跟踪尚未就绪，请管理员配置跟踪服务";
     } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
-    const subtitleCapabilities = ["replacement-prepare", "replacement-finish", "replacement-subtitles-v2", ...(person && wholeVideo && d.regenerateSubtitles ? ["replacement-transcribe", "replacement-render-captions"] : [])];
+    const subtitleCapabilities = ["replacement-finish", "replacement-transcribe"];
     const subtitleCapability = subtitleCapabilities.map((name) => capabilities?.find((item) => item.name === name)).find((item) => !item?.available);
-    const subtitleUnavailable = d.replaceSubtitles
-        ? checking || !capabilities && !serviceError ? "正在检查自动字幕处理能力" : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "自动字幕处理尚未启用，请管理员更新处理服务")
-        : "";
-    const subtitleNotice = !d.replaceSubtitles && (serviceError || subtitleCapability?.reason || (capabilities && !capabilities.some((item) => item.name === "replacement-prepare" && item.available) ? "自动字幕清理暂未启用，当前保留原字幕并继续人物替换。" : ""));
+    const subtitleUnavailable = !d.replaceSubtitles || person && wholeVideo && !d.regenerateSubtitles ? ""
+        : person && wholeVideo ? checking || !capabilities && !serviceError ? "正在检查字幕识别与合成服务"
+        : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "字幕识别与合成服务尚未启用")
+        : d.route !== "model" || !isWan30(config.videoModel) ? "当前模型不支持联合去字幕，请关闭此项，或先使用云端硬字幕去除工具处理原片。"
+        : !d.regenerateSubtitles ? ""
+        : checking || !capabilities && !serviceError ? "正在检查字幕识别与合成服务"
+        : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "字幕识别与合成服务尚未启用");
     const missing = !wb.hydrated
         ? "正在恢复本浏览器草稿"
         : uploading
@@ -277,6 +291,19 @@ export default function ContentReplaceWorkspace() {
         } finally {
             uploadingRef.current = false;
             setUploading(false);
+        }
+    };
+    const pasteImage = async (role: MediaRole, accept: string) => {
+        try {
+            const items = await navigator.clipboard.read();
+            const image = (await Promise.all(items.flatMap((item) => item.types.filter((type) => type.startsWith("image/")).map((type) => item.getType(type)))))[0];
+            if (!image) throw new Error("剪切板里没有可读取的图片");
+            const extension = image.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+            await addFile(new File([image], `clipboard-image.${extension}`, { type: image.type || "image/png" }), role, accept);
+        } catch (error) {
+            const detail = publicServiceText(error instanceof Error ? error.message : "剪切板读取失败");
+            setUploadErrors((errors) => ({ ...errors, [role]: detail }));
+            message.error(detail);
         }
     };
     const repairSource = async () => {
@@ -333,6 +360,7 @@ export default function ContentReplaceWorkspace() {
                 <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="font-medium">{label}</span>
                     <div className="flex shrink-0 items-center gap-2 text-xs" style={muted}>
+                        {accept === "image/*" && <Button type="text" size="small" disabled={locked} icon={<ClipboardPaste size={13} />} onClick={() => void pasteImage(role, accept)}>从剪切板粘贴</Button>}
                         {cloud && person && role === "reference" && (
                             <Popover
                                 title="人物替换素材建议"
@@ -515,25 +543,40 @@ export default function ContentReplaceWorkspace() {
                                 options={Object.entries(replacementNames).map(([value, label]) => ({ value, label: `换${label}` }))}
                                 onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"], maskedPerson: false, regions: [], replacementSeedTime: undefined }, "video")}
                             />
+                            {person && <label className="block space-y-2">
+                                <span className="text-sm font-medium">替换方式</span>
+                                <Select
+                                    className="w-full"
+                                    aria-label="替换方式"
+                                    disabled={locked}
+                                    value={d.replacementModel}
+                                    options={[
+                                        { value: "wan", label: "整个人 · 保留动作" },
+                                        { value: "headswap", label: "只换脸 · 保留口型" },
+                                    ]}
+                                    onChange={(replacementModel) => wb.edit({ replacementModel, maskedPerson: false }, "video")}
+                                />
+                            </label>}
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
+                            {wholeVideo && longVideo && <Alert showIcon type="info" title={`视频长 ${((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，超过 15 秒，需要分段处理。`} description="系统自动切分。先看整片费用，再生成第一段预览；你确认效果后才处理其余片段并合并。" />}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">
                                     <Switch aria-label="去除原字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
                                     <span className="text-sm">去除原字幕</span>
                                 </div>
-                                <p className="m-0 text-xs" style={muted}>先清理原片字幕，再替换内容，输出保留原音轨的无字幕视频。无法可靠清理时暂停；关闭此项后原字幕可能被模型重画。</p>
+                                <p className="m-0 text-xs" style={muted}>支持的模型在云端同时替换内容并去除字幕，无需单独运行字幕清理服务。请检查成片是否残字或闪烁；关闭此项后原字幕可能被模型重画。</p>
                                 {d.replaceSubtitles && <>
                                     <div className="flex items-center gap-2">
                                         <Switch aria-label="去除后重新生成字幕" disabled={locked} checked={d.regenerateSubtitles === true} onChange={(regenerateSubtitles) => wb.edit({ regenerateSubtitles }, "video")} />
                                         <span className="text-sm">去除后重新生成字幕</span>
                                     </div>
-                                    <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "根据原音轨识别字幕稿，在线校对后可单独生成带字幕版或下载 SRT；无字幕版仍会保留。" : "根据原音轨识别并烧录新字幕，识别文字可能需要校对。"}</p>
+                                    <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "另需字幕识别与合成服务：根据原音轨识别字幕稿，校对后单独生成带字幕版或下载 SRT。" : "另需字幕识别与合成服务：根据原音轨识别并烧录新字幕，识别文字可能需要校对。"}</p>
                                 </>}
-                                {subtitleNotice && <Alert className="mt-2" type="warning" showIcon title={subtitleNotice} />}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
+                                {d.replaceSubtitles && <Link to="/video/subtitle-remove">单独使用云端硬字幕去除</Link>}
                             </div>
-                            {cloud && person && !wholeVideo && !headSwap && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式先跟踪一次人物，再用人物替换模型生成换人视频，最后只把人物区域回填到原画面，背景和字幕保留原片；不读取文字提示词。" : "Replicate 的 Wan 2.2 Animate Replace 与灵舟 Wan30 是不同模型接口；这条任务不读取文字提示词。人物分割失败时，改提示词不能修复；切镜、无人镜头或遮挡也可能导致跟踪失败。"} />}
+                            {cloud && person && !wholeVideo && !headSwap && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式先跟踪一次人物，再用人物替换模型生成换人视频，最后只把人物区域回填到原画面，背景和字幕保留原片；不读取文字提示词。" : "人物替换不读取文字要求；切镜、遮挡或人物短暂离开画面可能影响结果。"} />}
                             {(!cloud || !person || wholeVideo) && (
                                 <label className="block">
                                     <div className="mb-2 font-medium">替换要求{!person ? "（必填）" : "（可选）"}</div>
@@ -592,19 +635,6 @@ export default function ContentReplaceWorkspace() {
                                     {publicServiceText(unavailable || (cloud ? model?.billingDescription || "平台按当前规格计费" : "按当前处理方式执行"))}
                                 </div>
                             </div>}
-                            {person && <Select
-                                className="w-full"
-                                aria-label="人物替换模型"
-                                disabled={locked}
-                                value={d.replacementModel}
-                                options={[
-                                    { value: "wan", label: "Wan 2.2 Animate · 保留动作的整人替换" },
-                                    { value: "headswap", label: "WaveSpeed 换脸 · 只替换头部，保留口型" },
-                                ]}
-                                onChange={(replacementModel) => wb.edit({ replacementModel, maskedPerson: false }, "video")}
-                            />}
-                            {person && !headSwap && <Segmented block aria-label="人物替换处理模式" value={wholeVideo ? "whole" : "single"} options={[{ value: "whole", label: "整片后台处理" }, { value: "single", label: "单片处理" }]} onChange={(v) => setWholeVideo(v === "whole")} />}
-                            {person && headSwap && <p className="m-0 text-xs" style={muted}>换脸模型一次处理整段素材，按整片提交；参考照片请使用清晰的真实正面照，避免逆光和 AI 重绘过的图片。</p>}
                             {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} />}
                             {!(person && wholeVideo) && <Collapse
                                 size="small"
@@ -614,18 +644,18 @@ export default function ContentReplaceWorkspace() {
                                         label: "高级设置",
                                         children: (
                                             <div className="space-y-4">
-                                                <Select
+                                                {administrator && <Select
                                                     className="w-full"
                                                     aria-label="处理方式"
                                                     disabled={locked}
                                                     value={d.route}
                                                     options={[
                                                         { value: "replicate", label: "平台智能处理（推荐）" },
-                                                        { value: "model", label: "已配置的视频模型" },
-                                                        { value: "worker", label: "增强处理服务" },
+                                                        { value: "model", label: "自定义模型" },
+                                                        { value: "worker", label: "处理服务" },
                                                     ]}
                                                     onChange={(route) => wb.edit({ route }, "video")}
-                                                />
+                                                />}
                                                 {cloud && person && !wholeVideo && !headSwap && (
                                                     <div className="space-y-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                                         <div className="flex items-center gap-2">

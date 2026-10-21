@@ -102,7 +102,7 @@ def capabilities():
         {"name": "cut", "available": ffmpeg and whisper, "reason": "需要配置 Whisper 转写模型"},
         {"name": "transcribe", "available": ffmpeg and whisper, "reason": "需要安装 faster-whisper 并配置 WHISPER_MODEL"},
         {"name": "upscale", "available": ffmpeg and engine_ready("realesrgan"), "reason": "需要配置 Real-ESRGAN 引擎及权重"},
-        {"name": "subtitle-remove", "available": ffmpeg and engine_ready("lama"), "reason": "需要配置已获得相应使用许可的修复引擎及权重"},
+        {"name": "subtitle-remove", "available": False, "reason": "本地字幕擦除已下线，请使用云端硬字幕去除工具"},
         {"name": "digital-human", "available": ffmpeg and engine_ready("musetalk"), "reason": "需要配置 MuseTalk 引擎及权重"},
         {"name": "replace-person", "available": ffmpeg and bool(FFPROBE) and engine_ready("wan-animate"), "reason": "需要配置 Wan-Animate 引擎、权重和 FFprobe"},
         {"name": "replace-person-masked", "available": ffmpeg and bool(FFPROBE) and engine_ready("sam2") and engine_ready("vace"), "reason": "只替换人物实验需要配置 SAM 2 跟踪、VACE 局部生成、显存充足的 GPU 和 FFprobe"},
@@ -110,11 +110,11 @@ def capabilities():
         {"name": "track-product", "available": ffmpeg and bool(FFPROBE) and engine_ready("sam2"), "reason": "自动跟踪移动商品需要配置 SAM 2 引擎及权重"},
         {"name": "voice-clone", "available": bool(os.environ.get("COSYVOICE_URL") and os.environ.get("COSYVOICE_SAMPLE_RATE")), "reason": "需要部署 CosyVoice HTTP 服务并配置实际输出采样率"},
         {"name": "ocr", "available": ocr, "reason": "需要安装 PaddlePaddle 与 PaddleOCR"},
-        {"name": "replacement-prepare", "available": ffmpeg and bool(FFPROBE) and whisper and ocr and engine_ready("lama"), "reason": "自动字幕处理需要平台配置语音识别、PaddlePaddle、PaddleOCR 和字幕修复引擎"},
+        {"name": "replacement-prepare", "available": False, "reason": "CPU 字幕预清理已下线，请使用云端联合处理"},
         *[{"name": operation, "available": ffmpeg and bool(FFPROBE), "reason": "需要 FFmpeg 和 FFprobe"} for operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble")],
         {"name": "replacement-finish", "available": ffmpeg and bool(FFPROBE), "reason": "自动字幕合成需要 FFmpeg"},
         {"name": "replacement-masked-composite", "available": ffmpeg and bool(FFPROBE), "reason": "局部替换合成需要 FFmpeg 和 FFprobe"},
-        {"name": "replacement-subtitles-v2", "available": ffmpeg and bool(FFPROBE) and whisper and ocr and engine_ready("lama"), "reason": "先清理后按原音轨重做字幕需要更新处理服务并配置语音识别、OCR 和修复引擎"},
+        {"name": "replacement-subtitles-v2", "available": False, "reason": "旧字幕清理流程已下线，请使用云端联合处理"},
         {"name": "replacement-transcribe", "available": ffmpeg and bool(FFPROBE) and whisper, "reason": "在线字幕编辑需要配置语音识别"},
         {"name": "replacement-render-captions", "available": ffmpeg and bool(FFPROBE), "reason": "字幕合成需要 FFmpeg"},
     ]
@@ -125,11 +125,9 @@ async def available_capabilities():
     if os.environ.get("GPU_WORKER_URL"):
         remote = await remote_subtitles.capabilities()
         for item in items:
-            if item["name"] in ("replacement-prepare", "replacement-subtitles-v2", "replacement-transcribe"):
-                item["available"] = remote.get("transcribe" if item["name"] == "replacement-transcribe" else item["name"], False) and bool(FFPROBE) and Path(FFMPEG).exists()
-                if item["name"] == "replacement-subtitles-v2":
-                    item["available"] = item["available"] and remote.get("transcribe", False)
-                item["reason"] = "云端字幕处理服务未就绪，请管理员检查 GPU_WORKER_URL、令牌和 OCR / 修复引擎"
+            if item["name"] == "replacement-transcribe":
+                item["available"] = remote.get("transcribe", False) and bool(FFPROBE) and Path(FFMPEG).exists()
+                item["reason"] = "字幕识别服务未就绪，请管理员检查服务地址、令牌和识别模型"
     return items
 
 
@@ -284,8 +282,9 @@ async def create_job(request: JobRequest):
     validate_options(request)
     if request.operation == "replace" and request.options.get("replacement") == "product" and "mask" not in request.inputs and not available.get("track-product", {}).get("available"):
         raise HTTPException(422, "商品自动跟踪尚未就绪，请管理员配置跟踪服务；未启动商品生成")
-    if request.operation in ("replacement-prepare", "replacement-finish", "replacement-transcribe") and request.options.get("subtitleMethod") == "audio-after-generation" and not available.get("replacement-subtitles-v2", {}).get("available"):
-        raise HTTPException(422, "先清理后按原音轨重做字幕的处理服务尚未就绪，请管理员更新服务及引擎")
+    if request.operation == "replacement-finish" and request.options.get("subtitleMethod") == "audio-after-generation" and request.options.get("subtitleOutput") != "editable":
+        if not available.get("replacement-transcribe", {}).get("available"):
+            raise HTTPException(422, "字幕识别服务尚未就绪；去字幕不需要 OCR 或修复引擎")
     if request.operation == "replacement-transcribe" and not available.get("replacement-transcribe", {}).get("available"):
         raise HTTPException(422, "语音识别尚未就绪，请管理员检查识别模型")
     if request.operation == "subtitle-remove" and not request.options.get("regions") and not available["ocr"]["available"]:
@@ -851,29 +850,8 @@ async def run_job(identifier: str, request: JobRequest):
             await ffmpeg(identifier, "-i", video, "-i", source, "-map", "0:v:0", "-map", "1:a?", "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", output)
             validate_timeline(info, await probe_video(identifier, output))
             result = {"file": publish(output), "metadata": {**checks, "timelineChecked": True, "identityChecked": False}}
-        elif operation == "subtitle-remove":
-            video = await repair_frames(identifier, inputs["video"], work, options)
-            result = {"file": publish(video)}
-        elif operation == "replacement-prepare":
-            source = inputs["video"]
-            info = await probe_video(identifier, source)
-            audio_method = options.get("subtitleMethod") == "audio-after-generation"
-            if audio_method and not info["audio"]:
-                raise ValueError("原视频没有音轨，无法重建口播字幕，已停止且未提交收费替换")
-            if os.environ.get("GPU_WORKER_URL"):
-                video, captions = await remote_subtitles.prepare(source, work, lambda step: update_job(identifier, step=step), options)
-            else:
-                segments = await transcribe(identifier, source, work) if info["audio"] else []
-                captions = []
-                if audio_method:
-                    segments = audio_captions(segments, info["duration"])
-                    update_job(identifier, step="定位并清理口播字幕区域，检查残字")
-                    video = await clean_spoken_subtitles(identifier, source, work, segments)
-                else:
-                    update_job(identifier, step="逐帧识别并比对口播与画面文字")
-                    video = await repair_frames(identifier, source, work, {"matchSpokenSubtitles": True, "subtitleSegments": segments, "detectedSubtitles": captions})
-            validate_timeline(info, await probe_video(identifier, video))
-            result = {"file": publish(video), "segments": [] if audio_method else captions, "metadata": {"subtitleMethod": "audio-after-generation" if audio_method else "speech-matched-ocr"}}
+        elif operation in ("subtitle-remove", "replacement-prepare"):
+            raise ValueError("本地字幕擦除与预清理已下线，请使用云端 API")
         elif operation == "replacement-finish":
             source, generated = inputs["source"], inputs["video"]
             output_info = await probe_video(identifier, generated)
@@ -899,7 +877,8 @@ async def run_job(identifier: str, request: JobRequest):
                 arguments.extend(["-vf", f"ass='{escaped}'"])
             update_job(identifier, step="恢复原音轨并合成字幕")
             output = work / "final.mp4"
-            await ffmpeg(identifier, *arguments, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", output)
+            video_codec = ["-c:v", "libx264", "-pix_fmt", "yuv420p"] if captions and not editable else ["-c:v", "copy"]
+            await ffmpeg(identifier, *arguments, *video_codec, "-c:a", "aac", "-movflags", "+faststart", output)
             final_info = await probe_video(identifier, output)
             validate_generated_timeline(source_info, final_info)
             validate_timeline(output_info, final_info)

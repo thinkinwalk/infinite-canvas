@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import unittest
@@ -67,13 +68,13 @@ class SubtitlePipelineTests(unittest.IsolatedAsyncioTestCase):
         await worker.run_job(identifier, worker.JobRequest(operation=operation, inputs=inputs, options=options))
         return worker.read_job(identifier)
 
-    async def test_prepare_calls_new_cleaner_without_returning_ocr_captions(self):
+    async def test_retired_prepare_never_starts_cpu_or_remote_inpainting(self):
         cleaner = AsyncMock(return_value=worker.MEDIA / "clean.mp4")
         with patch.dict("os.environ", {"GPU_WORKER_URL": ""}), patch.object(worker, "probe_video", AsyncMock(return_value=self.info)), patch.object(worker, "transcribe", AsyncMock(return_value=[{"start": 0, "end": 2, "text": "原音轨"}])), patch.object(worker, "clean_spoken_subtitles", cleaner), patch.object(worker, "repair_frames", AsyncMock(side_effect=AssertionError("legacy path"))):
             state = await self.run_job("replacement-prepare", {"subtitleMethod": "audio-after-generation"})
-        self.assertEqual(state["status"], "completed", state)
-        self.assertEqual(state["result"]["segments"], [])
-        cleaner.assert_awaited_once()
+        self.assertEqual(state["status"], "failed", state)
+        self.assertIn("已下线", state["error"])
+        cleaner.assert_not_awaited()
 
     async def test_residual_detection_cannot_succeed_with_missing_frames_or_unreadable_text(self):
         for missing in (False, True):
@@ -111,7 +112,7 @@ class SubtitlePipelineTests(unittest.IsolatedAsyncioTestCase):
         async def ffmpeg(identifier, *args):
             self.assertIn("-map", args)
             self.assertNotIn("-vf", args)
-            self.assertIn("libx264", args)
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
             args[-1].write_bytes(b"clean-with-audio")
         with patch.object(worker, "probe_video", AsyncMock(return_value=self.info)), patch.object(worker, "transcribe", AsyncMock(side_effect=AssertionError("recognition is a separate step"))), patch.object(worker, "ffmpeg", ffmpeg):
             state = await self.run_job("replacement-finish", {"subtitleMethod": "audio-after-generation", "subtitleOutput": "editable"})
@@ -119,6 +120,28 @@ class SubtitlePipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["result"]["segments"], [])
         self.assertEqual(state["result"]["metadata"]["subtitleOutput"], "editable")
         self.assertEqual((worker.MEDIA / state["result"]["file"]).read_bytes(), b"clean-with-audio")
+
+    async def test_real_audio_restore_keeps_video_packets_and_generated_canvas(self):
+        if not worker.FFPROBE:
+            self.skipTest("FFprobe is required for real media verification")
+        async def ffmpeg(*args):
+            child = await asyncio.create_subprocess_exec(worker.FFMPEG, "-y", "-nostdin", *map(str, args), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            output, error = await child.communicate()
+            self.assertEqual(child.returncode, 0, error.decode(errors="replace"))
+            return output
+        source, generated = worker.MEDIA / "source.mp4", worker.MEDIA / "generated.mp4"
+        await ffmpeg("-f", "lavfi", "-i", "color=c=black:s=160x288:r=10:d=1", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", source)
+        await ffmpeg("-f", "lavfi", "-i", "testsrc=size=160x288:rate=10:duration=1", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", generated)
+        state = await self.run_job("replacement-finish", {"subtitleOutput": "editable"})
+        self.assertEqual(state["status"], "completed", state)
+        result = worker.MEDIA / state["result"]["file"]
+        async def video_hash(path):
+            return await ffmpeg("-i", path, "-map", "0:v:0", "-c:v", "copy", "-f", "hash", "-hash", "sha256", "-")
+        self.assertEqual(await video_hash(generated), await video_hash(result))
+        info = await worker.probe_video("test", result)
+        self.assertTrue(info["audio"])
+        self.assertEqual(info["size"], (160, 288))
+        self.assertEqual(info["duration"], 1)
 
     async def test_postprocessing_keeps_generated_canvas_when_source_ratio_differs(self):
         source = {**self.info, "duration": 10, "fps": 30, "size": (544, 960)}

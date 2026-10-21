@@ -41,3 +41,19 @@ test("logged out clients cannot access server jobs", async () => {
     await expect(listReplacementJobs()).rejects.toThrow("请登录");
     expect(calls).toBe(0);
 });
+
+test("continuation explicitly approves the preview that was displayed", async () => {
+    useUserStore.setState({ token: "test" });
+    const requests: unknown[] = [];
+    globalThis.fetch = async (url, options) => {
+        requests.push([String(url), JSON.parse(String(options?.body))]);
+        return new Response(JSON.stringify({ code: 0, data: {} }));
+    };
+    const job = { id: "preview-job", credits: 1200, previewResult: "first-preview.mp4" } as Parameters<typeof startReplacementJob>[0];
+    await startReplacementJob(job);
+    await startReplacementJob(job, true);
+    expect(requests).toEqual([
+        ["/api/v1/replacement-jobs/preview-job/start", { expectedCredits: 1200 }],
+        ["/api/v1/replacement-jobs/preview-job/start", { expectedCredits: 1200, approvePreview: true, previewResult: "first-preview.mp4" }],
+    ]);
+});

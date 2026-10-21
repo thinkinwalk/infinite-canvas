@@ -80,6 +80,113 @@ func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testin
 	}
 }
 
+func TestReplacementPreviewStopsBeforeSecondPartAndResumesWithoutRegeneratingFirst(t *testing.T) {
+	replacementTestStorage(t)
+	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	operations := []string{}
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatal("preview workflow unexpectedly submitted a paid model request")
+		}
+		var input struct {
+			Operation string         `json:"operation"`
+			Inputs    map[string]any `json:"inputs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		operations = append(operations, input.Operation)
+		file := ""
+		switch input.Operation {
+		case "replacement-validate":
+		case "replacement-assemble":
+			files, _ := input.Inputs["parts"].([]any)
+			if len(files) != 2 || files[0] != "generated-first.mp4" || files[1] != "generated-second.mp4" {
+				t.Fatalf("did not reuse preview: %+v", input)
+			}
+			file = "assembled.mp4"
+		case "replacement-finish":
+			if input.Inputs["source"] == "first-input.mp4" {
+				file = "preview.mp4"
+			} else {
+				file = "final.mp4"
+			}
+		default:
+			t.Fatalf("unexpected operation: %+v", input)
+		}
+		data, _ := json.Marshal(map[string]any{"status": "completed", "result": map[string]any{"file": file}})
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+	})}
+	job := replacementJob{ID: uuid.NewString(), UserID: "preview-owner", Source: "original.mp4", Model: "wan30-720p", Planned: true, PreviewRequired: true,
+		Parts: []replacementPart{
+			{Input: "first-input.mp4", Generated: "generated-first.mp4", TaskID: "paid-first", Submitted: true},
+			{Input: "second-input.mp4", Generated: "generated-second.mp4", TaskID: "paid-second", Submitted: true},
+		}}
+	if err := executeReplacement(context.Background(), &job, false); err != nil {
+		t.Fatal(err)
+	}
+	if job.Status != "preview" || !job.PreviewReady || job.PreviewApproved || job.Result != "" || !job.Parts[0].Validated || job.Parts[1].Validated {
+		t.Fatalf("did not stop for approval: %+v", job)
+	}
+	if strings.Join(operations, ",") != "replacement-validate,replacement-finish" {
+		t.Fatalf("ran later parts: %v", operations)
+	}
+	owner, found, err := repository.GetReferenceMediaOwner("worker-media:" + job.PreviewResult)
+	if err != nil || !found || owner.UserID != job.UserID {
+		t.Fatalf("preview is not accessible to its owner: %+v, %v", owner, err)
+	}
+	recovered, err := loadReplacement(job.ID, job.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := executeReplacement(context.Background(), &recovered, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 2 || recovered.Status != "preview" {
+		t.Fatal("restart bypassed preview approval")
+	}
+	recovered.PreviewApproved = true
+	if err := executeReplacement(context.Background(), &recovered, false); err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Status != "completed" || recovered.Result != "final.mp4" || strings.Join(operations, ",") != "replacement-validate,replacement-finish,replacement-validate,replacement-assemble,replacement-finish" {
+		t.Fatalf("incorrect continuation: %+v, %v", recovered, operations)
+	}
+}
+
+func TestReplacementPreviewApprovalCannotBeBypassedOrApproveAnOldPreview(t *testing.T) {
+	replacementTestStorage(t)
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Status: "preview", Planned: true, PreviewRequired: true, PreviewReady: true, PreviewResult: "current.mp4", Credits: 1200, Parts: []replacementPart{{Validated: true}, {}}}
+	if err := saveReplacement(&job); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`{"expectedCredits":1200}`, `{"expectedCredits":1200,"approvePreview":true,"previewResult":"old.mp4"}`, `{"expectedCredits":1100,"approvePreview":true,"previewResult":"current.mp4"}`} {
+		r := httptest.NewRequest(http.MethodPost, "/start", strings.NewReader(body)).WithContext(service.WithUser(context.Background(), model.AuthUser{ID: "owner"}))
+		response := httptest.NewRecorder()
+		ReplacementJobAction(response, r, job.ID, "start")
+		var envelope struct {
+			Code int `json:"code"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.Code == 0 {
+			t.Fatalf("unexpected approval: %s", response.Body.String())
+		}
+		saved, _ := loadReplacement(job.ID, job.UserID)
+		if saved.PreviewApproved || replacementControlFor(job.ID).running.Load() {
+			t.Fatal("unconfirmed task was started")
+		}
+	}
+}
+
+func TestReplacementFaceSwapUsesItsOwnOperationAndInput(t *testing.T) {
+	job := replacementJob{Model: "wavespeed-ai/video-head-swap", Image: "reference.jpg", Resolution: "720"}
+	input := replacementCloudInput(&job, &replacementPart{Reference: "segment.mp4"})
+	if replacementCloudOperation(job.Model) != "head-swap" || input["face_image"] != job.Image || input["resolution"] != "720p" || input["character_image"] != nil {
+		t.Fatalf("wrong face swap routing: %+v", input)
+	}
+}
+
 func TestReplacementReviewRequiresOwnedCompletedResult(t *testing.T) {
 	replacementTestStorage(t)
 	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Status: "paused"}
@@ -171,21 +278,15 @@ func TestReplacementWorkerRecoveryReusesDurableID(t *testing.T) {
 	}
 }
 
-func TestReplacementInterruptedSubtitlePreparationCannotBeSkippedOnRecovery(t *testing.T) {
+func TestReplacementOldSubtitleRecoveryStopsBeforeAnyWorkerOrPaidRequest(t *testing.T) {
 	replacementTestStorage(t)
 	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
 	previous := aiHTTPClient
 	t.Cleanup(func() { aiHTTPClient = previous })
 	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Subtitles: true, Parts: []replacementPart{{Input: "original.mp4"}}}
 	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
-		persisted, err := loadReplacement(job.ID, job.UserID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if persisted.Parts[0].Prepared != "" {
-			t.Fatal("unprocessed video was marked subtitle-cleaned before worker completion")
-		}
-		return &http.Response{StatusCode: 503, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"detail":"worker interrupted"}`))}, nil
+		t.Fatal("retired subtitle flow must not call a worker or paid provider")
+		return nil, nil
 	})}
 	if err := executeReplacementPart(context.Background(), &job, 0); err == nil {
 		t.Fatal("worker interruption ignored")
@@ -195,13 +296,13 @@ func TestReplacementInterruptedSubtitlePreparationCannotBeSkippedOnRecovery(t *t
 	}
 }
 
-func TestReplacementNewSubtitleFlowPreservesCleanVideoWhenTranscriptionFails(t *testing.T) {
+func TestReplacementCloudJointPreservesCleanVideoWhenTranscriptionFails(t *testing.T) {
 	replacementTestStorage(t)
 	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
 	previous := aiHTTPClient
 	t.Cleanup(func() { aiHTTPClient = previous })
 	operations := []string{}
-	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Subtitles: true, RegenerateSubtitles: true, SubtitleMethod: "audio-after-generation", SubtitleOutput: "editable", Planned: true,
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Model: "wan30-720p", Subtitles: true, RegenerateSubtitles: true, SubtitleMethod: "cloud-joint", SubtitleOutput: "editable", Planned: true,
 		Parts: []replacementPart{{Generated: "paid-output.mp4", Start: 0, End: 3, InputEnd: 3, Seconds: 3}}}
 	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "worker.invalid" {
@@ -218,21 +319,16 @@ func TestReplacementNewSubtitleFlowPreservesCleanVideoWhenTranscriptionFails(t *
 		operations = append(operations, request.Operation)
 		file := ""
 		switch request.Operation {
-		case "replacement-prepare":
-			if request.Inputs["video"] != "original.mp4" || request.Options["subtitleMethod"] != job.SubtitleMethod {
-				t.Fatalf("bad prepare: %+v", request)
-			}
-			file = "whole-clean.mp4"
 		case "replacement-extract":
-			if request.Inputs["video"] != "whole-clean.mp4" {
-				t.Fatal("extract used unclean source")
+			if request.Inputs["video"] != "original.mp4" {
+				t.Fatal("joint cloud generation must receive the original video")
 			}
 			file = "clean-part.mp4"
 		case "replacement-validate":
 		case "replacement-assemble":
 			file = "assembled.mp4"
 		case "replacement-finish":
-			if request.Inputs["source"] != "original.mp4" || request.Inputs["video"] != "assembled.mp4" || request.Options["subtitleMethod"] != job.SubtitleMethod || request.Options["subtitleOutput"] != "editable" || len(request.Options["subtitles"].([]any)) != 0 {
+			if request.Inputs["source"] != "original.mp4" || request.Inputs["video"] != "assembled.mp4" || request.Options["subtitleMethod"] != nil || request.Options["subtitleOutput"] != "editable" || len(request.Options["subtitles"].([]any)) != 0 {
 				t.Fatalf("bad finish: %+v", request)
 			}
 			file = "clean-with-audio.mp4"
@@ -250,33 +346,52 @@ func TestReplacementNewSubtitleFlowPreservesCleanVideoWhenTranscriptionFails(t *
 	if err := executeReplacement(context.Background(), &job, false); err != nil {
 		t.Fatalf("ASR failure should not fail the clean video delivery: %v", err)
 	}
-	if strings.Join(operations, ",") != "replacement-prepare,replacement-extract,replacement-validate,replacement-assemble,replacement-finish,replacement-transcribe" {
+	if strings.Join(operations, ",") != "replacement-extract,replacement-validate,replacement-assemble,replacement-finish,replacement-transcribe" {
 		t.Fatalf("wrong order: %v", operations)
 	}
 	saved, err := loadReplacement(job.ID, job.UserID)
-	if err != nil || saved.Status != "completed" || saved.Result != "clean-with-audio.mp4" || saved.CaptionStatus != "failed" || saved.Assembled != "assembled.mp4" || saved.Parts[0].Generated != "paid-output.mp4" || !saved.Parts[0].Validated || saved.PreparedSource != "whole-clean.mp4" {
+	if err != nil || saved.Status != "completed" || saved.Result != "clean-with-audio.mp4" || saved.CaptionStatus != "failed" || saved.Assembled != "assembled.mp4" || saved.Parts[0].Generated != "paid-output.mp4" || !saved.Parts[0].Validated || saved.PreparedSource != "" {
 		t.Fatalf("results lost: %+v, %v", saved, err)
 	}
 	operations = nil
 	if err := executeReplacement(context.Background(), &saved, false); err != nil || strings.Join(operations, ",") != "replacement-finish,replacement-transcribe" {
 		t.Fatalf("resume should only rerun reversible post-processing: %v %v", operations, err)
 	}
+	saved.RegenerateSubtitles = false
+	saved.CaptionSegments = nil
+	operations = nil
+	if err := executeReplacement(context.Background(), &saved, false); err != nil || strings.Join(operations, ",") != "replacement-finish" {
+		t.Fatalf("clean-only job must not run ASR or inpainting: %v %v", operations, err)
+	}
 }
 
-func TestReplacementNewSubtitleFlowRejectsOldWorkerBeforeGeneration(t *testing.T) {
+func TestReplacementRetiredSubtitleJobRejectedBeforeAnyRequest(t *testing.T) {
 	replacementTestStorage(t)
 	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
 	previous := aiHTTPClient
 	t.Cleanup(func() { aiHTTPClient = previous })
 	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "worker.invalid" {
-			t.Fatal("must not charge")
-		}
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","result":{"file":"legacy.mp4"}}`))}, nil
+		t.Fatal("retired job must not call a worker or charge")
+		return nil, nil
 	})}
 	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "source.mp4", Subtitles: true, SubtitleMethod: "audio-after-generation", Parts: []replacementPart{{}}}
 	if err := executeReplacement(context.Background(), &job, false); err == nil || job.PreparedSource != "" || job.Parts[0].Submitted {
 		t.Fatalf("old worker accepted: %+v, %v", job, err)
+	}
+}
+
+func TestReplacementUnsupportedJointModelRejectedBeforePlanning(t *testing.T) {
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("unsupported joint model must not make requests")
+		return nil, nil
+	})}
+	for _, name := range []string{"wan-video/wan-2.2-animate-replace", "grok-imagine-video-1.5-preview", "wan30-other"} {
+		job := replacementJob{Model: name, Subtitles: true, SubtitleMethod: "cloud-joint"}
+		if err := executeReplacement(context.Background(), &job, true); err == nil || !strings.Contains(err.Error(), "不支持联合去字幕") {
+			t.Fatalf("unsupported model %s accepted: %v", name, err)
+		}
 	}
 }
 

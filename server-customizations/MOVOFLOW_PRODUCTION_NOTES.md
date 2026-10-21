@@ -15,11 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: ghcr.io/thinkinwalk/infinite-canvas:v0.19.61
-- Current production commit: bb6e0d45841a633e566bcfab11e8f56ad2c9f2fc
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.60-worker/
+- Current production image: infinite-canvas:v0.19.63
+- Current production source: tag v0.19.63 (deployment verification below)
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.63-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.63 automatic segmentation and preview release
+
+- Release prepared from the current release branch; deploy app and worker together. Long videos require a paid first-segment preview and explicit approval of remaining cost before continuing; successful first output is reused for final assembly.
+- Cloud subtitle cleanup replaces the disabled legacy CPU pre-clean path. Resolution, subtitle controls and result tabs remain available.
+- Deployment verification and backup paths will be recorded after switching. Real paid generation and browser interaction remain pending acceptance.
+- The existing untracked quick-deploy helper still assumes a GHCR image and db.sqlite. Use the actual app image and DATABASE_DSN; snapshot SQLite with its backup API and preserve Compose before switching the app image and versioned worker source mounts.
 
 ## v0.19.61 subtitle regeneration release
 

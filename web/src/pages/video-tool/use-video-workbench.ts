@@ -10,7 +10,7 @@ import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audi
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
 import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
-import { remapMaterialMentions } from "@/lib/video-capabilities";
+import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralInput, viralMaterialLabels, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { upscaleError, upscaleInput } from "./upscale-settings";
@@ -604,7 +604,9 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const replacementPipeline = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
         const record = () => store().records.find((r) => r.id === ctx.recordId)!;
-        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { subtitleMethod: "audio-after-generation", regenerateSubtitles: d.regenerateSubtitles === true, phase: "prepare", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
+        let state: NonNullable<VideoRecord["replacementPipeline"]> = record().replacementPipeline || { subtitleMethod: "cloud-joint", regenerateSubtitles: true, phase: "generate", workerUrl: resolveWorkerUrl(ctx.worker), model: config.videoModel, channelMode: config.channelMode, baseUrl: resolveModelRequestConfig(config, config.videoModel).baseUrl, generation: { size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, videoInputMode: config.videoInputMode, videoGenerateAudio: config.videoGenerateAudio } };
+        if (state.subtitleMethod !== "cloud-joint") throw new Error("旧字幕清理流程已下线，已有结果保留；请使用云端去字幕或重新创建联合处理任务。");
+        if (d.route !== "model" || !isWan30(state.model)) throw new Error("请切换回原任务的联合处理模型后继续。");
         const save = (value: Partial<NonNullable<VideoRecord["replacementPipeline"]>>, finishedStep = false) => {
             state = { ...state, ...value };
             store().patchRecord(ctx.recordId, { replacementPipeline: state, ...(finishedStep ? { workerJob: undefined } : {}) });
@@ -625,19 +627,10 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (job.status === "failed" || job.status === "cancelled") store().patchRecord(ctx.recordId, { workerJob: undefined });
             });
         };
-        if (!state.prepared) {
-            const capabilities = await getWorkerCapabilities(ctx.worker);
-            for (const name of ["replacement-prepare", "replacement-finish", ...(state.subtitleMethod ? ["replacement-subtitles-v2"] : [])]) {
-                const capability = capabilities.find((item) => item.name === name);
-                if (!capability?.available) throw new Error(`${capability?.reason || "平台自动字幕处理尚未启用，请管理员更新处理服务"}；尚未提交收费替换`);
-            }
-            const prepared = await localStep("replacement-prepare", { video: source }, state.subtitleMethod ? { subtitleMethod: state.subtitleMethod } : {});
-            if (!prepared.result?.file) throw new Error("字幕预处理未返回视频");
-            if (state.subtitleMethod && prepared.result.metadata?.subtitleMethod !== state.subtitleMethod) {
-                store().patchRecord(ctx.recordId, { workerJob: undefined });
-                throw new Error("字幕服务未返回新流程的清理结果，请管理员更新服务；未提交收费生成");
-            }
-            save({ prepared: await storeWorkerResult(ctx.worker, prepared.result.file), subtitles: prepared.result.segments || [], phase: "generate" }, true);
+        const capabilities = await getWorkerCapabilities(ctx.worker);
+        for (const name of ["replacement-finish", "replacement-transcribe"]) {
+            const capability = capabilities.find((item) => item.name === name);
+            if (!capability?.available) throw new Error(capability?.reason || "字幕识别与合成服务尚未启用");
         }
         ctx.signal.throwIfAborted();
         if (!state.generated) {
@@ -647,18 +640,15 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (existing.replicateTask) value = await cloudResult("video", await waitForReplicateTask(existing.replicateTask.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: publicServiceText(job.error || job.status), replicateBilling: { credits: job.credits, refunded: job.refunded }, ...(["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })));
             else if (existing.modelTask) value = { video: await storeGeneratedVideo(await waitForVideoGenerationTask(config, existing.modelTask, { signal: ctx.signal })) };
             else if (existing.workerJob) value = await applyWorkerResult("video", await localStep("replace", {}), ctx.worker);
-            else {
-                const prepared = await restoreWorkbenchFile(state.prepared!);
-                value = await execute("video", ctx, { ...d, media: d.media.map((m) => m === source ? { ...m, ...prepared } : m) });
-            }
+            else value = await execute("video", ctx, { ...d, replaceSubtitles: true });
             if (!value.video) throw new Error("内容替换未返回视频");
             save({ generated: value.video, phase: "finish" }, true);
             store().patchRecord(ctx.recordId, { result: value.video });
         }
         const generated = await restoreWorkbenchFile(state.generated!);
-        const finished = await localStep("replacement-finish", { video: generated, source }, { ...(state.subtitleMethod ? { subtitleMethod: state.subtitleMethod } : {}), ...(state.regenerateSubtitles !== true ? { subtitleOutput: "editable" } : {}), subtitles: state.regenerateSubtitles !== true ? [] : state.subtitles || [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
+        const finished = await localStep("replacement-finish", { video: generated, source }, { subtitleMethod: "audio-after-generation", subtitles: [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor });
         if (!finished.result?.file) throw new Error("字幕合成未返回视频，已保留内容替换结果");
-        if (state.subtitleMethod && (finished.result.metadata?.subtitleMethod !== state.subtitleMethod || state.regenerateSubtitles !== true && finished.result.metadata?.subtitleOutput !== "editable")) {
+        if (finished.result.metadata?.subtitleMethod !== "audio-after-generation") {
             store().patchRecord(ctx.recordId, { workerJob: undefined });
             throw new Error("字幕服务未按所选方式输出视频，已保留替换结果，请管理员检查服务版本");
         }
@@ -668,10 +658,8 @@ export function useVideoWorkbench(tool: VideoTool) {
         const d = replacementDraft || read(tool);
         if (tool === "content-replace" && stage === "video" && d.replaceSubtitles !== false && !replacementDraft) {
             const cfg = modelConfig("video");
-            if (!isWan30(cfg.videoModel)) {
-                return replacementPipeline(ctx, d);
-            }
-            // wan30-720p 支持联合处理，跳过 pipeline，继续正常生成流程
+            if (d.route !== "model" || !isWan30(cfg.videoModel)) throw new Error("当前模型不支持联合去字幕，请关闭此项，或先使用云端硬字幕去除工具处理原片。");
+            if (d.regenerateSubtitles) return replacementPipeline(ctx, d);
         }
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
             const cfg = viralVideoConfig(d, config),
@@ -911,8 +899,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ? contentReplacementPrompt(
                     d.replacement,
                     d.instructions,
-                    Boolean(replacementDraft),
-                    !replacementDraft && d.replaceSubtitles !== false && isWan30(modelConfig("video").videoModel)
+                    d.replaceSubtitles
                   )
                 : `${d.script}\n实际素材信息：${d.instructions}\n${d.analysis}`;
             const materials = d.media.filter((m) => (tool === "content-replace" ? m.role === "reference" || m.role === (d.replacement === "background" ? "background" : "model") : ["reference", "model", "background"].includes(m.role)));
@@ -985,7 +972,8 @@ export function useVideoWorkbench(tool: VideoTool) {
             const { operation, fields, materials } = subtitleRemoveRequest(read(tool));
             return cloud(ctx, stage, operation, fields, materials);
         }
-        if (stage === "upscale" || stage === "subtitle-remove")
+        if (stage === "subtitle-remove") throw new Error("本地字幕擦除已下线，请使用云端硬字幕去除工具。");
+        if (stage === "upscale")
             return applyWorkerResult(stage, await workerJob(ctx, stage, { video: required(reference, "上传原视频") }, stage === "upscale" ? { scale: d.scale, fps: d.fps } : { regions: d.regions }), ctx.worker);
         throw new Error("未知制作步骤");
     };
@@ -1149,19 +1137,19 @@ export function useVideoWorkbench(tool: VideoTool) {
             const stopped = signal.aborted;
             const detail = stopped ? "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
             const submitted = store().records.find((r) => r.id === id);
-            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.replacementPipeline?.prepared && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
+            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
             }
             store().patchRecord(id, {
                 status:
-                    stopped || (submitted?.replacementPipeline?.prepared && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || (digital && submitted?.workerJob && submitted.status !== "failed") || (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
+                    stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || (digital && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
                         ? "interrupted"
                         : "failed",
                 error: detail,
             });
-            if (submitted?.replacementPipeline?.prepared && error instanceof DOMException && error.name === "AbortError") throw error;
+            if (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") throw error;
             throw new Error(detail);
         }
     };
@@ -1197,12 +1185,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (current.subtitleMode === "manual" && !current.regions.length) throw new Error("手动标记至少需要一个字幕区域");
                 if (current.route === "replicate") {
                     subtitleRemoveRequest(current);
-                } else {
-                    const capabilities = await getWorkerCapabilities(store().worker);
-                    const repair = capabilities.find((item) => item.name === "subtitle-remove");
-                    if (!repair?.available) throw new Error(repair?.reason || "字幕修复引擎未配置");
-                    if (current.subtitleMode === "auto" && !capabilities.find((item) => item.name === "ocr")?.available) throw new Error("自动标记需要启用智能识别服务；也可以切换到手动标记");
-                }
+                } else throw new Error("本地字幕擦除已下线，请使用云端硬字幕去除工具。");
             }
             if (tool === "viral-recreate" && stage === "video") {
                 const error = viralVideoError(read(tool), viralVideoConfig(read(tool), config));

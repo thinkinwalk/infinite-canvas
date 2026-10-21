@@ -6,7 +6,7 @@ const targetNames: Record<ContentReplacementTarget, string> = {
     background: "背景",
 };
 
-export function contentReplacementPrompt(target: ContentReplacementTarget, instructions: string, cleanSubtitles = false, jointCleanSubtitles = false) {
+export function contentReplacementPrompt(target: ContentReplacementTarget, instructions: string, cleanSubtitles = false) {
     const name = targetNames[target];
     const stability =
         target === "person"
@@ -14,12 +14,10 @@ export function contentReplacementPrompt(target: ContentReplacementTarget, instr
             : target === "product"
               ? "替换后的商品在整段视频中保持同一外观、颜色、标识、比例和边缘稳定"
               : "替换后的背景在整段视频中保持连贯，与人物、商品和光线自然衔接";
-    const subtitleRule = cleanSubtitles && jointCleanSubtitles
+    const subtitleRule = cleanSubtitles
         ? "与此同时，去除原视频画面叠加的全部口播字幕，包括每次出现和切换的字幕，补全被字幕遮挡的衣服或背景，不生成新字幕、标题、水印或额外文字。保留场景中的招牌、商标、商品包装和其他真实环境文字。"
-        : cleanSubtitles
-          ? "输入已完成字幕预处理，字幕由后期统一合成；不要生成字幕、标题、水印或新的文字。"
-          : "保留原有字幕的文字、位置和出现时间，不翻译、不改写、不叠加新字幕；不要生成额外文字。";
-    const stabilityWithSubtitle = cleanSubtitles && jointCleanSubtitles && target === "person"
+        : "保留原有字幕的文字、位置和出现时间，不翻译、不改写、不叠加新字幕；不要生成额外文字。";
+    const stabilityWithSubtitle = cleanSubtitles && target === "person"
         ? stability + "，手部自然，去字幕区域连续稳定无残字"
         : stability;
     return [

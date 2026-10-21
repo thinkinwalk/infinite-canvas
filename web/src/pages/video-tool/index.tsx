@@ -12,7 +12,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
-import { type MediaRole, type SubtitleRegion, type SubtitleMarkMode, type VideoTool, type WorkerCapabilities } from "@/types/video-workbench";
+import { type MediaRole, type SubtitleRegion, type VideoTool, type WorkerCapabilities } from "@/types/video-workbench";
 import { getReplicateModels, publicServiceText, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
 import { useUserStore } from "@/stores/use-user-store";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
@@ -32,7 +32,7 @@ const tools: Record<VideoTool, { title: string; description: string }> = {
     "photo-talk": { title: "照片说话", description: "人物照片与音频生成说话视频。" },
     lipsync: { title: "视频对口型", description: "人物视频匹配新的语音与口型。" },
     upscale: { title: "视频高清", description: "使用平台视频增强或增强处理服务提升清晰度，可选择目标分辨率与帧率。" },
-    "subtitle-remove": { title: "硬字幕去除", description: "可使用平台智能服务手动框选去除硬字幕，也可使用增强处理服务进行 OCR 与智能修复。" },
+    "subtitle-remove": { title: "硬字幕去除", description: "通过云端 API 去除硬字幕，手动框选字幕区域，支持 2–10 秒视频。" },
 };
 export default function VideoToolPage() {
     const params = useParams();
@@ -75,13 +75,9 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
     const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
-    const subtitleCapability = capabilities?.find((item) => item.name === "subtitle-remove");
-    const ocrCapability = capabilities?.find((item) => item.name === "ocr");
     const subtitleReady =
         tool !== "subtitle-remove" ||
-        (d.route === "replicate"
-            ? Boolean(reference && d.subtitleMode === "manual" && d.regions.length > 0)
-            : Boolean(reference && subtitleCapability?.available && (d.subtitleMode === "manual" ? d.regions.length > 0 : ocrCapability?.available)));
+        Boolean(d.route === "replicate" && reference && reference.durationMs && reference.durationMs >= 2000 && reference.durationMs <= 10000 && d.subtitleMode === "manual" && d.regions.length > 0);
     const processing = tool === "upscale" || tool === "subtitle-remove";
     const digital = tool === "digital-human";
     const result = d.final || d.edited || d.video;
@@ -126,8 +122,12 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
         }
     };
     useEffect(() => {
-        if (wb.hydrated) void checkService();
-    }, [wb.hydrated, wb.worker.url]);
+        if (wb.hydrated && tool !== "subtitle-remove") void checkService();
+    }, [wb.hydrated, wb.worker.url, tool]);
+    useEffect(() => {
+        if (!wb.hydrated || tool !== "subtitle-remove" || d.route === "replicate" && d.subtitleMode === "manual") return;
+        useVideoWorkbenchStore.getState().patchDraft(tool, { route: "replicate", subtitleMode: "manual" });
+    }, [wb.hydrated, tool, d.route, d.subtitleMode]);
     const checkCloud = async () => {
         try {
             setCloudModels(await getReplicateModels());
@@ -360,7 +360,7 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                                                     options={[
                                                         { value: "replicate", label: "平台智能处理（推荐）" },
                                                         ...(!["subtitle-remove"].includes(tool) ? [{ value: "model", label: "已配置模型与处理服务" }] : []),
-                                                        ...(["content-replace", "digital-human", "upscale", "subtitle-remove"].includes(tool) ? [{ value: "worker", label: "增强处理服务" }] : []),
+                                                        ...(["content-replace", "digital-human", "upscale"].includes(tool) ? [{ value: "worker", label: "增强处理服务" }] : []),
                                                     ]}
                                                 />
                                                 {d.route === "replicate" && (
@@ -371,7 +371,7 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                                             </Space>
                                             {d.route === "replicate" && (
                                                 <div className="mt-3 text-sm" style={{ color: token.colorTextSecondary }}>
-                                                    AI 运算由平台智能服务完成，文案和封面使用当前平台配置。每次创建任务前确认算力点；字幕、剪气口和配乐由处理服务完成。
+                                                    {tool === "subtitle-remove" ? "字幕清理由云端 API 完成，每次创建任务前确认算力点，无需本地字幕修复服务。" : "AI 运算由平台智能服务完成，文案和封面使用当前平台配置。每次创建任务前确认算力点；字幕、剪气口和配乐由处理服务完成。"}
                                                 </div>
                                             )}
                                         </>
@@ -774,38 +774,10 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                         <Card size="small" title={tool === "subtitle-remove" ? "字幕区域" : "框选需要替换的区域"}>
                                     {tool === "subtitle-remove" && (
                                 <>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                        {(["auto", "manual"] as SubtitleMarkMode[]).map((mode) => (
-                                            <Button
-                                                key={mode}
-                                                block
-                                                type={d.subtitleMode === mode ? "primary" : "default"}
-                                                aria-pressed={d.subtitleMode === mode}
-                                                disabled={busy}
-                                                onClick={() => {
-                                                    wb.edit({ subtitleMode: mode }, "finish");
-                                                    setDrawRegions(mode === "manual");
-                                                }}
-                                            >
-                                                {mode === "auto" ? "自动标记 · OCR 识别字幕" : "手动标记 · 框选字幕区域"}
-                                            </Button>
-                                        ))}
-                                    </div>
+                                    <Tag>手动框选字幕区域 · 云端处理</Tag>
                                     <p className="mt-2 text-sm" style={{ color: token.colorTextSecondary }}>
-                                        {d.route === "replicate"
-                                            ? "平台智能服务当前要求手动框选字幕区域，视频需为 2–10 秒；服务器会请求保留原音轨。"
-                                            : d.subtitleMode === "auto"
-                                            ? "上传后按帧识别文字区域；识别结果仍需检查，请先启用智能识别服务。"
-                                              : "放大视频后框选固定字幕区域；适合字幕位置稳定的片段。"}
+                                        在下方视频上框选字幕区域，支持 2–10 秒视频，并请求保留原音轨。请检查成片的残字、背景与音轨。
                                     </p>
-                                    <Space wrap className="mt-3">
-                                        {d.route === "replicate" ? <Tag color="success">平台智能服务：已连接</Tag> : <>
-                                            <Tag color={subtitleCapability?.available ? "success" : "warning"}>
-                                                修复引擎：{subtitleCapability?.available ? "可用" : publicServiceText(subtitleCapability?.reason || "未连接")}
-                                            </Tag>
-                                            <Tag color={ocrCapability?.available ? "success" : "warning"}>OCR：{ocrCapability?.available ? "可用" : publicServiceText(ocrCapability?.reason || "未连接")}</Tag>
-                                        </>}
-                                    </Space>
                                 </>
                             )}
                             {tool !== "subtitle-remove" && (
@@ -889,15 +861,9 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                             {tool === "subtitle-remove" && (
                                 <>
                                     <div className="mt-3">
-                                        {d.route === "replicate"
-                                            ? d.regions.length
-                                                ? "智能服务会把这些固定区域用于整段视频，请检查字幕位置是否稳定。"
-                                                : "请切换到手动标记并在视频上框选至少一个字幕区域。"
-                                            : d.subtitleMode === "auto"
-                                              ? "未手动框选时使用 OCR；需要服务端配置 OCR 引擎。"
-                                              : d.regions.length
-                                                ? "固定区域会覆盖整个视频，请检查时间段内字幕位置是否稳定。"
-                                                : "请在视频上框选至少一个字幕区域。"}
+                                        {reference?.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
+                                            ? "当前云端服务仅支持 2–10 秒视频，请先裁剪素材。"
+                                            : d.regions.length ? "这些固定区域用于整段视频，请检查字幕位置是否稳定。" : "请在视频上框选至少一个字幕区域。"}
                                     </div>
                                     <div className="mt-3">{action("subtitle-remove", "去除硬字幕", true, !subtitleReady)}</div>
                                 </>

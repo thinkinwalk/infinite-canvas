@@ -4,6 +4,11 @@ from replacement import fit_frame_count, plan_segments, validate_generated_timel
 
 
 class ReplacementTimelineTests(unittest.TestCase):
+    def test_preview_threshold_respects_model_capacity_without_cutting_short_video(self):
+        self.assertEqual(len(plan_segments(15, 15, preserve_scenes=False)), 1)
+        self.assertEqual(len(plan_segments(15.01, 15, preserve_scenes=False)), 2)
+        self.assertEqual(len(plan_segments(12, 10, preserve_scenes=False)), 2)
+
     def test_wan_short_video_keeps_one_part_despite_detected_cuts(self):
         cuts = [0.6, 2.866667, 3.233333, 4.933333, 6.6, 8.166667, 9.633333, 10.933333, 12.766667]
         parts = plan_segments(15, 15, cuts, preserve_scenes=False)

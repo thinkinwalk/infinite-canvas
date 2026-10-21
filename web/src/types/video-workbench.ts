@@ -219,7 +219,7 @@ export type VideoRecord = {
     draftPatch?: Partial<VideoDraft>;
     replacementInput?: Pick<VideoDraft, "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "regenerateSubtitles" | "subtitleSize" | "subtitleColor">;
     replacementPipeline?: {
-        subtitleMethod?: "audio-after-generation";
+        subtitleMethod?: "audio-after-generation" | "cloud-joint";
         regenerateSubtitles?: boolean;
         phase: "prepare" | "mask" | "generate" | "finish";
         workerUrl: string;
