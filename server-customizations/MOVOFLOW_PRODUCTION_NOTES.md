@@ -15,11 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.63
-- Current production source: tag v0.19.63, commit ee05f21f91acfeb920389a68aeec6e45ffbd67e3
+- Current production image: infinite-canvas:v0.19.64
+- Current production source: tag v0.19.64, commit 8ea657e5d72cceabfe8a9312cd67950cdaf0f0a2
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.63-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
+
+## v0.19.64 right-side segment preview release
+
+- Released from release/v0.19.60 at commit `8ea657e5d72cceabfe8a9312cd67950cdaf0f0a2`; GitHub release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.64. No merge to main. Segment cards, bounded source/effect players and fee approval now share the right-side current-result workspace. The left panel keeps settings and a compact task entry. Plan-ready copy no longer implies extracted files exist.
+- Server image build succeeded. Image ID `sha256:9b6ef18d91f0e01a854a6053db8c9c2181155f5954ba5cf3a509964067b3b049`; container VERSION and OCI revision match v0.19.64 / 8ea657e. Worker source and running container remain unchanged at v0.19.63-worker. Both containers run with zero restarts.
+- SQLite backup and previous Compose: `/opt/infinite-canvas/backups/v0.19.64-20261021-131119/` (`database.sqlite`, `docker-compose.deploy.yml`, before/after evidence JSON). SQLite quick_check is ok and all 11 table row counts are unchanged. No active jobs were interrupted (replacement: completed 3, paused 1, ready 3; worker: completed 63, failed 5).
+- Internal/external health, ordinary-user authenticated video-worker health gateway and replacement job GET pass. Mounted worker hashes and capabilities match the previous release. Public content-replace page serves `/assets/index-DUdXULdD.js`, containing the right-side preview, source preview, duration/cost explanation and two-stage approval controls.
+- Existing scene boundaries, padding, limits, pricing and generation approvals are unchanged. The reported 151.50-second task has 12 planned parts; the first ends at the 4.93-second scene boundary, uses a 15-second model input and quotes 3360 credits. Its original screenshot represented planning, not completed extraction or generation.
+- Verification covered published resources and read-only connectivity; browser playback/fullscreen, mobile layout and real paid generation remain pending acceptance. No local build/tests or paid generation requests were run during this release.
 
 ## v0.19.63 automatic segmentation and preview release
 
