@@ -666,7 +666,13 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const execute = async (stage: string, ctx: Context, replacementDraft?: VideoDraft): Promise<Partial<VideoDraft>> => {
         const d = replacementDraft || read(tool);
-        if (tool === "content-replace" && stage === "video" && d.replaceSubtitles !== false && !replacementDraft) return replacementPipeline(ctx, d);
+        if (tool === "content-replace" && stage === "video" && d.replaceSubtitles !== false && !replacementDraft) {
+            const cfg = modelConfig("video");
+            if (!isWan30(cfg.videoModel)) {
+                return replacementPipeline(ctx, d);
+            }
+            // wan30-720p 支持联合处理，跳过 pipeline，继续正常生成流程
+        }
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
             const cfg = viralVideoConfig(d, config),
                 labels = viralMaterialLabels(d);
@@ -901,7 +907,14 @@ export function useVideoWorkbench(tool: VideoTool) {
                     "上传替换图片",
                 );
             }
-            const prompt = tool === "content-replace" ? contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)) : `${d.script}\n实际素材信息：${d.instructions}\n${d.analysis}`;
+            const prompt = tool === "content-replace"
+                ? contentReplacementPrompt(
+                    d.replacement,
+                    d.instructions,
+                    Boolean(replacementDraft),
+                    !replacementDraft && d.replaceSubtitles !== false && isWan30(modelConfig("video").videoModel)
+                  )
+                : `${d.script}\n实际素材信息：${d.instructions}\n${d.analysis}`;
             const materials = d.media.filter((m) => (tool === "content-replace" ? m.role === "reference" || m.role === (d.replacement === "background" ? "background" : "model") : ["reference", "model", "background"].includes(m.role)));
             const generation = tool === "content-replace" ? store().records.find((r) => r.id === ctx.recordId)?.replacementPipeline?.generation : undefined;
             const requestConfig = modelConfig("video", generation);
