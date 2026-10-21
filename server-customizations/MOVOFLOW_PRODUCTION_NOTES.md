@@ -15,9 +15,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.64
-- Current production source: tag v0.19.64, commit 8ea657e5d72cceabfe8a9312cd67950cdaf0f0a2
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.63-worker/
+- Current production image: infinite-canvas:v0.19.65
+- Current production source: tag v0.19.65, commit 7f4997bdc90a494ffa947720332b054658d4231c
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.65 selectable segment generation release
+
+- Released from `release/v0.19.60` at commit `7f4997bdc90a494ffa947720332b054658d4231c`; GitHub release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.65. No merge to main. The content replacement workspace now separates preview from generation selection: clicking a segment name only previews its source range, while checkboxes select one or multiple segments and the primary action confirms only that selection.
+- The app image was built on the server as `infinite-canvas:v0.19.65` (`sha256:b2bdb213cb27879428e74b6eb587f4c2b804090cd43c740e5cbb43adeb2b9dcf`). The Worker mounts `/opt/infinite-canvas/releases/v0.19.65-worker/`; its new `replacement-segment` capability exports an effective segment with the corresponding original audio. App and Worker restart counts are zero.
+- SQLite backup and previous Compose are stored at `/opt/infinite-canvas/backups/v0.19.65-20261021-144351/` (`database.sqlite`, `docker-compose.deploy.yml`, `evidence-before.json`, `evidence-after.json`). SQLite `quick_check` passed; all 11 table counts remained unchanged (`users 34`, `credit_logs 15039`, `prompts 1512`, `assets 0`, `settings 2`, `redemption_codes 61`, `video_tasks 37`, `case_apps 22`, `case_runs 22`, `replicate_tasks 33`, `reference_media_owners 192`). No active jobs were interrupted (replacement: completed 3, ready 3, paused 1; worker: completed 63, failed 5).
+- Internal and external health returned `ok`. Worker capabilities `replacement-plan`, `replacement-extract`, `replacement-validate`, `replacement-assemble`, `replacement-segment`, `replacement-finish`, `replacement-transcribe` and `replacement-render-captions` are available. No paid generation was submitted during deployment; browser playback and real selected-segment generation remain pending acceptance.
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
