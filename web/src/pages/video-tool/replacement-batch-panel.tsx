@@ -280,20 +280,16 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={!hydrated || !source || !image || !duration || !size || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
         {!source || !image ? <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{!source ? "请先上传原视频" : "请上传人物参考图"}</p> : (!duration || !size) && <Alert type="warning" title="当前模型尚未配置可用的时长或清晰度，请在高级设置中切换模型。" />}
         {error && <Alert type="warning" showIcon title={publicServiceText(error)} closable onClose={() => setError("")} />}
-        <div className="flex items-center justify-between gap-2">
-            <span className="text-sm">{currentJob ? "当前任务" : "暂无当前任务"}</span>
-            <Button type="text" size="small" onClick={() => setHistoryOpen(true)}>历史任务（{jobs.length}）{activeCount > 0 ? ` · ${activeCount} 项处理中` : ""}</Button>
-        </div>
-        {!currentJob && <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>上传素材创建新任务，或从历史任务中打开已有任务。</p>}
-        {currentJob && <div className="space-y-2 border-t pt-3" style={{ borderColor: colors.colorBorderSecondary }}>
-            <div className="text-sm">{modelLabel(currentJob.model)} · {labels[currentJob.status]}</div>
-            <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{jobStep(currentJob)}</div>
-            <Button block onClick={onOpenWorkspace}>查看分段与预览 →</Button>
-        </div>}
+        {workspace && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
+            <div className="min-w-0">
+                <div className="text-sm font-medium">当前任务{currentJob ? ` · ${labels[currentJob.status]}` : ""}</div>
+                {currentJob ? <div className="mt-1 text-xs" style={{ color: colors.colorTextSecondary }}>{jobStep(currentJob)}{currentJob.parts?.length ? ` · 已完成 ${currentJob.parts.filter((part) => part.validated).length}/${currentJob.parts.length} 段` : ""}</div>
+                    : <div className="mt-1 text-xs" style={{ color: colors.colorTextSecondary }}>{d.replacementJobId ? "正在载入任务详情…" : activeCount ? `${activeCount} 项任务处理中` : "分析并确认费用后，任务会显示在这里"}</div>}
+            </div>
+            <Button size="small" onClick={() => setHistoryOpen(true)}>任务记录（{jobs.length}）</Button>
+        </div>, workspace)}
         {workspace && createPortal((currentJob ? [currentJob] : []).map((job) => <div key={job.id} className="flex flex-col gap-4" aria-label="分段与效果预览">
-            <div className="order-1 text-sm">{modelLabel(job.model)} · {labels[job.status]}</div>
             <div className="order-1"><Dropdown menu={{ items: [{ key: "archive", label: "归档任务", disabled: !canArchive(job), onClick: () => void setArchived(job, true) }, { key: "close", label: "收起当前任务", onClick: () => selectJob() }] }} placement="bottomRight"><Button size="small" type="text">任务操作⌄</Button></Dropdown></div>
-            <div className="order-1 text-sm" style={{ color: colors.colorTextSecondary }}>{jobStep(job)} · 已生成 {job.parts?.filter((p) => p.validated).length || 0}/{job.parts?.length || 0} 段</div>
             {job.planned && <>
                 <div className="order-1 text-sm">整片模型预算 {job.credits} 点 · {job.resolution.replace(/p$/i, "")}p</div>
                 <p className="order-1 m-0 text-xs" style={{ color: colors.colorTextSecondary }}>点片段名称试看原片；勾选框决定生成范围。可只生成一段，也可一次勾选多段。生成时才按需切出文件，不会自动处理未勾选片段。</p>
@@ -356,7 +352,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             </div>
         </div>), workspace)}
         {workspace && d.replacementJobId && !currentJob && createPortal(<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? "任务读取失败，请从历史任务重新打开" : "正在读取分段任务…"} />, workspace)}
-        <Modal title="历史任务" open={historyOpen} onCancel={() => setHistoryOpen(false)} footer={null} width={640}>
+        <Modal title="替换任务记录" open={historyOpen} onCancel={() => setHistoryOpen(false)} footer={null} width={640}>
             <p className="text-sm" style={{ color: colors.colorTextSecondary }}>打开任务后可查看结果或继续处理。归档保留视频和进度，可随时取消；打开或取消归档不会自动开始生成。</p>
             <Segmented value={historyTab} onChange={setHistoryTab} options={[
                 { label: `任务列表（${jobs.filter((job) => !job.archived).length}）`, value: "recent" },

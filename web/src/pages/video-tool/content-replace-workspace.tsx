@@ -810,14 +810,14 @@ export default function ContentReplaceWorkspace() {
                             {!(person && wholeVideo) && submit}
                         </div>
                     </section>
-                    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border lg:overflow-y-auto" style={surface} aria-label="作品区">
+                    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border lg:overflow-y-auto" style={surface} aria-label="任务与作品区">
                         <div className="px-4 pt-2">
                             <Tabs
                                 activeKey={tab}
                                 onChange={setTab}
                                 items={[
-                                    { key: "current", label: "当前结果" },
-                                    { key: "history", label: `本浏览器作品${wb.records.length ? ` (${wb.records.length})` : ""}` },
+                                    { key: "current", label: wholeVideo ? "当前任务" : "当前结果" },
+                                    { key: "history", label: `本地作品${wb.records.length ? ` (${wb.records.length})` : ""}` },
                                     { key: "guide", label: "使用说明" },
                                 ]}
                             />
@@ -896,7 +896,7 @@ export default function ContentReplaceWorkspace() {
                                             </Button>
                                         </div>
                                     )}
-                                    {showBatchWorkspace && <div ref={setBatchWorkspace} />}
+                                    {wholeVideo && !historyPreview && <div ref={setBatchWorkspace} className="space-y-4" />}
                                     {!showBatchWorkspace && <div className="grid flex-1 gap-4 xl:grid-cols-2">
                                         <div className="flex min-w-0 flex-col gap-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                             <div className="text-sm font-medium">原视频</div>
@@ -946,70 +946,35 @@ export default function ContentReplaceWorkspace() {
                                     )}
                                 </>
                             )}
-                            {tab === "history" &&
-                                (wb.records.length ? (
+                            {tab === "history" && <>
+                                <div className="border-b pb-3" style={{ borderColor: token.colorBorderSecondary }}>
+                                    <div className="text-sm font-medium">保存在此浏览器的生成作品</div>
+                                    <div className="mt-1 text-xs" style={muted}>分段进度和可继续处理的任务，请在“当前任务”中查看。</div>
+                                </div>
+                                {wb.records.length ? (
                                     wb.records.map((record) => (
-                                        <article key={record.id} className="space-y-3 rounded-lg border p-4" style={{ borderColor: token.colorBorderSecondary }}>
-                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                                <span>{record.replacementInput ? `换${replacementNames[record.replacementInput.replacement]}` : "内容替换任务"}</span>
-                                                <Tag color={record.status === "completed" ? "success" : record.status === "failed" ? "error" : "processing"}>{recordNames[record.status]}</Tag>
-                                            </div>
-                                            <div className="text-xs" style={muted}>
-                                                {new Date(record.createdAt).toLocaleString()} · {record.step || "等待处理"}
-                                            </div>
-                                            {record.replacementInput && (
-                                                <div className="truncate text-xs" style={muted}>
-                                                    {record.replacementInput.media.find((m) => m.role === "reference")?.name}
+                                        <article key={record.id} className="flex flex-col gap-2 border-b py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
+                                            <div className="min-w-0 space-y-1">
+                                                <div className="flex flex-wrap items-center gap-2 text-sm">
+                                                    <span>{record.replacementInput ? `换${replacementNames[record.replacementInput.replacement]}` : "内容替换"}</span>
+                                                    <Tag color={record.status === "completed" ? "success" : record.status === "failed" ? "error" : "processing"}>{recordNames[record.status]}</Tag>
                                                 </div>
-                                            )}
-                                            {record.error && (
-                                                <Alert
-                                                    type="warning"
-                                                    title={publicServiceText(record.error)}
-                                                    description={record.status === "failed" && record.replicateBilling && (
-                                                        <Tag color={record.replicateBilling.refunded ? "success" : "warning"}>
-                                                            {record.replicateBilling.refunded
-                                                                ? `${record.replicateBilling.credits.toLocaleString()} 算力点已返还`
-                                                                : "平台尚未确认返还算力点"}
-                                                        </Tag>
-                                                    )}
-                                                />
-                                            )}
-                                            <Space wrap>
-                                                {record.result && (
-                                                    <>
-                                                        <Button size="small" onClick={() => void showRecord(record)}>
-                                                            查看作品
-                                                        </Button>
-                                                        <Button size="small" onClick={() => void wb.download(record.result!)}>
-                                                            下载视频
-                                                        </Button>
-                                                    </>
-                                                )}
-                                                {record.status !== "completed" && (record.replicateTask || record.modelTask || record.workerJob || record.replacementPipeline) && (
-                                                    <Button
-                                                        size="small"
-                                                        disabled={locked}
-                                                        onClick={() => {
-                                                            setHistoryPreview(null);
-                                                            setTab("current");
-                                                            void wb.resume(record);
-                                                        }}
-                                                    >
-                                                        {record.replacementPipeline ? "继续处理" : "恢复查询"}
-                                                    </Button>
-                                                )}
-                                                {administrator && record.replicateTask && record.status === "interrupted" && (
-                                                    <Button size="small" disabled={locked} onClick={() => reconcile(record)}>
-                                                        核对平台任务
-                                                    </Button>
-                                                )}
+                                                <div className="text-xs" style={muted}>{new Date(record.createdAt).toLocaleString()} · {record.step || "等待处理"}</div>
+                                                {record.replacementInput && <div className="truncate text-xs" style={muted}>{record.replacementInput.media.find((m) => m.role === "reference")?.name}</div>}
+                                                {record.error && <div className="text-xs" style={{ color: token.colorWarningText }}>{publicServiceText(record.error)}{record.status === "failed" && record.replicateBilling ? ` · ${record.replicateBilling.refunded ? `${record.replicateBilling.credits.toLocaleString()} 算力点已返还` : "平台尚未确认返还算力点"}` : ""}</div>}
+                                            </div>
+                                            <Space wrap className="shrink-0">
+                                                {record.result && <>
+                                                    <Button size="small" onClick={() => void showRecord(record)}>查看作品</Button>
+                                                    <Button size="small" onClick={() => void wb.download(record.result!)}>下载</Button>
+                                                </>}
+                                                {record.status !== "completed" && (record.replicateTask || record.modelTask || record.workerJob || record.replacementPipeline) && <Button size="small" disabled={locked} onClick={() => { setHistoryPreview(null); setTab("current"); void wb.resume(record); }}>{record.replacementPipeline ? "继续处理" : "恢复查询"}</Button>}
+                                                {administrator && record.replicateTask && record.status === "interrupted" && <Button size="small" disabled={locked} onClick={() => reconcile(record)}>核对平台任务</Button>}
                                             </Space>
                                         </article>
                                     ))
-                                ) : (
-                                    <Empty description="本浏览器尚无内容替换记录" />
-                                ))}
+                                ) : <Empty description="此浏览器还没有保存的作品" />}
+                            </>}
                             {tab === "guide" && (
                                 <div className="space-y-5 text-sm">
                                     <h2 className="text-base font-medium">如何替换{replacementNames[d.replacement]}</h2>
