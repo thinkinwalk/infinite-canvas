@@ -15,9 +15,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.66
-- Current production source: tag v0.19.66, commit 123f6d13e0611032df0006ada2f3c5e69b1704ba
+- Current production image: infinite-canvas:v0.19.67
+- Current production source: tag v0.19.67, commit 20e6093d7e1814f774d53c3ceddf32d9011c7967
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.67 content replacement task layout
+
+- Released from `release/v0.19.60` at commit `20e6093d7e1814f774d53c3ceddf32d9011c7967`, tag `v0.19.67`. The current task, segment preview and replacement task history entry are grouped in the right work area; browser-local saved works have a separate label and compact list.
+- The app was built on the production host as `infinite-canvas:v0.19.67`, image ID `sha256:e2adb5a1151bd6740c9be67a9384c9d0962a561c36317b6cb5b7be6218f47416`. Only the `app` Compose service was recreated. The existing video worker kept container ID `f5a12467a87e37b4d20086b144bf27e03cc8aba634c569305be54adf5b9a8a82` and its original start time.
+- SQLite online backup and previous Compose: `/opt/infinite-canvas/backups/v0.19.67-20261021-171516/`. Backup `PRAGMA quick_check` passed; all 11 table row counts matched before and after deployment. No active video or Replicate tasks were present before app restart.
+- Internal and external health returned `ok`; `/video/content-replace` returned HTTP 200 and the served `/assets/index-BTEGU9zf.js` contains「当前任务」「任务记录」「本地作品」. No paid generation was submitted. Real account browser interaction remains pending user acceptance.
 
 ## v0.19.66 selected segment compatibility fix
 
