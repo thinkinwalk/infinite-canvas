@@ -14,6 +14,14 @@ export function contentReplacementPrompt(target: ContentReplacementTarget, instr
             : target === "product"
               ? "替换后的商品在整段视频中保持同一外观、颜色、标识、比例和边缘稳定"
               : "替换后的背景在整段视频中保持连贯，与人物、商品和光线自然衔接";
+    const subtitleRule = cleanSubtitles && jointCleanSubtitles
+        ? "与此同时，去除原视频画面叠加的全部口播字幕，包括每次出现和切换的字幕，补全被字幕遮挡的衣服或背景，不生成新字幕、标题、水印或额外文字。保留场景中的招牌、商标、商品包装和其他真实环境文字。"
+        : cleanSubtitles
+          ? "输入已完成字幕预处理，字幕由后期统一合成；不要生成字幕、标题、水印或新的文字。"
+          : "保留原有字幕的文字、位置和出现时间，不翻译、不改写、不叠加新字幕；不要生成额外文字。";
+    const stabilityWithSubtitle = cleanSubtitles && jointCleanSubtitles && target === "person"
+        ? stability + "，手部自然，去字幕区域连续稳定无残字"
+        : stability;
     return [
         `这是对视频1的局部${name}替换，图片1用于确定新${name}的外观，不是重新创作视频。`,
         target === "person"
@@ -23,14 +31,6 @@ export function contentReplacementPrompt(target: ContentReplacementTarget, instr
               : "仅替换背景环境，以图片1的场景为准；保留原片人物、脸部、发型、服装、商品及动作，保持前后景遮挡和接触关系，背景随原镜头自然运动。",
         "保持原视频的镜头顺序、构图、景别、时长、剪辑节奏、运镜及音频。不要新增镜头、拉伸画幅或改变播放速度。",
         `除目标${name}及用户明确要求的改动外，保留其他画面内容；不要镜像、改写或重画招牌、商标、价格和环境文字。`,
-    const subtitleRule = cleanSubtitles && jointCleanSubtitles
-        ? "与此同时，去除原视频画面叠加的全部口播字幕，包括每次出现和切换的字幕，补全被字幕遮挡的衣服或背景，不生成新字幕、标题、水印或额外文字。保留场景中的招牌、商标、商品包装和其他真实环境文字。"
-        : cleanSubtitles
-          ? "输入已完成字幕预处理，字幕由后期统一合成；不要生成字幕、标题、水印或新的文字。"
-          : "保留原有字幕的文字、位置和出现时间，不翻译、不改写、不叠加新字幕；不要生成额外文字。";
-    const stabilityWithSubtitle = cleanSubtitles && jointCleanSubtitles && target === "person"
-        ? stability + "，手部自然，去字幕区域连续稳定无残字"
-        : stability;
         subtitleRule,
         target === "product" ? "上述字幕约束仅指画面叠加文字；新商品本身的包装与商标以参考图为准，不把包装文字当作字幕擦除。" : "",
         stabilityWithSubtitle + "。",
