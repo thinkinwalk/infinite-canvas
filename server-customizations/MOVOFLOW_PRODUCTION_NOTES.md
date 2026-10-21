@@ -15,9 +15,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.65
-- Current production source: tag v0.19.65, commit 7f4997bdc90a494ffa947720332b054658d4231c
+- Current production image: infinite-canvas:v0.19.66
+- Current production source: tag v0.19.66, commit 123f6d13e0611032df0006ada2f3c5e69b1704ba
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.66 selected segment compatibility fix
+
+- Released from `release/v0.19.60` at commit `123f6d13e0611032df0006ada2f3c5e69b1704ba`; GitHub release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.66. Preserves selectable one/many segment generation and ensures existing first-preview tasks remain viewable/downloadable without quoting that already-paid segment again.
+- App image: `infinite-canvas:v0.19.66`, image ID `sha256:f039205de3131ea1f0103f374d616eac26c1ac51b438df8ccf459253de942baf`. Worker remains mounted from `/opt/infinite-canvas/releases/v0.19.65-worker/`; it already provides the required `replacement-segment` operation, so it was not restarted.
+- SQLite backup and previous Compose: `/opt/infinite-canvas/backups/v0.19.66-20261021-145714/`. `quick_check` passed; all 11 table counts match v0.19.65. There were no active jobs at deployment (replacement: completed 3, ready 3, paused 1; worker: completed 63, failed 5).
+- Internal/external health returned `ok`. The public page serves `/assets/index-D-9flOrq.js`; the deployed bundle contains the segment selection, single-clip download and resume labels. No paid generation was submitted. Browser interaction remains pending user acceptance.
 
 ## v0.19.65 selectable segment generation release
 
