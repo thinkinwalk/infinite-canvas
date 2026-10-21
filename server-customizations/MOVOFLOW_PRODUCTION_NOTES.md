@@ -16,16 +16,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
 - Current production image: infinite-canvas:v0.19.63
-- Current production source: tag v0.19.63 (deployment verification below)
+- Current production source: tag v0.19.63, commit ee05f21f91acfeb920389a68aeec6e45ffbd67e3
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.63-worker/
 
 Do not commit private key material. The key path above is recorded only so future local Codex sessions can connect through the existing workstation key.
 
 ## v0.19.63 automatic segmentation and preview release
 
-- Release prepared from the current release branch; deploy app and worker together. Long videos require a paid first-segment preview and explicit approval of remaining cost before continuing; successful first output is reused for final assembly.
+- Released from release/v0.19.60 at commit `ee05f21f91acfeb920389a68aeec6e45ffbd67e3`; app and worker deployed together. GitHub release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.63. No merge to main. Long videos require a paid first-segment preview and explicit approval of remaining cost before continuing; successful first output is reused for final assembly.
 - Cloud subtitle cleanup replaces the disabled legacy CPU pre-clean path. Resolution, subtitle controls and result tabs remain available.
-- Deployment verification and backup paths will be recorded after switching. Real paid generation and browser interaction remain pending acceptance.
+- Server image build succeeded. Image ID `sha256:0e8703e980330dec07e9dc13c2573c45505ff05193126988273fa0232fe31c61`; container VERSION and OCI revision match v0.19.63 / ee05f21. Both containers run with zero restarts.
+- SQLite backup and previous Compose: `/opt/infinite-canvas/backups/v0.19.63-20261021-120648/` (`database.sqlite`, `docker-compose.deploy.yml`). Before/after evidence JSON is saved there. SQLite quick_check is ok and all 11 table row counts are unchanged. No active jobs were interrupted (replacement: completed 3, paused 1, ready 2; worker: completed 62, failed 5).
+- Internal/external health, ordinary-user authenticated video-worker health gateway and replacement job GET pass. All versioned mounted worker Python hashes match the tagged source; plan/extract/validate/assemble/finish/transcribe/render-captions are available, while legacy CPU subtitle cleanup capabilities are disabled as intended.
+- Public content-replace page serves `/assets/index-BxMju3Nm.js`, containing split consent, first-preview-complete and continue-after-approval controls. This verifies published resources and read-only connectivity; browser clicks and real paid generation remain pending acceptance. No local build/tests or paid requests were run during this release.
 - The existing untracked quick-deploy helper still assumes a GHCR image and db.sqlite. Use the actual app image and DATABASE_DSN; snapshot SQLite with its backup API and preserve Compose before switching the app image and versioned worker source mounts.
 
 ## v0.19.61 subtitle regeneration release

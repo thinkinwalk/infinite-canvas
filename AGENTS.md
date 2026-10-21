@@ -87,10 +87,10 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`（部署目录，只含配置和数据），完整源码仓库在 `/opt/infinite-canvas-repo`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产版本为 `infinite-canvas:v0.19.63`（源码 tag `v0.19.63`），使用服务器本地构建的镜像；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产版本为 `infinite-canvas:v0.19.63`（源码 tag `v0.19.63`，提交 `ee05f21`），使用服务器本地构建的镜像；发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 部署采用服务器本地构建方式，源码仓库位于 `/opt/infinite-canvas-repo`，不依赖 GitHub Actions 和 GHCR。
-- 生产部署不依赖 GitHub Actions，直接在服务器上从源码构建：执行 `/opt/infinite-canvas-repo/quick-deploy.sh [版本tag]` 即可完成代码更新、镜像构建、数据库备份、服务重启和健康检查全流程。
-- 本地快速发布和部署：`./scripts/release-and-deploy.sh` 完成版本创建、提交、推送和服务器部署全流程；仅部署已有版本用 `./scripts/deploy.sh [版本]`。
+- 生产部署不依赖 GitHub Actions：服务器检出发布 tag 并构建版本化镜像，按下述核对与备份要求更新 Compose，分别更新 app 与 video-worker，再验证内外健康、普通用户处理服务网关及静态资源版本。
+- 使用 `scripts/release-and-deploy.sh` 或 `scripts/deploy.sh` 前先审查脚本：不得在发布分支上误推 main，也不能漏部署 Worker 源码。本轮按实际配置执行受控部署，备份位置见生产交接记录。
 - 部署前必须核对 Compose 实际镜像、Worker 挂载版本及 `DATABASE_DSN`；现有 quick-deploy 脚本仍含旧 GHCR 镜像替换与 db.sqlite 路径，未修正前不能直接依赖它。实际数据库为 `/opt/infinite-canvas/data/infinite-canvas.db`，使用 `sqlite3.backup` 并校验 `quick_check`，备份同时保存 Compose；Worker 有改动时须同步更新版本化源码挂载。
 - Fork 仓库的 GitHub Actions 可能被禁用或跳过，不影响生产部署；生产镜像在服务器端直接构建，不依赖 Actions 或 GHCR 推送。
 - 生产健康检查优先使用 `https://studio.lingzhouai.com/api/health`；本机容器侧可用 `http://127.0.0.1:3002/api/health`。
