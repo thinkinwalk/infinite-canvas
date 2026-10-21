@@ -33,7 +33,7 @@ export type ReplacementJob = {
     archived?: boolean;
     previousResults?: string[];
     createdAt: string;
-    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; taskId?: string; generated?: string; credits: number }[] | null;
+    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; input?: string; taskId?: string; generated?: string; credits: number }[] | null;
 };
 export type ReplacementCaption = { start: number; end: number; text: string };
 

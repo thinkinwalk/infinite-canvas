@@ -50,6 +50,7 @@ export default function ContentReplaceWorkspace() {
     const [checking, setChecking] = useState(false);
     const [serviceRevision, setServiceRevision] = useState(0);
     const [tab, setTab] = useState("current");
+    const [batchWorkspace, setBatchWorkspace] = useState<HTMLDivElement | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [assetRole, setAssetRole] = useState<{ role: MediaRole; accept: string } | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -77,6 +78,7 @@ export default function ContentReplaceWorkspace() {
     const longVideo = Boolean(reference?.durationMs && reference.durationMs > longVideoPreviewThresholdMs);
     // All full-person edits share one durable flow; short face swaps keep their direct request.
     const wholeVideo = person && cloud && (!headSwap || longVideo) && !d.maskedPerson;
+    const showBatchWorkspace = wholeVideo && Boolean(d.replacementJobId) && !historyPreview;
     const locked = busy || uploading || repairingSource || trimming;
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
@@ -635,7 +637,7 @@ export default function ContentReplaceWorkspace() {
                                     {publicServiceText(unavailable || (cloud ? model?.billingDescription || "平台按当前规格计费" : "按当前处理方式执行"))}
                                 </div>
                             </div>}
-                            {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} />}
+                            {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} workspace={batchWorkspace} onOpenWorkspace={() => { setTab("current"); setHistoryPreview(null); }} />}
                             {!(person && wholeVideo) && <Collapse
                                 size="small"
                                 items={[
@@ -894,7 +896,8 @@ export default function ContentReplaceWorkspace() {
                                             </Button>
                                         </div>
                                     )}
-                                    <div className="grid flex-1 gap-4 xl:grid-cols-2">
+                                    {showBatchWorkspace && <div ref={setBatchWorkspace} />}
+                                    {!showBatchWorkspace && <div className="grid flex-1 gap-4 xl:grid-cols-2">
                                         <div className="flex min-w-0 flex-col gap-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                             <div className="text-sm font-medium">原视频</div>
                                             {previewSource ? (
@@ -915,7 +918,7 @@ export default function ContentReplaceWorkspace() {
                                                 </div>
                                             )}
                                         </div>
-                                    </div>
+                                    </div>}
                                     {sourcePreviewError && !historyPreview && (
                                         <Alert type="warning" showIcon title="原视频编码不兼容" description="可转换为兼容的 MP4 后继续预览；转换失败会保留原素材。" action={<Button size="small" loading={repairingSource} disabled={locked} onClick={() => void repairSource()}>修复视频预览</Button>} />
                                     )}
@@ -936,7 +939,7 @@ export default function ContentReplaceWorkspace() {
                                                 </>
                                             )}
                                         </Space>
-                                    ) : (
+                                    ) : !showBatchWorkspace && (
                                         <div className="text-xs" style={muted}>
                                             先选替换对象，再上传原视频与对应参考图。作品与草稿保存在当前浏览器。
                                         </div>

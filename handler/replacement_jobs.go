@@ -901,7 +901,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			job.Credits += price
 		}
 		job.Planned = true
-		job.Status, job.Step = "ready", "分段完成，等待确认整片模型费用"
+		job.Status, job.Step = "ready", "分段计划已就绪，等待确认生成费用"
 		return saveReplacement(job)
 	}
 	// A saved first part must never allow a restart to bypass preview approval.
