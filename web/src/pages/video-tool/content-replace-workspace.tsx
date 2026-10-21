@@ -560,7 +560,7 @@ export default function ContentReplaceWorkspace() {
                                 />
                             </label>}
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
-                            {wholeVideo && longVideo && <Alert showIcon type="info" title={`视频长 ${((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，超过 15 秒，需要分段处理。`} description="系统自动切分。先看整片费用，再生成第一段预览；你确认效果后才处理其余片段并合并。" />}
+                            {wholeVideo && longVideo && <Alert showIcon type="info" title={`视频长 ${((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，需要分段处理。`} description="系统先分析分段和费用；你可以只勾选一段试效果，也可以一次勾选多段生成，未勾选的片段不会处理。" />}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">

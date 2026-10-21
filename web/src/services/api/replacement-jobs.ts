@@ -10,6 +10,8 @@ export type ReplacementJob = {
     error?: string;
     credits: number;
     planned: boolean;
+    selectionMode?: boolean;
+    selectedParts?: number[];
     previewRequired: boolean;
     previewReady: boolean;
     previewApproved: boolean;
@@ -33,7 +35,7 @@ export type ReplacementJob = {
     archived?: boolean;
     previousResults?: string[];
     createdAt: string;
-    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; input?: string; taskId?: string; generated?: string; credits: number }[] | null;
+    parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; validated: boolean; submitted: boolean; input?: string; taskId?: string; generated?: string; result?: string; credits: number }[] | null;
 };
 export type ReplacementCaption = { start: number; end: number; text: string };
 
@@ -55,6 +57,7 @@ export const createReplacementJob = (input: {
     prompt: string; subtitles: boolean; regenerateSubtitles?: boolean; subtitleSize: number; subtitleColor: string; previewRequired?: boolean;
 }) => request<ReplacementJob>("", input);
 export const startReplacementJob = (job: ReplacementJob, approvePreview = false) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits, ...(approvePreview ? { approvePreview: true, previewResult: job.previewResult } : {}) });
+export const generateReplacementParts = (job: ReplacementJob, parts: number[], expectedCredits: number) => request<ReplacementJob>(`/${job.id}/generate-parts`, { parts, expectedCredits });
 export const pauseReplacementJob = (id: string) => request<{ message: string }>(`/${id}/pause`, {});
 export const archiveReplacementJob = (id: string, archived: boolean) => request<ReplacementJob>(`/${id}/${archived ? "archive" : "unarchive"}`, {});
 

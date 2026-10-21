@@ -42,6 +42,7 @@ type replacementPart struct {
 	Submitted     bool             `json:"submitted"`
 	Generated     string           `json:"generated,omitempty"`
 	Validated     bool             `json:"validated"`
+	Result        string           `json:"result,omitempty"`
 	PreviousTasks []string         `json:"previousTasks,omitempty"`
 	Captions      []map[string]any `json:"captions,omitempty"`
 	Credits       int              `json:"credits"`
@@ -81,6 +82,8 @@ type replacementJob struct {
 	Credits             int                  `json:"credits"`
 	Parts               []replacementPart    `json:"parts"`
 	Planned             bool                 `json:"planned"`
+	SelectionMode       bool                 `json:"selectionMode"`
+	SelectedParts       []int                `json:"selectedParts,omitempty"`
 	PreviewRequired     bool                 `json:"previewRequired"`
 	PreviewReady        bool                 `json:"previewReady"`
 	PreviewApproved     bool                 `json:"previewApproved"`
@@ -665,6 +668,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		}
 		part.PreviousTasks = append(part.PreviousTasks, part.TaskID)
 		part.Credits, part.TaskID, part.Generated, part.Submitted, part.Validated = price, "", "", false, false
+		part.Result = ""
 		if input.Part == 0 && job.PreviewRequired && !job.PreviewApproved {
 			job.PreviewReady, job.PreviewResult = false, ""
 		}
@@ -687,6 +691,39 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			return
 		}
 		OK(w, job)
+		return
+	}
+	if action == "generate-parts" {
+		var input struct {
+			Parts           []int `json:"parts"`
+			ExpectedCredits int   `json:"expectedCredits"`
+		}
+		if json.NewDecoder(r.Body).Decode(&input) != nil {
+			Fail(w, "请选择需要生成的片段")
+			return
+		}
+		if !c.running.CompareAndSwap(false, true) {
+			Fail(w, "任务正在运行，请等待或先暂停")
+			return
+		}
+		job, err = loadReplacement(id, user.ID)
+		if err == nil {
+			err = selectReplacementParts(&job, input.Parts, input.ExpectedCredits)
+		}
+		if err != nil {
+			c.running.Store(false)
+			Fail(w, err.Error())
+			return
+		}
+		c.pause.Store(false)
+		job.Status, job.Error = "running", ""
+		if err := saveReplacement(&job); err != nil {
+			c.running.Store(false)
+			Fail(w, "保存所选片段失败")
+			return
+		}
+		OK(w, job)
+		go runReplacement(service.WithUser(context.Background(), user), job, false)
 		return
 	}
 	if action != "start" {
@@ -742,6 +779,55 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 	}
 	OK(w, job)
 	go runReplacement(service.WithUser(context.Background(), user), job, !job.Planned)
+}
+
+// A selection is an explicit spending boundary, persisted before any paid call.
+func selectReplacementParts(job *replacementJob, indices []int, expected int) error {
+	if job.Archived || !job.Planned || job.Status == "completed" {
+		return fmt.Errorf("任务状态已变化，请刷新")
+	}
+	// Older preview jobs already have an independently finished first clip;
+	// expose it to the new selection flow without charging or regenerating it.
+	if len(job.Parts) > 0 && job.Parts[0].Result == "" && job.Parts[0].Validated && job.PreviewResult != "" {
+		job.Parts[0].Result = job.PreviewResult
+	}
+	seen := make(map[int]bool)
+	credits := 0
+	for _, index := range indices {
+		if index < 0 || index >= len(job.Parts) || seen[index] {
+			return fmt.Errorf("片段选择无效，请刷新后重新选择")
+		}
+		seen[index] = true
+		part := job.Parts[index]
+		if part.Validated && part.Result != "" {
+			continue
+		}
+		if !part.Submitted && !part.Validated {
+			credits += part.Credits
+		}
+	}
+	allComplete := true
+	for index, part := range job.Parts {
+		allComplete = allComplete && part.Validated
+		// Keep the in-flight reversible step and any paid submission recoverable.
+		started := part.Submitted || strings.HasPrefix(job.WorkerStep, strconv.Itoa(index)+":")
+		if started && (!part.Validated || job.SelectionMode && part.Result == "") && !seen[index] {
+			return fmt.Errorf("请保留第 %d 段以恢复已有处理，不会重新提交已收费任务", index+1)
+		}
+	}
+	if len(indices) == 0 && !allComplete || credits != expected {
+		return fmt.Errorf("所选片段或报价已变化，请重新核对")
+	}
+	// Resume the saved worker step before switching to another segment.
+	ordered := append([]int{}, indices...)
+	for i, index := range ordered {
+		if strings.HasPrefix(job.WorkerStep, strconv.Itoa(index)+":") {
+			ordered[0], ordered[i] = ordered[i], ordered[0]
+			break
+		}
+	}
+	job.SelectionMode, job.SelectedParts = true, ordered
+	return nil
 }
 
 func validateReplacementRequest(ctx context.Context, job *replacementJob) error {
@@ -817,7 +903,7 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 	if err := replacementWorkerJSON(ctx, "GET", "/health", nil, &health); err != nil {
 		return err
 	}
-	needed := []string{"replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-finish"}
+	needed := []string{"replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment", "replacement-finish"}
 	if job.Subtitles {
 		if job.RegenerateSubtitles {
 			needed = append(needed, "replacement-transcribe", "replacement-render-captions")
@@ -905,26 +991,54 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		return saveReplacement(job)
 	}
 	// A saved first part must never allow a restart to bypass preview approval.
-	if job.PreviewRequired && !job.PreviewApproved && len(job.Parts) > 0 && job.Parts[0].Validated {
+	if !job.SelectionMode && job.PreviewRequired && !job.PreviewApproved && len(job.Parts) > 0 && job.Parts[0].Validated {
 		return finishReplacementPreview(ctx, job)
 	}
-	for index := range job.Parts {
+	indices := job.SelectedParts
+	if !job.SelectionMode {
+		indices = make([]int, len(job.Parts))
+		for i := range indices {
+			indices[i] = i
+		}
+	}
+	for _, index := range indices {
 		if replacementControlFor(job.ID).pause.Load() {
 			return fmt.Errorf("已暂停，成功片段和当前任务编号已保留")
 		}
 		part := &job.Parts[index]
-		if part.Validated {
+		if part.Validated && (!job.SelectionMode || part.Result != "") {
 			continue
 		}
 		job.Step = fmt.Sprintf("处理第 %d / %d 段", index+1, len(job.Parts))
 		if err := saveReplacement(job); err != nil {
 			return err
 		}
-		if err := executeReplacementPart(ctx, job, index); err != nil {
-			return err
+		if !part.Validated {
+			if err := executeReplacementPart(ctx, job, index); err != nil {
+				return err
+			}
 		}
-		if job.PreviewRequired && !job.PreviewApproved {
+		if job.SelectionMode && part.Result == "" {
+			result, err := replacementWorkerStep(ctx, job, strconv.Itoa(index)+":export", "replacement-segment", map[string]any{"source": job.Source, "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
+			if err != nil {
+				return err
+			}
+			if err := saveWorkerOwner(job.UserID, "media", result.File); err != nil {
+				return err
+			}
+			part.Result = result.File
+			if err := saveReplacement(job); err != nil {
+				return err
+			}
+		}
+		if !job.SelectionMode && job.PreviewRequired && !job.PreviewApproved {
 			return finishReplacementPreview(ctx, job)
+		}
+	}
+	for _, part := range job.Parts {
+		if !part.Validated {
+			job.Status, job.Step, job.Error = "ready", "所选片段已完成，可查看效果或继续勾选其他片段", ""
+			return saveReplacement(job)
 		}
 	}
 	if replacementControlFor(job.ID).pause.Load() {
@@ -1035,6 +1149,7 @@ func finishReplacementPreview(ctx context.Context, job *replacementJob) error {
 	if err := saveWorkerOwner(job.UserID, "media", job.PreviewResult); err != nil {
 		return err
 	}
+	job.Parts[0].Result = job.PreviewResult
 	job.PreviewReady, job.Status, job.Step = true, "preview", "预览片段已完成，请确认效果后继续"
 	return saveReplacement(job)
 }

@@ -111,7 +111,7 @@ def capabilities():
         {"name": "voice-clone", "available": bool(os.environ.get("COSYVOICE_URL") and os.environ.get("COSYVOICE_SAMPLE_RATE")), "reason": "需要部署 CosyVoice HTTP 服务并配置实际输出采样率"},
         {"name": "ocr", "available": ocr, "reason": "需要安装 PaddlePaddle 与 PaddleOCR"},
         {"name": "replacement-prepare", "available": False, "reason": "CPU 字幕预清理已下线，请使用云端联合处理"},
-        *[{"name": operation, "available": ffmpeg and bool(FFPROBE), "reason": "需要 FFmpeg 和 FFprobe"} for operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble")],
+        *[{"name": operation, "available": ffmpeg and bool(FFPROBE), "reason": "需要 FFmpeg 和 FFprobe"} for operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment")],
         {"name": "replacement-finish", "available": ffmpeg and bool(FFPROBE), "reason": "自动字幕合成需要 FFmpeg"},
         {"name": "replacement-masked-composite", "available": ffmpeg and bool(FFPROBE), "reason": "局部替换合成需要 FFmpeg 和 FFprobe"},
         {"name": "replacement-subtitles-v2", "available": False, "reason": "旧字幕清理流程已下线，请使用云端联合处理"},
@@ -222,6 +222,16 @@ def validate_options(request: JobRequest):
                 if not isinstance(request.inputs.get("source"), str):
                     raise ValueError("请提供保留音轨与时间轴的原视频")
                 validate_segments(request.options.get("subtitles", []))
+        if request.operation == "replacement-segment":
+            try:
+                start, end, trim_start = (float(request.options[key]) for key in ("start", "end", "trimStart"))
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("单段导出范围不正确")
+            if not all(math.isfinite(value) for value in (start, end, trim_start)) or start < 0 or end <= start or trim_start < 0:
+                raise ValueError("单段导出范围不正确")
+            for key in ("source", "video", "input"):
+                if not isinstance(request.inputs.get(key), str) or not request.inputs[key]:
+                    raise ValueError("单段导出需要原视频、模型输入和生成视频")
         if request.operation == "replacement-masked-composite":
             for key in ("source", "video", "mask"):
                 if not isinstance(request.inputs.get(key), str):
@@ -709,7 +719,7 @@ async def run_job(identifier: str, request: JobRequest):
         inputs = {key: [media_path(item) for item in value] if isinstance(value, list) else media_path(value) for key, value in request.inputs.items()}
         operation = request.operation
         result = {}
-        if operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble"):
+        if operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment"):
             result = await process_replacement(operation, identifier, inputs, options, work, ffmpeg=ffmpeg, probe_video=probe_video, publish=publish)
         elif operation == "frames":
             source = inputs["video"]

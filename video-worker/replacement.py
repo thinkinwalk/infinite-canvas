@@ -142,6 +142,28 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
         generated = await probe_video(identifier, source)
         validate_generated_timeline(original, generated)
         return {"metadata": {"timelineChecked": True, "identityChecked": False}}
+    if operation == "replacement-segment":
+        original = await probe_video(identifier, inputs["source"])
+        model_input = await probe_video(identifier, inputs["input"])
+        generated = await probe_video(identifier, source)
+        validate_generated_timeline(model_input, generated)
+        start, end, trim = (float(options[k]) for k in ("start", "end", "trimStart"))
+        if not all(math.isfinite(v) for v in (start, end, trim)) or start < 0 or end <= start or end > original["duration"] or trim < 0 or trim + end - start > model_input["duration"]:
+            raise ValueError("单段导出范围不正确")
+        frames = round(end * original["fps"]) - round(start * original["fps"])
+        if frames <= 0:
+            raise ValueError("片段没有有效画面帧")
+        duration = frames / original["fps"]
+        output = work / "segment.mp4"
+        # Export only the manifest's effective range, with the corresponding
+        # original audio. Keep the padded generation for full assembly.
+        await ffmpeg(identifier, "-ss", trim, "-i", source, "-ss", start, "-i", inputs["source"],
+                     "-map", "0:v:0", "-map", "1:a?", "-vf",
+                     f"trim=start={trim},setpts=PTS-STARTPTS,fps={original['fps']}",
+                     "-frames:v", frames, "-t", duration, "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                     "-c:a", "aac", "-movflags", "+faststart", output)
+        validate_generated_timeline({**original, "duration": duration}, await probe_video(identifier, output))
+        return {"file": publish(output), "metadata": {"timelineChecked": True, "identityChecked": False}}
     if operation == "replacement-assemble":
         info = await probe_video(identifier, source)
         parts, videos = options["parts"], inputs["parts"]
