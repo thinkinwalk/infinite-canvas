@@ -57,6 +57,19 @@ class ReplacementMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info["duration"], plan["metadata"]["duration"])
         self.assertFalse(info["audio"])
 
+    async def test_assembly_fits_standard_generated_canvas_without_stretching(self):
+        source, generated = self.root / "source.mp4", self.root / "generated.mp4"
+        for path, size in ((source, "544x960"), (generated, "720x1280")):
+            await self.ffmpeg("test", "-f", "lavfi", "-i", f"color=c=red:s={size}:r=30:d=1", "-an", "-c:v", "libx264", path)
+        await self.operation("replacement-validate", {"video": generated, "source": source}, {})
+        part = {"start": 0, "end": 1, "trimStart": 0, "seconds": 1}
+        final = await self.operation("replacement-assemble", {"video": source, "parts": [generated]}, {"parts": [part]})
+        info = await self.probe_video("test", final["file"])
+        self.assertEqual(info["size"], (544, 960))
+        self.assertEqual(info["duration"], 1)
+        raw, _ = await self.command("test", [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", final["file"], "-vf", "crop=2:960:0:0,signalstats,metadata=print:file=-", "-frames:v", "1", "-f", "null", "-"])
+        self.assertIn("lavfi.signalstats.YAVG=16", raw)
+
     async def test_short_shot_is_padded_then_restored_to_original_length(self):
         source = self.root / "short.mp4"
         await self.ffmpeg("test", "-f", "lavfi", "-i", "color=c=red:s=160x96:r=25:d=0.12", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.12", "-c:v", "libx264", "-c:a", "aac", source)

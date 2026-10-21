@@ -1,6 +1,6 @@
 import unittest
 
-from replacement import fit_frame_count, plan_segments, validate_masked_generation, validate_timeline
+from replacement import fit_frame_count, plan_segments, validate_generated_timeline, validate_masked_generation, validate_timeline
 
 
 class ReplacementTimelineTests(unittest.TestCase):
@@ -51,6 +51,16 @@ class ReplacementTimelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_timeline(source, {**source, **changed})
         validate_timeline(source, {**source, "fps": 25, "size": (720, 1280), "duration": 10.02})
+
+    def test_generated_canvas_allows_standard_size_without_relaxing_duration_or_orientation(self):
+        source = {"duration": 10, "fps": 30, "size": (544, 960)}
+        generated = {**source, "size": (720, 1280)}
+        validate_generated_timeline(source, generated)
+        with self.assertRaises(ValueError):
+            validate_timeline(source, generated)
+        for changed in ({"size": (1280, 720)}, {"size": (720, 720)}, {"size": (0, 1280)}, {"duration": 9}, {"fps": 0}):
+            with self.assertRaises(ValueError):
+                validate_generated_timeline(source, {**generated, **changed})
 
     def test_masked_generation_tolerates_model_size_and_tail_padding_only(self):
         source = {"duration": 5.0, "fps": 30, "size": (480, 848)}

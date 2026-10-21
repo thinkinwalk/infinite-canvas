@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from PIL import Image, ImageDraw
 from pydantic import BaseModel
 import remote_subtitles
-from replacement import fit_frame_count, probe as probe_replacement_video, process as process_replacement, validate_masked_generation, validate_timeline
+from replacement import fit_frame_count, probe as probe_replacement_video, process as process_replacement, validate_generated_timeline, validate_masked_generation, validate_timeline
 from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
 from replacement_subtitles import caption_lane_boxes, locate_caption_masks, audio_captions
 from replacement_masks import composite_masked_frames, validate_mask_frames
@@ -878,7 +878,7 @@ async def run_job(identifier: str, request: JobRequest):
             source, generated = inputs["source"], inputs["video"]
             output_info = await probe_video(identifier, generated)
             source_info = await probe_video(identifier, source)
-            validate_timeline(source_info, output_info)
+            validate_generated_timeline(source_info, output_info)
             captions = options.get("subtitles", [])
             editable = options.get("subtitleOutput") == "editable"
             if editable and not source_info["audio"]:
@@ -900,7 +900,11 @@ async def run_job(identifier: str, request: JobRequest):
             update_job(identifier, step="恢复原音轨并合成字幕")
             output = work / "final.mp4"
             await ffmpeg(identifier, *arguments, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", output)
-            validate_timeline(source_info, await probe_video(identifier, output))
+            final_info = await probe_video(identifier, output)
+            validate_generated_timeline(source_info, final_info)
+            validate_timeline(output_info, final_info)
+            if final_info["size"] != output_info["size"]:
+                raise ValueError("后处理改变了生成画布尺寸，已停止合成")
             result = {"file": publish(output), "segments": captions, "metadata": {"identityChecked": False, "timelineChecked": True, "subtitleMethod": options.get("subtitleMethod", "speech-matched-ocr"), "subtitleOutput": "editable" if editable else "burned-in"}}
         elif operation == "replacement-masked-composite":
             source, generated, mask = inputs["source"], inputs["video"], inputs["mask"]
@@ -967,7 +971,7 @@ async def run_job(identifier: str, request: JobRequest):
             generated, source = inputs["video"], inputs["source"]
             output_info = await probe_video(identifier, generated)
             source_info = await probe_video(identifier, source)
-            validate_timeline(source_info, output_info)
+            validate_generated_timeline(source_info, output_info)
             captions = options.get("subtitles", [])
             validate_segments(captions)
             previous_end = 0
@@ -982,7 +986,11 @@ async def run_job(identifier: str, request: JobRequest):
             escaped = str(subtitle).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
             output = work / "captioned.mp4"
             await ffmpeg(identifier, "-i", generated, "-i", source, "-map", "0:v:0", "-map", "1:a?", "-vf", f"ass='{escaped}'", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", output)
-            validate_timeline(source_info, await probe_video(identifier, output))
+            final_info = await probe_video(identifier, output)
+            validate_generated_timeline(source_info, final_info)
+            validate_timeline(output_info, final_info)
+            if final_info["size"] != output_info["size"]:
+                raise ValueError("后处理改变了生成画布尺寸，已停止合成")
             result = {"file": publish(output), "segments": captions, "metadata": {"identityChecked": False, "timelineChecked": True, "subtitleOutput": "burned-in"}}
         elif operation == "upscale":
             source = inputs["video"]

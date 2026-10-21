@@ -36,17 +36,32 @@ def plan_segments(duration, seconds, cuts=(), overlap=0.5, preserve_scenes=True)
     return parts
 
 
-def validate_timeline(source, generated):
+def validate_duration(source, generated):
     for info in (source, generated):
         if not math.isfinite(info["duration"]) or info["duration"] <= 0 or not math.isfinite(info["fps"]) or info["fps"] <= 0:
             raise ValueError("无法读取视频画面时间轴，已停止合成")
     # Only frame quantization is tolerated; never stretch or truncate an edit.
     if abs(source["duration"] - generated["duration"]) > max(1 / source["fps"], 1 / generated["fps"]):
         raise ValueError("生成视频时长与输入不一致，已保留结果并停止合成；不会强行变速或截断")
+
+
+def validate_timeline(source, generated):
+    validate_duration(source, generated)
     sw, sh = source["size"]
     gw, gh = generated["size"]
     if sw * gh != sh * gw:
         raise ValueError("生成视频画幅比例发生变化，已停止合成")
+
+
+def validate_generated_timeline(source, generated):
+    """Audio/caption processing keeps the model canvas; reject orientation changes."""
+    validate_duration(source, generated)
+    sw, sh = source["size"]
+    gw, gh = generated["size"]
+    if min(sw, sh, gw, gh) <= 0:
+        raise ValueError("无法读取视频画幅尺寸，已停止合成")
+    if (sw > sh) != (gw > gh) or (sw == sh) != (gw == gh):
+        raise ValueError("生成视频横竖画幅方向发生变化，已保留结果并停止合成")
 
 
 def validate_masked_generation(source, generated, max_aspect=0.03, max_seconds=0.25):
@@ -125,7 +140,7 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
     if operation == "replacement-validate":
         original = await probe_video(identifier, inputs["source"])
         generated = await probe_video(identifier, source)
-        validate_timeline(original, generated)
+        validate_generated_timeline(original, generated)
         return {"metadata": {"timelineChecked": True, "identityChecked": False}}
     if operation == "replacement-assemble":
         info = await probe_video(identifier, source)
@@ -139,10 +154,10 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
                 raise ValueError("分段时间轴有缺口或重复")
             cursor = part["end"]
             current = await probe_video(identifier, video)
-            validate_timeline({**info, "duration": float(part["seconds"])}, current)
+            validate_generated_timeline({**info, "duration": float(part["seconds"])}, current)
             output = work / f"part-{index}.mp4"
             await ffmpeg(identifier, "-i", video, "-an", "-vf",
-                         f"trim=start={part['trimStart']},setpts=PTS-STARTPTS,scale={info['size'][0]}:{info['size'][1]},fps={info['fps']}",
+                         f"trim=start={part['trimStart']},setpts=PTS-STARTPTS,scale={info['size'][0]}:{info['size'][1]}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={info['size'][0]}:{info['size'][1]}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={info['fps']}",
                          "-frames:v", round(part["end"] * info["fps"]) - round(part["start"] * info["fps"]),
                          "-c:v", "libx264", "-pix_fmt", "yuv420p", output)
             files.append(output)

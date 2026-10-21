@@ -120,6 +120,22 @@ class SubtitlePipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["result"]["metadata"]["subtitleOutput"], "editable")
         self.assertEqual((worker.MEDIA / state["result"]["file"]).read_bytes(), b"clean-with-audio")
 
+    async def test_postprocessing_keeps_generated_canvas_when_source_ratio_differs(self):
+        source = {**self.info, "duration": 10, "fps": 30, "size": (544, 960)}
+        generated = {**source, "size": (720, 1280)}
+        captions = [{"start": 0.2, "end": 1.5, "text": "校对字幕"}]
+        async def probe(identifier, path):
+            return source if path.name == "source.mp4" else generated
+        async def ffmpeg(identifier, *args):
+            self.assertFalse(any("scale=" in str(arg) for arg in args))
+            args[-1].write_bytes(b"processed")
+        for operation, options in (
+            ("replacement-finish", {"subtitleMethod": "audio-after-generation", "subtitleOutput": "editable"}),
+            ("replacement-render-captions", {"subtitles": captions}),
+        ):
+            with self.subTest(operation=operation), patch.object(worker, "probe_video", probe), patch.object(worker, "ffmpeg", ffmpeg), patch.object(worker, "transcribe", AsyncMock(side_effect=AssertionError("must reuse generated video"))):
+                state = await self.run_job(operation, options)
+            self.assertEqual(state["status"], "completed", state)
     async def test_online_caption_recognition_returns_clean_timeline_from_source_audio(self):
         captions = [{"start": 0.2, "end": 1.5, "text": "请校对这句话。"}]
         transcribe = AsyncMock(return_value=captions)
