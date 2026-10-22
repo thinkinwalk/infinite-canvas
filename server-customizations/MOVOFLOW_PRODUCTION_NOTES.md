@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.75
-- Current production source: tag v0.19.75, commit 6922f1c7d2f15dba515252897d4dead9be87d749
+- Current production image: infinite-canvas:v0.19.76
+- Current production source: tag v0.19.76, commit 5f3b93d9901861ea80295c72dcb5bc2f34d582e9
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.76 deployment
+
+- Exact MiniMax H3 IDs now appear as video models: `minimax-h3` uses reference input and `minimax-h3-fl2v` uses first/last frames. The shared video and canvas paths adapt JSON sizes and ordered images/audio references. Explicit saved capability profiles, access restrictions and pricing remain authoritative.
+- Source tag `v0.19.76`, commit `5f3b93d9901861ea80295c72dcb5bc2f34d582e9`, pushed from `release/v0.19.60`. Production image `infinite-canvas:v0.19.76`, ID `sha256:410c2831c2e1305a71cbbbfc1413fd1bd5f9616227923cf83e6c183d7bb06d18`. Built on the server using the prior deployment Dockerfile's no-audit install flags. Only app was recreated; Worker ID, start time and v0.19.65 mounts were unchanged.
+- Online SQLite backup, prior Compose and root-only environment are in `/opt/infinite-canvas/backups/v0.19.76-20261022-115737/`; a prebuild backup also exists at `/opt/infinite-canvas/backups/v0.19.76-prebuild-20261022-115506/`. SQLite `quick_check` passed; all 11 table counts, saved settings and hashes for 7,864 existing task/image files matched. No active database, replacement or Worker jobs were present at restart.
+- Internal/external health, `/image`, `/canvas`, `/video` and `/admin/credit-logs` returned HTTP 200. Published `/assets/index-qnWuV8hQ.js` contains both MiniMax IDs and new request adapters, while prior prompt enhancement rules remain present. Authenticated default and VIP users both receive the correct MiniMax modes, material limits, five resolution tiers and 4-15 second options. Both models currently have no explicit fixed price and quote the existing default of 0 credits; no price or access setting was changed. H3video-768 remains VIP-only, 768p, OpenAI, 400 credits/request. Ordinary-user Worker health and replacement-job reads passed; admin-only video access restrictions remain enforced.
+- Deployment evidence: `/opt/infinite-canvas/releases/v0.19.76-deployment.json`. Development verification passed 14 focused frontend tests (98 assertions), focused Go regressions and isolated browser mode/refresh/mobile/admin checks. No local build or tests were repeated for release and no paid generation was submitted. Real upstream frame ordering, optional-frame behavior, output quality and billing/refunds remain pending acceptance.
+- GitHub Release `v0.19.76` is published at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.76. Independent workstation requests confirmed HTTP 200 health and video page, `/assets/index-qnWuV8hQ.js`, the release version and both MiniMax model IDs.
 
 ## v0.19.75 deployment
 
