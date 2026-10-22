@@ -190,7 +190,6 @@ export default function VideoPage() {
         prompt, onChange: setPrompt, scenario: "video", disabled: running || writing,
         contextKey: JSON.stringify([references.map((item) => [item.id, item.name, item.storageKey, item.dataUrl]), videoReferences.map((item) => [item.id, item.url, item.durationMs]), audioReferences.map((item) => [item.id, item.url, item.durationMs]), creationMode, previewLog?.id, videoCommand?.nonce]),
         references: materialLabels.map((item) => ({ marker: `@${item.label}`, title: item.name })),
-        parameters: { model, size: effectiveConfig.size, seconds: effectiveConfig.videoSeconds, resolution: effectiveConfig.vquality, generateAudio: effectiveConfig.videoGenerateAudio, watermark: effectiveConfig.videoWatermark, interpolate: effectiveConfig.videoInterpolate },
         validate: (value) => materialMentionError(value, materialLabels),
     });
     const writingScope = JSON.stringify([prompt, materialLabels, references.map((item) => [item.storageKey, item.dataUrl]), videoReferences.map((item) => [item.url, item.durationMs]), audioReferences.map((item) => [item.url, item.durationMs]), effectiveConfig, model, creationMode, token]);

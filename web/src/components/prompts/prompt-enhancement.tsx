@@ -31,11 +31,11 @@ export function PromptEnhancementPreview({ state }: { state: PromptEnhancementSt
                     {state.running ? "正在增强…" : "增强预览"}
                 </span>
                 <div className="flex min-w-0 items-center gap-1">
-                    <ModelPicker config={state.config} value={state.model} onChange={state.setModel} capability="text" className="!min-w-0 max-w-[190px]" onMissingConfig={() => openConfigDialog(true, "channels")} />
+                    <Tooltip title="增强用文字模型" styles={{ root: { pointerEvents: "none" } }}><div className="min-w-0"><ModelPicker config={state.config} value={state.model} onChange={state.setModel} capability="text" className="!min-w-0 max-w-[190px]" onMissingConfig={() => openConfigDialog(true, "channels")} /></div></Tooltip>
                     <Tooltip title={expanded ? "收起预览" : "展开预览"} styles={{ root: { pointerEvents: "none" } }}><Button type="text" size="small" aria-label={expanded ? "收起预览" : "展开预览"} icon={expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />} onClick={() => setExpanded(!expanded)} /></Tooltip>
                 </div>
             </div>
-            {state.preview.text && <Input.TextArea aria-label="增强提示词预览" readOnly value={state.preview.text} rows={expanded ? 14 : 5} className="thin-scrollbar" />}
+            {(state.preview.text || state.preview.complete) && <Input.TextArea aria-label="增强提示词预览" readOnly={!state.canEdit} value={state.preview.text} onChange={(event) => state.editPreview(event.target.value)} autoSize={{ minRows: 2, maxRows: expanded ? 14 : 6 }} className="thin-scrollbar" />}
             {state.stale ? <Typography.Text type="warning" role="alert">输入或上下文已变化，请重新增强。</Typography.Text> : state.preview.error && <Typography.Text type="danger" role="alert">{state.preview.error}</Typography.Text>}
             <div className="flex flex-wrap items-center justify-end gap-1">
                 {state.running

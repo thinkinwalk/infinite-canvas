@@ -108,10 +108,9 @@ export default function ImagePage() {
     const canGenerate = Boolean(prompt.trim());
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
     const enhancement = usePromptEnhancement({
-        prompt, onChange: setPrompt, scenario: references.length ? "image-edit" : "image", disabled: running,
+        prompt, onChange: setPrompt, scenario: references.length ? "image-reference" : "image", disabled: running,
         contextKey: JSON.stringify([references.map((item) => [item.id, item.name, item.storageKey, item.dataUrl]), templateInput, previewLog?.id, imageCommand?.nonce]),
         references: references.map((item, index) => ({ marker: imageReferenceLabel(index), title: item.name, kind: "image" })),
-        parameters: { model, size: effectiveConfig.size, quality: effectiveConfig.quality, count: generationCount },
     });
 
     useEffect(() => {

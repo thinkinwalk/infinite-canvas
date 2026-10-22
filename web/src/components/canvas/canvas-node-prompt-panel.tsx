@@ -63,11 +63,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     };
     const enhancement = usePromptEnhancement({
         prompt, onChange: updatePrompt,
-        scenario: mode === "image" ? (hasImageContent || connectedNodes.some((item) => item.type === CanvasNodeType.Image) ? "image-edit" : "image") : mode === "video" ? "video" : "text",
+        scenario: mode === "image" ? (hasImageContent ? "image-edit" : connectedNodes.some((item) => item.type === CanvasNodeType.Image) ? "image-reference" : "image") : mode === "video" ? "video" : "text",
         contextKey: JSON.stringify([node.id, node.metadata?.content, connectedNodes.map((item) => [item.id, item.metadata?.content]), mentionReferences.map((item) => [item.id, item.label, item.active, item.text, item.previewUrl])]),
         disabled: isRunning || mode === "audio",
         references: mentionReferences.filter((item) => item.active).map((item) => ({ marker: item.label, title: item.title, kind: item.kind, text: prompt.includes(item.label) ? item.text : undefined })),
-        parameters: { model: config.model, size: config.size, quality: config.quality, background: config.background, seconds: config.videoSeconds, resolution: config.vquality, generateAudio: config.videoGenerateAudio, watermark: config.videoWatermark, inputMode: config.videoInputMode, interpolate: config.videoInterpolate, count: config.count, textCount: node.metadata?.textCount || 1, reasoningEffort: config.reasoningEffort },
     });
 
     const submit = () => {

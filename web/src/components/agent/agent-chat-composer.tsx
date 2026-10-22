@@ -73,9 +73,8 @@ export function AgentChatComposer({
     const enhancement = usePromptEnhancement({
         prompt, scenario: "task", onChange: onPromptChange,
         disabled: disabled || sending,
-        contextKey: JSON.stringify([activeThreadId, workspacePath, activeTab, panelOpen, selectedSkill?.path, attachments.map((item) => [item.id, item.name, item.url]), canvasReferences.map((item) => [item.nodeId, item.label, item.previewUrl, item.text])]),
+        contextKey: JSON.stringify([activeThreadId, workspacePath, activeTab, panelOpen, selectedSkill?.path, permissionMode, confirmTools, attachments.map((item) => [item.id, item.name, item.url]), canvasReferences.map((item) => [item.nodeId, item.label, item.previewUrl, item.text])]),
         references: inlineReferences,
-        parameters: { model: model || "", reasoningEffort: reasoningEffort || "", permissionMode: permissionMode || "", confirmTools: Boolean(confirmTools) },
     });
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
     return (

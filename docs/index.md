@@ -34,6 +34,7 @@
 - [Changelog](/docs/progress/changelog)
 - [Pending Tests](/docs/progress/pending-test)
 - [TODO](/docs/progress/todo)
+- [提示词增强分析与优化方案](/docs/progress/prompt-enhancement-reference)
 - [视频内容替换优化方案](/docs/progress/content-replace-reference)
 - [探店视频优化方案](/docs/progress/store-explore-reference)
 - [爆款复刻优化方案](/docs/progress/viral-recreate-reference)

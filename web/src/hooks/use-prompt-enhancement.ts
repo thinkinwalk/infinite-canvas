@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { requestPromptEnhancement, type PromptEnhancementInput } from "@/services/api/prompt-enhancement";
+import { promptEnhancementConfigKey, requestPromptEnhancement, validatePromptEnhancement, type PromptEnhancementInput } from "@/services/api/prompt-enhancement";
 import { publicServiceText } from "@/services/api/replicate";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -14,6 +14,13 @@ type Options = PromptEnhancementInput & {
 };
 type Preview = { key: string; text: string; error: string; complete: boolean; stale: boolean };
 
+function previewError(options: Options, value: string) {
+    try {
+        validatePromptEnhancement(options, value);
+        return options.validate?.(value) || "";
+    } catch (error) { return error instanceof Error ? error.message : "请检查增强预览。"; }
+}
+
 export function usePromptEnhancement(options: Options) {
     const effectiveConfig = useEffectiveConfig();
     const token = useUserStore((state) => state.token);
@@ -26,10 +33,10 @@ export function usePromptEnhancement(options: Options) {
     const [running, setRunning] = useState(false);
     const [undo, setUndo] = useState<{ original: string; applied: string; scope: string } | null>(null);
     const controllerRef = useRef<AbortController | null>(null);
-    const scope = JSON.stringify([options.contextKey, options.scenario, options.references, options.parameters, effectiveConfig, model, token, Boolean(options.disabled)]);
+    const scope = JSON.stringify([options.contextKey, options.scenario, options.references, promptEnhancementConfigKey(config), token, Boolean(options.disabled)]);
     const key = JSON.stringify([scope, options.prompt]);
-    const latest = useRef({ options, key, scope });
-    latest.current = { options, key, scope };
+    const latest = useRef({ options, key, scope, config });
+    latest.current = { options, key, scope, config };
 
     const stop = () => {
         controllerRef.current?.abort();
@@ -57,14 +64,13 @@ export function usePromptEnhancement(options: Options) {
         try {
             const inputError = snapshot.options.validate?.(snapshot.options.prompt);
             if (inputError) throw new Error(inputError);
-            await confirmTextModel(config, controller.signal);
+            await confirmTextModel(snapshot.config, controller.signal);
             if (!current()) return;
-            const answer = await requestPromptEnhancement(config, snapshot.options, (text) => {
+            const answer = await requestPromptEnhancement(snapshot.config, snapshot.options, (text) => {
                 if (current()) setPreview({ key: snapshot.key, text, error: "", complete: false, stale: false });
             }, { signal: controller.signal });
             if (!current()) return;
-            const error = snapshot.options.validate?.(answer) || "";
-            setPreview({ key: snapshot.key, text: answer, error, complete: !error, stale: false });
+            setPreview({ key: snapshot.key, text: answer, error: previewError(snapshot.options, answer), complete: true, stale: false });
         } catch (error) {
             if (current()) setPreview((value) => value && {
                 ...value, complete: false,
@@ -77,19 +83,24 @@ export function usePromptEnhancement(options: Options) {
             }
         }
     };
-    const canApply = Boolean(preview?.complete && !preview.stale && preview.key === key && !running && !options.disabled);
+    const canEdit = Boolean(preview?.complete && !preview.stale && preview.key === key && !running && !options.disabled);
+    const canApply = canEdit && !preview?.error;
     return {
         preview, running, config, model, setModel: setSelectedModel,
         stale: Boolean(preview && (preview.stale || preview.key !== key)),
-        canApply,
+        canApply, canEdit,
         canUndo: Boolean(undo && undo.applied === options.prompt && undo.scope === scope && !options.disabled && !running),
         start, stop,
         cancel: () => { stop(); setPreview(null); },
+        editPreview: (text: string) => {
+            if (!canEdit || !preview || preview.key !== latest.current.key || latest.current.options.disabled) return;
+            setPreview({ ...preview, text, error: previewError(latest.current.options, text) });
+        },
         apply: () => {
             if (!canApply || !preview || preview.key !== latest.current.key || latest.current.options.disabled) return;
             const snapshot = latest.current;
-            const error = snapshot.options.validate?.(preview.text);
-            if (error) { setPreview({ ...preview, error, complete: false }); return; }
+            const error = previewError(snapshot.options, preview.text);
+            if (error) { setPreview({ ...preview, error }); return; }
             setUndo({ original: snapshot.options.prompt, applied: preview.text, scope: snapshot.scope });
             setPreview(null);
             snapshot.options.onChange(preview.text);
