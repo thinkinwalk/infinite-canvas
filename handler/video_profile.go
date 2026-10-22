@@ -257,6 +257,11 @@ func validateVideoProfileRequest(profile model.VideoModelProfile, body []byte, c
 		if err := json.Unmarshal(body, &payload); err != nil {
 			return fmt.Errorf("视频参数格式不正确")
 		}
+		if service.IsMiniMaxH3(jsonStringValue(payload["model"])) {
+			if _, ok := buildMiniMaxH3VideoBody(payload); !ok {
+				return fmt.Errorf("MiniMax H3 请填写提示词并选择有效画面规格和 4–15 秒时长；本次未扣费")
+			}
+		}
 		if value := jsonStringValue(payload["input_mode"]); value != "" {
 			mode = value
 		}

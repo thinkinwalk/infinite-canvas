@@ -408,7 +408,7 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") ||
+	return IsMiniMaxH3(name) || strings.Contains(name, "seedance") ||
 		strings.Contains(name, "video") ||
 		strings.Contains(name, "sora") ||
 		strings.Contains(name, "veo") ||
@@ -470,7 +470,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 			profile.Seconds = []string{}
 		}
 		imageLimit, mediaLimit := 7, 3
-		if IsH3Video2K(name) {
+		if IsH3Video2K(name) || IsMiniMaxH3(name) {
 			imageLimit = 9
 		}
 		if strings.EqualFold(strings.TrimSpace(name), "wan30-720p") {

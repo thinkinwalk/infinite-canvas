@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
+import { isMiniMaxH3Name } from "@/lib/minimax-h3";
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings, VideoModelProfile } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
@@ -167,6 +168,7 @@ const IMAGE_KEYWORDS = ["seedream", "gpt-image", "image", "dall-e", "dalle", "im
 
 function knownModelCapability(name: string): ModelCapability | undefined {
     const value = name.toLowerCase();
+    if (isMiniMaxH3Name(value)) return "video";
     if (["gpt-image", "dall-e", "dalle", "seedream", "imagen", "flux", "sdxl", "stable-diffusion", "midjourney"].some((keyword) => value.includes(keyword))) return "image";
     if (["seedance", "doubao-seedance"].some((keyword) => value.includes(keyword))) return "video";
     if (["seedance", "grok-imagine", "sora", "veo", "kling", "hailuo", "tejiasd"].some((keyword) => value.includes(keyword)) && (value.includes("video") || value.includes("720p") || value.includes("1080p") || value.includes("480p"))) return "video";

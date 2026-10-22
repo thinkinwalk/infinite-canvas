@@ -5,6 +5,36 @@ import (
 	"testing"
 )
 
+func TestMiniMaxH3CatalogModesAndPricing(t *testing.T) {
+	channel := normalizeModelChannel(model.ModelChannel{
+		Name: "xysnai", Enabled: true, BaseURL: "https://example.com/v1", APIKey: "test",
+		Models: []string{"minimax-h3", "minimax-h3-fl2v", "minimax-m2.7"},
+	})
+	profiles := publicVideoProfiles([]model.ModelChannel{channel})
+	for name, mode := range map[string]string{"minimax-h3": "reference", "minimax-h3-fl2v": "first_last"} {
+		profile, ok := profiles[name]
+		if !ok || profile.Interface != "relay" || len(profile.InputModes) != 1 || profile.InputModes[0] != mode || len(profile.Seconds) != 12 || profile.Resolutions[0] != "768" {
+			t.Fatalf("missing MiniMax video capabilities: %s %+v", name, profile)
+		}
+		if isTextModelName(name) {
+			t.Fatalf("video classified as text: %s", name)
+		}
+	}
+	if len(profiles) != 2 || !isTextModelName("minimax-m2.7") {
+		t.Fatalf("unrelated MiniMax models affected: %+v", profiles)
+	}
+	catalog := publicChannelModels(model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{channel}}}, "default")
+	if len(catalog) < 2 || catalog[0].Capabilities[0] != "video" || catalog[1].Capabilities[0] != "video" {
+		t.Fatalf("ordinary user catalog hides MiniMax videos: %+v", catalog)
+	}
+	profile := channel.VideoModels["minimax-h3"]
+	profile.BillingMode, profile.BillingTiers = "duration_resolution", map[string]float64{"768": 12}
+	channel.VideoModels["minimax-h3"] = profile
+	if credits, _, ok := VideoQuote(normalizeModelChannel(channel), "minimax-h3", "768p", "5"); !ok || credits != 60 {
+		t.Fatalf("configured price changed: %d %v", credits, ok)
+	}
+}
+
 func TestWan30ProfileSurvivesNormalizationAndPublicCatalog(t *testing.T) {
 	channel := normalizeModelChannel(model.ModelChannel{
 		Enabled: true, BaseURL: "https://example.com", APIKey: "test", Models: []string{"wan30-720p"},

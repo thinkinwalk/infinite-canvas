@@ -39,6 +39,26 @@ func VideoQuote(channel model.ModelChannel, modelName, resolution string, second
 }
 
 func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfile {
+	if IsMiniMaxH3(name) && channel.VideoModels[name].Interface == "" {
+		profile := channel.VideoModels[name]
+		profile.DisplayName, profile.Interface = name, "relay"
+		profile.Description = "支持文字及图片、视频、音频参考生成视频。"
+		profile.MaxImages, profile.MaxVideos, profile.MaxAudios = 9, 3, 3
+		profile.Resolutions, profile.Seconds = []string{"768", "480", "1080", "2K", "4K"}, []string{}
+		for seconds := 4; seconds <= 15; seconds++ {
+			profile.Seconds = append(profile.Seconds, fmt.Sprint(seconds))
+		}
+		profile.InputModes = []string{"reference"}
+		profile.FirstFrameField, profile.LastFrameField = "", ""
+		profile.FirstFrameRequired, profile.LastFrameOptional, profile.GenerateAudio = false, true, false
+		if strings.EqualFold(strings.TrimSpace(name), "minimax-h3-fl2v") {
+			profile.Description = "首尾帧生成视频，图片按首帧、尾帧顺序提交。"
+			profile.MaxImages, profile.MaxVideos, profile.MaxAudios = 2, 0, 0
+			profile.InputModes = []string{"first_last"}
+			profile.FirstFrameField, profile.LastFrameField = "image_url", "last_frame"
+		}
+		return normalizeVideoInputProfile(profile)
+	}
 	if IsH3Video2K(name) {
 		return normalizeVideoInputProfile(model.VideoModelProfile{DisplayName: name, Description: "支持 768p / 2K，支持 5 / 10 / 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", Interface: "relay", MaxImages: 9, MaxVideos: 3, MaxAudios: 3, Resolutions: []string{"2K", "768"}, Seconds: []string{"15", "5", "10"}})
 	}
@@ -74,6 +94,11 @@ func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfi
 
 func IsH3Video2K(name string) bool {
 	return strings.EqualFold(strings.TrimSpace(name), "H3video-2k")
+}
+
+func IsMiniMaxH3(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return name == "minimax-h3" || name == "minimax-h3-fl2v"
 }
 
 // Only declared input modes are exposed; unconfigured channels retain reference input.

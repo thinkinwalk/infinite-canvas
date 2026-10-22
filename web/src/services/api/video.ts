@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { prepareWanVideoFrames, wanFrameRatio } from "@/lib/video-frames";
 import { inferVideoRatio } from "@/lib/media-size";
+import { isMiniMaxH3Name, miniMaxH3VideoBody } from "@/lib/minimax-h3";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
@@ -358,7 +359,7 @@ async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt:
     try {
         const created = unwrapVideoResponse(
             (
-                await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), payload, {
+                await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), config.channelMode !== "remote" && isMiniMaxH3Name(modelName) ? miniMaxH3VideoBody(payload) : payload, {
                     headers: videoCreateHeaders(config, options, "application/json"),
                     signal: options?.signal,
                 })
@@ -627,7 +628,7 @@ function normalizeVideoSize(value: string) {
 }
 
 function normalizeVideoResolution(value: string) {
-    if (value.trim().toLowerCase() === "2k") return "2K";
+    if (["2k", "4k"].includes(value.trim().toLowerCase())) return value.trim().toUpperCase();
     if (value === "low") return "480p";
     if (value === "auto" || value === "high" || value === "medium") return "720p";
     const resolution = value.replace(/p$/i, "") || "720";

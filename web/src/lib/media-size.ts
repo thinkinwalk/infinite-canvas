@@ -106,7 +106,7 @@ export function clampVideoSeconds(value: string) {
 
 export function parseVideoResolution(value: string | undefined) {
     const raw = String(value || "").trim().toLowerCase();
-    if (raw === "2k") return "2K";
+    if (raw === "2k" || raw === "4k") return raw.toUpperCase();
     if (raw === "low") return "480";
     if (raw === "auto" || raw === "high" || raw === "medium") return "720";
     const number = raw.replace(/p$/i, "");
@@ -134,7 +134,7 @@ export function computeVideoSize(resolution: string, ratio: string) {
     const parsed = parseAspectRatio(ratio);
     if (!parsed) return "auto";
     // Named upstream tiers do not define exact pixel dimensions.
-    if (parseVideoResolution(resolution) === "2K") return ratio;
+    if (["2K", "4K"].includes(parseVideoResolution(resolution))) return ratio;
     const p = Math.max(1, Math.floor(Number(parseVideoResolution(resolution)) || 720));
     const landscape = parsed.width >= parsed.height;
     const width = evenRound(landscape ? (p * parsed.width) / parsed.height : p);

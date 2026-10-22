@@ -686,6 +686,12 @@ func normalizeAIProxyVideoBody(baseURL string, path string, body []byte, content
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return body, contentType
 	}
+	if service.IsMiniMaxH3(jsonStringValue(payload["model"])) && path == "/videos" {
+		if converted, ok := buildMiniMaxH3VideoBody(payload); ok {
+			return converted, "application/json"
+		}
+		return body, contentType
+	}
 	if isArkAgentPlanVideo(baseURL) && path == "/contents/generations/tasks" {
 		if converted, ok := buildArkAgentPlanVideoBody(payload); ok {
 			return converted, "application/json"
