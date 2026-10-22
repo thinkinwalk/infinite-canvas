@@ -16,13 +16,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
 - Current production image: infinite-canvas:v0.19.69
-- Current production source: tag v0.19.69, commit pending release commit
+- Current production source: tag v0.19.69, commit ab6c25b (`ab6c25b`)
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
 
 ## v0.19.69 concise long-video guidance
 
 - The long-video help popup now states the shared rule that videos over 15 seconds are analyzed and split with a quote for confirmation, then shows the current video's duration and that it will be split. Redundant upload and segment-selection copy was removed; processing behavior is unchanged.
-- Deployment details and verification results will be recorded after deployment.
+- Released from `release/v0.19.60` at commit `ab6c25b`, tag `v0.19.69`. The help popup now states the shared 15-second threshold and processing/quote flow, then the current duration. No processing or billing behavior changed.
+- App image `infinite-canvas:v0.19.69`, image ID `sha256:0795a5cccda7faaa6c31acdb9ac08d704658266f952dad82602e4f6107680f1b`, built on the production host. Only the app service was recreated; Worker ID/start time and v0.19.65 mounts were unchanged. No local automated tests ran.
+- SQLite online backup, previous Compose and environment are in `/opt/infinite-canvas/backups/v0.19.69-20261022-050330/`. SQLite `quick_check` passed, all 11 table counts and existing replacement/Worker task files remained unchanged, and no active jobs were interrupted.
+- Internal/external health and the content-replace page returned HTTP 200. Origin asset `/assets/index-CXi7X41I.js` contains the two-part text and the superseded standalone subtitle link is absent. Ordinary-user Worker health and replacement-job GET passed; missing admin thumbnail returned 404 and user access was denied. Evidence: `/opt/infinite-canvas/releases/v0.19.69-deployment.json`. No paid job was submitted.
 
 ## v0.19.68 replacement guidance and admin image previews
 
