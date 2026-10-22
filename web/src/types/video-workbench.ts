@@ -68,7 +68,8 @@ export type DigitalHumanInput = Pick<
 export type VideoTool = "cloud-create" | "content-replace" | "store-explore" | "viral-recreate" | "upscale" | "subtitle-remove" | "digital-human" | "photo-talk" | "lipsync";
 export const isTalkingVideoTool = (tool: VideoTool) => ["digital-human", "photo-talk", "lipsync"].includes(tool);
 export type MediaRole = "reference" | "learning" | "product" | "model" | "background" | "voice" | "avatar" | "music" | "mask" | "first-frame";
-export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole };
+export type VideoImportSource = { platform: "wxchannels"; title: string; author: string; sourceUrl: string; coverUrl?: string };
+export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole; source?: VideoImportSource };
 export type UpscaleInput = Pick<VideoDraft, "media" | "route" | "replicateTargetResolution" | "replicateFps" | "scale" | "fps">;
 export type SubtitleSegment = { start: number; end: number; text: string };
 export type SubtitleRegion = { x: number; y: number; width: number; height: number };

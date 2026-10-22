@@ -1,13 +1,14 @@
 import { App } from "antd";
 import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
 import { nanoid } from "nanoid";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { useNavigate } from "react-router-dom";
 
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
+import { importVideoURL } from "@/services/api/video-import";
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
 import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
@@ -18,7 +19,7 @@ import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
 import { contentReplacementPrompt } from "./content-replace-prompt";
 import { readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
-import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { deleteStoredMedia, readPlayableVideoMeta, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -28,7 +29,7 @@ import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { CanvasNodeType } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
-import { emptyVideoDraft, isTalkingVideoTool, type MediaRole, type VideoDraft, type VideoRecord, type VideoTool, type WorkbenchMedia, type WorkerConfig, type WorkerJob } from "@/types/video-workbench";
+import { emptyVideoDraft, isTalkingVideoTool, type MediaRole, type VideoDraft, type VideoImportSource, type VideoRecord, type VideoTool, type WorkbenchMedia, type WorkerConfig, type WorkerJob } from "@/types/video-workbench";
 
 export const stageLabels: Record<string, string> = {
     frames: "抽取参考关键帧",
@@ -133,6 +134,8 @@ export function useVideoWorkbench(tool: VideoTool) {
     const config = useEffectiveConfig();
     const state = useVideoWorkbenchStore();
     const cloudReferences = useRef({ token: "", urls: new Map<string, string>() });
+    const [importing, setImporting] = useState(false);
+    const importSignal = useRef<AbortSignal | null>(null);
     const digital = isTalkingVideoTool(tool);
     const draft = { ...emptyVideoDraft(tool), ...state.drafts[tool] };
     const busy = Boolean(state.busyTools[tool]);
@@ -235,16 +238,23 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (digital && invalidate === "speech") cleared.voicePreview = null;
         patch({ ...cleared, ...value });
     };
-    const addFiles = async (files: File[], role: MediaRole, accept: string) => {
-        if (busy) return;
+    const addFiles = async (files: File[], role: MediaRole, accept: string, imported?: { source: VideoImportSource; signal: AbortSignal; validate: () => void }) => {
+        if (store().busyTools[tool] || (importSignal.current && !imported)) {
+            if (imported) throw new Error("当前正在制作视频，请稍后重新导入");
+            return;
+        }
+        const added: WorkbenchMedia[] = [];
         try {
-            const added: WorkbenchMedia[] = [];
             for (const file of files) {
+                imported?.signal.throwIfAborted();
                 if (!accept.split(",").some((a) => file.type.startsWith(a.trim().replace("*", "")))) throw new Error("请选择该位置支持的图片、视频或音频格式");
-                const blob = tool === "content-replace" && file.type.startsWith("video/") ? await prepareWorkbenchVideo(store().worker, file, file.name) : file;
+                const blob = !imported && tool === "content-replace" && file.type.startsWith("video/") ? await prepareWorkbenchVideo(store().worker, file, file.name) : file;
                 const result = file.type.startsWith("image/") ? await uploadImage(file) : await uploadMediaFile(blob, "video-material");
-                added.push({ ...result, storageKey: result.storageKey || "", id: nanoid(), name: file.name, kind: file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "video", role });
+                added.push({ ...result, storageKey: result.storageKey || "", id: nanoid(), name: file.name, kind: file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "video", role, ...(imported ? { source: imported.source } : {}) });
             }
+            imported?.signal.throwIfAborted();
+            imported?.validate();
+            if (imported && store().busyTools[tool]) throw new Error("当前正在制作视频，请稍后重新导入");
             const single = ["voice", "avatar", "music", "mask", "first-frame", "learning"].includes(role) || (tool === "content-replace" && ["model", "background"].includes(role)) || (role === "reference" && added.some((m) => m.kind === "video"));
             const media = [...read(tool).media.filter((m) => !single || m.role !== role), ...added];
             edit(
@@ -253,9 +263,38 @@ export function useVideoWorkbench(tool: VideoTool) {
             );
             return added;
         } catch (error) {
+            if (imported) {
+                await deleteStoredMedia(added.map((media) => media.storageKey));
+                throw error;
+            }
             const detail = error instanceof Error ? error.message : "上传失败";
             message.error(publicServiceText(detail));
             return detail;
+        }
+    };
+    const importLink = async (text: string, role: MediaRole, signal: AbortSignal) => {
+        if (store().busyTools[tool] || importSignal.current) throw new Error("当前素材正在处理，请稍候");
+        importSignal.current = signal;
+        setImporting(true);
+        const session = useUserStore.getState().token;
+        const snapshot = () => JSON.stringify(read(tool).media.filter((media) => media.role === role).map((media) => [media.id, media.storageKey]));
+        const original = snapshot();
+        const validate = () => {
+            signal.throwIfAborted();
+            if (session !== useUserStore.getState().token) throw new Error("登录状态已变化，请重新提取");
+            if (original !== snapshot()) throw new Error("原素材已变化，请重新提取以确认替换");
+        };
+        try {
+            validate();
+            const { file, source } = await importVideoURL(text, signal);
+            const blob = await prepareWorkbenchVideo(store().worker, file, file.name, signal);
+            await readPlayableVideoMeta(blob);
+            validate();
+            const added = await addFiles([new File([blob], file.name, { type: blob.type || "video/mp4" })], role, "video/*", { source, signal, validate });
+            return Array.isArray(added);
+        } finally {
+            importSignal.current = null;
+            setImporting(false);
         }
     };
     const removeMedia = (id: string) => {
@@ -1151,7 +1190,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
     };
     const guard = async (action: (signal: AbortSignal) => Promise<void>) => {
-        if (store().busyTools[tool] || controllers.has(tool)) return;
+        if (store().busyTools[tool] || controllers.has(tool) || importSignal.current) return;
         const controller = new AbortController();
         controllers.set(tool, controller);
         store().setBusy(tool, true);
@@ -1396,6 +1435,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     return {
         draft,
         busy,
+        importing,
         hydrated: state.hydrated,
         storageError: state.storageError,
         worker: state.worker,
@@ -1403,6 +1443,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         edit,
         patch,
         addFiles,
+        importLink,
         removeMedia,
         run,
         quoteReplacement,

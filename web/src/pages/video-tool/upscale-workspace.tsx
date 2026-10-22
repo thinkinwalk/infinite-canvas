@@ -5,6 +5,7 @@ import { ArrowLeft, Download, FolderPlus, Grid2X2, RefreshCw, Sparkles, Video, X
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { VideoLinkImport } from "@/components/video-link-import";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { getReplicateModels, publicServiceText, reconcileReplicateTask, type ReplicateQuote } from "@/services/api/replicate";
 import { getWorkerCapabilities, workbenchMediaBlob } from "@/services/api/video-worker";
@@ -59,7 +60,7 @@ export default function UpscaleWorkspace() {
     const stale = !historyPreview && result && (outputInput ? upscaleInputKey(outputInput) !== inputKey : d.upscaleOutputStale);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob));
-    const locked = busy || uploading || restoring;
+    const locked = busy || wb.importing || uploading || restoring;
     const muted = { color: token.colorTextSecondary };
     const surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
 
@@ -177,7 +178,7 @@ export default function UpscaleWorkspace() {
         }
     };
     const addFile = async (file: File) => {
-        if (busy || restoring || uploadLock.current) return;
+        if (locked || uploadLock.current) return;
         uploadLock.current = true;
         setUploading(true);
         setUploadError("");
@@ -370,6 +371,15 @@ export default function UpscaleWorkspace() {
                                 <Button type="text" size="small" className="mt-1" disabled={locked} onClick={() => setAssetOpen(true)}>
                                     从我的素材选择
                                 </Button>
+                                <VideoLinkImport disabled={locked} source={reference?.source} onImport={async (text, signal) => {
+                                    const added = await wb.importLink(text, "reference", signal);
+                                    if (added) {
+                                        setHistoryPreview(null);
+                                        setTab("current");
+                                        setView("source");
+                                    }
+                                    return added;
+                                }} />
                                 {uploadError && (
                                     <div role="alert" className="mt-1 text-xs" style={{ color: token.colorError }}>
                                         {uploadError}

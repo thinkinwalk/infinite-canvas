@@ -145,6 +145,27 @@ export async function fetchAdminCreditLogThumbnail(token: string, id: string, or
     return response.blob();
 }
 
+export type AdminCreditLogVideo = {
+    taskId: string;
+    status: string;
+    available: boolean;
+    updatedAt: string;
+};
+
+export async function fetchAdminCreditLogVideo(token: string, id: string) {
+    return apiGet<AdminCreditLogVideo | null>(`/api/admin/credit-logs/${encodeURIComponent(id)}/video`, undefined, token);
+}
+
+export async function fetchAdminCreditLogVideoContent(token: string, id: string, signal: AbortSignal) {
+    const response = await fetch(`/api/admin/credit-logs/${encodeURIComponent(id)}/video/content`, { headers: { Authorization: `Bearer ${token}` }, signal });
+    if (response.status === 404) throw new Error("视频文件不存在或已过期");
+    if (response.status === 403) throw new Error("读取视频需要管理员权限，请重新登录");
+    if (!response.ok || !response.headers.get("Content-Type")?.startsWith("video/")) throw new Error("视频读取失败，源文件可能已过期，请稍后重试");
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("视频文件为空，请稍后重试");
+    return blob;
+}
+
 export async function fetchAdminRedemptionCodes(token: string, query: AdminRedemptionCodeQuery = {}) {
     return apiGet<AdminRedemptionCodeListResponse>("/api/admin/redemption-codes", compactApiParams(query), token);
 }

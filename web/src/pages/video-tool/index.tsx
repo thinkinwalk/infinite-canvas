@@ -6,6 +6,7 @@ import { Download, FolderPlus, Grid2X2, History, Settings, Sparkles, Trash2, Upl
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { VideoSettingsPanel } from "@/components/video-settings-panel";
+import { VideoLinkImport } from "@/components/video-link-import";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { getWorkerCapabilities, workbenchMediaBlob } from "@/services/api/video-worker";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -151,21 +152,21 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
         </div>
     );
     const action = (stage: string, label: string, primary = false, blocked = false) => (
-        <Button type={primary ? "primary" : "default"} disabled={busy || blocked} icon={<Sparkles size={15} />} onClick={() => void wb.run(stage)}>
+        <Button type={primary ? "primary" : "default"} disabled={busy || wb.importing || blocked} icon={<Sparkles size={15} />} onClick={() => void wb.run(stage)}>
             {label}
         </Button>
     );
     const materialField = (role: MediaRole, accept: string, label: string, multiple = false) => (
         <Card size="small" title={label}>
             <Space wrap>
-                <Button icon={<Upload size={15} />} disabled={busy} onClick={(event) => event.currentTarget.querySelector<HTMLInputElement>("input")?.click()}>
+                <Button icon={<Upload size={15} />} disabled={busy || wb.importing} onClick={(event) => event.currentTarget.querySelector<HTMLInputElement>("input")?.click()}>
                     上传
                     <input
                         type="file"
                         className="hidden"
                         accept={accept}
                         multiple={multiple}
-                        disabled={busy}
+                        disabled={busy || wb.importing}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(e) => {
                             void wb.addFiles(Array.from(e.target.files || []), role, accept);
@@ -174,11 +175,12 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                     />
                 </Button>
                 {!accept.startsWith("audio") && (
-                    <Button disabled={busy} onClick={() => setAssetRole({ role, accept })}>
+                    <Button disabled={busy || wb.importing} onClick={() => setAssetRole({ role, accept })}>
                         从我的素材选择
                     </Button>
                 )}
             </Space>
+            {accept.includes("video/") && <VideoLinkImport disabled={busy || wb.importing} source={d.media.find((media) => media.role === role && media.kind === "video")?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
             <div className="mt-3 flex flex-wrap gap-3">
                 {d.media
                     .filter((m) => m.role === role)
@@ -195,7 +197,7 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                                 <span className="truncate text-xs" title={m.name}>
                                     {m.name}
                                 </span>
-                                <Button type="text" disabled={busy} size="small" icon={<X size={14} />} aria-label="移除素材" onClick={() => wb.removeMedia(m.id)} />
+                                <Button type="text" disabled={busy || wb.importing} size="small" icon={<X size={14} />} aria-label="移除素材" onClick={() => wb.removeMedia(m.id)} />
                             </div>
                             {!!m.durationMs && (
                                 <div className="text-xs" style={{ color: token.colorTextSecondary }}>
@@ -969,7 +971,7 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
             </div>
             {tool === "subtitle-remove" && (
                 <div className="sticky bottom-2 z-10 rounded-lg border p-2 shadow-lg lg:hidden" style={{ background: token.colorBgContainer, borderColor: token.colorBorder }}>
-                    <Button type="primary" block disabled={busy || !subtitleReady} icon={<Sparkles size={15} />} onClick={() => void wb.run("subtitle-remove")}>
+                    <Button type="primary" block disabled={busy || wb.importing || !subtitleReady} icon={<Sparkles size={15} />} onClick={() => void wb.run("subtitle-remove")}>
                         {busy ? "正在处理…" : "去除硬字幕"}
                     </Button>
                     {!subtitleReady && <div className="mt-1 text-center text-xs" style={{ color: token.colorTextSecondary }}>请上传视频并完成标记方式/处理服务配置</div>}

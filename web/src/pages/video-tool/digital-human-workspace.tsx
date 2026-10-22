@@ -5,6 +5,7 @@ import { ArrowLeft, Download, FolderPlus, Grid2X2, RefreshCw, Sparkles, UploadCl
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
+import { VideoLinkImport } from "@/components/video-link-import";
 import { getWorkerCapabilities } from "@/services/api/video-worker";
 import { getReplicateModels, publicServiceText, REPLICATE_MODEL_NAMES, transcriptionUnavailable, type ReplicateQuote } from "@/services/api/replicate";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -84,7 +85,7 @@ export default function DigitalHumanWorkspace() {
         { key: "final", label: "最终成片", file: d.final },
     ].filter((item) => item.file);
     const result = viewed?.result || previews.find((item) => item.key === previewStage)?.file || d.final || d.edited || d.video;
-    const locked = busy || uploading;
+    const locked = busy || wb.importing || uploading;
     const muted = { color: token.colorTextSecondary };
     const surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
     const modelAvailable = cloudModels?.find((m) => m.operation === mode.model);
@@ -315,6 +316,7 @@ export default function DigitalHumanWorkspace() {
                         从我的素材选择
                     </Button>
                 )}
+                {accept.includes("video/") && <VideoLinkImport disabled={locked} source={files.find((file) => file.kind === "video")?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
             </section>
         );
     };

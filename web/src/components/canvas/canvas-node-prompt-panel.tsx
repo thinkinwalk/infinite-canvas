@@ -16,6 +16,8 @@ import { CanvasTextSettingsPopover } from "./canvas-text-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
+import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -59,6 +61,14 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         if (isEditingExistingContent) onConfigChange(node.id, { composerContent: value });
         else onPromptChange(node.id, value);
     };
+    const enhancement = usePromptEnhancement({
+        prompt, onChange: updatePrompt,
+        scenario: mode === "image" ? (hasImageContent || connectedNodes.some((item) => item.type === CanvasNodeType.Image) ? "image-edit" : "image") : mode === "video" ? "video" : "text",
+        contextKey: JSON.stringify([node.id, node.metadata?.content, connectedNodes.map((item) => [item.id, item.metadata?.content]), mentionReferences.map((item) => [item.id, item.label, item.active, item.text, item.previewUrl])]),
+        disabled: isRunning || mode === "audio",
+        references: mentionReferences.filter((item) => item.active).map((item) => ({ marker: item.label, title: item.title, kind: item.kind, text: prompt.includes(item.label) ? item.text : undefined })),
+        parameters: { model: config.model, size: config.size, quality: config.quality, background: config.background, seconds: config.videoSeconds, resolution: config.vquality, generateAudio: config.videoGenerateAudio, watermark: config.videoWatermark, inputMode: config.videoInputMode, interpolate: config.videoInterpolate, count: config.count, textCount: node.metadata?.textCount || 1, reasoningEffort: config.reasoningEffort },
+    });
 
     const submit = () => {
         const text = prompt.trim();
@@ -89,13 +99,15 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 style={{ background: "transparent", color: theme.node.text }}
                 placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
             />
+            {!expanded && mode !== "audio" && <PromptEnhancementPreview state={enhancement} />}
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <Tooltip title={t("canvas.promptPanel.expandEditor")}>
                         <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Maximize2 className="size-3.5" />} onClick={openExpandedEditor} aria-label={t("canvas.promptPanel.expandEditor")} />
                     </Tooltip>
                     <CanvasPromptLibrary onSelect={updatePrompt} />
+                    {mode !== "audio" && <PromptEnhancementButton state={enhancement} disabled={isRunning || !prompt.trim()} />}
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
@@ -157,6 +169,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         style={{ background: "transparent", borderColor: theme.toolbar.border, color: theme.node.text }}
                         placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
                     />
+                    {mode !== "audio" && <><div className="mt-2 flex justify-end"><PromptEnhancementButton state={enhancement} disabled={isRunning || !prompt.trim()} /></div><PromptEnhancementPreview state={enhancement} /></>}
                 </div>
             </Modal>
         </div>

@@ -276,6 +276,19 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	return log, db.Save(&log).Error
 }
 
+func GetCreditLog(id string) (model.CreditLog, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.CreditLog{}, false, err
+	}
+	var entry model.CreditLog
+	err = db.Where("id = ?", id).First(&entry).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return entry, false, nil
+	}
+	return entry, err == nil, err
+}
+
 func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, model.CreditLogStats, error) {
 	db, err := DB()
 	if err != nil {

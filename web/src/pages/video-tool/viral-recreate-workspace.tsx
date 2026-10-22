@@ -4,6 +4,7 @@ import { Alert, App, Button, Collapse, Empty, Input, InputNumber, Mentions, Moda
 import { ArrowLeft, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, Sparkles, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
+import { VideoLinkImport } from "@/components/video-link-import";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
@@ -74,7 +75,7 @@ export default function ViralRecreateWorkspace() {
     const wan = cfg.videoModel === REPLICATE_VIDEO_MODEL,
         cloud = isReplicateVideoModel(cfg.videoModel),
         referenceMode = mode === "reference",
-        locked = busy || uploading;
+        locked = busy || wb.importing || uploading;
     const labels = viralMaterialLabels(d),
         materials = viralVideoMaterials(d, cfg),
         frames = viralFrameMaterials(d),
@@ -239,6 +240,7 @@ export default function ViralRecreateWorkspace() {
             <Button type="text" size="small" disabled={locked} onClick={() => setAssetRole(role)}>
                 从我的素材选择
             </Button>
+            {role === "reference" && <VideoLinkImport disabled={locked} source={reference?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
             {errors[role] && (
                 <div role="alert" className="text-xs" style={{ color: token.colorError }}>
                     {errors[role]}

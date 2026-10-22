@@ -4,6 +4,7 @@ import { Alert, App, Button, Card, Collapse, Empty, Input, Select, Space, Spin, 
 import { ArrowLeft, Download, FolderPlus, Grid2X2, UploadCloud, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
+import { VideoLinkImport } from "@/components/video-link-import";
 import { imageToDataUrl } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { getReplicateModels, publicServiceText, type ReplicateQuote } from "@/services/api/replicate";
@@ -36,7 +37,7 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask));
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const model = models.find((m) => m.operation === (photo ? "digital-human" : "lipsync"));
-    const locked = busy || uploading;
+    const locked = busy || wb.importing || uploading;
     const blocked = pending ? "已有任务，请先恢复查询核对结果" : !avatar ? `请上传人物${photo ? "照片" : "视频"}` : !d.speech ? "请上传或生成音频" : !session ? "请先登录" : model && !model.available ? publicServiceText(model.reason || "服务暂不可用") : "";
     const speechBlocked = !d.narration.trim() ? "请填写要朗读的文字" : d.voiceMode === "clone" && !d.media.some((m) => m.role === "voice") ? "请上传声音样本" : !session ? "请先登录" : pending ? "请先恢复已有任务" : "";
     const result = viewed || d.video;
@@ -108,6 +109,11 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
             <Upload.Dragger accept={role === "avatar" ? accept : "audio/*"} disabled={locked} showUploadList={false} beforeUpload={(file) => { void upload(file, role); return Upload.LIST_IGNORE; }}>
                 <div className="flex items-center justify-center gap-2"><UploadCloud size={17} />上传{label}</div>
             </Upload.Dragger>
+            {role === "avatar" && !photo && <VideoLinkImport disabled={locked} source={avatar?.source} onImport={async (text, signal) => {
+                const added = await wb.importLink(text, role, signal);
+                if (added) setViewed(null);
+                return added;
+            }} />}
         </div>
     );
     const viewQuote = async () => {

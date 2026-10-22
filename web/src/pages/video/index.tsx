@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ChevronDown, ClipboardPaste, Download, FolderPlus, LoaderCircle, Plus, RefreshCw, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon, X } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { App, Button, Checkbox, Empty, Input, InputNumber, Mentions, Modal, Popover, Segmented, Select, Slider, Switch, Tabs, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
@@ -9,11 +9,18 @@ import type { MentionsRef } from "antd/es/mentions";
 
 import { VideoFrameEditor } from "./video-frame-editor";
 import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
+import { VideoLinkImport } from "@/components/video-link-import";
+import { importVideoURL } from "@/services/api/video-import";
+import { prepareWorkbenchVideo } from "@/services/api/video-worker";
+import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { wanFrameRatio } from "@/lib/video-frames";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { VideoModelOption } from "@/components/video-model-option";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
+import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
+import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
+import { useTextModelConfirmation } from "@/hooks/use-text-model-confirmation";
 import { normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel, videoResolutionLabel } from "@/components/video-settings-panel";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
@@ -22,7 +29,7 @@ import { createVideoGenerationTask, isVideoTaskFailed, quoteVideoModel, storeGen
 import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { boolConfig, modelOptionLabel, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoReferenceDurationError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode, isH3Video2K, isWan30 } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
 import { fetchReplicateResult, publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
@@ -107,6 +114,8 @@ export default function VideoPage() {
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [videoReferences, setVideoReferences] = useState<ReferenceVideo[]>([]);
     const [trimming, setTrimming] = useState(false);
+    const [linkImporting, setLinkImporting] = useState(false);
+    const linkImportRequest = useRef<AbortSignal | null>(null);
     const [audioReferences, setAudioReferences] = useState<ReferenceAudio[]>([]);
     const [writing, setWriting] = useState(false);
     const [writingError, setWritingError] = useState("");
@@ -118,6 +127,8 @@ export default function VideoPage() {
     const [resultView, setResultView] = useState("results");
     const [writingOpen, setWritingOpen] = useState(false);
     const [writingBrief, setWritingBrief] = useState("");
+    const [writingMode, setWritingMode] = useState<"write" | "enhance">("write");
+    const confirmTextModel = useTextModelConfirmation();
     const [quotedPrice, setQuotedPrice] = useState<{ key: string; value: VideoPrice } | null>(null);
     const [manualModel, setManualModel] = useState(false);
     const [creationMode, setCreationMode] = useState<"reference" | "first_last">("reference");
@@ -167,11 +178,39 @@ export default function VideoPage() {
     const referenceLimit = Math.max(0, ...uploadProfiles.map((item) => item.maxImages));
     const maxVideos = Math.max(0, ...uploadProfiles.map((item) => item.maxVideos));
     const maxAudios = Math.max(0, ...uploadProfiles.map((item) => item.maxAudios));
+    const linkScope = JSON.stringify([token, model, creationMode, maxVideos, references.map((item) => item.id), videoReferences.map((item) => [item.id, item.storageKey]), audioReferences.map((item) => item.id)]);
+    const currentLinkScope = useRef(linkScope);
+    currentLinkScope.current = linkScope;
     const materialLabels = [
         ...references.map((item, index) => ({ id: item.id, label: `图片${index + 1}`, name: item.name })),
         ...videoReferences.map((item, index) => ({ id: item.id, label: `视频${index + 1}`, name: item.name })),
         ...audioReferences.map((item, index) => ({ id: item.id, label: `音频${index + 1}`, name: item.name })),
     ];
+    const enhancement = usePromptEnhancement({
+        prompt, onChange: setPrompt, scenario: "video", disabled: running || writing,
+        contextKey: JSON.stringify([references.map((item) => [item.id, item.name, item.storageKey, item.dataUrl]), videoReferences.map((item) => [item.id, item.url, item.durationMs]), audioReferences.map((item) => [item.id, item.url, item.durationMs]), creationMode, previewLog?.id, videoCommand?.nonce]),
+        references: materialLabels.map((item) => ({ marker: `@${item.label}`, title: item.name })),
+        parameters: { model, size: effectiveConfig.size, seconds: effectiveConfig.videoSeconds, resolution: effectiveConfig.vquality, generateAudio: effectiveConfig.videoGenerateAudio, watermark: effectiveConfig.videoWatermark, interpolate: effectiveConfig.videoInterpolate },
+        validate: (value) => materialMentionError(value, materialLabels),
+    });
+    const writingScope = JSON.stringify([prompt, materialLabels, references.map((item) => [item.storageKey, item.dataUrl]), videoReferences.map((item) => [item.url, item.durationMs]), audioReferences.map((item) => [item.url, item.durationMs]), effectiveConfig, model, creationMode, token]);
+    const writingScopeRef = useRef(writingScope);
+    writingScopeRef.current = writingScope;
+    const [writingResultScope, setWritingResultScope] = useState("");
+    const [writingComplete, setWritingComplete] = useState(false);
+    useLayoutEffect(() => {
+        writingControllerRef.current?.abort();
+        writingControllerRef.current = null;
+        setWriting(false);
+        setWritingComplete(false);
+    }, [writingScope]);
+    const closeWriting = () => {
+        enhancement.cancel();
+        writingControllerRef.current?.abort();
+        writingControllerRef.current = null;
+        setWriting(false);
+        setWritingOpen(false);
+    };
     const referenceError = (trimming ? "参考视频正在裁剪，请稍候" : "") || (!manualModel && !model ? "暂无支持这些输入的可用服务，请调整素材或联系管理员启用相应服务。" : videoReferenceError(effectiveConfig, model, references.length, videoReferences.length, audioReferences.length)) || videoReferenceDurationError(model, videoReferences) || materialMentionError(prompt, materialLabels);
     const quoteKey = [model, effectiveConfig.channelMode, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.videoInputMode, effectiveConfig.videoInterpolate, token, quoteRevision, pricingRevision].join("|");
     const price = quotedPrice?.key === quoteKey ? quotedPrice.value : null;
@@ -297,7 +336,7 @@ export default function VideoPage() {
         event.preventDefault();
         dragDepthRef.current = 0;
         setReferenceDragTarget(false);
-        if (running || writing) return;
+        if (running || writing || linkImportRequest.current) return;
         const files = Array.from(event.dataTransfer.files);
         void addReferences(files.filter((file) => file.type.startsWith("image/")));
         void addMediaReferences(files.filter((file) => !file.type.startsWith("image/")));
@@ -324,6 +363,7 @@ export default function VideoPage() {
         }
     };
     const addMediaReferences = async (files: FileList | File[] | null) => {
+        if (linkImportRequest.current) return;
         try {
             const selected = Array.from(files || []);
             if (selected.filter((item) => item.type.startsWith("video/")).length + videoReferences.length > maxVideos || selected.filter((item) => item.type.startsWith("audio/")).length + audioReferences.length > maxAudios) throw new Error("当前模型不支持这些素材或素材数量已达到上限");
@@ -338,6 +378,35 @@ export default function VideoPage() {
             message.error(publicServiceText(error instanceof Error ? error.message : "参考素材上传失败"));
         }
     };
+    const importReferenceLink = async (text: string, signal: AbortSignal) => {
+        if (running || writing || trimming || linkImportRequest.current) throw new Error("当前素材正在处理，请稍候");
+        if (!maxVideos || videoReferences.length >= maxVideos) throw new Error("当前模型不支持视频参考或数量已达上限");
+        linkImportRequest.current = signal;
+        setLinkImporting(true);
+        let storedKey: string | undefined;
+        const validate = () => {
+            signal.throwIfAborted();
+            if (currentLinkScope.current !== linkScope) throw new Error("模型、素材或登录状态已变化，请重新提取");
+        };
+        try {
+            const { file, source } = await importVideoURL(text, signal);
+            const blob = await prepareWorkbenchVideo(useVideoWorkbenchStore.getState().worker, file, file.name, signal);
+            validate();
+            const media = await uploadMediaFile(blob, "video-reference");
+            storedKey = media.storageKey;
+            validate();
+            setVideoReferences((items) => [...items, { ...media, id: nanoid(), name: file.name, type: media.mimeType, source }]);
+            storedKey = undefined;
+            return true;
+        } finally {
+            try {
+                if (storedKey) await deleteStoredMedia([storedKey]);
+            } finally {
+                linkImportRequest.current = null;
+                setLinkImporting(false);
+            }
+        }
+    };
     const writePrompt = async () => {
         if (writingControllerRef.current) return;
         setWritingError("");
@@ -346,41 +415,37 @@ export default function VideoPage() {
             setWritingError("请先输入视频主题或制作要求。");
             return;
         }
-        if (effectiveConfig.channelMode === "remote" && !useUserStore.getState().token) {
-            setWritingError("请先点击页面右上角“登录”，登录后再使用 AI 代为撰写。");
-            return;
-        }
         const textModel = effectiveConfig.textModel;
-        if (!textModel || !isAiConfigReady(effectiveConfig, textModel)) {
-            setWritingError(effectiveConfig.channelMode === "remote" ? "平台尚未提供可用的文字模型，请联系管理员配置。" : "请配置可用的文字模型及渠道，然后重新点击 AI 代为撰写。");
-            if (effectiveConfig.channelMode === "local") openConfigDialog(true, "channels");
-            return;
-        }
         const controller = new AbortController();
+        const scope = writingScope;
         writingControllerRef.current = controller;
         setWriting(true);
+        setWritingComplete(false);
+        setWritingResultScope(scope);
         try {
-            if (effectiveConfig.channelMode === "remote") {
-                const quote = await quoteVideoModel(effectiveConfig, textModel, controller.signal);
-                await new Promise<void>((resolve, reject) => modal.confirm({ title: "确认AI代写费用", content: `${modelOptionLabel(effectiveConfig, textModel)}：本次 ${quote.credits} 算力点，与视频生成分开计费。`, okText: "确认代写", cancelText: "取消", onOk: () => resolve(), onCancel: () => reject(new DOMException("已取消代写", "AbortError")) }));
-            }
+            await confirmTextModel(effectiveConfig, controller.signal, "AI代写");
             const content: Exclude<AiTextMessage["content"], string> = [
                 { type: "text", text: `根据用户的要求与参考图片撰写可直接提交给视频模型的中文分镜提示词。时长 ${effectiveConfig.videoSeconds} 秒。说明主体、镜头、动作、构图、光线和节奏，不虚构素材事实。已上传编号：${materialLabels.map((item) => item.label).join("、") || "无"}。保留用户指定的 @素材编号；不添加不存在的编号。视频和音频仅有编号，未提供内容，不推断其具体内容。只输出提示词。用户要求：${writingBrief}` },
             ];
             for (const image of references) content.push({ type: "image_url", image_url: { url: await imageToDataUrl(image) } });
             controller.signal.throwIfAborted();
-            const answer = await requestImageQuestion({ ...effectiveConfig, model: textModel }, [{ role: "user", content }], setWritingPreview, { signal: controller.signal });
+            const answer = await requestImageQuestion({ ...effectiveConfig, model: textModel }, [{ role: "user", content }], (text) => { if (!controller.signal.aborted && writingControllerRef.current === controller && writingScopeRef.current === scope) setWritingPreview(text); }, { signal: controller.signal });
+            if (controller.signal.aborted || writingControllerRef.current !== controller || writingScopeRef.current !== scope) return;
             if (!answer.trim() || answer.trim() === "没有返回内容") throw new Error("文字模型没有返回提示词，请重试或切换代写模型。原提示词已保留。");
             setWritingPreview(answer);
+            setWritingComplete(true);
             message.success("脚本已撰写，请预览后应用");
         } catch (error) {
             if (!controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) setWritingError(publicServiceText(error instanceof Error ? error.message : "撰写失败，请重试。原提示词已保留。"));
         } finally {
-            writingControllerRef.current = null;
-            setWriting(false);
+            if (writingControllerRef.current === controller) {
+                writingControllerRef.current = null;
+                setWriting(false);
+            }
         }
     };
     const generate = async () => {
+        if (linkImportRequest.current) return;
         const agentTaskId = agentTaskIdRef.current;
         agentTaskIdRef.current = undefined;
         const snapshot = buildRequestSnapshot();
@@ -549,7 +614,7 @@ export default function VideoPage() {
     };
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
-        if (running || writing) return;
+        if (running || writing || linkImportRequest.current) return;
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "video") {
@@ -568,7 +633,7 @@ export default function VideoPage() {
     };
 
     const createSession = () => {
-        if (running || writing) return;
+        if (running || writing || linkImportRequest.current) return;
         setManualModel(false);
         setPrompt("");
         setReferences([]);
@@ -695,7 +760,7 @@ export default function VideoPage() {
                         </div>
                         <div className="space-y-3">
                             <div className="flex items-center justify-between"><span className="font-semibold">生成模式</span><Button type="text" size="small" loading={loadingModels} icon={<RefreshCw size={14} />} onClick={() => { void useConfigStore.getState().loadPublicSettings(); setQuoteRevision((value) => value + 1); }}>刷新服务 / 报价</Button></div>
-                            <Segmented block value={creationMode} disabled={running || writing} options={[{ label: "参考模式", value: "reference" }, { label: "首尾帧模式", value: "first_last" }]} onChange={(value) => { const next = value as "reference" | "first_last"; setCreationMode(next); updateConfig("videoInputMode", next); setManualModel(false); }} />
+            <Segmented block value={creationMode} disabled={running || writing || linkImporting} options={[{ label: "参考模式", value: "reference" }, { label: "首尾帧模式", value: "first_last" }]} onChange={(value) => { const next = value as "reference" | "first_last"; setCreationMode(next); updateConfig("videoInputMode", next); setManualModel(false); }} />
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-2"><span className="font-semibold">视频模型</span>{manualModel && <Tag color="blue">手动</Tag>}</div>
                                 <Select aria-label="视频模型" className="w-full" size="large" disabled={running || writing || !selectableModeModels.length} value={model || undefined} placeholder="暂无支持当前模式的模型" optionLabelProp="title" virtual={false} optionRender={(option) => <VideoModelOption config={effectiveConfig} model={String(option.value)} />} onChange={(value) => { setManualModel(true); updateConfig("videoModel", value); }} options={selectableModeModels.map((value) => { const item = videoProfile(effectiveConfig, value); return { value, title: item.displayName, label: item.displayName }; })} />
@@ -708,25 +773,27 @@ export default function VideoPage() {
                             <div className="flex items-center justify-between gap-2"><span className="font-semibold">{frameMode ? "首尾帧图片" : !manualModel || isHailuo ? "图片素材（可选）" : "参考素材"}</span><Button size="small" disabled={running || writing} icon={<FolderPlus size={14} />} onClick={() => setAssetPickerOpen(true)}>我的资产</Button></div>
                             <div className="flex flex-wrap gap-2">
                                 {referenceLimit > 0 && <><Button size="small" disabled={running || writing} icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()}>{frameMode ? "添加首帧 / 尾帧" : singleImage && references.length ? "更换首帧" : "添加图片"}</Button><Button size="small" disabled={running || writing} icon={<ClipboardPaste size={14} />} onClick={() => void addReferencesFromClipboard()}>粘贴图片</Button></>}
-                                {maxVideos > 0 && <Button size="small" disabled={running || writing} onClick={() => videoInputRef.current?.click()}>添加视频</Button>}
+                                {maxVideos > 0 && <Button size="small" disabled={running || writing || linkImporting} onClick={() => videoInputRef.current?.click()}>添加视频</Button>}
                                 {maxAudios > 0 && <Button size="small" disabled={running || writing} onClick={() => audioInputRef.current?.click()}>添加音频</Button>}
                             </div>
+                            {maxVideos > 0 && <VideoLinkImport disabled={running || writing || trimming || linkImporting || videoReferences.length >= maxVideos} onImport={importReferenceLink} />}
                             <div className={`min-h-28 rounded-lg border border-dashed p-3 ${referenceDragTarget ? "border-primary bg-primary/5" : "border-border"}`} onDragEnter={handleReferenceDragEnter} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={handleReferenceDragLeave} onDrop={handleReferenceDrop}>
                                 {!materialLabels.length && <div className="py-5 text-center text-sm text-muted-foreground">{creationMode === "first_last" ? "上传首帧和尾帧图片控制开始与结束画面" : "只写文字生成文生视频；上传图片、视频或音频后仅显示对应能力的模型"}</div>}
                                 <div className="grid grid-cols-3 gap-2">
                                     {references.map((item, index) => <div key={item.id} className="group relative overflow-hidden rounded-md border border-border"><button type="button" disabled={running || writing} className="block w-full cursor-pointer" onClick={() => { if (!frameMode) insertMention(`图片${index + 1}`); }}><img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="aspect-square w-full object-cover" /><span className="block truncate px-1 py-1 text-xs">{frameMode ? (index === 0 ? "首帧" : "尾帧") : `图片${index + 1}`}</span></button>{!frameMode && <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => { if (!running && !writing) changeImages(moveListItem(references, index, offset)); }} />}<button type="button" disabled={running || writing} className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white" aria-label={`移除图片${index + 1}`} onClick={() => removeMaterial(item.id)}><Trash2 size={12} /></button></div>)}
                                 </div>
                                 {model === REPLICATE_VIDEO_MODEL && references.length > 0 && <div className="mt-3 space-y-2"><Button block disabled={running || writing} onClick={() => setFrameEditorOpen(true)}>{framesNeedReview ? "确认首尾帧构图" : "调整首尾帧构图"} · {frameRatio}</Button><p className="text-xs text-muted-foreground">{framesNeedReview ? "生成前先查看裁剪预览；首尾帧将统一画幅，不会拉伸。" : `已确认 ${frameRatio} 构图，原图保留；修改画幅后需重新确认。`}</p></div>}
-                                {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><video src={item.url} controls className="max-h-32 w-full rounded" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing || trimming} onClick={() => removeMaterial(item.id)}>移除</Button></div>{isWan30(model) && <VideoReferenceTrimmer media={{ ...item, storageKey: item.storageKey || "", bytes: item.bytes || 0, mimeType: item.type }} disabled={running || writing || trimming} onBusyChange={setTrimming} onApply={(file) => setVideoReferences((items) => items.map((current) => current.id === item.id ? { ...current, ...file, type: file.mimeType } : current))} />}</div>)}
+                                {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><video src={item.url} controls className="max-h-32 w-full rounded" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing || linkImporting} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing || linkImporting || trimming} onClick={() => removeMaterial(item.id)}>移除</Button></div>{isWan30(model) && <VideoReferenceTrimmer media={{ ...item, storageKey: item.storageKey || "", bytes: item.bytes || 0, mimeType: item.type }} disabled={running || writing || linkImporting || trimming} onBusyChange={setTrimming} onApply={(file) => setVideoReferences((items) => items.map((current) => current.id === item.id ? { ...current, ...file, type: file.mimeType } : current))} />}</div>)}
                                 {audioReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><audio src={item.url} controls className="w-full" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`音频${index + 1}`)} className="cursor-pointer truncate text-primary">@音频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing} onClick={() => removeMaterial(item.id)}>移除</Button></div></div>)}
+                                {videoReferences.filter((item) => item.source).map((item) => <div key={`source:${item.id}`} className="mt-1 break-words text-xs text-muted-foreground" title={item.source?.sourceUrl}>视频号 · {item.source?.author || "未知作者"} · {item.source?.title}</div>)}
                             </div>
                             <p className="text-xs leading-5 text-muted-foreground">{isTextWan ? manualModel ? "当前手动选择文生视频服务，仅支持文字输入。" : "图片可选，添加图片将自动切换服务。" : videoInputDescription(profile, inputMode)}{inputMode === "reference" && references.length > 0 && "点击素材插入编号。"}</p>
                             {!maxVideos && !maxAudios && <p className="text-xs text-muted-foreground">当前渠道未开放视频 / 音频参考。上传照片和语音让人物说话，请进入 <a href="/video/photo-talk" className="text-primary">照片说话</a>；已有视频匹配新语音，请进入 <a href="/video/lipsync" className="text-primary">视频对口型</a>。</p>}
                             {referenceError && <Typography.Text role="alert" type="warning">{referenceError}</Typography.Text>}
                         </div>
                         <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2"><span className="font-semibold">视频脚本</span><div className="flex gap-1"><Button size="small" icon={<BookOpen size={14} />} onClick={() => setPromptDialogOpen(true)}>提示词库</Button><Button size="small" disabled={running || writing} icon={<Sparkles size={14} />} onClick={() => { setWritingBrief(prompt); setWritingError(""); setWritingPreview(""); setWritingOpen(true); }}>AI代写</Button></div></div>
-                            <Mentions ref={promptInputRef} aria-label="视频脚本" className="w-full" rows={8} disabled={running || writing} value={prompt} onChange={setPrompt} prefix="@" options={materialLabels.map((item) => ({ value: item.label, label: `${item.label} · ${item.name}` }))} placeholder="描述主体、动作和镜头；输入 @ 选择参考素材，或点击AI代写。" />
+                            <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">视频脚本</span><div className="flex gap-1"><PromptEnhancementButton state={enhancement} undoOnly /><Button size="small" icon={<BookOpen size={14} />} onClick={() => setPromptDialogOpen(true)}>提示词库</Button><Button size="small" disabled={running || writing} icon={<Sparkles size={14} />} onClick={() => { setWritingBrief(prompt); setWritingError(""); setWritingPreview(""); setWritingComplete(false); setWritingMode(prompt.trim() ? "enhance" : "write"); setWritingOpen(true); }}>AI脚本助手</Button></div></div>
+                            <Mentions ref={promptInputRef} aria-label="视频脚本" className="w-full" rows={8} disabled={running || writing} value={prompt} onChange={setPrompt} prefix="@" options={materialLabels.map((item) => ({ value: item.label, label: `${item.label} · ${item.name}` }))} placeholder="描述主体、动作和镜头；输入 @ 选择参考素材。" />
                             <p className="text-xs text-muted-foreground">例如：以 @图片1 中的商品为主体，镜头缓慢环绕，突出材质细节。</p>
                         </div>
                     </div>
@@ -745,7 +812,7 @@ export default function VideoPage() {
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0 text-sm">{priceLoading ? <span className="text-xs text-muted-foreground">正在读取报价…</span> : price ? <div className="flex items-baseline gap-2"><span className="text-xs text-muted-foreground">预计扣费</span><strong>{price.credits.toLocaleString()} 算力点</strong></div> : token && (isCloudVideo || effectiveConfig.channelMode === "remote") ? <Typography.Text type="warning">{priceError || "报价尚未就绪"}</Typography.Text> : isCloudVideo || effectiveConfig.channelMode === "remote" ? <span className="text-xs text-muted-foreground">登录后查看本次算力点</span> : <span className="text-xs text-muted-foreground">自定义渠道费用以该服务账单为准</span>}</div>
                         </div>
-                        <Button type="primary" size="large" block icon={<Sparkles size={16} />} loading={running} disabled={!canGenerate || framesNeedReview || running || writing || Boolean(referenceError) || profile.interface === "unavailable"} onClick={() => void generate()}>生成视频</Button>
+                        <Button type="primary" size="large" block icon={<Sparkles size={16} />} loading={running} disabled={!canGenerate || framesNeedReview || running || writing || linkImporting || Boolean(referenceError) || profile.interface === "unavailable"} onClick={() => void generate()}>生成视频</Button>
                         <p className="text-xs text-muted-foreground">提交前确认最新费用；上传素材、选择模板和查看报价不扣费。</p>
                     </div>
                 </section>
@@ -758,8 +825,26 @@ export default function VideoPage() {
             <input ref={fileInputRef} type="file" accept="image/*" multiple={!singleImage} className="hidden" onChange={(event) => { void addReferences(event.target.files); event.target.value = ""; }} />
             <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={(event) => { void addMediaReferences(event.target.files); event.target.value = ""; }} />
             <input ref={audioInputRef} type="file" accept="audio/*" multiple className="hidden" onChange={(event) => { void addMediaReferences(event.target.files); event.target.value = ""; }} />
-            <Modal title="AI脚本助手" open={writingOpen} onCancel={() => { if (!writing) setWritingOpen(false); }} maskClosable={!writing} closable={!writing} footer={<div className="flex justify-end gap-2"><Button loading={writing} disabled={running} onClick={() => void writePrompt()}>撰写脚本</Button><Button type="primary" disabled={writing || !writingPreview.trim()} onClick={() => { const error = materialMentionError(writingPreview, materialLabels); if (error) { setWritingError(error); return; } setPrompt(writingPreview); setWritingOpen(false); }}>应用到脚本</Button></div>}>
-                <div className="space-y-3"><p className="text-sm text-muted-foreground">根据文字和参考图片扩写脚本，不分析视频、音频内容。AI代写按文字模型单独计费，生成视频另行确认。</p><ModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(value) => { if (!writing) updateConfig("textModel", value); }} capability="text" fullWidth onMissingConfig={() => openConfigDialog(false, "channels")} /><Input.TextArea aria-label="代写要求" rows={3} disabled={writing} value={writingBrief} onChange={(event) => setWritingBrief(event.target.value)} placeholder="例如：做一段香水广告，镜头缓慢环绕，突出瓶身质感。" />{writing && <Typography.Text role="status" type="secondary">正在撰写，请稍候…</Typography.Text>}{writingPreview && <Input.TextArea aria-label="代写脚本预览" rows={8} readOnly={writing} value={writingPreview} onChange={(event) => setWritingPreview(event.target.value)} />}{writingError && <Typography.Text role="alert" type="danger">{writingError}</Typography.Text>}</div>
+            <Modal title="AI脚本助手" open={writingOpen} onCancel={closeWriting} footer={null}>
+                <div className="space-y-3">
+                    <Segmented aria-label="脚本助手模式" value={writingMode} options={[{ label: "增强现有脚本", value: "enhance" }, { label: "AI代写", value: "write" }]} onChange={(value) => { enhancement.cancel(); writingControllerRef.current?.abort(); writingControllerRef.current = null; setWriting(false); setWritingComplete(false); setWritingMode(value as "write" | "enhance"); }} />
+                    {writingMode === "enhance" ? <>
+                        <Input.TextArea aria-label="待增强视频脚本" rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={running} />
+                        <div className="flex flex-wrap items-center justify-between gap-2"><Typography.Text type="secondary">文字增强单独计费</Typography.Text><PromptEnhancementButton state={enhancement} disabled={running || !prompt.trim()} /></div>
+                        <PromptEnhancementPreview state={enhancement} />
+                    </> : <>
+                        <ModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(value) => { if (!writing) updateConfig("textModel", value); }} capability="text" fullWidth onMissingConfig={() => openConfigDialog(false, "channels")} />
+                        <Input.TextArea aria-label="代写要求" rows={3} disabled={writing} value={writingBrief} onChange={(event) => { setWritingBrief(event.target.value); setWritingComplete(false); }} placeholder="例如：做一段香水广告，镜头缓慢环绕，突出瓶身质感。" />
+                        {writing && <Typography.Text role="status" type="secondary">正在撰写…</Typography.Text>}
+                        {writingPreview && <Input.TextArea aria-label="代写脚本预览" rows={8} readOnly={writing} value={writingPreview} onChange={(event) => setWritingPreview(event.target.value)} />}
+                        {writingError && <Typography.Text role="alert" type="danger">{writingError}</Typography.Text>}
+                        {writingResultScope && writingResultScope !== writingScope && <Typography.Text type="warning" role="alert">输入或素材已变化，请重新撰写。</Typography.Text>}
+                        <div className="flex flex-wrap justify-end gap-2">
+                            {writing ? <Button onClick={() => { writingControllerRef.current?.abort(); writingControllerRef.current = null; setWriting(false); setWritingComplete(false); }}>停止</Button> : <Button disabled={running} onClick={() => void writePrompt()}>撰写脚本</Button>}
+                            <Button type="primary" disabled={running || writing || !writingComplete || !writingPreview.trim() || writingResultScope !== writingScope} onClick={() => { const error = materialMentionError(writingPreview, materialLabels); if (error) { setWritingError(error); return; } setPrompt(writingPreview); closeWriting(); }}>应用到脚本</Button>
+                        </div>
+                    </>}
+                </div>
             </Modal>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={(text) => { if (!running && !writing) setPrompt(text); }} />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />

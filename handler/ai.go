@@ -204,7 +204,8 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
-	if err := service.ConsumeUserCredits(user.ID, modelName, credits, path, channel); err != nil {
+	entry, err := service.ConsumeUserCreditsWithLog(user.ID, modelName, credits, path, channel)
+	if err != nil {
 		FailError(w, err)
 		return
 	}
@@ -212,7 +213,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		copyAIVideoCreateResponse(w, request, model.VideoTask{
 			UserID: user.ID, Model: modelName, Credits: credits, Path: billingPath,
 			ChannelID: channel.ID, ChannelName: channel.Name, ChannelBaseURL: channel.BaseURL,
-		}, func() {
+		}, entry.ID, func() {
 			if err := service.RefundUserCredits(user.ID, modelName, credits, billingPath, channel); err != nil {
 				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 			}
@@ -263,7 +264,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	_, _ = io.Copy(w, response.Body)
 }
 
-func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, task model.VideoTask, onFailure func()) {
+func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, task model.VideoTask, creditLogID string, onFailure func()) {
 	response, err := aiHTTPClient.Do(request)
 	if err != nil {
 		log.Printf("AI proxy video create failed: url=%s err=%v", request.URL.String(), err)
@@ -291,7 +292,8 @@ func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, tas
 		return
 	}
 	task.Status = videoResponseString(body, "status")
-	if err := service.SaveVideoTask(task); err != nil {
+	task.OutputURL = videoResponseOutputURL(body)
+	if err := service.SaveVideoTask(task, creditLogID); err != nil {
 		log.Printf("AI proxy save video task failed: task=%s user=%s err=%v", task.ID, task.UserID, err)
 		onFailure()
 		Fail(w, "视频任务记录失败")
@@ -344,6 +346,7 @@ func copyAIVideoGetResponse(w http.ResponseWriter, request *http.Request, task m
 		return
 	}
 	if tracked {
+		task.OutputURL = videoResponseOutputURL(body)
 		if status := videoResponseString(body, "status"); status != "" {
 			if err := service.UpdateVideoTaskStatus(task, status); err != nil {
 				log.Printf("AI proxy update video task failed: task=%s status=%s err=%v", task.ID, status, err)
@@ -353,6 +356,25 @@ func copyAIVideoGetResponse(w http.ResponseWriter, request *http.Request, task m
 	copyAIResponseHeaders(w, response)
 	w.WriteHeader(response.StatusCode)
 	_, _ = w.Write(body)
+}
+
+func videoResponseOutputURL(body []byte) string {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	if data, ok := payload["data"].(map[string]any); ok {
+		payload = data
+	}
+	for _, value := range []any{payload["video_url"], payload["url"], payload["result_url"], payload["video"], payload["content"]} {
+		if address := jsonURLValue(value); address != "" {
+			return address
+		}
+	}
+	if content, ok := payload["content"].(map[string]any); ok {
+		return jsonURLValue(content["video_url"])
+	}
+	return ""
 }
 
 func copyAIResponseHeaders(w http.ResponseWriter, response *http.Response) {

@@ -569,14 +569,14 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 	return err
 }
 
-func SaveVideoTask(task model.VideoTask) error {
+func SaveVideoTask(task model.VideoTask, creditLogID string) error {
 	task.Status = normalizeVideoTaskStatus(task.Status)
 	if task.Status == "" {
 		task.Status = "pending"
 	}
 	task.CreatedAt = now()
 	task.UpdatedAt = task.CreatedAt
-	return repository.SaveVideoTask(task)
+	return repository.SaveVideoTask(task, creditLogID)
 }
 
 func GetVideoTask(id string) (model.VideoTask, bool, error) {
@@ -589,7 +589,7 @@ func UpdateVideoTaskStatus(task model.VideoTask, status string) error {
 		return nil
 	}
 	if status != "failed" && status != "cancelled" && status != "expired" {
-		return repository.UpdateVideoTaskStatus(task.ID, task.UserID, status, now())
+		return repository.UpdateVideoTaskStatus(task.ID, task.UserID, status, now(), task.OutputURL)
 	}
 	extra, _ := json.Marshal(map[string]any{"model": task.Model, "path": task.Path, "chargedCredits": task.Credits, "videoTaskId": task.ID, "terminalStatus": status, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	_, err := repository.RefundFailedVideoTask(task.ID, task.UserID, status, model.CreditLog{

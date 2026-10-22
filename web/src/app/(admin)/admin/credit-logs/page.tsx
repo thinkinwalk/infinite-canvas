@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchAdminCreditLogThumbnail, type AdminCreditLog, type AdminCreditLogQuery } from "@/services/api/admin";
 import { defaultCreditLogPageSize, useAdminCreditLogs } from "./use-admin-credit-logs";
 import { useUserStore } from "@/stores/use-user-store";
+import { CreditLogVideo } from "./components/credit-log-video";
 
 type DateRange = [Dayjs, Dayjs];
 type CreditLogDraft = {
@@ -82,6 +83,11 @@ function getLogModel(log: AdminCreditLog) {
 
 function getLogPath(log: AdminCreditLog) {
     return stringValue(readExtra(log)?.path);
+}
+
+function hasVideoTask(log: AdminCreditLog) {
+    const operation = stringValue(readExtra(log)?.operation);
+    return /^\/(videos|contents\/generations\/tasks)(\/|$)/.test(getLogPath(log)) || Boolean(log.relatedId && operation && operation !== "speech" && operation !== "transcribe");
 }
 
 function getLogChannel(log: AdminCreditLog) {
@@ -415,12 +421,13 @@ export default function AdminCreditLogsPage() {
                 />
             </Space>
 
-            <Modal title="日志详情" open={Boolean(detailLog)} width={760} footer={null} onCancel={() => setDetailLog(null)} destroyOnHidden>
+            <Modal title="日志详情" open={Boolean(detailLog)} width={760} footer={null} style={{ top: 24 }} styles={{ body: { maxHeight: "calc(100dvh - 140px)", overflowY: "auto" } }} onCancel={() => setDetailLog(null)} destroyOnHidden>
                 {detailLog ? (
                     <Descriptions
                         bordered
                         size="small"
                         column={1}
+                        styles={{ label: { width: 104, minWidth: 104 }, content: { overflowWrap: "anywhere" } }}
                         items={[
                             { key: "user", label: "用户", children: detailLog.user?.displayName || detailLog.user?.username || detailLog.userId },
                             { key: "userId", label: "用户 ID", children: <Typography.Text copyable>{detailLog.userId}</Typography.Text> },
@@ -439,6 +446,15 @@ export default function AdminCreditLogsPage() {
                                   ]
                                 : []),
                             { key: "remark", label: "备注", children: detailLog.remark || "-" },
+                            ...((detailLog.type === "ai_consume" || detailLog.type === "ai_refund") && hasVideoTask(detailLog)
+                                ? [
+                                      {
+                                          key: "video",
+                                          label: "视频任务",
+                                          children: <CreditLogVideo key={`${detailLog.id}:${token}`} log={detailLog} />,
+                                      },
+                                  ]
+                                : []),
                             ...(detailLog.type === "ai_consume" && /^\/(images\/|responses)/.test(getLogPath(detailLog))
                                 ? [
                                       {

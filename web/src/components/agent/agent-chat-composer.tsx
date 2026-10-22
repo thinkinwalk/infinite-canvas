@@ -6,6 +6,11 @@ import { useTranslation } from "react-i18next";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useAgentStore, type AgentModel, type AgentPermissionMode, type AgentReasoningEffort } from "@/stores/use-agent-store";
+import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
+import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
+import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
+import type { PromptEnhancementReference } from "@/services/api/prompt-enhancement";
+import { agentReferenceMarker, agentSkillMarker, parseAgentInlineTokens } from "./agent-chat-inline-tokens";
 import type { AgentChatAttachment } from "./agent-chat-message";
 import { AgentChatPromptInput } from "./agent-chat-prompt-input";
 
@@ -57,6 +62,21 @@ export function AgentChatComposer({
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const canvasReferences = useAgentStore((state) => state.canvasReferences);
+    const activeThreadId = useAgentStore((state) => state.activeThreadId);
+    const workspacePath = useAgentStore((state) => state.workspacePath);
+    const activeTab = useAgentStore((state) => state.activeTab);
+    const panelOpen = useAgentStore((state) => state.panelOpen);
+    const selectedSkill = useAgentSkillStore((state) => state.selectedSkill);
+    const inlineReferences = parseAgentInlineTokens(prompt, canvasReferences, selectedSkill || undefined).flatMap<PromptEnhancementReference>((item) =>
+        item.type === "reference" ? [{ marker: agentReferenceMarker(item.reference), title: item.reference.title, kind: item.reference.kind, text: item.reference.text }]
+            : item.type === "skill" ? [{ marker: agentSkillMarker(item.skill), title: item.skill.displayName || item.skill.name, kind: "skill" }] : []).sort((a, b) => a.marker.localeCompare(b.marker));
+    const enhancement = usePromptEnhancement({
+        prompt, scenario: "task", onChange: onPromptChange,
+        disabled: disabled || sending,
+        contextKey: JSON.stringify([activeThreadId, workspacePath, activeTab, panelOpen, selectedSkill?.path, attachments.map((item) => [item.id, item.name, item.url]), canvasReferences.map((item) => [item.nodeId, item.label, item.previewUrl, item.text])]),
+        references: inlineReferences,
+        parameters: { model: model || "", reasoningEffort: reasoningEffort || "", permissionMode: permissionMode || "", confirmTools: Boolean(confirmTools) },
+    });
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
     return (
         <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
@@ -76,6 +96,7 @@ export function AgentChatComposer({
                     </div>
                 ) : null}
                 <AgentChatPromptInput value={prompt} disabled={disabled || sending} placeholder={placeholder} theme={theme} onChange={onPromptChange} onSubmit={() => { if (canSubmit) void onSubmit(); }} onAddFiles={onAddFiles} />
+                <PromptEnhancementPreview state={enhancement} />
                 <div className="@container mt-2 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1">
                         {onAddFiles ? (
@@ -95,6 +116,7 @@ export function AgentChatComposer({
                         {left}
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
+                        <PromptEnhancementButton state={enhancement} disabled={disabled || sending || !prompt.trim()} />
                         {sending && onStop ? (
                             <Tooltip title={t("agent.composer.stop")} placement="top"><Button danger shape="circle" className="!h-10 !w-10 !min-w-10" icon={<Square className="size-4" />} onClick={() => void onStop()} aria-label={t("agent.composer.stop")} /></Tooltip>
                         ) : (

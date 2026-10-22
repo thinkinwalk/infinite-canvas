@@ -1,3 +1,5 @@
+import type { VideoImportSource } from "@/types/video-workbench";
+
 export type ReferenceVideo = {
     id: string;
     name: string;
@@ -8,6 +10,7 @@ export type ReferenceVideo = {
     width?: number;
     height?: number;
     durationMs?: number;
+    source?: VideoImportSource;
 };
 
 export type ReferenceAudio = {

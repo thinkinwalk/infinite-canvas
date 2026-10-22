@@ -8,6 +8,7 @@ type VideoTask struct {
 	Credits        int    `json:"credits"`
 	Path           string `json:"path"`
 	Status         string `json:"status" gorm:"index"`
+	OutputURL      string `json:"-"`
 	Refunded       bool   `json:"refunded" gorm:"index"`
 	ChannelID      int    `json:"channelId"`
 	ChannelName    string `json:"channelName"`

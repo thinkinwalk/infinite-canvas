@@ -8,6 +8,7 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { ModelPicker } from "@/components/model-picker";
 import { VideoSettingsPanel } from "@/components/video-settings-panel";
 import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
+import { VideoLinkImport } from "@/components/video-link-import";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
@@ -82,7 +83,7 @@ export default function ContentReplaceWorkspace() {
     const wholeVideo = person && cloud && (!headSwap || longVideo);
     const showSegmentHint = wholeVideo && longVideo;
     const showBatchWorkspace = wholeVideo && Boolean(d.replacementJobId) && !historyPreview;
-    const locked = busy || uploading || repairingSource || trimming;
+    const locked = busy || wb.importing || uploading || repairingSource || trimming;
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
     const operation: ReplicateOperation = person ? (headSwap ? "head-swap" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
@@ -425,6 +426,7 @@ export default function ContentReplaceWorkspace() {
                 <Button type="text" className="mt-1" size="small" disabled={locked} onClick={() => setAssetRole({ role, accept })}>
                     {media ? "从我的素材更换" : "从我的素材选择"}
                 </Button>
+                {accept === "video/*" && <VideoLinkImport disabled={locked} source={media?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
                 {uploadErrors[role] && (
                     <div role="alert" className="mt-1 text-xs" style={{ color: token.colorError }}>
                         {uploadErrors[role]}

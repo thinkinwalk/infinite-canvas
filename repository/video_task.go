@@ -7,12 +7,29 @@ import (
 	"gorm.io/gorm"
 )
 
-func SaveVideoTask(task model.VideoTask) error {
+func SaveVideoTask(task model.VideoTask, creditLogID string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	return db.Create(&task).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&task).Error; err != nil {
+			return err
+		}
+		if creditLogID == "" {
+			return nil
+		}
+		result := tx.Model(&model.CreditLog{}).
+			Where("id = ? AND user_id = ? AND type = ?", creditLogID, task.UserID, model.CreditLogTypeAIConsume).
+			Update("related_id", task.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("视频扣费日志不存在")
+		}
+		return nil
+	})
 }
 
 func GetVideoTask(id string) (model.VideoTask, bool, error) {
@@ -28,12 +45,16 @@ func GetVideoTask(id string) (model.VideoTask, bool, error) {
 	return task, err == nil, err
 }
 
-func UpdateVideoTaskStatus(id string, userID string, status string, now string) error {
+func UpdateVideoTaskStatus(id string, userID string, status string, now string, outputURL string) error {
 	db, err := DB()
 	if err != nil {
 		return err
 	}
-	return db.Model(&model.VideoTask{}).Where("id = ? AND user_id = ?", id, userID).Updates(map[string]any{"status": status, "updated_at": now}).Error
+	updates := map[string]any{"status": status, "updated_at": now}
+	if outputURL != "" {
+		updates["output_url"] = outputURL
+	}
+	return db.Model(&model.VideoTask{}).Where("id = ? AND user_id = ?", id, userID).Updates(updates).Error
 }
 
 // RefundFailedVideoTask atomically claims the one-time refund, updates the balance, and writes its audit log.

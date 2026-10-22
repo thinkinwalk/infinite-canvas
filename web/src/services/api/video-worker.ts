@@ -35,8 +35,8 @@ async function workerRequest(config: WorkerConfig, path: string, init: RequestIn
     return response;
 }
 
-export async function getWorkerCapabilities(config: WorkerConfig): Promise<WorkerCapabilities[]> {
-    return (await (await workerRequest(config, "health")).json()).capabilities;
+export async function getWorkerCapabilities(config: WorkerConfig, signal?: AbortSignal): Promise<WorkerCapabilities[]> {
+    return (await (await workerRequest(config, "health", { signal })).json()).capabilities;
 }
 
 export async function workbenchMediaBlob(media: UploadedFile & { kind?: string }) {
@@ -58,30 +58,40 @@ export async function uploadWorkerMedia(config: WorkerConfig, media: UploadedFil
     return (await (await workerRequest(config, "media", { method: "POST", body: form, signal })).json()).id;
 }
 
-export async function prepareWorkbenchVideo(config: WorkerConfig, blob: Blob, name?: string): Promise<Blob> {
+export async function prepareWorkbenchVideo(config: WorkerConfig, blob: Blob, name?: string, signal?: AbortSignal): Promise<Blob> {
+    signal?.throwIfAborted();
     try {
         await readPlayableVideoMeta(blob);
+        signal?.throwIfAborted();
         return blob;
     } catch {
         // MIME/extension alone cannot establish that the browser can decode the video.
     }
+    signal?.throwIfAborted();
+    let jobId: string | undefined;
     try {
-        const capabilities = await getWorkerCapabilities(config);
+        const capabilities = await getWorkerCapabilities(config, signal);
         if (!capabilities.some((item) => item.name === "compose" && item.available)) throw new Error("处理服务未启用视频格式转换");
         const url = URL.createObjectURL(blob);
         let id: string;
         try {
-            id = await uploadWorkerMedia(config, { url, storageKey: "", bytes: blob.size, mimeType: blob.type, name });
+            id = await uploadWorkerMedia(config, { url, storageKey: "", bytes: blob.size, mimeType: blob.type, name }, signal);
         } finally {
             URL.revokeObjectURL(url);
         }
-        const job = await createWorkerJob(config, "compose", { video: id }, {});
-        const completed = await waitForWorkerJob(config, job.id, new AbortController().signal, () => {});
+        const job = await createWorkerJob(config, "compose", { video: id }, {}, signal);
+        jobId = job.id;
+        const completed = await waitForWorkerJob(config, job.id, signal || new AbortController().signal, () => {});
         if (!completed.result?.file) throw new Error("处理服务未返回转换后的视频");
-        const converted = await (await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}`)).blob();
+        const converted = await (await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}`, { signal })).blob();
         await readPlayableVideoMeta(converted);
+        signal?.throwIfAborted();
         return converted;
     } catch (error) {
+        if (signal?.aborted) {
+            if (jobId) void cancelWorkerJob(config, jobId).catch(() => {});
+            signal.throwIfAborted();
+        }
         throw new Error(`视频编码不兼容，自动转换失败：${error instanceof Error ? error.message : "处理失败"}。请改用 H.264 编码的 MP4 视频，原文件未修改。`);
     }
 }
