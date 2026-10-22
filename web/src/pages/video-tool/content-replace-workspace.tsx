@@ -63,6 +63,7 @@ export default function ContentReplaceWorkspace() {
     const quoteController = useRef<AbortController | null>(null);
     const [previewError, setPreviewError] = useState(false);
     const [sourcePreviewError, setSourcePreviewError] = useState(false);
+    const [processingHelpOpen, setProcessingHelpOpen] = useState(false);
     const [repairingSource, setRepairingSource] = useState(false);
     const [historyPreview, setHistoryPreview] = useState<{ record: VideoRecord; result: UploadedFile; source?: UploadedFile } | null>(null);
     const [drawRegions, setDrawRegions] = useState(false);
@@ -78,6 +79,7 @@ export default function ContentReplaceWorkspace() {
     const longVideo = Boolean(reference?.durationMs && reference.durationMs > longVideoPreviewThresholdMs);
     // All full-person edits share one durable flow; short face swaps keep their direct request.
     const wholeVideo = person && cloud && (!headSwap || longVideo) && !d.maskedPerson;
+    const showSegmentHint = wholeVideo && longVideo;
     const showBatchWorkspace = wholeVideo && Boolean(d.replacementJobId) && !historyPreview;
     const locked = busy || uploading || repairingSource || trimming;
     const imageRole = d.replacement === "background" ? "background" : "model";
@@ -201,6 +203,7 @@ export default function ContentReplaceWorkspace() {
         if (d.replacementJobId || d.replacementResultKey) { setHistoryPreview(null); setTab("current"); }
     }, [d.replacementJobId, d.replacementResultKey, d.final?.storageKey]);
     useEffect(() => setSourcePreviewError(false), [reference?.storageKey, reference?.url]);
+    useEffect(() => setProcessingHelpOpen(showSegmentHint), [reference?.id, showSegmentHint]);
     useEffect(() => {
         if (!platformToken || active?.status !== "failed" || !active.replicateTask || active.replicateBilling) return;
         let disposed = false;
@@ -239,7 +242,7 @@ export default function ContentReplaceWorkspace() {
     const subtitleUnavailable = !d.replaceSubtitles || person && wholeVideo && !d.regenerateSubtitles ? ""
         : person && wholeVideo ? checking || !capabilities && !serviceError ? "正在检查字幕识别与合成服务"
         : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "字幕识别与合成服务尚未启用")
-        : d.route !== "model" || !isWan30(config.videoModel) ? "当前模型不支持联合去字幕，请关闭此项，或先使用云端硬字幕去除工具处理原片。"
+        : d.route !== "model" || !isWan30(config.videoModel) ? "当前模型不能在替换内容时同时去除原字幕，请关闭「去除原字幕」后继续。"
         : !d.regenerateSubtitles ? ""
         : checking || !capabilities && !serviceError ? "正在检查字幕识别与合成服务"
         : serviceError || (subtitleCapabilities.every((name) => capabilities?.some((item) => item.name === name && item.available)) ? "" : subtitleCapability?.reason || "字幕识别与合成服务尚未启用");
@@ -365,12 +368,24 @@ export default function ContentReplaceWorkspace() {
                         {accept === "image/*" && <Button type="text" size="small" disabled={locked} icon={<ClipboardPaste size={13} />} onClick={() => void pasteImage(role, accept)}>从剪切板粘贴</Button>}
                         {cloud && person && role === "reference" && (
                             <Popover
-                                title="人物替换素材建议"
+                                title={<div className="flex items-center justify-between gap-3">
+                                    <span>{showSegmentHint ? "长视频分段说明" : "人物替换处理说明"}</span>
+                                    <Button type="text" size="small" icon={<X size={14} />} aria-label="收起处理说明" onClick={() => setProcessingHelpOpen(false)} />
+                                </div>}
                                 trigger="click"
-                                content={<div className="max-w-64 text-xs leading-relaxed">目标人物应在片段中持续可见。混剪、频繁转场、无人画面或主体遮挡容易导致跟踪失败，建议先按镜头拆分，只提交人物连续出现的片段。</div>}
+                                placement="topRight"
+                                open={processingHelpOpen}
+                                onOpenChange={setProcessingHelpOpen}
+                                content={<div className="max-w-64 space-y-2 text-xs leading-relaxed">
+                                    <p className="m-0">直接上传原视频和人物参考图即可，无需提前剪辑或拆分。系统会在需要时分析镜头、规划分段，并展示费用供你确认。</p>
+                                    {showSegmentHint && <>
+                                        <p className="m-0">当前视频长 {((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，将分段处理。</p>
+                                        <p className="m-0">分析后可以只勾选一段试效果，也可以选择多段生成；未勾选的片段不会处理，确认费用后才开始生成。</p>
+                                    </>}
+                                </div>}
                             >
-                                <Button type="text" size="small" className="!h-7 !px-1" icon={<Info size={14} />} aria-label="查看人物替换素材建议">
-                                    素材建议
+                                <Button type="text" size="small" className="!h-7 !px-1" icon={<Info size={14} />} aria-label={showSegmentHint ? "查看长视频分段说明" : "查看人物替换处理说明"} aria-expanded={processingHelpOpen}>
+                                    {showSegmentHint ? "分段提示" : "处理说明"}
                                 </Button>
                             </Popover>
                         )}
@@ -560,23 +575,21 @@ export default function ContentReplaceWorkspace() {
                                 />
                             </label>}
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
-                            {wholeVideo && longVideo && <Alert showIcon type="info" title={`视频长 ${((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，需要分段处理。`} description="系统先分析分段和费用；你可以只勾选一段试效果，也可以一次勾选多段生成，未勾选的片段不会处理。" />}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center gap-2">
                                     <Switch aria-label="去除原字幕" disabled={locked} checked={d.replaceSubtitles} onChange={(replaceSubtitles) => wb.edit({ replaceSubtitles }, "video")} />
                                     <span className="text-sm">去除原字幕</span>
                                 </div>
-                                <p className="m-0 text-xs" style={muted}>支持的模型在云端同时替换内容并去除字幕，无需单独运行字幕清理服务。请检查成片是否残字或闪烁；关闭此项后原字幕可能被模型重画。</p>
+                                <p className="m-0 text-xs" style={muted}>{d.replaceSubtitles ? "去掉原视频画面里已有的字幕。支持的模型会在替换内容时一起处理，无需另外操作。" : "不主动去除原视频中的字幕；替换内容时，模型仍可能改动画面里的文字。"}</p>
                                 {d.replaceSubtitles && <>
                                     <div className="flex items-center gap-2">
                                         <Switch aria-label="去除后重新生成字幕" disabled={locked} checked={d.regenerateSubtitles === true} onChange={(regenerateSubtitles) => wb.edit({ regenerateSubtitles }, "video")} />
                                         <span className="text-sm">去除后重新生成字幕</span>
                                     </div>
-                                    <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "另需字幕识别与合成服务：根据原音轨识别字幕稿，校对后单独生成带字幕版或下载 SRT。" : "另需字幕识别与合成服务：根据原音轨识别并烧录新字幕，识别文字可能需要校对。"}</p>
+                                    <p className="m-0 text-xs" style={muted}>{person && wholeVideo ? "根据原视频声音重新识别字幕，校对后生成带字幕的视频，也可下载字幕文件（SRT）。" : "根据原视频声音重新识别并添加字幕，识别文字可能需要校对。"}</p>
                                 </>}
                                 {subtitleUnavailable && <Alert className="mt-2" type="warning" showIcon title={subtitleUnavailable} />}
-                                {d.replaceSubtitles && <Link to="/video/subtitle-remove">单独使用云端硬字幕去除</Link>}
                             </div>
                             {cloud && person && !wholeVideo && !headSwap && <Alert showIcon type="info" title={d.maskedPerson ? "云端局部模式先跟踪一次人物，再用人物替换模型生成换人视频，最后只把人物区域回填到原画面，背景和字幕保留原片；不读取文字提示词。" : "人物替换不读取文字要求；切镜、遮挡或人物短暂离开画面可能影响结果。"} />}
                             {(!cloud || !person || wholeVideo) && (
@@ -980,7 +993,7 @@ export default function ContentReplaceWorkspace() {
                                     <h2 className="text-base font-medium">如何替换{replacementNames[d.replacement]}</h2>
                                     <ol className="list-decimal space-y-3 pl-5">
                                         <li>上传清晰的原视频和{replacementNames[d.replacement]}参考图。</li>
-                                        <li>{person ? "人物替换使用单张人物图，平台服务可选 480p / 720p 并合并原音轨；目标人物应持续可见，混剪建议先按镜头拆分。" : "商品和背景编辑需填写具体要求；平台编辑服务使用 2–10 秒原视频、720p 和原音轨。"}</li>
+                                        <li>{person ? "人物替换直接上传原视频和单张人物参考图，无需提前剪辑或拆分；系统按需分析镜头与分段，确认费用后处理，并保留原音轨。" : "商品和背景编辑需填写具体要求；平台编辑服务使用 2–10 秒原视频、720p 和原音轨。"}</li>
                                         <li>查看本次费用，提交前在确认弹窗核对处理方式、时长与算力点。</li>
                                         <li>处理后对照原片，检查边缘、动作和主体一致性，再下载或保存。</li>
                                     </ol>

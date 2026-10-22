@@ -69,7 +69,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         .filter((name) => { const p = videoProfile({ ...config, channelMode: "remote" }, name); return p.maxVideos > 0 && p.maxImages > 0; })
         .sort((a, b) => preferred.indexOf(modelOptionName(a).toLowerCase()) - preferred.indexOf(modelOptionName(b).toLowerCase()));
     const selected = headSwap ? headSwapModel : candidates.includes(model) || model === wanReplace ? model : candidates[0] || wanReplace;
-    const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? "当前模型不支持联合去字幕，请关闭「去除原字幕」，或先使用云端硬字幕去除工具处理原片。" : "");
+    const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? headSwap ? "当前换脸模型不能同时去除原字幕，请关闭「去除原字幕」后继续。" : "当前模型不能同时换人和去除原字幕。请在「高级设置」中选择 Wan 3.0（wan30-720p），或关闭「去除原字幕」后继续。" : "");
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
     const durations = selected === headSwapModel ? ["15"] : selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
     const sizes = selected === wanReplace || headSwap ? ["720", "480"] : profile.resolutions;

@@ -48,7 +48,7 @@ func New() *gin.Engine {
     v1.GET("/replacement-jobs", gin.WrapF(handler.ReplacementJobs))
     v1.POST("/replacement-jobs", gin.WrapF(handler.ReplacementJobs))
     v1.GET("/replacement-jobs/:id", func(c *gin.Context) { handler.ReplacementJobAction(c.Writer, c.Request, c.Param("id"), "") })
-    v1.POST("/replacement-jobs/:id/:action", func(c *gin.Context) { handler.ReplacementJobAction(c.Writer, c.Request, c.Param("id"), c.Param("action")) })
+    v1.POST("/replacement-jobs/:id/:action", func(c *gin.Context) { handler.ReplacementJobAction(c.Writer,c.Request,c.Param("id"), c.Param("action")) })
     v1.Any("/video-worker/*path", func(c *gin.Context) { handler.VideoWorkerGateway(c.Writer,c.Request,c.Param("path")) })
     v1.GET("/replicate/models", gin.WrapF(handler.ReplicateCatalog))
     v1.POST("/replicate/quote", gin.WrapF(handler.ReplicatePrice))
@@ -123,6 +123,7 @@ func New() *gin.Engine {
 	})
 	admin.POST("/replicate/tasks/:id/reconcile", func(c *gin.Context) { handler.AdminReconcileReplicateTask(c.Writer,c.Request,c.Param("id")) })
 	admin.GET("/credit-logs", gin.WrapF(handler.AdminCreditLogs))
+	admin.GET("/credit-logs/:id/thumbnail", func(c *gin.Context) { handler.AdminCreditLogThumbnail(c.Writer, c.Request, c.Param("id")) })
 	admin.DELETE("/redemption-codes/invalid", gin.WrapF(handler.AdminDeleteInvalidRedemptionCodes))
 	admin.DELETE("/redemption-codes/:id", func(c *gin.Context) {
 		handler.AdminDeleteRedemptionCode(c.Writer, c.Request, c.Param("id"))

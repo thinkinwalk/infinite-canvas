@@ -138,6 +138,13 @@ export async function fetchAdminCreditLogs(token: string, query: AdminCreditLogQ
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 
+export async function fetchAdminCreditLogThumbnail(token: string, id: string) {
+    const response = await fetch(`/api/admin/credit-logs/${encodeURIComponent(id)}/thumbnail`, { headers: { Authorization: `Bearer ${token}` } });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error("读取生成图片失败");
+    return response.blob();
+}
+
 export async function fetchAdminRedemptionCodes(token: string, query: AdminRedemptionCodeQuery = {}) {
     return apiGet<AdminRedemptionCodeListResponse>("/api/admin/redemption-codes", compactApiParams(query), token);
 }

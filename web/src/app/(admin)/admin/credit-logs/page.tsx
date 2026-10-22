@@ -2,12 +2,13 @@
 
 import { InfoCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Avatar, Button, Card, Col, DatePicker, Descriptions, Flex, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, Typography, theme } from "antd";
+import { Avatar, Button, Card, Col, DatePicker, Descriptions, Flex, Form, Image, Input, Modal, Row, Select, Skeleton, Space, Tag, Tooltip, Typography, theme } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { AdminCreditLog, AdminCreditLogQuery } from "@/services/api/admin";
+import { fetchAdminCreditLogThumbnail, type AdminCreditLog, type AdminCreditLogQuery } from "@/services/api/admin";
 import { defaultCreditLogPageSize, useAdminCreditLogs } from "./use-admin-credit-logs";
+import { useUserStore } from "@/stores/use-user-store";
 
 type DateRange = [Dayjs, Dayjs];
 type CreditLogDraft = {
@@ -113,6 +114,37 @@ export default function AdminCreditLogsPage() {
     const [filters, setFilters] = useState<CreditLogFilters>(() => draftToFilters(defaultDraft(), 1, defaultCreditLogPageSize));
     const { logs, stats, total, isLoading, refreshLogs } = useAdminCreditLogs(filters);
     const [detailLog, setDetailLog] = useState<AdminCreditLog | null>(null);
+    const token = useUserStore((state) => state.token);
+    const [thumbnailUrl, setThumbnailUrl] = useState("");
+    const [thumbnailLoading, setThumbnailLoading] = useState(false);
+
+    useEffect(() => {
+        if (!detailLog || detailLog.type !== "ai_consume" || !getLogPath(detailLog).match(/^\/(images\/|responses)/)) {
+            setThumbnailUrl("");
+            setThumbnailLoading(false);
+            return;
+        }
+        let active = true;
+        let objectUrl = "";
+        setThumbnailLoading(true);
+        setThumbnailUrl("");
+        void fetchAdminCreditLogThumbnail(token, detailLog.id)
+            .then((blob) => {
+                if (!active || !blob) return;
+                objectUrl = URL.createObjectURL(blob);
+                setThumbnailUrl(objectUrl);
+            })
+            .catch(() => {
+                if (active) setThumbnailUrl("");
+            })
+            .finally(() => {
+                if (active) setThumbnailLoading(false);
+            });
+        return () => {
+            active = false;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [detailLog, token]);
 
     const applyFilters = () => {
         setFilters((current) => draftToFilters(draft, 1, current.pageSize));
@@ -376,6 +408,15 @@ export default function AdminCreditLogsPage() {
                                   ]
                                 : []),
                             { key: "remark", label: "备注", children: detailLog.remark || "-" },
+                            ...(detailLog.type === "ai_consume" && /^\/(images\/|responses)/.test(getLogPath(detailLog))
+                                ? [
+                                      {
+                                          key: "thumbnail",
+                                          label: "生成图片",
+                                          children: thumbnailLoading ? <Skeleton.Image active /> : thumbnailUrl ? <Image src={thumbnailUrl} width={180} style={{ objectFit: "cover" }} /> : <Typography.Text type="secondary">暂无生成图片</Typography.Text>,
+                                      },
+                                  ]
+                                : []),
                             { key: "createdAt", label: "创建时间", children: formatDate(detailLog.createdAt) },
                             {
                                 key: "extra",
@@ -392,7 +433,6 @@ export default function AdminCreditLogsPage() {
                     />
                 ) : null}
             </Modal>
-
         </main>
     );
 }

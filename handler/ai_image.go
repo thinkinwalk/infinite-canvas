@@ -95,7 +95,7 @@ func proxyAIImageRequest(w http.ResponseWriter, r *http.Request, path string, bo
 		}
 		// Once accepted, never replay a stream or an uncertain response on another channel.
 		failed = false
-		copyNativeAIResponses(w, service.BuildModelChannelURL(channel, path), response, func() { failed = true })
+		copyNativeAIImageResponse(w, service.BuildModelChannelURL(channel, path), response, entry.ID, func() { failed = true })
 		return
 	}
 }

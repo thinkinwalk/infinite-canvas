@@ -19,6 +19,7 @@ type Config struct {
 	JWTExpireHours               int    `env:"JWT_EXPIRE_HOURS" envDefault:"168"`
 	StorageDriver                string `env:"STORAGE_DRIVER" envDefault:"sqlite"`
 	DatabaseDSN                  string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
+	CreditLogThumbnailDir        string `env:"CREDIT_LOG_THUMBNAIL_DIR" envDefault:"data/credit-log-thumbnails"`
 	PublicBaseURL                string `env:"PUBLIC_BASE_URL"`
 	InfiniteCanvasOpsURL         string `env:"INFINITE_CANVAS_OPS_URL"`
 	InfiniteCanvasCallbackSecret string `env:"INFINITE_CANVAS_CALLBACK_SECRET"`

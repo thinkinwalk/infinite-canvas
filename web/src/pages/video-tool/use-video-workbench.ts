@@ -658,7 +658,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         const d = replacementDraft || read(tool);
         if (tool === "content-replace" && stage === "video" && d.replaceSubtitles !== false && !replacementDraft) {
             const cfg = modelConfig("video");
-            if (d.route !== "model" || !isWan30(cfg.videoModel)) throw new Error("当前模型不支持联合去字幕，请关闭此项，或先使用云端硬字幕去除工具处理原片。");
+            if (d.route !== "model" || !isWan30(cfg.videoModel)) throw new Error("当前模型不能在替换内容时同时去除原字幕，请关闭「去除原字幕」后继续。");
             if (d.regenerateSubtitles) return replacementPipeline(ctx, d);
         }
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
