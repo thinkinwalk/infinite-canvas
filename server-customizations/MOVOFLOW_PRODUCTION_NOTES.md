@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.71
-- Current production source: tag v0.19.71, commit 943a6a72413e24c08d73a1de2de459a723478e29
+- Current production image: infinite-canvas:v0.19.73
+- Current production source: tag v0.19.73, commit a8434c45120b20f06f0f8fed02080a322ca2f51b
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.73 deployment
+
+- Source tag `v0.19.73`, commit `a8434c45120b20f06f0f8fed02080a322ca2f51b`, includes the v0.19.72 admin video-task log viewer, prompt enhancement with text-model confirmation, and video-share import UI/server adapter, plus the H3video-768 resolution correction.
+- Production image `infinite-canvas:v0.19.73`, ID `sha256:55f24fa590628b29b628e4fed1d85cf294de8b5ab2528a26ad48b8f0ebf6e878`; container VERSION and OCI revision match. Only app was recreated. Video worker stayed running with its existing v0.19.65 source mount and start time `2026-10-21T14:43:53.828210978Z`.
+- Backup directory: `/opt/infinite-canvas/backups/v0.19.72-20261022-100222/`, containing an online SQLite backup, previous Compose and root-only environment backup. SQLite `quick_check` passed before and after deployment. All table row counts matched except `credit_logs`, which increased by 9 during the backup-to-verification interval; video and Replicate task counts did not change. The additional credit-log rows are not attributed to this deployment.
+- External `/api/health`, `/video`, `/video/content-replace`, `/image`, and `/admin/credit-logs` returned HTTP 200. The published `/assets/index-CD8nlJwV.js` contains the video import UI and API path. An unauthenticated import request returned the expected `未登录或权限不足` business error. No paid generation or import was submitted.
+- `VIDEO_IMPORT_WX_ENDPOINT` and `VIDEO_IMPORT_WX_TOKEN` are not configured in the app container. The link-import UI is deployed, but real video-account extraction remains unavailable until an authorized parser service is configured and tested. Douyin and Xiaohongshu remain unsupported.
+- Docker API and Vite production builds succeeded. Automated tests were not rerun during release. npm install reported 36 dependency audit findings (3 low, 10 moderate, 22 high, 1 critical); Vite also reported existing chunk-splitting/large-chunk warnings. These did not fail the build and were not changed in this release.
 
 ## v0.19.71 automatic person replacement and legacy recovery
 
