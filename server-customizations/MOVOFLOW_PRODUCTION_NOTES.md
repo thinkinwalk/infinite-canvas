@@ -15,9 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.70
-- Current production source: tag v0.19.70, commit 03191f93ce4867377c1ce2edab15ad76022ba097
+- Current production image: infinite-canvas:v0.19.71
+- Current production source: tag v0.19.71, commit 943a6a72413e24c08d73a1de2de459a723478e29
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.71 automatic person replacement and legacy recovery
+
+- Source `943a6a72413e24c08d73a1de2de459a723478e29`, tag `v0.19.71`, was pushed from `release/v0.19.60` without merging main. New person tasks use automatic replacement; obsolete person box, masked-only toggle and mask input controls were removed. Person drafts normalize on load/update while preserving media, outputs, task IDs and history snapshots. Legacy tasks resume from their original snapshot; product/background region tools remain available.
+- Image `infinite-canvas:v0.19.71`, ID `sha256:abc9c2ff56bd3d842c91c12673362dd54120e620c6e91791dadf39c49089b241`, was built on the production host using the previous deployment Dockerfile's `--no-audit --no-fund` install flags. Only app was recreated; Worker ID, start time and v0.19.65 mounts remained unchanged.
+- Online SQLite backup, previous Compose and environment: `/opt/infinite-canvas/backups/v0.19.71-20261022-064918/`. SQLite quick_check passed; all 11 table counts remained unchanged (users 34, credit_logs 15121, prompts 1512, assets 0, settings 2, redemption_codes 61, video_tasks 40, case_apps 22, case_runs 22, replicate_tasks 33, reference_media_owners 197). Prior task JSON, subtitles and thumbnail/original image hashes remained unchanged. No active jobs were present at restart (replacement: completed 3, ready 4, paused 1; Worker: completed 64, failed 5).
+- Internal/external health, ordinary-user Worker health gateway and replacement-job GET passed. Production `/video/content-replace` serves `/assets/index-Bs3bsRsP.js`; new recovery/automatic-flow copy and product/background controls are present, while retired person controls are absent. Evidence: `/opt/infinite-canvas/releases/v0.19.71-deployment.json`.
+- Development verification passed 10 focused tests (40 assertions) and isolated Chromium checks with simulated legacy drafts/recovery, product/background controls, head swap and desktop/mobile layout. No local builds/tests were rerun during release and no paid generation was submitted. Original Firefox/Bit 464 drafts and real paid legacy recovery/output remain pending user acceptance; production resource checks do not substitute for those browser checks.
 
 ## v0.19.70 original images in admin credit logs
 
