@@ -15,9 +15,16 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.69
-- Current production source: tag v0.19.69, commit ab6c25b (`ab6c25b`)
+- Current production image: infinite-canvas:v0.19.70
+- Current production source: tag v0.19.70, commit 03191f93ce4867377c1ce2edab15ad76022ba097
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.70 original images in admin credit logs
+
+- Source `03191f93ce4867377c1ce2edab15ad76022ba097`, tag `v0.19.70`, was built on the production host. New supported Base64 image results save their original bytes alongside the thumbnail; the admin detail loads the original only on click, using the authenticated thumbnail route with `?original=1`. Previous thumbnail-only records show an explicit missing-original message. Existing URL-only, streaming and first-image-only scope is unchanged.
+- Image `infinite-canvas:v0.19.70`, ID `sha256:71e2eecff5548863022d5bc9c68523d4af0ac7fa2b0ebe08ab928dbcb3f1f33c`. Only app was recreated; Worker mounts, ID and start time remained unchanged. Dockerfile install flags used `--no-audit --no-fund`; tagged application source was unchanged.
+- Online SQLite backup, Compose and environment: `/opt/infinite-canvas/backups/v0.19.70-20261022-051328/`. SQLite quick_check passed; all 11 table counts, prior thumbnails and task files remained unchanged. Existing thumbnail GET returned image bytes matching disk, old-record original GET returned 404, and ordinary users were denied original access.
+- Internal/external health and published resources passed. `/assets/index-C-Ta88zG.js` includes the original-image flow and missing-original message. Evidence: `/opt/infinite-canvas/releases/v0.19.70-deployment.json`. No local build or automated tests and no paid generation ran. Real original-image saving and browser preview for a newly completed image remain pending acceptance. Original files are retained in the existing data volume and must be included in backups/capacity planning.
 
 ## v0.19.69 concise long-video guidance
 
