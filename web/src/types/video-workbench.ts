@@ -130,7 +130,7 @@ export type VideoDraft = {
     replacement: "person" | "product" | "background";
     /** 人物替换使用的模型：wan 保留动作的整人替换，headswap 只换头部。 */
     replacementModel: "wan" | "headswap";
-    /** 仅处理人物掩膜，保留人物以外的原画面；仅增强处理服务实验模式。 */
+    /** 旧人物局部替换任务恢复专用；当前草稿固定为 false，不再创建此类任务。 */
     maskedPerson: boolean;
     replacementSeedTime?: number;
     maskedEdit: boolean;

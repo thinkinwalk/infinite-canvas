@@ -2,6 +2,7 @@ import localforage from "localforage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { normalizeContentReplacementDraft } from "@/lib/content-replacement-state";
 import { emptyVideoDraft, type DigitalHumanPreset, type VideoDraft, type VideoRecord, type VideoTool, type WorkerConfig } from "@/types/video-workbench";
 
 type WorkbenchState = {
@@ -33,7 +34,10 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
             digitalPresets: [],
             saveDigitalPreset: (preset) => set((state) => ({ digitalPresets: [...state.digitalPresets.filter((p) => p.id !== preset.id), preset] })),
             removeDigitalPreset: (id) => set((state) => ({ digitalPresets: state.digitalPresets.filter((p) => p.id !== id) })),
-            patchDraft: (tool, patch) => set((state) => ({ drafts: { ...state.drafts, [tool]: { ...emptyVideoDraft(tool), ...state.drafts[tool], ...patch } } })),
+            patchDraft: (tool, patch) => set((state) => {
+                const draft = { ...emptyVideoDraft(tool), ...state.drafts[tool], ...patch };
+                return { drafts: { ...state.drafts, [tool]: tool === "content-replace" ? normalizeContentReplacementDraft(draft) : draft } };
+            }),
             addRecord: (record) => set((state) => ({ records: [record, ...state.records] })),
             patchRecord: (id, patch) => set((state) => ({ records: state.records.map((record) => record.id === id ? { ...record, ...patch } : record) })),
             setWorker: (patch) => set((state) => ({ worker: { ...state.worker, ...patch } })),
@@ -46,6 +50,14 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
                 removeItem: (key) => storage.removeItem(key),
             })),
             partialize: ({ drafts, records, worker, digitalPresets }) => ({ drafts, records, worker, digitalPresets }),
+            merge: (persisted, current) => {
+                const saved = (persisted || {}) as Partial<WorkbenchState>;
+                const draft = saved.drafts?.["content-replace"];
+                return {
+                    ...current, ...saved,
+                    drafts: { ...saved.drafts, ...(draft ? { "content-replace": normalizeContentReplacementDraft({ ...emptyVideoDraft("content-replace"), ...draft }) } : {}) },
+                };
+            },
             onRehydrateStorage: () => (state, error) => {
                 if (error) useVideoWorkbenchStore.getState().setStorageError("视频工作台本地记录加载失败，请检查浏览器存储权限");
                 (state || useVideoWorkbenchStore.getState()).setHydrated();

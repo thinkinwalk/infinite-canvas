@@ -6,6 +6,7 @@ import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { emptyVideoDraft } from "@/types/video-workbench";
 import { isWan30, videoProfile } from "@/lib/video-capabilities";
+import { isPendingReplacement } from "@/lib/content-replacement-state";
 import { publicServiceText, uploadReplicateReference } from "@/services/api/replicate";
 import { storeWorkerResult, uploadWorkerMedia } from "@/services/api/video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "@/services/api/video";
@@ -33,11 +34,19 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const headSwap = d.replacementModel === "headswap";
     const token = useUserStore((s) => s.token);
     const hydrated = useVideoWorkbenchStore((s) => s.hydrated);
+    const legacyPending = wb.records.some(isPendingReplacement);
+    const submissionBlocked = wb.busy || legacyPending;
     const savedConfig = useConfigStore((s) => s.config);
     const publicSettings = useConfigStore((s) => s.publicSettings);
     const config = resolveEffectiveConfig({ ...savedConfig, channelMode: "remote" }, publicSettings);
     const { token: colors } = theme.useToken();
     const { modal, message } = App.useApp();
+    const checkSubmission = () => {
+        const state = useVideoWorkbenchStore.getState();
+        if (!state.busyTools["content-replace"] && !state.records.some(isPendingReplacement)) return true;
+        message.warning("请先在右侧恢复或完成已有替换任务，再开始新的生成");
+        return false;
+    };
     const [model, setModel] = useState("");
     const [resolution, setResolution] = useState("");
     const [jobs, setJobs] = useState<ReplacementJob[]>([]);
@@ -189,7 +198,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     };
     const canArchive = (job: ReplacementJob) => !["planning", "running"].includes(job.status) && !["recognizing", "rendering"].includes(job.captionStatus || "");
     const prepare = async () => {
-        if (submitting.current || subtitleError || !source || !image || !duration || !size) return;
+        if (submitting.current || subtitleError || !source || !image || !duration || !size || !checkSubmission()) return;
         submitting.current = true; setBusy(true); setError("");
         try {
             const key = JSON.stringify([source, image, selected, size, duration, d.instructions, d.replaceSubtitles, d.regenerateSubtitles, d.subtitleSize, d.subtitleColor]);
@@ -210,6 +219,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         finally { submitting.current = false; setBusy(false); }
     };
     const start = (job: ReplacementJob) => {
+        if (!checkSubmission()) return;
         const approvePreview = job.previewRequired && job.previewReady && !job.previewApproved;
         const previewCredits = job.parts?.[0]?.credits || 0;
         const remainingCredits = job.parts?.filter((part) => !part.validated).reduce((sum, part) => sum + part.credits, 0) || 0;
@@ -222,27 +232,28 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             title: approvePreview ? "预览效果满意，继续吗？" : job.previewRequired && !job.previewReady ? "先生成一段预览" : job.planned ? "确认本次处理费用" : "恢复视频分析",
             content: `${content} 字幕识别、存储等外部服务费用另计。`,
             okText: approvePreview ? "确认并处理剩余片段" : job.previewRequired && !job.previewReady ? "生成预览" : job.status === "ready" ? "开始处理" : "恢复处理",
-            onOk: async () => { try { await startReplacementJob(job, approvePreview); setPreviewChoice(null); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
+            onOk: async () => { if (!checkSubmission()) throw new Error("请先完成已有替换任务"); try { await startReplacementJob(job, approvePreview); setPreviewChoice(null); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
         });
     };
     const retryPart = async (job: ReplacementJob, part: number) => {
+        if (!checkSubmission()) return;
         try {
         const { credits } = await quoteReplacementPart(job.id, part);
         modal.confirm({
         title: `重做第 ${part + 1} 段`,
         content: `将重新生成这一段，增加 ${credits} 算力点预算；其他成功片段会保留。原任务的退款以账单为准。`,
         okText: "准备重做这一段",
-        onOk: async () => { try { await retryReplacementPart(job, part, credits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "重做准备失败"); throw e; } },
+        onOk: async () => { if (!checkSubmission()) throw new Error("请先完成已有替换任务"); try { await retryReplacementPart(job, part, credits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "重做准备失败"); throw e; } },
         });
         } catch (e) { message.error(e instanceof Error ? e.message : "报价失败"); }
     };
     const generateSelected = async (job: ReplacementJob) => {
-        if (!selectedParts.length || (selectedCredits <= 0 && !selectedPending)) return;
+        if (!selectedParts.length || (selectedCredits <= 0 && !selectedPending) || !checkSubmission()) return;
         modal.confirm({
             title: `生成所选 ${selectedParts.length} 段`,
             content: `本次预计扣除 ${selectedCredits} 点。只处理勾选的片段，其他片段保持不变；已生成的片段不会重复收费。`,
             okText: "确认生成",
-            onOk: async () => { try { await generateReplacementParts(job, selectedParts, selectedCredits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "生成失败"); throw e; } },
+            onOk: async () => { if (!checkSubmission()) throw new Error("请先完成已有替换任务"); try { await generateReplacementParts(job, selectedParts, selectedCredits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "生成失败"); throw e; } },
         });
     };
     const showResult = async (job: ReplacementJob, automatic = false, result = job.result) => {
@@ -277,7 +288,8 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>只调用所选模型，系统根据其支持的时长自动分段。</span>
         </label> }]} />}
         {subtitleError && <Alert type="warning" showIcon title={subtitleError} />}
-        {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={!hydrated || !source || !image || !duration || !size || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
+        {legacyPending && <Alert type="info" showIcon title="请先在右侧继续已有替换任务" />}
+        {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={submissionBlocked || !hydrated || !source || !image || !duration || !size || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
         {!source || !image ? <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{!source ? "请先上传原视频" : "请上传人物参考图"}</p> : (!duration || !size) && <Alert type="warning" title="当前模型尚未配置可用的时长或清晰度，请在高级设置中切换模型。" />}
         {error && <Alert type="warning" showIcon title={publicServiceText(error)} closable onClose={() => setError("")} />}
         {workspace && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>

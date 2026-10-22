@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { useNavigate } from "react-router-dom";
 
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
+import { isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
@@ -451,12 +452,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     const quoteReplacement = async (signal?: AbortSignal) => {
         const d = read(tool);
         const { operation, fields, materials } = replacementRequest(d);
-        const quote = await quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
-        if (d.replacement !== "person" || !d.maskedPerson || d.media.some((item) => item.role === "mask")) return quote;
-        const track = trackMaskRequest(d);
-        // 原片一次跟踪 + 生成后新人物一次跟踪，报价预览按两次跟踪计
-        const trackQuote = await quoteReplicate("track-mask", await cloudInput(track.fields, track.materials, signal), signal);
-        return maskedPersonQuote(trackQuote, quote, trackQuote);
+        return quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
     };
     const quoteDigitalHuman = async (signal?: AbortSignal) => {
         const { operation, fields, materials } = digitalHumanRequest(read(tool));
@@ -509,8 +505,10 @@ export function useVideoWorkbench(tool: VideoTool) {
         const task = await submitCloudTask(ctx, operation, input, quote, taskId);
         return cloudResult(stage, task);
     };
-    const maskedPersonCloud = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
+    // 仅从已有任务恢复，不能由新任务入口调用。
+    const resumeMaskedPerson = async (ctx: Context, d: VideoDraft): Promise<Partial<VideoDraft>> => {
         const record = () => store().records.find((item) => item.id === ctx.recordId)!;
+        if (!isLegacyMaskedPersonRecord(record())) throw new Error("人物局部替换已下线，仅支持恢复已有任务");
         const source = required(d.media.find((item) => item.role === "reference" && item.kind === "video"), "上传原视频");
         const uploadedMask = d.media.find((item) => item.role === "mask");
         const existingState = record().maskedReplacement;
@@ -839,7 +837,6 @@ export function useVideoWorkbench(tool: VideoTool) {
                     return cloud(ctx, stage, operation, fields, materials);
                 }
                 if (tool === "content-replace") {
-                    if (d.maskedPerson && d.replacementModel !== "headswap") return maskedPersonCloud(ctx, d);
                     const { operation, fields, materials } = replacementRequest(d, Boolean(replacementDraft));
                     return cloud(ctx, stage, operation, fields, materials);
                 }
@@ -880,10 +877,10 @@ export function useVideoWorkbench(tool: VideoTool) {
                                           "上传替换主体图",
                                       ),
                                   }),
-                            ...((d.replacement !== "person" || d.maskedPerson) && d.media.find((m) => m.role === "mask") ? { mask: d.media.find((m) => m.role === "mask")! } : {}),
+                            ...(d.replacement !== "person" && d.media.find((m) => m.role === "mask") ? { mask: d.media.find((m) => m.role === "mask")! } : {}),
                             ...(d.replacement === "product" && d.media.find((m) => m.role === "background") ? { background: d.media.find((m) => m.role === "background")! } : {}),
                         },
-                        { replacement: d.replacement, maskedPerson: d.maskedPerson, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions, seedTime: d.replacementSeedTime || 0 },
+                        { replacement: d.replacement, prompt: contentReplacementPrompt(d.replacement, d.instructions, Boolean(replacementDraft)), regions: d.regions, seedTime: d.replacementSeedTime || 0 },
                     ),
                     ctx.worker,
                 );
@@ -1023,7 +1020,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                               (m) =>
                                   m.role === "reference" ||
                                   m.role === (d.replacement === "background" ? "background" : "model") ||
-                                  (m.role === "mask" && (d.replacement !== "person" || d.maskedPerson) && (d.maskedEdit || d.maskedPerson || d.route === "worker")) ||
+                                  (m.role === "mask" && d.replacement !== "person" && (d.maskedEdit || d.route === "worker")) ||
                                   (m.role === "background" && d.route === "worker"),
                           ),
                       },
@@ -1198,10 +1195,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (error) throw new Error(error);
                 if (store().records.some((r) => r.tool === tool && r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask))) throw new Error("已有视频任务，请恢复查询原任务，避免重复付费");
             }
-            if (tool === "content-replace" && stage === "video" && read(tool).route === "replicate") {
-                const current = read(tool);
-                if (current.maskedPerson && !current.media.some((item) => item.role === "mask")) trackMaskRequest(current);
-                else replacementRequest(current);
+            if (tool === "content-replace" && stage === "video") {
+                if (store().records.some(isPendingReplacement)) throw new Error("已有替换任务，请先恢复原任务核对结果，避免重复付费");
+                if (read(tool).route === "replicate") replacementRequest(read(tool));
             }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
             if (stage === "analyze" && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
@@ -1239,6 +1235,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (record.workerJob && resolveWorkerUrl({ ...worker, url: record.workerJob.url }) !== resolveWorkerUrl(worker)) throw new Error("该任务属于另一处理服务，请先切换到记录中的服务地址；不会向旧地址发送当前令牌");
             store().patchRecord(record.id, { status: "running", error: undefined });
             try {
+                let replacementInput: VideoDraft | undefined;
                 if (digital && record.digitalHumanInput) {
                     const { channelMode, baseUrl: _url, audioModel: _audio, textModel: _text, ...input } = record.digitalHumanInput;
                     if (!record.replicateTask && channelMode !== config.channelMode) throw new Error("请切换回任务原渠道后恢复查询");
@@ -1254,6 +1251,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 } else if (tool === "content-replace" && record.replacementInput) {
                     const media = await Promise.all(record.replacementInput.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     signal.throwIfAborted();
+                    replacementInput = { ...emptyVideoDraft(tool), ...record.replacementInput, media };
                     patch({ ...clearAfter("video"), video: null, ...record.replacementInput, media, activeRecord: record.id });
                 } else if (tool === "viral-recreate" && record.viralInput) {
                     if (record.viralInput.channelMode !== config.channelMode) throw new Error("请切换回该任务原来的平台 / 自定义渠道后恢复查询");
@@ -1278,10 +1276,12 @@ export function useVideoWorkbench(tool: VideoTool) {
                     patch({ ...clearAfter(record.stage), ...record.subtitleRemoveInput, media, activeRecord: record.id, video: null, final: null });
                 } else patch({ activeRecord: record.id });
                 let value: Partial<VideoDraft>;
-                if (tool === "content-replace" && record.stage === "video" && record.maskedReplacement)
-                    value = await maskedPersonCloud({ signal, recordId: record.id, worker }, read(tool));
+                if (tool === "content-replace" && (record.maskedReplacement || record.replacementMaskTask || record.replicateTask?.operation === "track-mask") && !isLegacyMaskedPersonRecord(record))
+                    throw new Error("旧人物任务缺少原始输入快照，已保留任务记录，请核对原任务后继续");
+                if (isLegacyMaskedPersonRecord(record))
+                    value = await resumeMaskedPerson({ signal, recordId: record.id, worker }, replacementInput!);
                 else if (tool === "content-replace" && record.stage === "video" && record.replacementPipeline)
-                    value = await replacementPipeline({ signal, recordId: record.id, worker }, read(tool));
+                    value = await replacementPipeline({ signal, recordId: record.id, worker }, replacementInput || read(tool));
                 else if (record.replicateTask)
                     value = await cloudResult(
                         record.stage,
