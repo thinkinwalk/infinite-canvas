@@ -656,7 +656,7 @@ function isPidoiGrokVideoModel(model: string) {
 
 function isPidoiJsonVideoModel(model: string) {
     const name = model.toLowerCase().trim();
-    return name === "grok-imagine-video-1.5-preview" || name.startsWith("tejiasd-") || name.includes("seedance") || name.includes("seedace");
+    return name === "h3video-768" || name === "grok-imagine-video-1.5-preview" || name.startsWith("tejiasd-") || name.includes("seedance") || name.includes("seedace");
 }
 
 function normalizePidoiVideoSeconds(model: string, value: string, resolution: string) {

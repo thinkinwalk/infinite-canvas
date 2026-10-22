@@ -86,6 +86,30 @@ func TestVideoProfileRejectsUnsupportedInputsBeforeBilling(t *testing.T) {
 	}
 }
 
+func TestH3Video768JSONAllowsOptionalImagesAndPreservesUpstreamFields(t *testing.T) {
+	profile := service.VideoProfile(model.ModelChannel{VideoModels: map[string]model.VideoModelProfile{
+		"H3video-768": {Interface: "openai", InputModes: []string{"reference"}, FirstFrameRequired: true, MaxImages: 7, Resolutions: []string{"480", "720", "1080"}},
+	}}, "H3video-768")
+	for _, references := range []string{"", `,"image_url":"https://example.com/first.png"`, `,"image_url":"https://example.com/first.png","reference_image_urls":["https://example.com/second.png"]`} {
+		body := []byte(`{"model":"H3video-768","prompt":"test","resolution":"768p","seconds":"10","aspect_ratio":"9:16","input_mode":"reference"` + references + `}`)
+		if err := validateVideoProfileRequest(profile, body, "application/json"); err != nil {
+			t.Fatal(err)
+		}
+		stripped := stripVideoInputMode(body, "application/json")
+		forwarded, contentType := normalizeAIProxyVideoBody("", "/videos", stripped, "application/json")
+		if contentType != "application/json" || string(forwarded) != string(stripped) {
+			t.Fatalf("H3 JSON changed during proxy conversion: %s", forwarded)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(forwarded, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["input_mode"] != nil || payload["preset"] != nil || payload["resolution"] != "768p" || payload["aspect_ratio"] != "9:16" {
+			t.Fatalf("incorrect H3 upstream fields: %s", forwarded)
+		}
+	}
+}
+
 func TestVideoPriceChangeRequiresNewConfirmation(t *testing.T) {
 	r := httptest.NewRequest("POST", "/api/v1/videos", nil)
 	r.Header.Set("X-Expected-Credits", "180")
