@@ -15,9 +15,14 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.68
-- Current production source: tag v0.19.68, commit 5af31c2e27eb3b3282e82b3c3c3925854da35caf
+- Current production image: infinite-canvas:v0.19.69
+- Current production source: tag v0.19.69, commit pending release commit
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.69 concise long-video guidance
+
+- The long-video help popup now states the shared rule that videos over 15 seconds are analyzed and split with a quote for confirmation, then shows the current video's duration and that it will be split. Redundant upload and segment-selection copy was removed; processing behavior is unchanged.
+- Deployment details and verification results will be recorded after deployment.
 
 ## v0.19.68 replacement guidance and admin image previews
 

@@ -377,11 +377,8 @@ export default function ContentReplaceWorkspace() {
                                 open={processingHelpOpen}
                                 onOpenChange={setProcessingHelpOpen}
                                 content={<div className="max-w-64 space-y-2 text-xs leading-relaxed">
-                                    <p className="m-0">直接上传原视频和人物参考图即可，无需提前剪辑或拆分。系统会在需要时分析镜头、规划分段，并展示费用供你确认。</p>
-                                    {showSegmentHint && <>
-                                        <p className="m-0">当前视频长 {((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，将分段处理。</p>
-                                        <p className="m-0">分析后可以只勾选一段试效果，也可以选择多段生成；未勾选的片段不会处理，确认费用后才开始生成。</p>
-                                    </>}
+                                    <p className="m-0">视频超过 {longVideoPreviewThresholdMs / 1000} 秒时，系统会分析镜头、规划分段，并展示费用供你确认。</p>
+                                    {showSegmentHint && <p className="m-0">当前视频 {((reference?.durationMs || 0) / 1000).toFixed(1)} 秒，将分段处理。</p>}
                                 </div>}
                             >
                                 <Button type="text" size="small" className="!h-7 !px-1" icon={<Info size={14} />} aria-label={showSegmentHint ? "查看长视频分段说明" : "查看人物替换处理说明"} aria-expanded={processingHelpOpen}>
