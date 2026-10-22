@@ -15,9 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.77
-- Current production source: tag v0.19.77, commit 1b5161e56cab6d0220b4cb6d66b930ce449ecc81
+- Current production image: infinite-canvas:v0.19.78
+- Current production source: tag v0.19.78, commit ea9efc4915f31018ecb15cea516f07d8212cc432
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.78 deployment
+
+- Release commit `ea9efc4915f31018ecb15cea516f07d8212cc432` and tag `v0.19.78` are published on `release/v0.19.60`. This release completes the video-link import flow and supported-platform resolution through the configured extraction provider.
+- Production image `infinite-canvas:v0.19.78`, ID `sha256:12274c3b99bedfb594630db252e39856d0a48a7ae895b3c0f56b1e0203d58abc`, was built on the server with the established deployment Dockerfile. Only the app container was recreated; the video worker retained ID `f5a12467a87e37b4d20086b144bf27e03cc8aba634c569305be54adf5b9a8a82`.
+- Deployment backup directory: `/opt/infinite-canvas/backups/v0.19.78-20261022-144621/`. SQLite `quick_check` returned `ok`; all 11 table counts and task status counts were unchanged. Internal and external health checks returned `ok`.
+- Focused frontend tests (8 cases) and focused Go service/handler tests passed before release. A full TypeScript check remains blocked by pre-existing errors in unrelated files; the complete Go suite has an unrelated Replicate test failure. Production Docker build succeeded.
+- `ynvan.com` successfully parsed the public Douyin sample during development verification. A complete real-media download/FFprobe/browser acceptance and a valid Xiaohongshu link acceptance were not completed during deployment; health checks do not establish those platform flows. WeChat Channels remains dependent on its separate extraction service.
 
 ## v0.19.77 deployment
 
