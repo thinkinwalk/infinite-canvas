@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Input, theme } from "antd";
 import { Link2, X } from "lucide-react";
 import { useUserStore } from "@/stores/use-user-store";
+import { videoImportPlatformName } from "@/lib/video-import";
 import type { VideoImportSource } from "@/types/video-workbench";
 
 export function VideoLinkImport({ disabled, onImport, source }: {
@@ -47,8 +48,8 @@ export function VideoLinkImport({ disabled, onImport, source }: {
             <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Input
                     className="min-w-0 flex-1 basis-40"
-                    aria-label="视频号分享链接"
-                    placeholder="粘贴视频号分享链接或分享文案"
+                    aria-label="视频分享链接"
+                    placeholder="粘贴视频分享链接或分享文案"
                     prefix={<Link2 size={14} />}
                     value={text}
                     allowClear
@@ -62,7 +63,8 @@ export function VideoLinkImport({ disabled, onImport, source }: {
             {!session && <div className="text-xs" style={{ color: token.colorTextSecondary }}>请登录后提取视频</div>}
             {busy && <div role="status" className="text-xs" style={{ color: token.colorTextSecondary }}>正在提取并检查视频…</div>}
             {error && <div role="alert" className="break-words text-xs" style={{ color: token.colorError }}>{error}</div>}
-            {source && <div className="break-words text-xs" title={source.sourceUrl} style={{ color: token.colorTextSecondary }}>视频号{source.author ? ` · ${source.author}` : ""}{source.title ? ` · ${source.title}` : ""}</div>}
+            <div className="text-xs" style={{ color: token.colorTextSecondary }}>链接将发送至第三方解析服务；仅提取公开可访问的视频。</div>
+            {source && <div className="break-words text-xs" title={source.sourceUrl} style={{ color: token.colorTextSecondary }}>{videoImportPlatformName(source.platform)}{source.author ? ` · ${source.author}` : ""}{source.title ? ` · ${source.title}` : ""}</div>}
         </div>
     );
 }

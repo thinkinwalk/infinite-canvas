@@ -27,10 +27,12 @@ type ResolvedVideoImport struct {
 	VideoURL string
 }
 
+const DefaultVideoImportEndpoint = "https://ynvan.com/api/parse"
+
 var videoShareURLPattern = regexp.MustCompile(`https?://[^\s<>"'，。！？、；（）【】]+`)
 
-// Only SPH share URLs use the upstream's server-only parser. Other Channels
-// page URLs may silently fall back to a connected desktop WeChat session.
+// Video-account imports require SPH share URLs; other public HTTPS links use
+// the configured hosted parser.
 func VideoImportLink(text string) (string, string, error) {
 	matches := videoShareURLPattern.FindAllString(strings.TrimSpace(text), -1)
 	if len(matches) != 1 {
@@ -41,6 +43,12 @@ func VideoImportLink(text string) (string, string, error) {
 		return "", "", errors.New("请使用有效的 HTTPS 视频分享链接")
 	}
 	host := strings.ToLower(address.Hostname())
+	if strings.Contains(host, "weixin.qq.com") && host != "weixin.qq.com" {
+		return "", "", errors.New("请使用有效的视频号分享链接")
+	}
+	if host == "weixin.qq.com" && (!strings.HasPrefix(address.Path, "/sph/") || len(strings.TrimPrefix(address.Path, "/sph/")) == 0) {
+		return "", "", errors.New("请使用 https://weixin.qq.com/sph/ 开头的视频号分享链接")
+	}
 	switch {
 	case host == "weixin.qq.com" && strings.HasPrefix(address.Path, "/sph/") && len(strings.TrimPrefix(address.Path, "/sph/")) > 0:
 		address.Fragment = ""
@@ -52,8 +60,145 @@ func VideoImportLink(text string) (string, string, error) {
 	case host == "xiaohongshu.com" || strings.HasSuffix(host, ".xiaohongshu.com") || host == "xhslink.com" || strings.HasSuffix(host, ".xhslink.com"):
 		return "xiaohongshu", address.String(), nil
 	default:
-		return "", "", errors.New("暂不支持该链接，请粘贴视频号分享链接")
+		if address.Hostname() == "" || net.ParseIP(address.Hostname()) != nil || !strings.Contains(address.Hostname(), ".") ||
+			strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".localhost") ||
+			strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".home.arpa") ||
+			strings.HasSuffix(host, ".lan") || host == "localhost" {
+			return "", "", errors.New("请粘贴公开网站的视频分享链接")
+		}
+		return "other", address.String(), nil
 	}
+}
+
+func ResolveHostedVideo(ctx context.Context, client *http.Client, endpoint, shareURL string, maxBytes int64) (ResolvedVideoImport, error) {
+	var result ResolvedVideoImport
+	address, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || address == nil || address.Scheme != "https" || address.Host == "" || address.User != nil ||
+		address.RawQuery != "" || address.Fragment != "" || strings.HasSuffix(address.Host, ":") {
+		return result, errors.New("视频链接解析服务配置无效，请联系管理员")
+	}
+	query := address.Query()
+	query.Set("url", shareURL)
+	address.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address.String(), nil)
+	if err != nil {
+		return result, errors.New("视频链接解析服务配置无效，请联系管理员")
+	}
+	parserClient := *client
+	parserClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := parserClient.Do(request)
+	if err != nil {
+		return result, errors.New("视频链接解析服务连接失败，请稍后重试")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return result, errors.New("视频解析服务暂不可用，请稍后重试")
+	}
+	if response.ContentLength > maxBytes {
+		return result, errors.New("视频解析服务返回异常")
+	}
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
+	if err != nil || int64(len(payload)) > maxBytes {
+		return result, errors.New("视频解析服务返回异常")
+	}
+	return decodeHostedVideo(bytes.NewReader(payload), shareURL)
+}
+
+func decodeHostedVideo(reader io.Reader, shareURL string) (ResolvedVideoImport, error) {
+	var payload struct {
+		Code int `json:"code"`
+		Data struct {
+			VideoURL string `json:"video_url"`
+			Title    string `json:"title"`
+			CoverURL string `json:"cover_url"`
+			Author   struct {
+				Name string `json:"name"`
+			} `json:"author"`
+			Images []struct {
+				URL string `json:"url"`
+			} `json:"images"`
+			Formats []struct {
+				URL string `json:"url"`
+			} `json:"formats"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(reader).Decode(&payload); err != nil || payload.Code != http.StatusOK {
+		return ResolvedVideoImport{}, errors.New("未能提取视频，请检查链接是否有效或内容是否公开")
+	}
+	videoURL := payload.Data.VideoURL
+	if videoURL == "" {
+		for _, format := range payload.Data.Formats {
+			if format.URL != "" {
+				videoURL = format.URL
+				break
+			}
+		}
+	}
+	if !VideoImportMediaURLAllowed(videoURL) {
+		return ResolvedVideoImport{}, errors.New("解析结果中没有可安全下载的视频")
+	}
+	cover := payload.Data.CoverURL
+	if cover == "" && len(payload.Data.Images) > 0 {
+		cover = payload.Data.Images[0].URL
+	}
+	if !VideoImportMediaURLAllowed(cover) {
+		cover = ""
+	}
+	platform, sourceURL, err := VideoImportLink(shareURL)
+	if err != nil {
+		return ResolvedVideoImport{}, err
+	}
+	if platform == "other" {
+		platform = platformFromHost(sourceURL)
+	}
+	return ResolvedVideoImport{
+		Source: VideoImportSource{
+			Platform: platform, Title: payload.Data.Title, Author: payload.Data.Author.Name,
+			SourceURL: sourceURL, CoverURL: cover,
+		},
+		VideoURL: videoURL,
+	}, nil
+}
+
+func platformFromHost(raw string) string {
+	address, err := url.Parse(raw)
+	if err != nil {
+		return "other"
+	}
+	host := strings.ToLower(address.Hostname())
+	switch {
+	case videoImportHostMatches(host, "kuaishou.com", "gifshow.com"):
+		return "kuaishou"
+	case videoImportHostMatches(host, "bilibili.com", "b23.tv"):
+		return "bilibili"
+	case videoImportHostMatches(host, "youtube.com", "youtu.be"):
+		return "youtube"
+	case videoImportHostMatches(host, "twitter.com", "x.com"):
+		return "x"
+	case videoImportHostMatches(host, "weibo.com", "weibo.cn"):
+		return "weibo"
+	case videoImportHostMatches(host, "ixigua.com"):
+		return "ixigua"
+	case videoImportHostMatches(host, "pipix.com"):
+		return "pipixia"
+	case videoImportHostMatches(host, "acfun.cn"):
+		return "acfun"
+	case videoImportHostMatches(host, "tiktok.com"):
+		return "tiktok"
+	case videoImportHostMatches(host, "instagram.com"):
+		return "instagram"
+	default:
+		return "other"
+	}
+}
+
+func videoImportHostMatches(host string, domains ...string) bool {
+	for _, domain := range domains {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveWeChatVideo uses an operator-configured HTTP service. No upstream
@@ -73,6 +218,9 @@ func ResolveWeChatVideo(ctx context.Context, client *http.Client, endpoint, toke
 	}
 	var request *http.Request
 	switch address.Path {
+	case "/api/v1/parse":
+		payload, _ := json.Marshal(map[string]string{"url": shareURL})
+		request, err = http.NewRequestWithContext(ctx, http.MethodPost, address.String(), bytes.NewReader(payload))
 	case "/api/channels/parse_sph":
 		query := url.Values{"url": {shareURL}}
 		address.RawQuery = query.Encode()
@@ -140,6 +288,40 @@ func decodeWeChatVideo(reader io.Reader, shareURL string) (ResolvedVideoImport, 
 	if err := json.NewDecoder(reader).Decode(&raw); err != nil {
 		return ResolvedVideoImport{}, errors.New("视频号解析服务返回异常，请联系管理员")
 	}
+	var standard struct {
+		RetCode int   `json:"retcode"`
+		Success *bool `json:"succ"`
+		Data    struct {
+			VideoURL string `json:"video_url"`
+			Title    string `json:"title"`
+			CoverURL string `json:"cover_url"`
+			Author   struct {
+				Nickname string `json:"nickname"`
+			} `json:"author"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &standard) == nil && (standard.RetCode != 0 || standard.Success != nil) {
+		if standard.RetCode != 200 || standard.Success != nil && !*standard.Success {
+			return ResolvedVideoImport{}, errors.New("视频号解析失败，请检查分享链接及解析服务的登录凭证")
+		}
+		if standard.Data.VideoURL == "" {
+			return ResolvedVideoImport{}, errors.New("该链接未返回视频，可能是图文、已失效或不可访问的内容")
+		}
+		if !VideoImportWeChatMediaURLAllowed(standard.Data.VideoURL) {
+			return ResolvedVideoImport{}, errors.New("视频号返回的视频地址无法验证，请联系管理员")
+		}
+		cover := standard.Data.CoverURL
+		if !VideoImportWeChatMediaURLAllowed(cover) {
+			cover = ""
+		}
+		return ResolvedVideoImport{
+			Source: VideoImportSource{
+				Platform: "wxchannels", Title: standard.Data.Title, Author: standard.Data.Author.Nickname,
+				SourceURL: shareURL, CoverURL: cover,
+			},
+			VideoURL: standard.Data.VideoURL,
+		}, nil
+	}
 	for len(raw) > 0 {
 		var payload envelope
 		if json.Unmarshal(raw, &payload) != nil || payload.Code != 0 || payload.ErrCode != 0 || payload.Error != "" {
@@ -156,11 +338,11 @@ func decodeWeChatVideo(reader io.Reader, shareURL string) (ResolvedVideoImport, 
 			if videoURL == "" {
 				return ResolvedVideoImport{}, errors.New("该链接未返回视频，可能是图文、已失效或不可访问的内容")
 			}
-			if !VideoImportMediaURLAllowed(videoURL) {
+			if !VideoImportWeChatMediaURLAllowed(videoURL) {
 				return ResolvedVideoImport{}, errors.New("视频号返回的视频地址无法验证，请联系管理员")
 			}
 			cover := feed.CoverURL
-			if !VideoImportMediaURLAllowed(cover) {
+			if !VideoImportWeChatMediaURLAllowed(cover) {
 				cover = ""
 			}
 			return ResolvedVideoImport{
@@ -178,6 +360,21 @@ func VideoImportMediaURLAllowed(raw string) bool {
 	if err != nil || address.Host == "" || address.User != nil || address.Port() != "" || address.Fragment != "" || strings.HasSuffix(address.Host, ":") || (address.Scheme != "http" && address.Scheme != "https") {
 		return false
 	}
+	host := strings.ToLower(address.Hostname())
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".local") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return videoImportPublicIP(ip)
+	}
+	return strings.Contains(host, ".")
+}
+
+func VideoImportWeChatMediaURLAllowed(raw string) bool {
+	if !VideoImportMediaURLAllowed(raw) {
+		return false
+	}
+	address, _ := url.Parse(raw)
 	host := strings.ToLower(address.Hostname())
 	return strings.HasSuffix(host, ".qq.com") || strings.HasSuffix(host, ".qpic.cn")
 }

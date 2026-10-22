@@ -21,13 +21,13 @@ export async function importVideoURL(text: string, signal: AbortSignal): Promise
     try {
         const encoded = response.headers.get("X-Video-Import") || "";
         source = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0))));
-        if (source.platform !== "wxchannels" || typeof source.title !== "string" || typeof source.author !== "string" || typeof source.sourceUrl !== "string") throw new Error("invalid metadata");
+        if (typeof source.platform !== "string" || typeof source.title !== "string" || typeof source.author !== "string" || typeof source.sourceUrl !== "string") throw new Error("invalid metadata");
     } catch {
         throw new Error("视频来源信息不完整，请重新提取");
     }
     const blob = await response.blob();
     signal.throwIfAborted();
     if (!blob.size) throw new Error("提取的视频为空，原素材已保留");
-    const name = (source.title || "视频号视频").replace(/[\\/:*?"<>|\r\n\x00-\x1f]/g, " ").trim();
-    return { file: new File([blob], `${name || "视频号视频"}.mp4`, { type: "video/mp4" }), source };
+    const name = (source.title || "提取的视频").replace(/[\\/:*?"<>|\r\n\x00-\x1f]/g, " ").trim();
+    return { file: new File([blob], `${name || "提取的视频"}.mp4`, { type: "video/mp4" }), source };
 }

@@ -43,6 +43,17 @@ test("sends only share text and session, decodes Chinese metadata and returns a 
     expect(await result.file.text()).toBe("video-bytes");
 });
 
+test("accepts provenance from non-WeChat platforms", async () => {
+    signIn();
+    const douyinSource = { ...source, platform: "douyin", sourceUrl: "https://v.douyin.com/abc/" };
+    globalThis.fetch = (async () => new Response("video-bytes", {
+        headers: { "Content-Type": "video/mp4", "X-Video-Import": Buffer.from(JSON.stringify(douyinSource)).toString("base64") },
+    })) as typeof fetch;
+    const result = await importVideoURL(douyinSource.sourceUrl, signal());
+    expect(result.source.platform).toBe("douyin");
+    expect(result.file.name).toBe("中文视频   标题.mp4");
+});
+
 test("surfaces JSON failures even when the API returns HTTP 200", async () => {
     signIn();
     globalThis.fetch = (async () => Response.json({ code: 1, msg: "解析凭证失效" })) as typeof fetch;

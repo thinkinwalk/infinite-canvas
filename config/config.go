@@ -21,6 +21,7 @@ type Config struct {
 	DatabaseDSN                  string `env:"DATABASE_DSN" envDefault:"data/infinite-canvas.db"`
 	CreditLogThumbnailDir        string `env:"CREDIT_LOG_THUMBNAIL_DIR" envDefault:"data/credit-log-thumbnails"`
 	PublicBaseURL                string `env:"PUBLIC_BASE_URL"`
+	VideoImportEndpoint          string `env:"VIDEO_IMPORT_ENDPOINT"`
 	VideoImportWXEndpoint        string `env:"VIDEO_IMPORT_WX_ENDPOINT"`
 	VideoImportWXToken           string `env:"VIDEO_IMPORT_WX_TOKEN"`
 	InfiniteCanvasOpsURL         string `env:"INFINITE_CANVAS_OPS_URL"`

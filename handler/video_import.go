@@ -32,14 +32,19 @@ func ImportVideoURL(w http.ResponseWriter, r *http.Request) {
 		Fail(w, err.Error())
 		return
 	}
-	if platform != "wxchannels" {
-		Fail(w, "当前仅开放视频号链接提取，抖音、小红书尚未接入，请使用本地上传")
-		return
-	}
 	// Bound both parsing and downloading by the existing AI request timeout.
 	ctx, cancel := context.WithTimeout(r.Context(), aiHTTPClient.Timeout)
 	defer cancel()
-	resolved, err := service.ResolveWeChatVideo(ctx, aiHTTPClient, config.Cfg.VideoImportWXEndpoint, config.Cfg.VideoImportWXToken, shareURL, referenceMediaMaxBytes)
+	var resolved service.ResolvedVideoImport
+	if platform == "wxchannels" {
+		resolved, err = service.ResolveWeChatVideo(ctx, aiHTTPClient, config.Cfg.VideoImportWXEndpoint, config.Cfg.VideoImportWXToken, shareURL, referenceMediaMaxBytes)
+	} else {
+		endpoint := config.Cfg.VideoImportEndpoint
+		if endpoint == "" {
+			endpoint = service.DefaultVideoImportEndpoint
+		}
+		resolved, err = service.ResolveHostedVideo(ctx, aiHTTPClient, endpoint, shareURL, referenceMediaMaxBytes)
+	}
 	if err != nil {
 		Fail(w, err.Error())
 		return

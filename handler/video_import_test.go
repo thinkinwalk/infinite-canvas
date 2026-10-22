@@ -113,15 +113,17 @@ func TestImportVideoURLValidation(t *testing.T) {
 	original := config.Cfg
 	t.Cleanup(func() { config.Cfg = original })
 	config.Cfg.VideoImportWXEndpoint = ""
+	config.Cfg.VideoImportEndpoint = "http://127.0.0.1:8080/api/parse"
 	for _, test := range []struct {
 		name, body, message string
 		authenticated       bool
 	}{
 		{"anonymous", `{"url":"https://weixin.qq.com/sph/a"}`, "请登录", false},
 		{"invalid-json", `{`, "有效", true},
-		{"invalid-url", `{"url":"https://localhost/a"}`, "暂不支持", true},
-		{"douyin", `{"url":"https://v.douyin.com/a"}`, "尚未接入", true},
-		{"xiaohongshu", `{"url":"https://xhslink.com/a"}`, "尚未接入", true},
+		{"invalid-url", `{"url":"https://localhost/a"}`, "公开网站", true},
+		{"douyin", `{"url":"https://v.douyin.com/a"}`, "配置无效", true},
+		{"xiaohongshu", `{"url":"https://xhslink.com/a"}`, "配置无效", true},
+		{"other-platform", `{"url":"https://www.youtube.com/watch?v=a"}`, "配置无效", true},
 		{"missing-config", `{"url":"https://weixin.qq.com/sph/a"}`, "未配置", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
