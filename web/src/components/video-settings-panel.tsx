@@ -7,7 +7,7 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { modelCapabilityOf, modelOptionName, type AiConfig } from "@/stores/use-config-store";
-import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription, isH3Video2K } from "@/lib/video-capabilities";
+import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription, isH3Video2K, isH3Video768 } from "@/lib/video-capabilities";
 
 const resolutionOptions = [
     { value: "480", label: "480p" },
@@ -38,6 +38,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const selectedModel = config.model && modelCapabilityOf(config, config.model) === "video" ? config.model : config.videoModel || config.model;
     const profile = videoProfile(config, selectedModel);
     const h3 = isH3Video2K(selectedModel);
+    const h3Video768 = isH3Video768(selectedModel);
     const wan30 = modelOptionName(selectedModel).trim().toLowerCase() === "wan30-720p";
     const availableModes = supportedVideoInputModes(profile);
     const inputMode = resolveVideoInputMode({ ...config, videoInputMode: config.videoInputMode }, selectedModel);
@@ -51,10 +52,10 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         if (config.size !== ratio) onConfigChange("size", ratio);
     }, [h3, config.vquality, config.videoSeconds, config.size, selectedRatio, onConfigChange]);
     useEffect(() => {
-        if (!wan30) return;
+        if (!wan30 && !h3Video768) return;
         if (!profile.resolutions.includes(parseVideoResolution(config.vquality))) onConfigChange("vquality", profile.resolutions[0] || "720");
-        if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) onConfigChange("videoSeconds", profile.seconds[0]);
-    }, [wan30, profile.resolutions.join(","), profile.seconds.join(","), config.vquality, config.videoSeconds, onConfigChange]);
+        if (wan30 && profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) onConfigChange("videoSeconds", profile.seconds[0]);
+    }, [wan30, h3Video768, profile.resolutions.join(","), profile.seconds.join(","), config.vquality, config.videoSeconds, onConfigChange]);
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
     const applySize = (nextResolution: string, ratio: string) => {
         onConfigChange("vquality", nextResolution);
@@ -71,12 +72,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {(h3 ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions.filter((item) => !profile.resolutions.length || profile.resolutions.includes(item.value))).map((item) => (
+                        {(h3 || h3Video768 ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions.filter((item) => !profile.resolutions.length || profile.resolutions.includes(item.value))).map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        {!h3 && !wan30 && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
+                        {!h3 && !h3Video768 && !wan30 && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
                     </div>
                 </SettingGroup>
                 {!h3 && <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>

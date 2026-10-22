@@ -43,9 +43,15 @@ func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfi
 		return normalizeVideoInputProfile(model.VideoModelProfile{DisplayName: name, Description: "支持 768p / 2K，支持 5 / 10 / 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", Interface: "relay", MaxImages: 9, MaxVideos: 3, MaxAudios: 3, Resolutions: []string{"2K", "768"}, Seconds: []string{"15", "5", "10"}})
 	}
 	if profile, ok := channel.VideoModels[name]; ok && profile.Interface != "" {
+		if strings.EqualFold(strings.TrimSpace(name), "H3video-768") {
+			profile.Resolutions = []string{"768"}
+		}
 		return normalizeVideoInputProfile(profile)
 	}
 	profile := model.VideoModelProfile{DisplayName: name, Interface: "openai", MaxImages: 7, Resolutions: []string{"480", "720", "1080"}}
+	if strings.EqualFold(strings.TrimSpace(name), "H3video-768") {
+		profile.Resolutions = []string{"768"}
+	}
 	if isArkAgentPlanChannel(channel) {
 		profile.Interface, profile.MaxVideos, profile.MaxAudios = "ark", 3, 3
 		profile.GenerateAudio = true

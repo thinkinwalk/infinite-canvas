@@ -17,7 +17,12 @@ export function videoProfile(config: AiConfig, model: string): VideoModelProfile
     const request = resolveModelRequestConfig(config, model);
     const ark = request.baseUrl.includes("/api/plan/v3");
     const seedance = /seedance|seedace/i.test(name);
-    return { description: "根据文字和参考图片制作视频；视频、音频及首尾帧需由管理员确认渠道支持后开放。", interface: ark ? "ark" : seedance ? "relay" : "openai", maxImages: 7, maxVideos: ark ? 3 : 0, maxAudios: ark ? 3 : 0, resolutions: seedance && !ark ? ["480", "720"] : ["480", "720", "1080"], seconds: seedance ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [], generateAudio: ark, inputModes: ["reference"], ...saved, displayName: /seedance.*mini/i.test(name) ? modelOptionLabel(config, model) : saved?.displayName || name };
+    const resolutions = isH3Video768(model) ? ["768"] : saved?.resolutions ?? (seedance && !ark ? ["480", "720"] : ["480", "720", "1080"]);
+    return { description: "根据文字和参考图片制作视频；视频、音频及首尾帧需由管理员确认渠道支持后开放。", interface: ark ? "ark" : seedance ? "relay" : "openai", maxImages: 7, maxVideos: ark ? 3 : 0, maxAudios: ark ? 3 : 0, seconds: seedance ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [], generateAudio: ark, inputModes: ["reference"], ...saved, resolutions, displayName: /seedance.*mini/i.test(name) ? modelOptionLabel(config, model) : saved?.displayName || name };
+}
+
+export function isH3Video768(model: string) {
+    return modelOptionName(model).trim().toLowerCase() === "h3video-768";
 }
 
 export function isH3Video2K(model: string) {
