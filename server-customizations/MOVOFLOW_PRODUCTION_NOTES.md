@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.76
-- Current production source: tag v0.19.76, commit 5f3b93d9901861ea80295c72dcb5bc2f34d582e9
+- Current production image: infinite-canvas:v0.19.77
+- Current production source: tag v0.19.77, commit 1b5161e56cab6d0220b4cb6d66b930ce449ecc81
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.77 deployment
+
+- Rechecked the provider's MiniMax H3 API template and both model details; a read-only lookup of the existing failed task confirmed upstream error 422 for combining `size` with `aspect_ratio`, `megapixels` or `pixels`. Gateway and local-channel adapters now send only `size`. Numeric tiers retain the documented pixel presets; named 2K/4K tiers show adaptive framing in the video page and canvas. Existing material ordering, seconds, access and pricing remain unchanged.
+- Source tag `v0.19.77`, commit `1b5161e56cab6d0220b4cb6d66b930ce449ecc81`, pushed from `release/v0.19.60`. Production image `infinite-canvas:v0.19.77`, ID `sha256:229f06cf6aa99dec670c475687e60678ed5770108dbefcd6508cf9b7feb68e58`, built on the server with the established no-audit deployment Dockerfile. Only app was recreated; Worker ID, start time and v0.19.65 mounts were unchanged.
+- Online SQLite backup, prior Compose and root-only environment are in `/opt/infinite-canvas/backups/v0.19.77-20261022-123717/`; a prebuild backup is in `/opt/infinite-canvas/backups/v0.19.77-prebuild-20261022-123458/`. SQLite `quick_check` passed; all 11 table counts, saved settings and hashes for 7,864 existing task/image files matched. No active database, replacement or Worker tasks were present at restart.
+- Internal/external health, video/canvas/image/admin pages, ordinary default/VIP catalogs and read-only quotes passed. MiniMax models retained 0-credit default pricing; H3video-768 retained VIP access, 768p and 400 credits/request. Worker gateway, replacement-job reads and administrator-only video access checks passed. Published `/assets/index-CC080Qxy.js` contains the corrected adapter without `aspect_ratio` alongside `size`; an independent workstation request confirmed the version and corrected adapter.
+- Development verification: 15 frontend tests with 904 assertions, focused Go regressions and 13 isolated browser checks passed. The shared upstream size fixture covers both model IDs, eight ratios, five tiers and duration bounds. Browser checks cover pixel/named tier switching, actual canvas settings components and mobile layout. No local builds or tests were repeated during release and no paid generation was submitted. Real upstream output, frame ordering and billing/refunds remain pending acceptance.
+- Deployment evidence: `/opt/infinite-canvas/releases/v0.19.77-deployment.json`. GitHub Release published at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.77.
 
 ## v0.19.76 deployment
 
