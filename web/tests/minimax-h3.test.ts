@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import axios from "axios";
+import sizeContract from "../../handler/testdata/minimax-h3-size-contract.json";
 
 const memory = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value), removeItem: (key: string) => memory.delete(key) } });
 const { createVideoGenerationTask, quoteVideoModel } = await import("../src/services/api/video");
 const { createModelChannel, defaultConfig, guessCapability, selectableModelsByCapability } = await import("../src/stores/use-config-store");
 const { videoModelsForInputMode, videoProfile } = await import("../src/lib/video-capabilities");
-const { miniMaxH3VideoBody } = await import("../src/lib/minimax-h3");
+const { isMiniMaxH3NamedSize, miniMaxH3VideoBody } = await import("../src/lib/minimax-h3");
 const { computeVideoSize, parseVideoResolution } = await import("../src/lib/media-size");
 
 const originalPost = axios.post;
@@ -40,8 +41,8 @@ for (const channelMode of ["local", "remote"] as const) {
                 expect(url).toBe(channelMode === "remote" ? "/api/v1/videos" : "https://example.com/v1/videos");
                 expect(options.headers["Content-Type"]).toBe("application/json");
                 expect(body.model).toBe(name);
-                expect(body.aspect_ratio).toBe("9:16");
                 if (channelMode === "local") {
+                    expect(body.aspect_ratio).toBeUndefined();
                     expect(body.seconds).toBe(5);
                     expect(body.size).toBe("768x1376");
                     expect(body.images).toEqual(images.map((image) => image.dataUrl));
@@ -51,6 +52,8 @@ for (const channelMode of ["local", "remote"] as const) {
                     expect(body.last_frame).toBeUndefined();
                     expect(body.reference_audios).toEqual(frames ? undefined : [audio.url]);
                 } else {
+                    expect(body.aspect_ratio).toBe("9:16");
+                    expect(body.size).toBeUndefined();
                     expect(body.input_mode).toBe(frames ? "first_last" : "reference");
                     expect(body.image_url).toBe(images[0].dataUrl);
                     expect(body.last_frame).toBe(frames ? images[1].dataUrl : undefined);
@@ -79,6 +82,25 @@ test("MiniMax H3 maps all documented size tiers and preserves named tiers in quo
         return { data: { credits: 180, calculation: "configured price" } };
     }) as typeof axios.post;
     expect((await quoteVideoModel({ ...config, vquality: "4K" }, "minimax-h3")).credits).toBe(180);
+});
+
+test("MiniMax H3 follows upstream size exclusivity across models, ratios and duration bounds", () => {
+    for (const [ratio, sizes] of Object.entries(sizeContract.sizesByRatio)) {
+        for (const [index, resolution] of ["480p", "768p", "1080p", ...sizeContract.namedSizes].entries()) {
+            for (const model of models) {
+                for (const seconds of [4, 15]) {
+                    const body = miniMaxH3VideoBody({ model, prompt: "test", seconds, resolution, aspect_ratio: ratio, pixels: 123, megapixels: 1 });
+                    expect(body.size).toBe([...sizes, ...sizeContract.namedSizes][index]);
+                    expect(body.seconds).toBe(seconds);
+                    for (const field of sizeContract.forbiddenWithSize) expect(field in body).toBe(false);
+                }
+            }
+        }
+    }
+    expect(isMiniMaxH3NamedSize("minimax-h3", "2K")).toBe(true);
+    expect(isMiniMaxH3NamedSize("minimax-h3-fl2v", "4K")).toBe(true);
+    expect(isMiniMaxH3NamedSize("minimax-h3", "768")).toBe(false);
+    expect(isMiniMaxH3NamedSize("H3video-2k", "2K")).toBe(false);
 });
 
 test("MiniMax H3 rejects unsupported modes, reference counts and specs before any HTTP", async () => {

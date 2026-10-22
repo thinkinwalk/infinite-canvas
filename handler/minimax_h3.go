@@ -39,7 +39,8 @@ func buildMiniMaxH3VideoBody(payload map[string]any) ([]byte, bool) {
 	if err != nil || seconds < 4 || seconds > 15 || strings.TrimSpace(jsonStringValue(payload["prompt"])) == "" {
 		return nil, false
 	}
-	converted := map[string]any{"model": payload["model"], "prompt": payload["prompt"], "seconds": seconds, "size": size, "aspect_ratio": ratio}
+	// Upstream rejects size combined with aspect_ratio, megapixels or pixels.
+	converted := map[string]any{"model": payload["model"], "prompt": payload["prompt"], "seconds": seconds, "size": size}
 	images := []string{}
 	if first := jsonURLValue(payload["image_url"]); first != "" {
 		images = append(images, first)

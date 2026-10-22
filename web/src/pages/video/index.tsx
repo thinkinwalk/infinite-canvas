@@ -29,7 +29,8 @@ import { createVideoGenerationTask, isVideoTaskFailed, quoteVideoModel, storeGen
 import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { boolConfig, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, modelOptionName, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
+import { isMiniMaxH3NamedSize } from "@/lib/minimax-h3";
 import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoReferenceDurationError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode, isH3Video2K, isWan30 } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
 import { fetchReplicateResult, publicServiceText, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, HAILUO_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
@@ -804,7 +805,7 @@ export default function VideoPage() {
                             </div>
                         }>
                             <Button aria-label="视频设置" aria-expanded={settingsOpen} disabled={running || writing || !validVideoModel} icon={<SlidersHorizontal size={14} />} className="!w-full !justify-center !rounded-lg !px-3">
-                                <span className="text-sm">视频规格 · {videoResolutionLabel(effectiveConfig.vquality)} · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : videoSizeLabel(effectiveConfig.size)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
+                                <span className="text-sm">视频规格 · {videoResolutionLabel(effectiveConfig.vquality)} · {isHailuo ? references.length ? "跟随首帧" : "默认比例" : videoSizeLabel(effectiveConfig.size, model, effectiveConfig.vquality)} · {isWan ? "约" : ""}{effectiveConfig.videoSeconds}s{isWan && effectiveConfig.videoInterpolate === "true" ? " · 插帧" : ""}</span>
                                 <ChevronDown size={12} className={`transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
                             </Button>
                         </Popover>
@@ -858,10 +859,11 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
     const isWan = model === REPLICATE_VIDEO_MODEL || isTextWan;
     const isHailuo = model === HAILUO_VIDEO_MODEL;
     const isCloudVideo = isReplicateVideoModel(model);
+    const namedSize = isMiniMaxH3NamedSize(modelOptionName(model), normalizeResolution(config.vquality));
     const ratio = inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size);
     const resolutions = profile.resolutions.length ? profile.resolutions : ["480", "720", "1080"];
     const seconds = profile.seconds.length ? profile.seconds : Array.from({ length: 27 }, (_, index) => String(index + 4));
-    const canSelectRatio = !isCloudVideo || isWan;
+    const canSelectRatio = !namedSize && (!isCloudVideo || isWan);
     const ratios = isWan ? ["16:9", "9:16"] : ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
     return <div className="space-y-4">
         <div className="space-y-2">
@@ -873,7 +875,7 @@ function GenerationSettings({ config, model, updateConfig }: { config: AiConfig;
             {canSelectRatio ? <div role="group" aria-label="视频比例" className="grid grid-cols-3 gap-2">{ratios.map((value) => {
                 const [width, height] = value.split(":").map(Number);
                 return <button key={value} type="button" aria-label={`画面比例 ${value}`} aria-pressed={ratio === value} className="flex h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-transparent bg-muted/60 text-xs transition hover:bg-muted aria-pressed:border-foreground aria-pressed:bg-muted" onClick={() => updateConfig("size", isH3Video2K(model) ? value : computeVideoSize(normalizeResolution(config.vquality), value))}><span aria-hidden="true" className="block rounded-[1px] border border-current opacity-60" style={{ width: 22 * width / Math.max(width, height), height: 22 * height / Math.max(width, height) }} /><span>{value}</span></button>;
-            })}</div> : <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{isHailuo ? "上传图片时跟随首帧，纯文字使用默认比例。" : "画面比例跟随首帧图片。"}</p>}
+            })}</div> : <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground">{namedSize ? "自适应" : isHailuo ? "上传图片时跟随首帧，纯文字使用默认比例。" : "画面比例跟随首帧图片。"}</p>}
         </div>
         {model === REPLICATE_VIDEO_MODEL && <p className="text-xs text-muted-foreground">首尾帧按所选画幅裁剪；上传后请确认构图，最终尺寸可能由模型对齐调整。</p>}
         <div className="space-y-2">

@@ -1,0 +1,16 @@
+{
+  "source": "https://xysnai.cn/api/api-docs/detail?slug=minimax-h3",
+  "sizeConflictSource": "Existing failed task returned error 422: size conflicts with aspect_ratio, megapixels or pixels",
+  "sizesByRatio": {
+    "16:9": ["864x480", "1376x768", "1920x1088"],
+    "9:16": ["480x864", "768x1376", "1088x1920"],
+    "1:1": ["640x640", "1024x1024", "1440x1440"],
+    "2:3": ["544x800", "832x1248", "1184x1760"],
+    "3:2": ["800x544", "1248x832", "1760x1184"],
+    "3:4": ["576x736", "896x1184", "1248x1664"],
+    "4:3": ["736x576", "1184x896", "1664x1248"],
+    "21:9": ["992x416", "1568x672", "2208x960"]
+  },
+  "namedSizes": ["2K", "4K"],
+  "forbiddenWithSize": ["aspect_ratio", "megapixels", "pixels"]
+}

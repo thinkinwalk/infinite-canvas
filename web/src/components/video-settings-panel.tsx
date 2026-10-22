@@ -8,7 +8,7 @@ import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { modelCapabilityOf, modelOptionName, type AiConfig } from "@/stores/use-config-store";
 import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription, isH3Video2K, isH3Video768 } from "@/lib/video-capabilities";
-import { isMiniMaxH3Name } from "@/lib/minimax-h3";
+import { isMiniMaxH3Name, isMiniMaxH3NamedSize } from "@/lib/minimax-h3";
 
 const resolutionOptions = [
     { value: "480", label: "480p" },
@@ -45,7 +45,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const availableModes = supportedVideoInputModes(profile);
     const inputMode = resolveVideoInputMode({ ...config, videoInputMode: config.videoInputMode }, selectedModel);
     const resolution = parseVideoResolution(config.vquality);
-    const selectedRatio = h3 && inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size || "auto");
+    const namedSize = isMiniMaxH3NamedSize(modelOptionName(selectedModel), resolution);
+    const selectedRatio = namedSize ? "auto" : h3 && inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size || "auto");
     useEffect(() => {
         if (!h3) return;
         if (!["2K", "768"].includes(parseVideoResolution(config.vquality))) onConfigChange("vquality", "2K");
@@ -82,7 +83,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         {!h3 && !h3Video768 && !miniMaxH3 && !wan30 && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
                     </div>
                 </SettingGroup>
-                {!h3 && <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
+                {!h3 && !miniMaxH3 && <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
                         <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
                         <span className="text-lg opacity-45">↔</span>
@@ -90,7 +91,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>}
                 <SettingGroup title={t("settingsPanels.video.ratio")} color={theme.node.muted}>
-                    <div className="grid grid-cols-4 gap-2.5">
+                    {namedSize ? <div className="text-sm">{t("settingsPanels.video.adaptive")}</div> : <div className="grid grid-cols-4 gap-2.5">
                         {videoRatioOptions.filter((item) => !h3 || item.value !== "auto").map((item) => (
                             <button
                                 key={item.value}
@@ -104,7 +105,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 <span>{item.value === "auto" ? t("settingsPanels.common.auto") : item.value}</span>
                             </button>
                         ))}
-                    </div>
+                    </div>}
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
                     {h3 ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
@@ -133,7 +134,8 @@ export function videoResolutionLabel(value: string) {
     return /K$/.test(resolution) ? resolution : `${resolution}p`;
 }
 
-export function videoSizeLabel(value: string) {
+export function videoSizeLabel(value: string, model = "", resolution = "") {
+    if (isMiniMaxH3NamedSize(modelOptionName(model), parseVideoResolution(resolution))) return i18n.t("settingsPanels.video.adaptive");
     const ratio = inferVideoRatio(value);
     return ratio === "auto" ? i18n.t("settingsPanels.video.adaptive") : ratio;
 }

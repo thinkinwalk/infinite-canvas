@@ -4,6 +4,10 @@ export function isMiniMaxH3Name(name: string) {
     return ["minimax-h3", "minimax-h3-fl2v"].includes(name.trim().toLowerCase());
 }
 
+export function isMiniMaxH3NamedSize(name: string, resolution: string) {
+    return isMiniMaxH3Name(name) && ["2K", "4K"].includes(resolution);
+}
+
 export function miniMaxH3Profile(name: string): VideoModelProfile {
     const frames = name.trim().toLowerCase() === "minimax-h3-fl2v";
     return {
@@ -35,7 +39,7 @@ export function miniMaxH3VideoBody(payload: Record<string, unknown>) {
     if (!sizes[ratio] || !size) throw new Error("MiniMax H3 不支持所选画面规格");
     const images = [payload.image_url, ...(payload.reference_image_urls as string[] || []), payload.last_frame].filter(Boolean);
     return {
-        model: payload.model, prompt: payload.prompt, seconds: Number(payload.seconds), size, aspect_ratio: ratio,
+        model: payload.model, prompt: payload.prompt, seconds: Number(payload.seconds), size,
         ...(images.length ? { images } : {}),
         ...(payload.reference_videos ? { reference_videos: payload.reference_videos } : {}),
         ...(payload.audio_urls ? { reference_audios: payload.audio_urls } : {}),
