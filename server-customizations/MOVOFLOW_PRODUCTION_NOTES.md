@@ -15,9 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.73
-- Current production source: tag v0.19.73, commit a8434c45120b20f06f0f8fed02080a322ca2f51b
+- Current production image: infinite-canvas:v0.19.74
+- Current production source: tag v0.19.74, commit f2903886045a131d75552a050a9b7211e3823efb
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.74 deployment
+
+- H3video-768 now uses the upstream JSON video request format. Images remain optional; supplied images use the existing JSON reference fields. Resolution remains 768p, channel access is unchanged, and the verified quote remains 400 credits/request. No real generation was submitted; upstream output acceptance remains pending.
+- Source tag `v0.19.74`, commit `f2903886045a131d75552a050a9b7211e3823efb`. Production image `infinite-canvas:v0.19.74`, ID `sha256:f853bf4e43e8ae1f51e405d20fc0a1548bfeabb5ed217a114b5371f0adcd07da`. Only the app container was recreated; Worker ID, start time and v0.19.65 mounts remained unchanged.
+- Online SQLite backup, prior Compose and root-only environment are in `/opt/infinite-canvas/backups/v0.19.74-20261022-110337/`; SQLite `quick_check` passed. All 11 table counts and settings were unchanged. Hashes for 7,852 existing replacement/worker task and thumbnail/original files matched before and after. No active video or Replicate tasks were present during the restart.
+- Internal/external `/api/health` returned 200. An authenticated VIP user confirmed the H3 catalog still reports `resolutions: ["768"]`, OpenAI protocol, reference input mode and 400 credits/request; the read-only quote also returned 400. The published `/video` page serves `/assets/index-CzbaCxN7.js`, which contains the H3 JSON adapter routing. Ordinary-user Worker health and replacement-job reads passed; admin video access returned 404 for a missing record and denied an ordinary user. Evidence: `/opt/infinite-canvas/releases/v0.19.74-deployment.json`.
+- Development verification passed 18 focused frontend tests (178 assertions) and focused Go request-validation/forwarding tests. No local production build or full test suite was run. An unrelated existing Wan30 frontend test still expects a 15-second maximum although the current implementation supports 30 seconds. GitHub Release publication and real upstream generation remain pending.
 
 ## v0.19.73 deployment
 
