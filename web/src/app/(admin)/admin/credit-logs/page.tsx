@@ -117,8 +117,39 @@ export default function AdminCreditLogsPage() {
     const token = useUserStore((state) => state.token);
     const [thumbnailUrl, setThumbnailUrl] = useState("");
     const [thumbnailLoading, setThumbnailLoading] = useState(false);
+    const [originalRequestId, setOriginalRequestId] = useState("");
+    const [originalPreview, setOriginalPreview] = useState({ id: "", url: "", error: "" });
 
     useEffect(() => {
+        if (!originalRequestId) return;
+        let active = true;
+        let objectUrl = "";
+        setOriginalPreview({ id: originalRequestId, url: "", error: "" });
+        void fetchAdminCreditLogThumbnail(token, originalRequestId, true)
+            .then((blob) => {
+                if (!active) return;
+                if (!blob) {
+                    setOriginalPreview({ id: originalRequestId, url: "", error: "此记录未保存原图，仅有缩略图" });
+                    setOriginalRequestId("");
+                    return;
+                }
+                objectUrl = URL.createObjectURL(blob);
+                setOriginalPreview({ id: originalRequestId, url: objectUrl, error: "" });
+            })
+            .catch((error: unknown) => {
+                if (active) {
+                    setOriginalPreview({ id: originalRequestId, url: "", error: error instanceof Error ? error.message : "原图加载失败，请重试" });
+                    setOriginalRequestId("");
+                }
+            });
+        return () => {
+            active = false;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [originalRequestId, token]);
+
+    useEffect(() => {
+        setOriginalRequestId("");
         if (!detailLog || detailLog.type !== "ai_consume" || !getLogPath(detailLog).match(/^\/(images\/|responses)/)) {
             setThumbnailUrl("");
             setThumbnailLoading(false);
@@ -413,7 +444,31 @@ export default function AdminCreditLogsPage() {
                                       {
                                           key: "thumbnail",
                                           label: "生成图片",
-                                          children: thumbnailLoading ? <Skeleton.Image active /> : thumbnailUrl ? <Image src={thumbnailUrl} width={180} style={{ objectFit: "cover" }} /> : <Typography.Text type="secondary">暂无生成图片</Typography.Text>,
+                                          children: thumbnailLoading ? (
+                                              <Skeleton.Image active />
+                                          ) : thumbnailUrl ? (
+                                              <Space direction="vertical" size={4}>
+                                                  <Image
+                                                      src={thumbnailUrl}
+                                                      width={180}
+                                                      alt="生成图片缩略图"
+                                                      preview={{
+                                                          open: originalRequestId === detailLog.id && originalPreview.id === detailLog.id && Boolean(originalPreview.url),
+                                                          src: originalPreview.id === detailLog.id ? originalPreview.url : "",
+                                                          cover: "查看原图",
+                                                          onOpenChange: (open) => {
+                                                              if (open) setOriginalPreview({ id: detailLog.id, url: "", error: "" });
+                                                              setOriginalRequestId(open ? detailLog.id : "");
+                                                          },
+                                                      }}
+                                                  />
+                                                  {originalPreview.id === detailLog.id && (originalPreview.error || (originalRequestId === detailLog.id && !originalPreview.url)) && (
+                                                      <Typography.Text type={originalPreview.error ? "warning" : "secondary"}>{originalPreview.error || "原图加载中…"}</Typography.Text>
+                                                  )}
+                                              </Space>
+                                          ) : (
+                                              <Typography.Text type="secondary">暂无生成图片</Typography.Text>
+                                          ),
                                       },
                                   ]
                                 : []),

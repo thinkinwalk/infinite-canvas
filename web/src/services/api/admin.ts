@@ -138,10 +138,10 @@ export async function fetchAdminCreditLogs(token: string, query: AdminCreditLogQ
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 
-export async function fetchAdminCreditLogThumbnail(token: string, id: string) {
-    const response = await fetch(`/api/admin/credit-logs/${encodeURIComponent(id)}/thumbnail`, { headers: { Authorization: `Bearer ${token}` } });
+export async function fetchAdminCreditLogThumbnail(token: string, id: string, original = false) {
+    const response = await fetch(`/api/admin/credit-logs/${encodeURIComponent(id)}/thumbnail${original ? "?original=1" : ""}`, { headers: { Authorization: `Bearer ${token}` } });
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error("读取生成图片失败");
+    if (!response.ok || !response.headers.get("Content-Type")?.startsWith("image/")) throw new Error("读取生成图片失败，请重新登录或稍后重试");
     return response.blob();
 }
 

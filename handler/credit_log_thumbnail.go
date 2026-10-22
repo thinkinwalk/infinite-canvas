@@ -97,6 +97,14 @@ func saveCreditLogThumbnail(id string, responseBody []byte) error {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
+	dir := creditLogImageDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	name := creditLogThumbnailName(id)
+	if err := os.WriteFile(filepath.Join(dir, name+".original"), imageBytes, 0644); err != nil {
+		log.Printf("AI image original save failed: log=%s err=%v", id, err)
+	}
 	scale := float64(creditLogThumbnailWidth) / float64(max(width, height))
 	target := image.NewRGBA(image.Rect(0, 0, max(1, int(float64(width)*scale)), max(1, int(float64(height)*scale))))
 	draw.CatmullRom.Scale(target, target.Bounds(), source, bounds, draw.Over, nil)
@@ -104,15 +112,14 @@ func saveCreditLogThumbnail(id string, responseBody []byte) error {
 	if err := jpeg.Encode(&encodedThumbnail, target, &jpeg.Options{Quality: 78}); err != nil {
 		return err
 	}
-	dir := config.Cfg.CreditLogThumbnailDir
-	if dir == "" {
-		dir = "data/credit-log-thumbnails"
-	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	name := creditLogThumbnailName(id)
 	return os.WriteFile(filepath.Join(dir, name), encodedThumbnail.Bytes(), 0644)
+}
+
+func creditLogImageDir() string {
+	if config.Cfg.CreditLogThumbnailDir != "" {
+		return config.Cfg.CreditLogThumbnailDir
+	}
+	return "data/credit-log-thumbnails"
 }
 
 func creditLogThumbnailName(id string) string {
@@ -126,11 +133,11 @@ func AdminCreditLogThumbnail(w http.ResponseWriter, r *http.Request, id string) 
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	dir := config.Cfg.CreditLogThumbnailDir
-	if dir == "" {
-		dir = "data/credit-log-thumbnails"
+	name := creditLogThumbnailName(id)
+	if r.URL.Query().Get("original") == "1" {
+		name += ".original"
 	}
-	file, err := os.Open(filepath.Join(dir, creditLogThumbnailName(id)))
+	file, err := os.Open(filepath.Join(creditLogImageDir(), name))
 	if err != nil {
 		if os.IsNotExist(err) {
 			w.WriteHeader(http.StatusNotFound)
@@ -140,9 +147,12 @@ func AdminCreditLogThumbnail(w http.ResponseWriter, r *http.Request, id string) 
 		return
 	}
 	defer file.Close()
-	w.Header().Set("Content-Type", "image/jpeg")
+	info, err := file.Stat()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, file)
+	http.ServeContent(w, r, name, info.ModTime(), file)
 }
