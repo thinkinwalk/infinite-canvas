@@ -15,9 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.67
-- Current production source: tag v0.19.67, commit 20e6093d7e1814f774d53c3ceddf32d9011c7967
+- Current production image: infinite-canvas:v0.19.68
+- Current production source: tag v0.19.68, commit 5af31c2e27eb3b3282e82b3c3c3925854da35caf
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.68 replacement guidance and admin image previews
+
+- Released from `release/v0.19.60` at commit `5af31c2e27eb3b3282e82b3c3c3925854da35caf`, tag `v0.19.68`. No merge to main. Includes direct-upload guidance, collapsible long-video processing help, removal of the redundant subtitle-tool link, clear model support guidance, and administrator-only image previews in credit-log details.
+- App image `infinite-canvas:v0.19.68`, image ID `sha256:ecce85d7ef4585b9ce94e206c7494ed65249d4e1b24f60ad37e966ef38f52ea4`, was built on the production host. npm install initially stalled on its audit request; the successful build used `/opt/infinite-canvas/releases/v0.19.68-Dockerfile`, changing only install flags to `--no-audit --no-fund`. Tagged application source was unchanged. No local build or automated tests ran.
+- SQLite online backup, previous Compose and environment are in `/opt/infinite-canvas/backups/v0.19.68-20261022-044658/`. SQLite `quick_check` passed; all 11 table counts and existing replacement/worker job records remained unchanged. No active tasks were present at restart. Only the app service was recreated; the Worker ID and start time were unchanged, retaining the v0.19.65 source mounts.
+- Internal/external health and the public content replacement route returned HTTP 200. `/assets/index-C-8SlLAt.js` contains the new help, subtitle copy and admin preview UI; the removed standalone subtitle link is absent. Ordinary-user Worker health/capabilities and replacement-job GET passed. The administrator thumbnail route returns 404 for a missing preview, and ordinary users are denied access.
+- Deployment evidence: `/opt/infinite-canvas/releases/v0.19.68-deployment.json`. No paid generation was submitted. Actual browser interaction, real-media generation and newly generated thumbnail display remain pending user acceptance; old logs and URL-only/streaming responses cannot provide previews.
 
 ## v0.19.67 content replacement task layout
 
