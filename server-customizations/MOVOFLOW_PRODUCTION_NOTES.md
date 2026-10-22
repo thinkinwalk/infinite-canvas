@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.74
-- Current production source: tag v0.19.74, commit f2903886045a131d75552a050a9b7211e3823efb
+- Current production image: infinite-canvas:v0.19.75
+- Current production source: tag v0.19.75, commit 6922f1c7d2f15dba515252897d4dead9be87d749
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+
+## v0.19.75 deployment
+
+- Prompt enhancement separates media settings from the text request, allows moderate visual detail for image creation, distinguishes reference creation from local edits, and supports editable auto-sized previews with validation. Media setting changes no longer invalidate a text enhancement by themselves. Exact references, specified literals, text-model confirmation, cancellation and undo remain in place.
+- Source tag `v0.19.75`, commit `6922f1c7d2f15dba515252897d4dead9be87d749`, pushed from `release/v0.19.60`. Production image `infinite-canvas:v0.19.75`, ID `sha256:c1acbd64219e835444de2abb24df7c9b607588b3fe26c9b8123630a786cfa829`. Server-side build used the prior deployment Dockerfile's existing no-audit install flags. Only the app was recreated; Worker ID, start time and v0.19.65 mounts were unchanged.
+- Online SQLite backup, prior Compose and root-only environment are in `/opt/infinite-canvas/backups/v0.19.75-20261022-112705/`. SQLite `quick_check` passed, all 11 table counts and saved settings were unchanged, and hashes for 7,864 existing task/image files matched before and after. No active database, replacement or Worker tasks were present during the restart.
+- Internal/external health and `/image`, `/canvas`, `/video`, `/admin/credit-logs` returned HTTP 200. Published `/assets/index-D6xEp3ni.js` contains the new visual/reference rules, protected-text mapping, text-model label and parameter/JSON checks; the retired conservative image rule is absent. An authenticated ordinary VIP account read the text catalog and its existing quote; H3video-768 retained 768p, OpenAI protocol and 400 credits/request. Worker health and replacement-job reads passed; administrator missing-record lookup returned 404 and ordinary-user access was denied.
+- Deployment evidence: `/opt/infinite-canvas/releases/v0.19.75-deployment.json`. Development verification passed 21 focused tests (92 assertions) and 29 isolated browser checks. No local build or automated tests were repeated for release, and no real paid enhancement or media generation was submitted. Real-model output quality, intent classification and same-settings image comparisons remain pending acceptance.
+- GitHub Release `v0.19.75` is published at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.75. Independent workstation requests confirmed HTTP 200, the new asset path, the version string and the new enhancement rules/checks.
 
 ## v0.19.74 deployment
 
