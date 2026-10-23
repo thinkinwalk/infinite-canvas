@@ -134,6 +134,15 @@ func New() *gin.Engine {
 	admin := api.Group("/admin", middleware.AdminAuth)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
+	admin.GET("/users/:id/client-api-keys", func(c *gin.Context) {
+		handler.AdminClientAPIKeys(c.Writer, c.Request, c.Param("id"), "")
+	})
+	admin.POST("/users/:id/client-api-keys", func(c *gin.Context) {
+		handler.AdminClientAPIKeys(c.Writer, c.Request, c.Param("id"), "")
+	})
+	admin.DELETE("/users/:id/client-api-keys/:keyId", func(c *gin.Context) {
+		handler.AdminClientAPIKeys(c.Writer, c.Request, c.Param("id"), c.Param("keyId"))
+	})
 	admin.POST("/users/:id/credits", func(c *gin.Context) {
 		handler.AdminAdjustUserCredits(c.Writer, c.Request, c.Param("id"))
 	})

@@ -129,7 +129,7 @@ export function UserStatusActions({ accountOnly = false, showConfig = true, show
                             <span className="font-medium opacity-75">点</span>
                         </button>
                     ) : null}
-                    <Dropdown menu={{ items: [...(user.role === "user" ? [{ key: "client-keys", icon: <KeyRound className="size-4" />, label: "客户端 API Key", onClick: () => setClientKeysOpen(true) }] : []), { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: clearSession }] }} trigger={["click"]} placement="bottomRight">
+                    <Dropdown menu={{ items: [...(user.role === "user" || user.role === "admin" ? [{ key: "client-keys", icon: <KeyRound className="size-4" />, label: "客户端 API Key", onClick: () => setClientKeysOpen(true) }] : []), { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: clearSession }] }} trigger={["click"]} placement="bottomRight">
                         <button type="button" className={naturalIconClass} style={iconStyle} aria-label={`${userName}，打开账户菜单`} title={`${userName} · 账户菜单`}>
                             <UserRound className="size-4" />
                         </button>
@@ -174,7 +174,7 @@ export function UserStatusActions({ accountOnly = false, showConfig = true, show
                 </div>
             ) : null}
             <CreditCenterModal open={creditCenterOpen} onOpenChange={setCreditCenterOpen} />
-            {user && <ClientAPIKeysModal key={user.id} open={clientKeysOpen} onClose={() => setClientKeysOpen(false)} />}
+            {user && clientKeysOpen && <ClientAPIKeysModal key={`${user.id}:${user.role}`} open onClose={() => setClientKeysOpen(false)} />}
             <Modal title={authMode === "register" ? "注册账号" : "登录账号"} open={authOpen} onCancel={() => setAuthOpen(false)} onOk={() => form.submit()} okText={authMode === "register" ? "注册" : "登录"} cancelText="取消" confirmLoading={submitting} destroyOnHidden>
                 <div className="mb-4">
                     <Segmented<AuthMode> options={authOptions} value={authMode} onChange={(value) => setAuthMode(value)} />

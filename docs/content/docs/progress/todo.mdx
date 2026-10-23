@@ -5,6 +5,8 @@ description: Planned follow-up work
 
 # TODO
 
+- 管理员客户端 Key 管理已补充账号菜单与后台用户列表入口；继续验收普通账号搜索/切换、一次性密钥展示、禁用账号创建拦截及历史撤销的桌面/手机交互。接口权限与语音回归见 pending-test，交接见 `docs/admin-client-api-keys-handoff.md`。
+
 - 统一模型配置管理已随 v0.19.92（`de6dfd3`）上线，详见仓库 `docs/model-management-handoff.md`。比特浏览器 464 的 39 项隔离模拟检查及线上新接口读取、权限、非持久化转换预览通过；62 个模型、162 个步骤的预览尚未保存启用。由用户在 `https://studio.lingzhouai.com/admin/models` 手动核对定价、别名及各功能绑定后启用，继续验收真实保存/持久化、并发、旧报价拒绝、历史恢复及付费生成质量。本地旧 8080 后端联调限制保留记录，不影响本次线上手动测试。
 
 - 微信语音工作台外部 API 已随 v0.19.91 部署，生产迁移与 HTTPS Key/上传/报价及合成任务下载验证通过；后续使用本人授权录音验收真实 Qwen 内联音频、克隆音质、实际扣费与恢复，并完成新版 Key 管理入口交互验收。首版多实例共享存储及归档互斥另行评估，详见仓库 `docs/wechat-voice-api-handoff.md`。

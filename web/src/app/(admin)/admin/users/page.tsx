@@ -4,9 +4,11 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutli
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
+import { KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { fetchAdminSettings, type AdminUser } from "@/services/api/admin";
+import { ClientAPIKeysModal } from "@/components/layout/client-api-keys-modal";
 import { useUserStore } from "@/stores/use-user-store";
 import { useAdminUsers } from "./use-admin-users";
 
@@ -29,6 +31,7 @@ export default function AdminUsersPage() {
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingUser, setEditingUser] = useState<Partial<AdminUser> | null>(null);
     const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
+    const [keyUser, setKeyUser] = useState<AdminUser | null>(null);
     const [groups, setGroups] = useState<Record<string, { name: string; enabled: boolean }>>({ default: { name: "普通用户", enabled: true } });
 
     useEffect(() => setKeywordText(keyword), [keyword]);
@@ -116,10 +119,13 @@ export default function AdminUsersPage() {
         {
             title: "操作",
             key: "actions",
-            width: 96,
+            width: 132,
             align: "right",
             render: (_, item) => (
                 <Space size={4}>
+                    <Tooltip title="客户端 API Key">
+                        <Button type="text" size="small" aria-label={`管理 ${item.username} 的客户端 API Key`} icon={<KeyRound className="size-4" />} onClick={() => setKeyUser(item)} />
+                    </Tooltip>
                     <Tooltip title="编辑">
                         <Button type="text" size="small" icon={<EditOutlined />} onClick={() => setEditingUser(item)} />
                     </Tooltip>
@@ -202,6 +208,7 @@ export default function AdminUsersPage() {
                 />
             </Flex>
 
+            {keyUser && <ClientAPIKeysModal key={keyUser.id} open initialUser={keyUser} onClose={() => setKeyUser(null)} />}
             <Modal title={editingUser?.id ? "编辑用户" : "新增用户"} open={Boolean(editingUser)} width={680} onCancel={() => setEditingUser(null)} onOk={() => void saveUser()} okText="保存" cancelText="取消" destroyOnHidden>
                 <Form form={form} layout="vertical" requiredMark={false}>
                     <Typography.Text strong>基础信息</Typography.Text>
