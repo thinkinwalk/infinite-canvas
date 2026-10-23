@@ -10,7 +10,8 @@ description: Implemented changes that still need manual verification
 - 新增普通账号客户端 API Key 创建、列表与撤销入口，Key 只显示一次并保存摘要；新增私有个人音色、Qwen 固定版本克隆报价、幂等任务、结果归档及鉴权下载。
 - 复用 Replicate 事务扣费、单次退款与提交不确定状态；参考录音不使用公开临时素材 URL，后台恢复已知任务及归档。接口与 PowerShell 完整示例见仓库 `docs/wechat-voice-api-handoff.md` 和 `scripts/wechat-voice-api.ps1`。
 - 验证：相关 handler/repository/router 测试包、4 项既有计价定向测试、后端构建及物理路径下前端构建通过；真实本地 HTTP 和 PowerShell 完整链路使用模拟模型响应，SQLite 旧表迁移、重开持久化和退款恢复通过。全量 Go 仍有两项已在 HEAD 复现的既有渠道导入失败，TypeScript 存在既有视频模块类型错误；详情见交接文档。
-- 待真实验收：部署迁移、普通账号管理界面、HTTPS 入口、本人授权录音的 Qwen 生成及音质。模拟模型与合成 WAV 的接口测试不代表真实声音克隆成功。
+- 已随 v0.19.91（`364b287`）发布生产。启动迁移、内外健康、线上 `/assets/index-C21SbVxG.js`、普通账号 Key 创建/撤销/隔离、真实 HTTPS 上传/FFprobe/报价/余额不足、合成任务鉴权下载/ETag/停用后下载/幂等冲突通过；专用测试账号及数据已清理。旧 11 张表记录数、余额配置报价及 8,829 个既有文件哈希一致，Worker 未重启；备份和证据见交接文档。
+- 待真实验收：普通账号管理界面交互、本人授权录音的 Qwen 内联音频、真实上游生成及音质、付费与失败恢复、多实例。模拟模型与合成任务的接口测试不代表真实声音克隆成功。
 
 ## 内容替换生成状态反馈
 

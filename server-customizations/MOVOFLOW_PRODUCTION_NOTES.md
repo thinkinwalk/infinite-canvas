@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.90
-- Current production source: tag v0.19.90, commit c6a51c0f2a17bd4be640bc7d101e95f7239ca20d
+- Current production image: infinite-canvas:v0.19.91
+- Current production source: tag v0.19.91, commit 364b28789cdcac6e19bc7de4add57249cd3c44d1
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.91 deployment
+
+- Release tag `v0.19.91`, commit `364b28789cdcac6e19bc7de4add57249cd3c44d1`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.91. Production app image `infinite-canvas:v0.19.91`, ID `sha256:d86442cbb33a01b2ddd25c7c3b291b79763a307d8e00fee78a17db4fe217e615`, was built on the server from the exact tag.
+- Stable voice, speech quote/task/download APIs and ordinary-user client Key management are deployed. Startup GORM migration added `voices`, `client_api_keys` and seven speech/audio task fields. Existing 11 table counts, user balances/roles/groups/status, settings, model catalogs/pricing/permissions, H3 quotes and 8,829 existing task/media file hashes matched. SQLite quick_check passed. Only app was recreated; Worker ID, image, start time and `v0.19.87-worker` mounts are unchanged.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.91-20261023-114224/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.91-prebuild-20261023-113950/`. Prior app image v0.19.90 remains available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; leave the additive schema in place. Never restore the old database over subsequent user activity.
+- Internal/external health, nine page routes, default/VIP Worker gateways and published `/assets/index-C21SbVxG.js` passed; an independent workstation confirmed health, release version and Key management code. Real HTTPS checks used two dedicated temporary ordinary accounts: Key creation/digest/scope/revocation, invalid and valid PCM WAV upload with real FFprobe, private persistence, pagination/rename/disable, ownership denial, pinned Qwen quote, unknown-field rejection and insufficient-balance prevention passed.
+- A synthetic completed task and WAV fixture verified task reads, authenticated download, MIME/hash, ETag 304, historical download after voice disable and existing-task idempotency/conflict. This fixture was seeded directly for download verification; it was not a model response. All test accounts, Keys, voices, task records and files were removed; original table counts/settings/balances matched afterward. The first smoke script needed header-name case normalization, then the complete check passed; no application change was needed.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.91-deployment.json` and `v0.19.91-speech-smoke.json`; workstation copies are in the outer workspace `artifacts/release-v0.19.91/`. API handoff: `docs/wechat-voice-api-handoff.md`; PowerShell 7 client: `scripts/wechat-voice-api.ps1`.
+- Development tests/builds are recorded in the handoff and were not repeated during release. Two baseline Go channel-import failures and one existing video TypeScript error remain. No real Qwen generation or paid request was submitted; authorized personal recording, provider inline-audio acceptance, cloning quality, Key UI interactions and multi-instance recovery remain pending.
 
 ## v0.19.90 deployment
 

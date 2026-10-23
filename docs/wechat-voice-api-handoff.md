@@ -2,7 +2,7 @@
 
 ## 交付范围
 
-本地源码已增加稳定语音接口、普通账号客户端 API Key 管理、私有音色保存、任务恢复及音频归档下载，复用已有 Replicate 模型路由、固定版本、任务表、报价、事务扣费和退款服务。没有部署生产。
+已随 **v0.19.91** 发布并部署至 `https://studio.lingzhouai.com`，源码提交 `364b28789cdcac6e19bc7de4add57249cd3c44d1`，发布分支 `release/v0.19.60`。稳定语音接口、普通账号客户端 API Key 管理、私有音色保存、任务恢复及音频归档下载复用已有 Replicate 模型路由、固定版本、任务表、报价、事务扣费和退款服务。
 
 创建音色只保存参考录音、录音原文和配置，不训练独立模型。每次新文字生成都会调用 Qwen；下载已有音频与客户端重复播放不重新计费。
 
@@ -256,7 +256,7 @@ Idempotency-Key: ${VOICE_IDEMPOTENCY_KEY}
 完整可执行脚本：`scripts/wechat-voice-api.ps1`，需要 PowerShell 7。凭据只通过环境变量传入，脚本不输出 Key。运行脚本会按报价创建收费模型任务，应使用本人授权录音。
 
 ```powershell
-$env:VOICE_API_BASE_URL = "https://studio.lingzhouai.com" # 部署本次源码后使用
+$env:VOICE_API_BASE_URL = "https://studio.lingzhouai.com"
 $env:VOICE_API_KEY = "<普通账号创建的客户端 Key>"
 $env:VOICE_REFERENCE_FILE = "C:\Voice\my-reference.wav"
 $env:VOICE_REFERENCE_TEXT = "这段录音的实际原文。"
@@ -294,7 +294,7 @@ pwsh -File .\scripts\wechat-voice-api.ps1
 6. 更新实际使用的前端资源；只开 Vite 不能证明生产 Go 静态资源已更新。普通账号菜单确认 Key 管理入口。
 7. 使用测试账号和授权本人录音进行真实 HTTPS/真实 Qwen 生成验收；确认上游接受内联音频、中文效果、真实扣费、归档、断线恢复、下载。
 
-本次没有执行生产迁移或部署。现有 `PUBLIC_BASE_URL` 仍用于原模型公开素材链路；新增私有音色链路不依赖它生成参考 URL。
+本次已完成生产增量迁移和应用部署；现有 `PUBLIC_BASE_URL` 仍用于原模型公开素材链路，新增私有音色链路不依赖它生成参考 URL。生产验证详情见下文。
 
 主要修改：
 
@@ -341,4 +341,17 @@ go test ./service -run "^(TestCalculateReplicateCreditsByBillingMode|TestReplica
 
 真实付费 Qwen 生成：**未执行**。没有提供已明确授权的本人录音测试素材，因此不使用其他用户录音。测试 WAV 是程序生成的 PCM 容器，仅验证格式、时长、落盘和下载，不能称为真实克隆成功。
 
-仍需验收：真实 HTTPS 入口、真实 Qwen 内联参考录音组合、声音相似度与质量、生产迁移及静态资源、多实例运行。
+## 生产发布与交接结果
+
+- 生产镜像：`infinite-canvas:v0.19.91`，镜像 ID `sha256:d86442cbb33a01b2ddd25c7c3b291b79763a307d8e00fee78a17db4fe217e615`，由服务器检出精确标签构建。GitHub Release：<https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.91>。
+- 仅更新应用，未重启视频 Worker；其容器 ID、镜像、启动时间及 `v0.19.87-worker` 挂载均一致。既有 11 张表记录数、用户余额/角色/分组/状态、模型目录/报价/权限、保存配置及 8,829 个既有任务/媒体文件哈希一致。
+- 启动迁移确认新增两张表和上述七个任务字段，SQLite `quick_check=ok`；内外健康均为 HTTP 200 `ok`，9 个页面及普通账号 default/VIP Worker 网关通过。
+- 前端实际发布资源为 `/assets/index-C21SbVxG.js`，含版本及 Key 管理代码；独立工作站请求确认同一资源。此项验证不代表管理弹窗已经完成浏览器点击验收。
+- 使用两个专用临时普通账号，通过真实 HTTPS 验证 Key 创建、摘要存储、作用域与撤销，非法音频拒绝，合成 PCM WAV 的真实 FFprobe 检测及私有落盘，列表、重命名、停用和用户隔离；Qwen 固定版本报价为样例 100 点，余额不足拦截及未知参数拒绝通过。
+- 下载专项使用直接写入的**合成已完成任务记录**和合成 WAV，验证任务查询、鉴权下载、实际 MIME/SHA-256、ETag 304、停用后历史下载、同内容幂等返回及内容冲突；未调用供应商，不能视为真实模型生成。首次检查脚本因 HTTP 头大小写读取方式失败，修正脚本后全部通过，无需修改应用。
+- 所有专项测试账号、Key、音色、任务和文件已清理，清理后原记录数、配置和余额一致。没有使用其他用户录音，没有创建真实付费任务。
+- 最终备份：`/opt/infinite-canvas/backups/v0.19.91-20261023-114224/`，含在线 SQLite 备份、旧 Compose 及仅 root 可访问的环境备份；构建前另有 `v0.19.91-prebuild-20261023-113950/`。媒体保持原数据卷并核对哈希，本轮未额外复制整个媒体卷。
+- 回滚：从上述目录恢复旧 Compose，执行 `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`。旧镜像 v0.19.90 保留；新增表/列可保留，不要把旧数据库覆盖到发布后产生的新业务数据。
+- 生产证据：`/opt/infinite-canvas/releases/v0.19.91-deployment.json`、`/opt/infinite-canvas/releases/v0.19.91-speech-smoke.json`；工作站副本位于外层工作区 `artifacts/release-v0.19.91/`。发布未重复本地构建或测试，服务器镜像构建和上述生产 HTTP 验证已实际执行。
+
+仍需验收：本人授权录音的真实 Qwen 内联参考音频组合、声音相似度与质量、真实上游扣费/失败/归档恢复、Key 管理 UI 交互、多实例运行。开发模拟及生产合成任务下载测试均不代表真实声音克隆成功。
