@@ -22,7 +22,7 @@ export function useReplicateConfirmation() {
                 title: `确认${REPLICATE_MODEL_NAMES[quote.operation]}`,
                 content: (
                     <div className="space-y-3">
-                        <div>处理服务：{REPLICATE_MODEL_NAMES[quote.operation]}</div>
+                        <div>处理服务：{quote.label || REPLICATE_MODEL_NAMES[quote.operation]}</div>
                         <div>{publicServiceText(quote.description || "")}</div>
                         {quote.inputSummary && <div>{publicServiceText(quote.inputSummary)}</div>}
                         {quote.submissionBlocked && <Typography.Text type="warning">{publicServiceText(quote.submissionBlocked)}</Typography.Text>}

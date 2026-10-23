@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Alert, App, Button, Checkbox, Collapse, Dropdown, Empty, Modal, Segmented, Select, theme } from "antd";
 import { Check, LoaderCircle, Pause } from "lucide-react";
-import { useConfigStore, resolveEffectiveConfig, modelOptionName } from "@/stores/use-config-store";
+import { useConfigStore, useEffectiveConfig, configForFeature, managedModelBinding, modelOptionLabel, modelOptionName } from "@/stores/use-config-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { emptyVideoDraft } from "@/types/video-workbench";
@@ -36,9 +36,8 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const headSwap = d.replacementModel === "headswap";
     const token = useUserStore((s) => s.token);
     const hydrated = useVideoWorkbenchStore((s) => s.hydrated);
-    const savedConfig = useConfigStore((s) => s.config);
-    const publicSettings = useConfigStore((s) => s.publicSettings);
-    const config = resolveEffectiveConfig({ ...savedConfig, channelMode: "remote" }, publicSettings);
+    const baseConfig = useEffectiveConfig();
+    const config = configForFeature({ ...baseConfig,channelMode:"remote" },headSwap ? "replace.head" : "replace.person","video");
     const { token: colors } = theme.useToken();
     const { modal, message } = App.useApp();
     const checkSubmission = (job?: ReplacementJob) => {
@@ -80,13 +79,14 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const pendingRequest = useRef<{ key: string; id: string; source?: string; image?: string } | undefined>(undefined);
     const candidates = contentReplacementModels(config);
     const currentJob = jobs.find((job) => job.id === d.replacementJobId && !job.archived);
-    const label = (name: string) => name === wanReplace || name === headSwapModel ? modelLabel(name) : videoProfile(config, name).displayName || modelLabel(name);
+    const label = (name: string) => currentJob?.model === name && currentJob.modelLabel ? currentJob.modelLabel : config.managed?.enabled ? modelOptionLabel(config,name) : name === wanReplace || name === headSwapModel ? modelLabel(name) : videoProfile(config, name).displayName || modelLabel(name);
     const selectedModel = currentJob ? candidates.find((name) => modelOptionName(name) === currentJob.model) || currentJob.model : model;
-    const selected = headSwap ? headSwapModel : currentJob || candidates.includes(selectedModel) || selectedModel === wanReplace ? selectedModel : candidates[0] || wanReplace;
+    const selected = config.managed?.enabled ? currentJob ? selectedModel : candidates.includes(model) ? model : config.videoModel || candidates[0] || "" : headSwap ? headSwapModel : currentJob || candidates.includes(selectedModel) || selectedModel === wanReplace ? selectedModel : candidates[0] || wanReplace;
+    const operation = managedModelBinding(config,selected,"video")?.operations[0];
     const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? headSwap ? "当前换脸模型不能同时去除原字幕，请关闭「去除原字幕」后继续。" : "当前模型不能同时换人和去除原字幕。请在「高级设置」中选择 Wan 3.0（wan30-720p），或关闭「去除原字幕」后继续。" : "");
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
-    const durations = selected === headSwapModel ? ["15"] : selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
-    const sizes = selected === wanReplace || headSwap ? ["720", "480"] : profile.resolutions;
+    const durations = selected === headSwapModel || operation === "head-swap" ? ["15"] : selected === wanReplace || operation === "replace-person" ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
+    const sizes = selected === wanReplace || headSwap || operation === "replace-person" ? ["720", "480"] : profile.resolutions;
     const duration = durations[0];
     const size = currentJob?.resolution || (sizes.includes(resolution) ? resolution : sizes[0]);
     const source = d.media.find((m) => m.role === "reference" && m.kind === "video");
@@ -101,7 +101,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const ratio = ratios.includes(requestedRatio || "") ? requestedRatio! : recommendedRatio;
     const aspectChanged = Boolean(h3 && currentJob && ratio && ratio !== currentJob.aspectRatio);
     const needsReplan = Boolean(h3 && ratio && canAdjustAspect && (aspectChanged || !currentJob?.planned));
-    const canPrepare = needsReplan || Boolean(source && image && duration && size);
+    const canPrepare = needsReplan || Boolean(selected && source && image && duration && size);
     const segmentLimit = Math.min(15, Number(duration));
     const requiresPreview = Boolean(source?.durationMs && source.durationMs > segmentLimit * 1000);
     const refresh = async () => setJobs((await listReplacementJobs()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
@@ -231,7 +231,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             pending.source ||= await uploadWorkerMedia(worker, source);
             pending.image ||= await uploadReplicateReference(image);
             const created = await createReplacementJob({ id: pending.id, source: pending.source, image: pending.image,
-                model: modelOptionName(selected), resolution: size.replace(/p$/i, ""), seconds: duration, ...(h3 && ratio ? { aspectRatio: ratio } : {}),
+                model: modelOptionName(selected), featureId: config.featureId, resolution: size.replace(/p$/i, ""), seconds: duration, ...(h3 && ratio ? { aspectRatio: ratio } : {}),
                 prompt: contentReplacementPrompt("person", d.instructions, d.replaceSubtitles), subtitles: d.replaceSubtitles, regenerateSubtitles: d.replaceSubtitles && d.regenerateSubtitles === true,
                 subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor, previewRequired: requiresPreview });
             useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: created.id, replacementResultKey: undefined, replacementSource: source, final: null });
@@ -251,7 +251,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             ? `继续处理剩余 ${job.parts?.filter((part) => !part.validated).length || 0} 段，预计 ${remainingCredits} 点；整片预计共 ${job.credits} 点。已完成的预览段会直接用于最终合并，不会重做。`
             : job.previewRequired && job.planned && !job.previewReady
               ? `本次只生成第 1 段预览，预计 ${previewCredits} 点；整片预计共 ${job.credits} 点。其余片段要等你确认预览效果后才会生成。`
-              : job.planned ? `${modelLabel(job.model)}，${replacementDurationSummary(job)}，整片预计 ${job.credits} 点。按段扣费，不自动重试或切换模型。${job.subtitles ? job.regenerateSubtitles ? "云端同时去除原字幕，字幕稿会在无字幕成片完成后另行识别与校对。" : "云端同时去除原字幕并保留原音轨。" : "未启用去字幕，原字幕可能被模型重画。"}` : "继续分析视频并计算费用，此步骤不调用收费生成模型。";
+              : job.planned ? `${job.modelLabel || modelLabel(job.model)}，${replacementDurationSummary(job)}，整片预计 ${job.credits} 点。按段扣费，不自动重试或切换模型。${job.subtitles ? job.regenerateSubtitles ? "云端同时去除原字幕，字幕稿会在无字幕成片完成后另行识别与校对。" : "云端同时去除原字幕并保留原音轨。" : "未启用去字幕，原字幕可能被模型重画。"}` : "继续分析视频并计算费用，此步骤不调用收费生成模型。";
         modal.confirm({
             title: approvePreview ? "预览效果满意，继续吗？" : job.previewRequired && !job.previewReady ? "先生成一段预览" : job.planned ? "确认本次处理费用" : "恢复视频分析",
             content: `${content} 字幕识别、存储等外部服务费用另计。`,
@@ -314,11 +314,11 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
                 {sourceWidth && sourceHeight ? `原视频 ${sourceWidth}×${sourceHeight} · ` : ""}等比例居中补边，保留完整画面与原音轨。
             </div>
         </div>}
-        {!headSwap && <Collapse size="small" items={[{ key: "model", label: `高级设置 · ${label(selected)}`, children: <label className="block space-y-2 text-sm">
+        {(!headSwap || config.managed?.enabled) && <Collapse size="small" items={[{ key: "model", label: `高级设置 · ${label(selected)}`, children: <label className="block space-y-2 text-sm">
             <span>生成模型</span>
             <Select showSearch optionFilterProp="label" className="w-full" aria-label="生成模型" value={selected} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"}
-                options={[...candidates.map((v) => ({ value: v, label: `${label(v)} · ${modelOptionName(v)}` })), { value: wanReplace, label: modelLabel(wanReplace) }]}
-                onChange={(v) => { setModel(v); setResolution(""); selectJob(); }} />
+                options={config.managed?.enabled ? candidates.map((v) => ({ value:v,label:label(v) })) : [...candidates.map((v) => ({ value: v, label: `${label(v)} · ${modelOptionName(v)}` })), { value: wanReplace, label: modelLabel(wanReplace) }]}
+                onChange={(v) => { setModel(v); if (config.managed?.enabled) useConfigStore.setState((s) => ({featureModels:{...s.featureModels,[headSwap ? "replace.head" : "replace.person"]:v}})); setResolution(""); selectJob(); }} />
             <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>只调用所选模型，系统根据其支持的时长自动分段。</span>
         </label> }]} />}
         {subtitleError && <Alert type="warning" showIcon title={subtitleError} />}
@@ -420,7 +420,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <div className="mt-3 max-h-[60vh] space-y-3 overflow-y-auto">
                 {!historyJobs.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyTab === "archived" ? "暂无已归档任务" : "暂无任务"} />}
                 {historyJobs.map((job) => <div key={job.id} className="space-y-1 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
-                    <div className="text-sm">{modelLabel(job.model)} · {labels[job.status]}{job.id === currentJob?.id ? " · 当前任务" : ""}</div>
+                    <div className="text-sm">{job.modelLabel || modelLabel(job.model)} · {labels[job.status]}{job.id === currentJob?.id ? " · 当前任务" : ""}</div>
                     <div className="text-xs" style={{ color: colors.colorTextSecondary }}>{new Date(job.createdAt).toLocaleString()} · {job.id.slice(0, 8)}</div>
                     <div className="text-xs">{jobStep(job)} · {job.parts?.filter((p) => p.validated).length || 0}/{job.parts?.length || 0} 段</div>
                     {job.error && <div className="text-xs" style={{ color: colors.colorWarningText }}>任务已暂停，打开任务查看原因</div>}

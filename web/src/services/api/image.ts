@@ -1,7 +1,8 @@
 import axios from "axios";
+import { managedFixedHeaders } from "./model-management";
 
 import i18n from "@/i18n";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, configForFeature, modelRequestHeaders, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
@@ -352,6 +353,7 @@ function aiHeaders(config: AiConfig, contentType?: string) {
     if (config.channelMode === "remote") {
         const token = useUserStore.getState().token;
         return {
+            ...modelRequestHeaders(config, config.managed?.models.find((m) => m.id === config.model)?.capability === "image" ? "image" : "text"),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(contentType ? { "Content-Type": contentType } : {}),
         };
@@ -517,7 +519,7 @@ function consumeResponseStreamText(state: ResponseStreamState, text: string, onD
 async function requestStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
     const response = await fetch(aiApiUrl(config, "/responses"), {
         method: "POST",
-        headers: { ...aiHeaders(config, "application/json"), Accept: "text/event-stream" },
+        headers: { ...aiHeaders(config, "application/json"), ...await managedFixedHeaders(config, config.managed?.models.find((m) => m.id === config.model)?.capability === "image" ? "image" : "text", Number(body.n) || 1,options?.signal), Accept: "text/event-stream" },
         body: JSON.stringify({ ...body, stream: true }),
         signal: options?.signal,
     });
@@ -786,7 +788,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
-                headers: aiHeaders(requestConfig, "application/json"),
+                headers: {...aiHeaders(requestConfig, "application/json"),...await managedFixedHeaders(requestConfig,"image",n,options?.signal)},
                 signal: options?.signal,
                 timeout: IMAGE_REQUEST_TIMEOUT_MS,
             },
@@ -800,6 +802,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
+    if (config.managed?.enabled && config.featureIds?.image === "image.generate") throw new Error("参考图已改变功能，请重新选择图片编辑模型并确认费用");
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
@@ -840,7 +843,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
     // gpt-image models reject response_format; they always return b64.
-    if (!/gpt-image/.test(requestConfig.model)) {
+    if (!requestConfig.managed?.enabled && !/gpt-image/.test(requestConfig.model)) {
         formData.set("response_format", "b64_json");
     }
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);
@@ -858,7 +861,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     files.forEach((file) => formData.append(imageField, file));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: {...aiHeaders(requestConfig),...await managedFixedHeaders(requestConfig,"image",n,options?.signal)}, signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
         const images = parseImagePayload(response.data);
         refreshRemoteUser(requestConfig);
         return images;

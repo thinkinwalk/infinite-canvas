@@ -26,9 +26,104 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		Seconds     string `json:"seconds"`
 		AspectRatio string `json:"aspect_ratio"`
 		Interpolate bool   `json:"interpolate"`
+		FeatureID   string `json:"featureId"`
+		Count       int    `json:"count"`
 	}
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.Model == "" {
 		Fail(w, "请选择模型")
+		return
+	}
+	if enabled, err := service.ManagementEnabled(); err != nil {
+		FailError(w, err)
+		return
+	} else if enabled {
+		featureID := input.FeatureID
+		if featureID == "" {
+			featureID = r.Header.Get("X-Model-Feature")
+		}
+		selected := service.ManagedSelectionFromContext(r.Context())
+		if selected == nil {
+			selected, err = service.ResolveManagedModel(featureID, input.Model, user.Group, 0)
+			if err != nil {
+				Fail(w, err.Error())
+				return
+			}
+		}
+		operation := selected.Feature.Capability
+		if operation == "video" && strings.HasPrefix(selected.Route.Adapter, "cloud:") {
+			op := strings.TrimPrefix(selected.Route.Adapter, "cloud:")
+			spec, err := service.FindReplicateModel(op)
+			if err != nil {
+				Fail(w, err.Error())
+				return
+			}
+			seconds, _ := strconv.ParseFloat(input.Seconds, 64)
+			fields := map[string]any{"resolution": strings.TrimSuffix(input.Resolution, "p") + "p", "duration": seconds, "interpolate_output": input.Interpolate}
+			if op == "image-to-video" || op == "text-to-video" {
+				if (input.Seconds != "5" && input.Seconds != "7.5") || (input.Resolution != "480" && input.Resolution != "720") {
+					Fail(w, "请选择有效的视频规格")
+					return
+				}
+				frames := 81
+				if input.Seconds == "7.5" {
+					frames = 121
+				}
+				fields["num_frames"] = frames
+			}
+			quote, err := service.QuoteManagedReplicate(user, spec, fields, selected)
+			if err != nil {
+				Fail(w, err.Error())
+				return
+			}
+			if !quote.Available {
+				Fail(w, quote.Reason)
+				return
+			}
+			OK(w, map[string]any{"credits": quote.Credits, "calculation": quote.Calculation})
+			return
+		}
+		if selected.Profile != nil {
+			if !managedHas(selected.Profile.Resolutions, strings.TrimSuffix(input.Resolution, "p")) || !managedHas(selected.Profile.Seconds, input.Seconds) {
+				Fail(w, "所选规格已不可用，请重新选择")
+				return
+			}
+		}
+		if selected.Route.Adapter == "video.sparkcine_h3" {
+			seconds, _ := strconv.ParseFloat(input.Seconds, 64)
+			aspect := input.AspectRatio
+			if aspect == "" {
+				aspect = "16:9"
+			}
+			if err := service.SparkCineH3SpecError(input.Resolution, aspect, seconds); err != nil {
+				Fail(w, err.Error())
+				return
+			}
+		}
+		credits, calculation, err := service.ManagedCredits(selected, input.Resolution, input.Seconds)
+		if err != nil {
+			Fail(w, err.Error())
+			return
+		}
+		ratio, err := service.UserGroupRatio(user.Group)
+		if err != nil {
+			FailError(w, err)
+			return
+		}
+		if input.Count < 1 {
+			input.Count = 1
+		}
+		parameters := map[string]any{"count": input.Count}
+		if operation == "video" {
+			if input.AspectRatio == "" {
+				input.AspectRatio = "16:9"
+			}
+			parameters = managedVideoParameters(input.Resolution, input.Seconds, input.AspectRatio, input.Interpolate)
+		}
+		total := int(math.Ceil(float64(credits) * ratio))
+		if operation != "video" {
+			total *= input.Count
+		}
+		OK(w, map[string]any{"credits": total, "calculation": calculation, "quoteToken": service.SignManagedQuote(user.ID, selected, parameters), "model": selected.Model.ID, "revision": selected.Revision})
 		return
 	}
 	if input.Protocol != "" && input.Protocol != "openai" && input.Protocol != "replicate" {

@@ -15,6 +15,7 @@
 
 ## Development and Data
 
+- [统一模型配置管理实施交接](model-management-handoff.md)
 - [微信语音工作台 API 交接](wechat-voice-api-handoff.md)
 
 - [Local Development](/docs/development/local-development)

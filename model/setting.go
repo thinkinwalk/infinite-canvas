@@ -11,6 +11,10 @@ const (
 
 // ModelChannel 模型渠道配置。
 type ModelChannel struct {
+	PlatformModelID   string                       `json:"-"`
+	ModelLabel        string                       `json:"-"`
+	ManagedProfile    bool                         `json:"-"`
+	ManagedAdapter    string                       `json:"-"`
 	ID                int                          `json:"id"`
 	Protocol          string                       `json:"protocol"`
 	Name              string                       `json:"name"`
@@ -68,6 +72,7 @@ type ModelCost struct {
 
 // PublicModelChannelSetting 公开模型渠道配置。
 type PublicModelChannelSetting struct {
+	Managed            *ManagedCatalog              `json:"managed,omitempty"`
 	Models             []PublicChannelModel         `json:"models"`
 	AvailableModels    []string                     `json:"availableModels"`
 	ModelCosts         []ModelCost                  `json:"modelCosts"`
@@ -113,12 +118,13 @@ type PublicLinuxDoAuthSetting struct {
 
 // PrivateSetting 私有配置。
 type PrivateSetting struct {
-	NextChannelID int                  `json:"nextChannelId"`
-	Channels      []ModelChannel       `json:"channels"`
-	Groups        map[string]UserGroup `json:"groups"`
-	PromptSync    PromptSyncSetting    `json:"promptSync"`
-	Auth          PrivateAuthSetting   `json:"auth"`
-	Replicate     ReplicateSetting     `json:"replicate"`
+	ModelManagement *ModelManagement     `json:"modelManagement,omitempty"`
+	NextChannelID   int                  `json:"nextChannelId"`
+	Channels        []ModelChannel       `json:"channels"`
+	Groups          map[string]UserGroup `json:"groups"`
+	PromptSync      PromptSyncSetting    `json:"promptSync"`
+	Auth            PrivateAuthSetting   `json:"auth"`
+	Replicate       ReplicateSetting     `json:"replicate"`
 }
 
 type ReplicateSetting struct {

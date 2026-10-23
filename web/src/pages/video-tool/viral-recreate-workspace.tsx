@@ -4,6 +4,7 @@ import { Alert, App, Button, Collapse, Empty, Input, InputNumber, Mentions, Moda
 import { ArrowLeft, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, Sparkles, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
@@ -104,6 +105,7 @@ export default function ViralRecreateWorkspace() {
         config.videoModels,
         config.models,
         modelCosts,
+        config.managed?.revision,
         session,
     ]);
     const quote = price?.key === priceKey ? price.value : null,
@@ -703,6 +705,7 @@ export default function ViralRecreateWorkspace() {
                                         label: "分析模型与处理服务",
                                         children: (
                                             <div className="space-y-3">
+                                                <FeatureModelPicker capability="text" featureId="viral-recreate.analyze" />
                                                 <ModelPicker
                                                     config={config}
                                                     capability="text"

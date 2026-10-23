@@ -302,6 +302,7 @@ export type VideoModelProfile = {
 export type PublicChannelModel = { version?: string; model: string; label: string; protocol: string; capabilities: string[]; operations?: string[] };
 
 export type AdminPublicModelChannelSettings = {
+    managed?: import("./model-management").PublicManagedCatalog;
     models?: PublicChannelModel[];
     videoModels?: Record<string, VideoModelProfile>;
     availableModels: string[];
@@ -346,6 +347,7 @@ export type AdminPublicSettings = {
 };
 
 export type AdminPrivateSettings = {
+    modelManagement?: import("./model-management").ModelManagement;
     nextChannelId?: number;
     channels: AdminModelChannel[];
     groups: Record<string, { name: string; creditRatio: number; enabled: boolean }>;

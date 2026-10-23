@@ -1,5 +1,20 @@
 import { apiGet, apiPost, compactApiParams, type ApiParams } from "@/services/api/request";
 
+const caseQuotes = new Map<string,string>();
+function caseQuoteHeaders(token: string, id: string, step: string): Record<string,string> {
+    const quote = caseQuotes.get(JSON.stringify([token,id,step]));
+    return quote ? {"X-Case-Quote":quote} : {};
+}
+async function rememberCaseQuote<T extends {quoteToken?: string}>(token: string,id: string,step: string,result: Promise<T>) {
+    const value = await result;
+    caseQuotes.set(JSON.stringify([token,id,step]),value.quoteToken || "");
+    return value;
+}
+async function caseTextHeaders(token: string,id: string) {
+    await fetchProductSetPlanPrice(token,id);
+    return caseQuoteHeaders(token,id,"text");
+}
+
 export type CaseStatus = "draft" | "pending" | "published" | "rejected" | "offline";
 
 export type CaseApp = {
@@ -94,21 +109,21 @@ export async function fetchTryonLibrary() {
 }
 
 export async function runCase(token: string, id: string, inputs: Record<string, unknown>) {
-    return apiPost<unknown>(`/api/cases/${id}/run`, { inputs }, token);
+    return apiPost<unknown>(`/api/cases/${id}/run`, { inputs }, token,caseQuoteHeaders(token,id,"run"));
 }
 
-export type CaseRunPrice = { points: number; modelPoints: number; servicePoints: number; count: number };
+export type CaseRunPrice = { points: number; modelPoints: number; servicePoints: number; count: number; quoteToken?: string };
 
 export async function fetchCaseRunPrice(token: string, id: string, count?: number) {
-    return apiGet<CaseRunPrice>(`/api/cases/${id}/run-price`, count ? { count } : undefined, token);
+    return rememberCaseQuote(token,id,"run",apiGet<CaseRunPrice>(`/api/cases/${id}/run-price`, count ? { count } : undefined, token));
 }
 
 export async function fetchVariationAssistPrice(token: string) {
-    return apiGet<{ points: number }>("/api/cases/official-image-variations/variations/assist-price", undefined, token);
+    return rememberCaseQuote(token,"official-image-variations","text",apiGet<{ points: number;quoteToken?:string }>("/api/cases/official-image-variations/variations/assist-price", undefined, token));
 }
 
 export async function assistVariationPrompt(token: string, input: { imageUrl: string; mode: string; prompt: string; action: "write" | "optimize" }) {
-    return apiPost<{ prompt: string }>("/api/cases/official-image-variations/variations/assist", input, token);
+    return apiPost<{ prompt: string }>("/api/cases/official-image-variations/variations/assist", input, token,caseQuoteHeaders(token,"official-image-variations","text"));
 }
 
 export async function streamImageVariations(token: string, inputs: Record<string, unknown>, onItem: (item: unknown, completed: number, total: number) => void) {
@@ -116,7 +131,7 @@ export async function streamImageVariations(token: string, inputs: Record<string
     try {
         response = await fetch("/api/cases/official-image-variations/run?stream=1", {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`,...caseQuoteHeaders(token,"official-image-variations","run") },
             body: JSON.stringify({ inputs }),
         });
     } catch {
@@ -165,31 +180,31 @@ export async function streamImageVariations(token: string, inputs: Record<string
 }
 
 export async function planProductSet(token: string, id: string, inputs: ProductSetInput) {
-    return apiPost<ProductSetPlan>(`/api/cases/${id}/product-set/plan`, { inputs }, token);
+    return apiPost<ProductSetPlan>(`/api/cases/${id}/product-set/plan`, { inputs }, token,caseQuoteHeaders(token,id,"text"));
 }
 
 export async function fetchProductSetPlanPrice(token: string, id: string) {
-    return apiGet<{ points: number }>(`/api/cases/${id}/product-set/plan-price`, undefined, token);
+    return rememberCaseQuote(token,id,"text",apiGet<{ points: number;quoteToken?:string }>(`/api/cases/${id}/product-set/plan-price`, undefined, token));
 }
 
 export async function fetchProductSetImagePrice(token: string, id: string) {
-    return apiGet<{ model: string; pointsPerImage: number }>(`/api/cases/${id}/product-set/image-price`, undefined, token);
+    return rememberCaseQuote(token,id,"image",apiGet<{ model: string; pointsPerImage: number;quoteToken?:string }>(`/api/cases/${id}/product-set/image-price`, undefined, token));
 }
 
 export async function analyzeProductSet(token: string, id: string, inputs: ProductSetInput) {
-    return apiPost<{ productBrief: string }>(`/api/cases/${id}/product-set/analyze`, { inputs }, token);
+    return apiPost<{ productBrief: string }>(`/api/cases/${id}/product-set/analyze`, { inputs }, token,await caseTextHeaders(token,id));
 }
 
 export async function parseProductSet(token: string, id: string, inputs: ProductSetInput) {
-    return apiPost<{ productBrief: string; styles: ProductSetStyle[] }>(`/api/cases/${id}/product-set/parse`, { inputs }, token);
+    return apiPost<{ productBrief: string; styles: ProductSetStyle[] }>(`/api/cases/${id}/product-set/parse`, { inputs }, token,await caseTextHeaders(token,id));
 }
 
 export async function recommendProductSetStyle(token: string, id: string, inputs: ProductSetInput) {
-    return apiPost<{ styles: ProductSetStyle[] }>(`/api/cases/${id}/product-set/recommend-style`, { inputs }, token);
+    return apiPost<{ styles: ProductSetStyle[] }>(`/api/cases/${id}/product-set/recommend-style`, { inputs }, token,await caseTextHeaders(token,id));
 }
 
 export async function runProductSet(token: string, id: string, inputs: ProductSetInput) {
-    return apiPost<ProductSetRunResult>(`/api/cases/${id}/product-set/run`, { inputs }, token);
+    return apiPost<ProductSetRunResult>(`/api/cases/${id}/product-set/run`, { inputs }, token,caseQuoteHeaders(token,id,"image"));
 }
 
 export async function streamProductSet(token: string, id: string, inputs: ProductSetInput, onItem: (item: ProductSetRunResult["items"][number], completed: number, total: number) => void): Promise<ProductSetRunResult> {
@@ -197,7 +212,7 @@ export async function streamProductSet(token: string, id: string, inputs: Produc
     try {
         response = await fetch(`/api/cases/${id}/product-set/run?stream=1`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`,...caseQuoteHeaders(token,id,"image") },
             body: JSON.stringify({ inputs }),
         });
     } catch {

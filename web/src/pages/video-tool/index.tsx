@@ -5,6 +5,7 @@ import { Download, FolderPlus, Grid2X2, History, Settings, Sparkles, Trash2, Upl
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoSettingsPanel } from "@/components/video-settings-panel";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -862,6 +863,7 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                             )}
                             {tool === "subtitle-remove" && (
                                 <>
+                                    <FeatureModelPicker capability="video" featureId="video.subtitle-remove" />
                                     <div className="mt-3">
                                         {reference?.durationMs && (reference.durationMs < 2000 || reference.durationMs > 10000)
                                             ? "当前云端服务仅支持 2–10 秒视频，请先裁剪素材。"

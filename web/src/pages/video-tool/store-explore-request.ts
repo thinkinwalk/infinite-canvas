@@ -11,7 +11,11 @@ export function storeVideoSettings(config: AiConfig): StoreVideoSettings {
 }
 
 export function storeVideoConfig(d: VideoDraft, config: AiConfig): AiConfig {
-    const settings = d.storeSettings || storeVideoSettings(config);
+    let settings = d.storeSettings || storeVideoSettings(config);
+    if (config.managed?.enabled && config.channelMode === "remote") {
+        const videoModel = selectableModelsByCapability(config,"video").includes(settings.videoModel) ? settings.videoModel : config.videoModel;
+        settings = videoModel ? normalizeStoreSettings({...settings,videoModel},config) : {...settings,videoModel:""};
+    }
     return { ...config, ...settings, model: settings.videoModel, vquality: settings.vquality.replace(/p$/i, "") };
 }
 

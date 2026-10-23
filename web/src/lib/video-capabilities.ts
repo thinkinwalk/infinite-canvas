@@ -1,6 +1,6 @@
 import type { VideoModelProfile } from "@/services/api/admin";
 import { isMiniMaxH3Name, miniMaxH3Profile } from "@/lib/minimax-h3";
-import { modelOptionLabel, modelOptionName, resolveModelRequestConfig, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
+import { managedModelBinding, modelAdapter, modelOptionLabel, modelOptionName, resolveModelRequestConfig, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 
 export const VIDEO_INPUT_MODES = [
     { value: "reference", label: "参考" },
@@ -19,6 +19,14 @@ export function sparkCineH3Preset(): VideoModelProfile {
 }
 
 export function videoProfile(config: AiConfig, model: string): VideoModelProfile {
+    if (config.managed?.enabled && config.channelMode === "remote") {
+        const binding = managedModelBinding(config,model,"video");
+        if (binding?.video) return binding.video;
+        const operation = binding?.operations[0];
+        if (operation === "text-to-video" || operation === "image-to-video") return { displayName:modelOptionLabel(config,model), description:"", interface:"relay", maxImages:operation === "image-to-video" ? 2 : 0, maxVideos:0,maxAudios:0,resolutions:["480","720"],seconds:["5","7.5"],generateAudio:false,inputModes:operation === "image-to-video" ? ["first_last"] : ["reference"],firstFrameField:"image",lastFrameField:"last_image",firstFrameRequired:operation === "image-to-video",lastFrameOptional:true };
+        if (operation === "hailuo-video") return { displayName:modelOptionLabel(config,model),description:"",interface:"relay",maxImages:1,maxVideos:0,maxAudios:0,resolutions:["768","1080"],seconds:config.vquality.replace(/p$/i,"") === "1080" ? ["6"] : ["6","10"],generateAudio:false,inputModes:["first_frame_only"],firstFrameField:"first_frame_image" };
+        return { displayName:modelOptionLabel(config,model),description:"",interface:"relay",maxImages:1,maxVideos:1,maxAudios:0,resolutions:["480","720"],seconds:["10","15"],generateAudio:false,inputModes:["reference"] };
+    }
     const name = modelOptionName(model);
     if (isMiniMaxH3Name(name)) return { ...miniMaxH3Profile(name), ...(config.channelMode === "remote" ? config.videoModels?.[name] : undefined) };
     if (isH3Video2K(model)) return { displayName: name, description: "支持 768p / 2K，支持 5 / 10 / 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", interface: "relay", maxImages: 9, maxVideos: 3, maxAudios: 3, resolutions: ["2K", "768"], seconds: ["15", "5", "10"], generateAudio: false, inputModes: ["reference"], contentReplacement: config.channelMode === "remote" && config.videoModels?.[name]?.contentReplacement === true };
@@ -38,10 +46,12 @@ export function isH3Video768(model: string) {
 }
 
 export function isH3Video2K(model: string) {
+    if (modelAdapter(model) === "video.h3-2k") return true;
     return modelOptionName(model).trim().toLowerCase() === "h3video-2k";
 }
 
 export function isWan30(model: string) {
+    if (modelAdapter(model) === "video.wan30") return true;
     return modelOptionName(model).trim().toLowerCase() === "wan30-720p";
 }
 
@@ -59,6 +69,7 @@ export function videoReferenceDurationError(model: string, videos: { durationMs?
 }
 
 export function contentReplacementModels(config: AiConfig) {
+    if (config.managed?.enabled && config.channelMode === "remote") return selectableModelsByCapability(config,"video");
     return selectableModelsByCapability(config, "video").filter((model) => {
         const profile = config.videoModels?.[modelOptionName(model)] ?? videoProfile(config, model);
         return model.startsWith("remote::") && profile.contentReplacement === true &&
@@ -86,7 +97,6 @@ export function resolveAutomaticVideoModel(config: AiConfig, images: number, vid
     const supportsMode = (model: string) => !requestedMode || supportedVideoInputModes(videoProfile(config, model)).includes(requestedMode);
     const ordered = [preferred, config.videoModel, ...models].filter((model, index, values) => values.indexOf(model) === index);
     return ordered.find((model) => models.includes(model) && videoProfile(config, model).interface !== "unavailable" && supportsMode(model) && !videoReferenceError(config, model, images, videos, audios))
-        || ordered.find((model) => models.includes(model) && videoProfile(config, model).interface !== "unavailable" && supportsMode(model))
         || "";
 }
 

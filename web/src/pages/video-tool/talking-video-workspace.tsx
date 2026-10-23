@@ -5,6 +5,8 @@ import { ArrowLeft, Download, FolderPlus, Grid2X2, UploadCloud, X } from "lucide
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { VideoLinkImport } from "@/components/video-link-import";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { imageToDataUrl } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { getReplicateModels, publicServiceText, type ReplicateQuote } from "@/services/api/replicate";
@@ -19,6 +21,7 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
     const { token } = theme.useToken();
     const { message } = App.useApp();
     const session = useUserStore((s) => s.token);
+    const modelConfig = useEffectiveConfig();
     const [uploading, setUploading] = useState(false);
     const [assetOpen, setAssetOpen] = useState(false);
     const [viewed, setViewed] = useState<UploadedFile | null>(null);
@@ -42,7 +45,7 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
     const speechBlocked = !d.narration.trim() ? "请填写要朗读的文字" : d.voiceMode === "clone" && !d.media.some((m) => m.role === "voice") ? "请上传声音样本" : !session ? "请先登录" : pending ? "请先恢复已有任务" : "";
     const result = viewed || d.video;
     const muted = { color: token.colorTextSecondary };
-    const quoteKey = JSON.stringify([session, d.digitalRevision, avatar?.storageKey, d.speech?.storageKey, d.digitalMotion]);
+    const quoteKey = JSON.stringify([session,modelConfig.managed?.revision,modelConfig.videoModel,modelConfig.audioModel, d.digitalRevision, avatar?.storageKey, d.speech?.storageKey, d.digitalMotion]);
 
     useEffect(() => {
         quoteRequest.current?.abort();
@@ -61,7 +64,7 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
         refresh();
         window.addEventListener("focus", refresh);
         return () => { request.abort(); window.removeEventListener("focus", refresh); };
-    }, [session]);
+    }, [session,modelConfig.managed?.revision,modelConfig.videoModel,modelConfig.audioModel]);
 
     const upload = async (file: File, role: "avatar" | "voice" | "speech") => {
         if (locked || uploadLock.current) return;
@@ -160,6 +163,7 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
                                 <div className="space-y-3">
                                     <Input.TextArea aria-label="配音正文" disabled={locked} rows={4} value={d.narration} placeholder="直接粘贴需要朗读的正文" onChange={(e) => wb.edit({ narration: e.target.value, script: e.target.value }, "script")} />
                                     <div className="flex flex-wrap gap-2">
+                                        <FeatureModelPicker capability="audio" />
                                         <Select aria-label="配音方式" disabled={locked} value={d.voiceMode} onChange={(voiceMode) => wb.edit({ voiceMode }, "speech")} options={[{ value: "api", label: "系统音色" }, { value: "clone", label: "声音样本克隆" }]} />
                                         <Select aria-label="朗读语言" disabled={locked} value={d.language === "中文" ? "Chinese" : d.language} onChange={(language) => wb.edit({ language }, "speech")} options={["Chinese", "English", "Japanese", "Korean", "French", "German", "auto"].map((value) => ({ value, label: value === "Chinese" ? "中文" : value === "auto" ? "自动识别" : value }))} />
                                         {d.voiceMode === "api" && <Select aria-label="系统音色" disabled={locked} value={d.replicateSpeaker} onChange={(replicateSpeaker) => wb.edit({ replicateSpeaker }, "speech")} options={digitalSystemSpeakers.map((value) => ({ value, label: value }))} />}
@@ -171,6 +175,7 @@ export default function TalkingVideoWorkspace({ tool }: { tool: "photo-talk" | "
                             ) }]} />
                         </Card>
                         <Card size="small" title="03 · 生成与费用">
+                            <FeatureModelPicker capability="video" />
                             <Space wrap><Button disabled={locked || Boolean(blocked)} loading={quoting} onClick={() => void viewQuote()}>查看本次费用</Button><Button type="primary" disabled={locked || Boolean(blocked)} loading={busy} onClick={() => { setViewed(null); void wb.run("video"); }}>生成{title}视频</Button>{busy && <Button onClick={wb.stop}>停止等待</Button>}</Space>
                             <p className="mt-2 text-xs" style={muted}>{blocked || "按音频时长核算费用，正式提交前再次报价确认。"}</p>
                             {quote && <div className="mt-2 text-sm"><strong style={{ color: token.colorPrimary }}>{quote.credits.toLocaleString()} 算力点</strong><p className="text-xs">{publicServiceText(quote.calculation || quote.billingDescription || "")}</p>{quote.submissionBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{publicServiceText(quote.submissionBlocked)}</p>}</div>}

@@ -13,7 +13,7 @@ import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
-import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { configForFeature, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
@@ -49,6 +49,7 @@ type GenerationLog = {
     prompt: string;
     time: string;
     model: string;
+    modelLabel?: string;
     config: GenerationLogConfig;
     references: ReferenceImage[];
     durationMs: number;
@@ -76,7 +77,7 @@ export default function ImagePage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dragDepthRef = useRef(0);
     const config = useConfigStore((state) => state.config);
-    const effectiveConfig = useEffectiveConfig();
+    const baseEffectiveConfig = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -84,6 +85,7 @@ export default function ImagePage() {
     const [prompt, setPrompt] = useState("");
     const [templateInput, setTemplateInput] = useState<WorkbenchCommand["templateInput"]>();
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const effectiveConfig = baseEffectiveConfig.managed?.enabled ? configForFeature(baseEffectiveConfig,references.length ? "image.edit" : "image.generate","image") : baseEffectiveConfig;
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
@@ -583,7 +585,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">{t("workbench.model")}</span>
-                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                <ModelPicker config={config} value={model} onChange={(value) => config.managed?.enabled ? useConfigStore.setState((s) => ({featureModels:{...s.featureModels,[config.featureId || config.featureIds?.image || "image.generate"]:value}})) : updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
                 <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
@@ -755,6 +757,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
                     <div className="min-w-0">
                         <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
+                        {log.modelLabel && <div className="truncate text-xs opacity-60">{log.modelLabel}</div>}
                         {thumbnails.length ? (
                             <div className="mt-2 flex gap-1 overflow-hidden">
                                 {thumbnails.map((image) => (
@@ -825,6 +828,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         prompt: log.prompt || log.title || "",
         time: log.time || new Date().toLocaleString(i18n.resolvedLanguage, { hour12: false }),
         model: log.model || config.imageModel || "",
+        modelLabel: log.modelLabel,
         config,
         references,
         durationMs: log.durationMs || 0,
@@ -887,7 +891,7 @@ function buildLog({
 }: {
     prompt: string;
     model: string;
-    config: GenerationLogConfig;
+    config: AiConfig;
     references: ReferenceImage[];
     durationMs: number;
     successCount: number;
@@ -909,6 +913,7 @@ function buildLog({
         prompt,
         time: new Date().toLocaleString(i18n.resolvedLanguage, { hour12: false }),
         model,
+        modelLabel: modelOptionLabel(config,model),
         config: logConfig,
         references,
         durationMs,

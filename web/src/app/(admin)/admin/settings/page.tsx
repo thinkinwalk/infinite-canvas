@@ -1045,6 +1045,7 @@ function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChanne
 
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
     return {
+        modelManagement: setting.modelManagement,
         nextChannelId: setting.nextChannelId,
         channels: (setting.channels || []).map(normalizeChannel),
         groups: setting.groups || { default: { name: "普通用户", creditRatio: 1, enabled: true } },

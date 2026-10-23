@@ -53,6 +53,11 @@ type replacementCaption struct {
 	Text  string  `json:"text"`
 }
 type replacementJob struct {
+	PlatformModelID      string               `json:"platformModelId,omitempty"`
+	ModelLabel           string               `json:"modelLabel,omitempty"`
+	FeatureID            string               `json:"featureId,omitempty"`
+	ConfigRevision       int                  `json:"configRevision,omitempty"`
+	ModelAdapter         string               `json:"modelAdapter,omitempty"`
 	ID                   string               `json:"id"`
 	UserID               string               `json:"userId"`
 	Source               string               `json:"source"`
@@ -109,6 +114,36 @@ type replacementControl struct {
 }
 
 var replacementControls sync.Map
+
+func publicReplacementJob(job replacementJob) replacementJob {
+	if job.PlatformModelID != "" {
+		real := job.Model
+		job.Model, job.ChannelID = job.PlatformModelID, 0
+		if job.Error != "" {
+			job.Error = strings.ReplaceAll(job.Error, real, job.ModelLabel)
+		}
+	}
+	return job
+}
+
+func replacementManagedContext(ctx context.Context, job *replacementJob) (context.Context, error) {
+	enabled, err := service.ManagementEnabled()
+	if err != nil || !enabled {
+		return ctx, err
+	}
+	if job.PlatformModelID == "" {
+		return ctx, fmt.Errorf("模型目录已升级，旧任务仍可查询已有片段；新增生成请重新选择功能模型")
+	}
+	user, _ := service.UserFromContext(ctx)
+	selected, err := service.ResolveManagedModel(job.FeatureID, job.PlatformModelID, user.Group, job.ChannelID)
+	if err != nil {
+		return ctx, err
+	}
+	if selected.Revision != job.ConfigRevision || selected.Route.Model != job.Model {
+		return ctx, fmt.Errorf("功能模型配置已变化，后续收费片段已暂停；已有结果和任务均已保留")
+	}
+	return service.WithManagedSelection(ctx, selected), nil
+}
 
 func replacementCloudOperation(name string) string {
 	switch name {
@@ -362,7 +397,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 			job, err := loadReplacement(strings.TrimSuffix(filepath.Base(path), ".json"), user.ID)
 			if err == nil {
 				markReplacementPaused(&job)
-				jobs = append(jobs, job)
+				jobs = append(jobs, publicReplacementJob(job))
 			}
 		}
 		OK(w, jobs)
@@ -373,6 +408,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		Source              string  `json:"source"`
 		Image               string  `json:"image"`
 		Model               string  `json:"model"`
+		FeatureID           string  `json:"featureId"`
 		Resolution          string  `json:"resolution"`
 		Seconds             string  `json:"seconds"`
 		AspectRatio         string  `json:"aspectRatio"`
@@ -399,7 +435,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 	if job, err := loadReplacement(request.ID, user.ID); err == nil {
 		control.running.Store(false)
 		markReplacementPaused(&job)
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	// An existing ID belonging to another user must never be overwritten.
@@ -412,6 +448,24 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 	job := replacementJob{ID: request.ID, UserID: user.ID, Source: request.Source, Image: request.Image, Model: request.Model,
 		Resolution: request.Resolution, Seconds: request.Seconds, RequestedAspectRatio: request.AspectRatio, Prompt: request.Prompt, Subtitles: request.Subtitles, RegenerateSubtitles: request.Subtitles && request.RegenerateSubtitles,
 		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, PreviewRequired: request.PreviewRequired, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if enabled, err := service.ManagementEnabled(); err != nil || enabled {
+		if err == nil && request.FeatureID != "replace.person" && request.FeatureID != "replace.head" {
+			err = fmt.Errorf("请选择人物替换或换脸功能模型")
+		}
+		var selected *service.ManagedSelection
+		if err == nil {
+			selected, err = service.ResolveManagedModel(request.FeatureID, request.Model, user.Group, 0)
+		}
+		if err != nil {
+			control.running.Store(false)
+			Fail(w, err.Error())
+			return
+		}
+		job.PlatformModelID, job.FeatureID, job.ConfigRevision = selected.Model.ID, selected.Feature.ID, selected.Revision
+		job.ModelAdapter = selected.Route.Adapter
+		job.ModelLabel, job.Model, job.ChannelID = service.ManagedLabel(selected.Model, []model.ManagedRoute{selected.Route}), selected.Route.Model, selected.Channel.ID
+		r = r.WithContext(service.WithManagedSelection(r.Context(), selected))
+	}
 	if job.Subtitles {
 		job.SubtitleMethod = "cloud-joint"
 		job.SubtitleOutput = "editable"
@@ -429,7 +483,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "保存任务失败")
 		return
 	}
-	OK(w, job)
+	OK(w, publicReplacementJob(job))
 	go runReplacement(service.WithUser(context.Background(), user), job, true)
 }
 func markReplacementPaused(job *replacementJob) {
@@ -452,7 +506,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 	c := replacementControlFor(id)
 	if action == "" {
 		markReplacementPaused(&job)
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if action == "archive" || action == "unarchive" {
@@ -471,7 +525,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存归档状态失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if job.Archived {
@@ -523,7 +577,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存画幅失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		go runReplacement(service.WithUser(context.Background(), user), job, true)
 		return
 	}
@@ -543,7 +597,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存验收状态失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if action == "save-captions" {
@@ -594,7 +648,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存字幕失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if action == "recognize-captions" || action == "render-captions" {
@@ -648,7 +702,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存字幕任务失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		if action == "render-captions" {
 			go runReplacementCaptionRender(context.Background(), job)
 		} else {
@@ -683,6 +737,20 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "该任务无需重新报价")
 			return
 		}
+		if job.PlatformModelID != "" {
+			selected, err := service.ResolveManagedModel(job.FeatureID, job.PlatformModelID, user.Group, job.ChannelID)
+			if err != nil {
+				Fail(w, err.Error())
+				return
+			}
+			if selected != nil {
+				if selected.Route.Model != job.Model {
+					Fail(w, "原任务模型身份已变化，请联系管理员")
+					return
+				}
+				job.ConfigRevision = selected.Revision
+			}
+		}
 		for i := range job.Parts {
 			part := &job.Parts[i]
 			if part.Submitted || part.Validated {
@@ -701,7 +769,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存报价失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if action == "retry" {
@@ -773,7 +841,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存重做计划失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if action == "generate-parts" {
@@ -805,7 +873,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 			Fail(w, "保存所选片段失败")
 			return
 		}
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		go runReplacement(service.WithUser(context.Background(), user), job, false)
 		return
 	}
@@ -823,7 +891,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		return
 	}
 	if job.Status == "completed" {
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if !c.running.CompareAndSwap(false, true) {
@@ -838,7 +906,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 	}
 	if job.Status == "completed" {
 		c.running.Store(false)
-		OK(w, job)
+		OK(w, publicReplacementJob(job))
 		return
 	}
 	if job.PreviewRequired && job.PreviewReady && !job.PreviewApproved {
@@ -860,7 +928,7 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 		Fail(w, "保存任务失败")
 		return
 	}
-	OK(w, job)
+	OK(w, publicReplacementJob(job))
 	go runReplacement(service.WithUser(context.Background(), user), job, !job.Planned)
 }
 
@@ -914,6 +982,11 @@ func selectReplacementParts(job *replacementJob, indices []int, expected int) er
 }
 
 func validateReplacementRequest(ctx context.Context, job *replacementJob) error {
+	var err error
+	ctx, err = replacementManagedContext(ctx, job)
+	if err != nil {
+		return err
+	}
 	if err := validateReplacementSubtitles(job); err != nil {
 		return err
 	}
@@ -942,7 +1015,7 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 	}
 	user, _ := service.UserFromContext(ctx)
 	if replacementCloudOperation(job.Model) != "" {
-		channel, err := service.SelectReplicateChannel(job.Model, user.Group)
+		channel, err := replacementModelChannel(ctx, job.Model, user.Group, true)
 		if err != nil {
 			return err
 		}
@@ -951,13 +1024,13 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 			return fmt.Errorf("当前替换模型支持 480 / 720")
 		}
 	} else {
-		channel, err := service.SelectModelChannelForGroup(job.Model, user.Group)
+		channel, err := replacementModelChannel(ctx, job.Model, user.Group, false)
 		if err != nil {
 			return err
 		}
 		job.ChannelID = channel.ID
 		profile := service.VideoProfile(channel, job.Model)
-		if profile.ContentReplacement == nil || !*profile.ContentReplacement || profile.MaxVideos < 1 || profile.MaxImages < 1 || profile.Interface == "unavailable" {
+		if (job.PlatformModelID == "" && (profile.ContentReplacement == nil || !*profile.ContentReplacement)) || profile.MaxVideos < 1 || profile.MaxImages < 1 || profile.Interface == "unavailable" {
 			return fmt.Errorf("该渠道未开启内容替换或未配置图片加视频参考能力")
 		}
 		allowed := false
@@ -982,7 +1055,7 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 				return err
 			}
 		}
-		if strings.EqualFold(job.Model, "wan30-720p") && seconds > 30 {
+		if (job.ModelAdapter == "video.wan30" || job.ModelAdapter == "" && strings.EqualFold(job.Model, "wan30-720p")) && seconds > 30 {
 			return fmt.Errorf("Wan30 当前参考视频接入支持 1–30 秒，请选择不超过 30 秒的分段")
 		}
 		if err := validateVideoProfileRequest(profile, mustReplacementJSON(map[string]any{"seconds": job.Seconds, "resolution": job.Resolution, "image_url": job.Image, "reference_videos": []string{"https://example.invalid/reference.mp4"}, "input_mode": "reference"}), "application/json"); err != nil {
@@ -1044,6 +1117,11 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 	}
 	ctx = context.WithValue(ctx, replacementChannelKey{}, job.ChannelID)
 	if planning {
+		var err error
+		ctx, err = replacementManagedContext(ctx, job)
+		if err != nil {
+			return err
+		}
 		seconds, _ := strconv.ParseFloat(job.Seconds, 64)
 		seconds = math.Min(seconds, 15)
 		result, err := replacementWorkerStep(ctx, job, "plan", "replacement-plan", map[string]any{"video": job.Source}, map[string]any{"seconds": seconds, "preserveScenes": false})
@@ -1399,6 +1477,11 @@ func resetFailedReplacementCaptionWorker(ctx context.Context, job *replacementJo
 	return nil
 }
 func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replacementPart) (int, error) {
+	var err error
+	ctx, err = replacementManagedContext(ctx, job)
+	if err != nil {
+		return 0, err
+	}
 	ctx = context.WithValue(ctx, replacementChannelKey{}, job.ChannelID)
 	if replacementCloudOperation(job.Model) != "" {
 		user, _ := service.UserFromContext(ctx)
@@ -1413,7 +1496,7 @@ func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replac
 		if replacementCloudOperation(job.Model) == "head-swap" {
 			resolution += "p"
 		}
-		quote, err := service.QuoteReplicate(user, spec, map[string]any{"resolution": resolution, "duration": part.Seconds})
+		quote, err := service.QuoteManagedReplicate(user, spec, map[string]any{"resolution": resolution, "duration": part.Seconds}, service.ManagedSelectionFromContext(ctx))
 		if err != nil {
 			return 0, err
 		}
@@ -1440,7 +1523,7 @@ func validateReplacementSubtitles(job *replacementJob) error {
 	if job.SubtitleMethod != "cloud-joint" {
 		return fmt.Errorf("旧字幕清理流程已下线，已有结果保留；请重新创建云端联合处理任务")
 	}
-	if !strings.EqualFold(job.Model, "wan30-720p") {
+	if job.ModelAdapter != "video.wan30" && (job.ModelAdapter != "" || !strings.EqualFold(job.Model, "wan30-720p")) {
 		return fmt.Errorf("当前模型不支持联合去字幕，请关闭此项或先使用云端硬字幕去除工具处理原片")
 	}
 	return nil
@@ -1485,6 +1568,10 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 				return fmt.Errorf("账户状态已变化，已暂停后续收费生成")
 			}
 			ctx = service.WithUser(ctx, model.PublicUser(current))
+			ctx, err = replacementManagedContext(ctx, job)
+			if err != nil {
+				return err
+			}
 			price, err := quoteReplacementPart(ctx, job, part)
 			if err != nil {
 				return err

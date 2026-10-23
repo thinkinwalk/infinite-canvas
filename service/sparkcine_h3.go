@@ -12,6 +12,9 @@ const SparkCineH3Interface = "sparkcine_h3"
 
 // Match the verified provider and full model ID; unrelated H3 aliases keep their adapters.
 func IsSparkCineH3(channel model.ModelChannel, name string) bool {
+	if channel.ManagedAdapter != "" {
+		return channel.ManagedAdapter == "video.sparkcine_h3"
+	}
 	if name != "h3-video" {
 		return false
 	}

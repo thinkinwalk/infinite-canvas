@@ -2,7 +2,7 @@ import { publicServiceText, type ReplicateOperation } from "@/services/api/repli
 import type { UploadedFile } from "@/services/file-storage";
 import type { VideoDraft } from "@/types/video-workbench";
 
-export const digitalSystemSpeakers = ["Aiden", "Dylan", "Eric", "Ono_anna", "Ryan", "Serena", "Sohee", "Uncle_fu", "Vivian"];
+export { cloudSpeechSpeakers as digitalSystemSpeakers } from "@/lib/audio-generation";
 
 export function digitalHumanTaskError(error: string): string {
     if (error === "云端语音识别尚未开通，请联系管理员配置识别服务") return "该次任务提交时服务尚未提供云端语音识别。请刷新模型目录查看当前状态；已有服务密钥无需重复填写。";

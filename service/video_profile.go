@@ -39,6 +39,9 @@ func VideoQuote(channel model.ModelChannel, modelName, resolution string, second
 }
 
 func VideoProfile(channel model.ModelChannel, name string) (result model.VideoModelProfile) {
+	if channel.ManagedProfile {
+		return channel.VideoModels[name]
+	}
 	defer func() {
 		if result.Interface == SparkCineH3Interface && name != "h3-video" {
 			result.Interface = "unavailable"

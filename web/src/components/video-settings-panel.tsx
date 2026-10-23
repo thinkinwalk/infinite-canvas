@@ -6,7 +6,7 @@ import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
-import { modelCapabilityOf, modelOptionName, type AiConfig } from "@/stores/use-config-store";
+import { modelAdapter, modelCapabilityOf, modelOptionName, type AiConfig } from "@/stores/use-config-store";
 import { videoInputMode as resolveVideoInputMode, videoProfile, supportedVideoInputModes, videoInputDescription, isH3Video2K, isH3Video768, sparkCineVideoSeconds } from "@/lib/video-capabilities";
 import { isMiniMaxH3Name, isMiniMaxH3NamedSize } from "@/lib/minimax-h3";
 
@@ -38,17 +38,24 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
     const selectedModel = config.model && modelCapabilityOf(config, config.model) === "video" ? config.model : config.videoModel || config.model;
     const profile = videoProfile(config, selectedModel);
-    const h3 = isH3Video2K(selectedModel);
+    const managed = config.channelMode === "remote" && config.managed?.enabled;
+    const adapter = modelAdapter(selectedModel,config);
+    const h3 = managed ? adapter === "video.h3-2k" : isH3Video2K(selectedModel);
     const h3Video768 = isH3Video768(selectedModel);
-    const miniMaxH3 = isMiniMaxH3Name(modelOptionName(selectedModel));
+    const miniMaxH3 = managed ? adapter.startsWith("video.minimax-h3") : isMiniMaxH3Name(modelOptionName(selectedModel));
     const sparkCine = profile.interface === "sparkcine_h3";
-    const wan30 = modelOptionName(selectedModel).trim().toLowerCase() === "wan30-720p";
+    const wan30 = managed ? adapter === "video.wan30" : modelOptionName(selectedModel).trim().toLowerCase() === "wan30-720p";
     const availableModes = supportedVideoInputModes(profile);
     const inputMode = resolveVideoInputMode({ ...config, videoInputMode: config.videoInputMode }, selectedModel);
     const resolution = parseVideoResolution(config.vquality);
     const namedSize = isMiniMaxH3NamedSize(modelOptionName(selectedModel), resolution);
     const selectedRatio = namedSize ? "auto" : h3 && inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size || "auto");
     const sparkSeconds = sparkCineVideoSeconds(profile, resolution, selectedRatio);
+    useEffect(() => {
+        if (!managed) return;
+        if (!profile.resolutions.includes(resolution) && profile.resolutions[0]) onConfigChange("vquality",profile.resolutions[0]);
+        if (!profile.seconds.includes(config.videoSeconds) && profile.seconds[0]) onConfigChange("videoSeconds",profile.seconds[0]);
+    },[managed,selectedModel,resolution,config.videoSeconds,profile.resolutions.join(","),profile.seconds.join(","),onConfigChange]);
     useEffect(() => {
         if (!sparkCine) return;
         if (!profile.resolutions.includes(resolution)) onConfigChange("vquality", profile.resolutions[0] || "480");
@@ -83,12 +90,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {(h3 || h3Video768 || miniMaxH3 || sparkCine ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions.filter((item) => !profile.resolutions.length || profile.resolutions.includes(item.value))).map((item) => (
+                        {(managed || h3 || h3Video768 || miniMaxH3 || sparkCine ? profile.resolutions.map((value) => ({ value, label: videoResolutionLabel(value) })) : resolutionOptions.filter((item) => !profile.resolutions.length || profile.resolutions.includes(item.value))).map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        {!h3 && !h3Video768 && !miniMaxH3 && !wan30 && !sparkCine && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
+                        {!managed && !h3 && !h3Video768 && !miniMaxH3 && !wan30 && !sparkCine && <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />}
                     </div>
                 </SettingGroup>
                 {!h3 && !miniMaxH3 && !sparkCine && <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
@@ -116,7 +123,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>}
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    {h3 ? <div className="grid grid-cols-3 gap-2.5">{[...profile.seconds].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                    {managed || h3 ? <div className="grid grid-cols-3 gap-2.5">{[...(sparkCine ? sparkSeconds : profile.seconds)].sort((a, b) => Number(a) - Number(b)).map((value) => <OptionPill key={value} selected={config.videoSeconds === value} theme={theme} onClick={() => onConfigChange("videoSeconds", value)}>{value} 秒</OptionPill>)}</div> : <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
                         <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={sparkCine ? Number(sparkSeconds.at(-1) || "30") : miniMaxH3 ? 15 : VIDEO_SECONDS_MAX} step={sparkCine ? null : 1} marks={sparkCine ? Object.fromEntries(sparkSeconds.map((value) => [Number(value), ""])) : undefined} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
                         <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(sparkCine ? sparkSeconds.reduce((best, candidate) => Math.abs(Number(candidate) - value) < Math.abs(Number(best) - value) ? candidate : best, sparkSeconds[0] || "4") : miniMaxH3 ? Math.min(15, value) : value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>

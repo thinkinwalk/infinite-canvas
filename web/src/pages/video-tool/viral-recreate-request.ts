@@ -3,7 +3,7 @@ import { isReplicateVideoModel, REPLICATE_VIDEO_MODEL } from "@/services/api/rep
 import { resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
-import { storeVideoSettings } from "./store-explore-request";
+import { storeVideoConfig } from "./store-explore-request";
 
 export const viralReference = (d: VideoDraft) => d.media.find((m) => m.role === "reference" && m.kind === "video");
 export const viralSource = (d: VideoDraft) => {
@@ -23,8 +23,7 @@ export function viralMaterialLabels(d: VideoDraft) {
     ];
 }
 export function viralVideoConfig(d: VideoDraft, config: AiConfig): AiConfig {
-    const settings = d.viralSettings || storeVideoSettings(config);
-    return { ...config, ...settings, model: settings.videoModel, vquality: settings.vquality.replace(/p$/i, "") };
+    return storeVideoConfig({...d,storeSettings:d.viralSettings},config);
 }
 export function viralVideoMaterials(d: VideoDraft, cfg: AiConfig) {
     const mode = videoInputMode(cfg, cfg.videoModel);

@@ -6,6 +6,7 @@ import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as Imag
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { ModelPicker } from "@/components/model-picker";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoSettingsPanel } from "@/components/video-settings-panel";
 import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { VideoLinkImport } from "@/components/video-link-import";
@@ -680,6 +681,7 @@ export default function ContentReplaceWorkspace() {
                                                         </div>
                                                     </div>
                                                 )}
+                                                {cloud && !person && <FeatureModelPicker capability="video" />}
                                                 {d.route === "model" && (
                                                     <div className="space-y-3">
                                                         <ModelPicker config={config} capability="video" value={config.videoModel} onChange={(value) => updateConfig("videoModel", value)} onMissingConfig={() => openConfig(true)} fullWidth />

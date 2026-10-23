@@ -28,6 +28,9 @@ var replicateSubmitting sync.Map
 var replicateRefreshLocks [64]sync.Mutex
 
 type replicateRequest struct {
+	ModelID           string         `json:"modelId"`
+	FeatureID         string         `json:"featureId"`
+	QuoteToken        string         `json:"quoteToken"`
 	ID                string         `json:"id"`
 	Operation         string         `json:"operation"`
 	Input             map[string]any `json:"input"`
@@ -50,6 +53,41 @@ type cloudPrediction struct {
 func ReplicateCatalog(w http.ResponseWriter, r *http.Request) {
 	user, _ := service.UserFromContext(r.Context())
 	items := []service.ReplicateQuote{}
+	if enabled, err := service.ManagementEnabled(); err != nil {
+		FailError(w, err)
+		return
+	} else if enabled {
+		settings, err := service.PublicSettingsForGroup(user.Group)
+		if err != nil {
+			FailError(w, err)
+			return
+		}
+		for _, binding := range settings.ModelChannel.Managed.Bindings {
+			if !binding.Available {
+				continue
+			}
+			for _, operation := range binding.Operations {
+				for _, spec := range service.ReplicateModels() {
+					if spec.Operation != operation {
+						continue
+					}
+					selected, err := service.ResolveManagedModel(binding.FeatureID, binding.ModelID, user.Group, 0)
+					if err != nil || selected == nil {
+						continue
+					}
+					quote, err := service.QuoteManagedReplicate(user, spec, nil, selected)
+					if err != nil {
+						continue
+					}
+					quote.Model, quote.Label, quote.Description, quote.PricingSnapshot = binding.ModelID, service.ManagedLabel(selected.Model, []model.ManagedRoute{selected.Route}), selected.Model.Description, ""
+					quote.FeatureID = binding.FeatureID
+					items = append(items, quote)
+				}
+			}
+		}
+		OK(w, items)
+		return
+	}
 	for _, spec := range service.ReplicateModels() {
 		quote, err := service.QuoteReplicate(user, spec, nil)
 		if err != nil {
@@ -67,7 +105,7 @@ func ReplicatePrice(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "请求格式不正确")
 		return
 	}
-	spec, err := service.FindReplicateModel(input.Operation)
+	selected, spec, err := managedCloudSelection(r, input, false)
 	if err != nil {
 		Fail(w, err.Error())
 		return
@@ -82,9 +120,14 @@ func ReplicatePrice(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	quote, err := service.QuoteReplicate(user, spec, input.Input)
+	quote, err := service.QuoteManagedReplicate(user, spec, input.Input, selected)
 	if err != nil {
 		FailError(w, err)
+		return
+	}
+	if selected != nil {
+		quote.Model, quote.Label, quote.Description, quote.PricingSnapshot = selected.Model.ID, service.ManagedLabel(selected.Model, []model.ManagedRoute{selected.Route}), selected.Model.Description, ""
+		OK(w, map[string]any{"operation": quote.Operation, "model": quote.Model, "label": quote.Label, "description": quote.Description, "credits": quote.Credits, "billingMode": quote.BillingMode, "calculation": quote.Calculation, "available": quote.Available, "configured": quote.Configured, "reason": quote.Reason, "submissionBlocked": quote.SubmissionBlocked, "quoteToken": service.SignManagedQuote(user.ID, selected, input.Input)})
 		return
 	}
 	OK(w, quote)
@@ -101,15 +144,11 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 		FailError(w, err)
 		return
 	}
-	OK(w, task)
+	OK(w, publicManagedCloudTask(task))
 }
 
 // Both public model tasks and the voice facade use this one submission and ledger path.
 func submitReplicateTask(r *http.Request, user model.AuthUser, input replicateRequest) (model.ReplicateTask, error) {
-	spec, err := service.FindReplicateModel(input.Operation)
-	if err != nil {
-		return model.ReplicateTask{}, voiceError(400, "INVALID_MODEL", err.Error())
-	}
 	encoded, _ := json.Marshal(map[string]any{"operation": input.Operation, "input": input.Input})
 	fingerprint := sha256.Sum256(encoded)
 	hash := hex.EncodeToString(fingerprint[:])
@@ -118,10 +157,17 @@ func submitReplicateTask(r *http.Request, user model.AuthUser, input replicateRe
 		return model.ReplicateTask{}, err
 	}
 	if found {
-		if existing.UserID != user.ID || (input.Voice == nil && existing.RequestHash != hash) || (input.Voice != nil && existing.SpeechRequestHash != input.SpeechRequestHash) {
+		if existing.UserID != user.ID || (input.Voice == nil && (existing.RequestHash != hash || input.ModelID != "" && existing.PlatformModelID != input.ModelID || input.FeatureID != "" && existing.FeatureID != input.FeatureID)) || (input.Voice != nil && existing.SpeechRequestHash != input.SpeechRequestHash) {
 			return model.ReplicateTask{}, voiceError(409, "IDEMPOTENCY_CONFLICT", "任务编号已被使用或幂等请求内容冲突")
 		}
 		return existing, nil
+	}
+	selected, spec, err := managedCloudSelection(r, input, true)
+	if err != nil {
+		return model.ReplicateTask{}, voiceError(400, "INVALID_MODEL", err.Error())
+	}
+	if selected != nil {
+		r = r.WithContext(service.WithManagedSelection(r.Context(), selected))
 	}
 	// Voice inputs are constructed from an owned, validated private file by SpeechCreateTask.
 	if input.Voice == nil {
@@ -134,7 +180,7 @@ func submitReplicateTask(r *http.Request, user model.AuthUser, input replicateRe
 			return model.ReplicateTask{}, voiceError(400, "INVALID_REQUEST", err.Error())
 		}
 	}
-	quote, err := service.QuoteReplicate(user, spec, input.Input)
+	quote, err := service.QuoteManagedReplicate(user, spec, input.Input, selected)
 	if err != nil {
 		return model.ReplicateTask{}, err
 	}
@@ -156,11 +202,14 @@ func submitReplicateTask(r *http.Request, user model.AuthUser, input replicateRe
 	defer replicateSubmitting.Delete(cacheKey)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	task := model.ReplicateTask{ChannelID: channel.ID, ChannelName: channel.Name, ID: input.ID, UserID: user.ID, Operation: spec.Operation, Model: spec.Model, Version: spec.Version, RequestHash: hash, Status: "creating", Credits: quote.Credits, PricingSnapshot: quote.PricingSnapshot, CreatedAt: now, UpdatedAt: now}
+	if selected != nil {
+		task.PlatformModelID, task.ModelLabel, task.FeatureID, task.ConfigRevision = selected.Model.ID, service.ManagedLabel(selected.Model, []model.ManagedRoute{selected.Route}), selected.Feature.ID, selected.Revision
+	}
 	if input.Voice != nil {
 		task.SpeechVoiceID, task.SpeechVoiceVersion = input.Voice.ID, input.Voice.Version
 		task.SpeechRequestHash, task.SpeechLanguage = input.SpeechRequestHash, input.SpeechLanguage
 	}
-	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "chargedCredits": task.Credits, "channelId": task.ChannelID, "channelName": task.ChannelName})
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "platformModelId": task.PlatformModelID, "modelLabel": task.ModelLabel, "operation": task.Operation, "taskId": task.ID, "chargedCredits": task.Credits, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	err = repository.CreateReplicateTask(task, model.CreditLog{ID: uuid.NewString(), Remark: "云模型 " + spec.Label, Extra: string(extra)})
 	if err != nil {
 		first, found, readErr := repository.GetReplicateTask(input.ID)
@@ -220,7 +269,7 @@ func ReadReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	OK(w, task)
+	OK(w, publicManagedCloudTask(task))
 }
 
 func refreshReplicateTask(ctx context.Context, task model.ReplicateTask) (model.ReplicateTask, error) {
@@ -283,7 +332,7 @@ func CancelReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if task.Status == "failed" || task.Status == "cancelled" || task.Status == "completed" || task.Status == "generated" {
-		OK(w, task)
+		OK(w, publicManagedCloudTask(task))
 		return
 	}
 	if task.PredictionID == "" {
@@ -308,7 +357,7 @@ func CancelReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	OK(w, task)
+	OK(w, publicManagedCloudTask(task))
 }
 func ReplicateTaskContent(w http.ResponseWriter, r *http.Request, id string) {
 	task, ok := ownedReplicateTask(w, r, id)
@@ -565,7 +614,7 @@ func applyReplicatePrediction(task *model.ReplicateTask, prediction cloudPredict
 }
 func refundReplicateTask(task *model.ReplicateTask) error {
 	task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "predictionId": task.PredictionID, "status": task.Status, "channelId": task.ChannelID, "channelName": task.ChannelName})
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "platformModelId": task.PlatformModelID, "modelLabel": task.ModelLabel, "operation": task.Operation, "taskId": task.ID, "predictionId": task.PredictionID, "status": task.Status, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	if err := repository.FailReplicateTask(*task, model.CreditLog{ID: uuid.NewString(), Remark: "云模型失败返还 " + task.Model, Extra: string(extra)}); err != nil {
 		return err
 	}

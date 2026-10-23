@@ -22,7 +22,7 @@ function previewError(options: Options, value: string) {
 }
 
 export function usePromptEnhancement(options: Options) {
-    const effectiveConfig = useEffectiveConfig();
+    const effectiveConfig = useEffectiveConfig("prompt.enhance");
     const token = useUserStore((state) => state.token);
     const confirmTextModel = useTextModelConfirmation();
     const [selectedModel, setSelectedModel] = useState("");

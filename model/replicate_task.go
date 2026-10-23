@@ -2,6 +2,10 @@ package model
 
 // ReplicateTask owns one cloud prediction and its one-time platform charge.
 type ReplicateTask struct {
+	PlatformModelID string  `json:"platformModelId,omitempty"`
+	ModelLabel      string  `json:"modelLabel,omitempty"`
+	FeatureID       string  `json:"featureId,omitempty"`
+	ConfigRevision  int     `json:"configRevision,omitempty"`
 	ID              string  `json:"id" gorm:"primaryKey"`
 	UserID          string  `json:"-" gorm:"index"`
 	ChannelID       int     `json:"channelId"`

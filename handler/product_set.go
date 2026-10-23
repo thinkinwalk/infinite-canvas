@@ -335,7 +335,7 @@ func productSetTextCompletion(r *http.Request, item model.CaseApp, user model.Au
 	if err := json.Unmarshal([]byte(item.RuntimeConfig), &runtime); err != nil {
 		return "", errors.New("商品套图运行配置无效")
 	}
-	modelName, err := resolveCaseModel("text", runtime.Model, user.Group)
+	modelName, err := resolveCaseModel("text", runtime.Model, user.Group, r)
 	if err != nil {
 		return "", err
 	}
@@ -490,12 +490,12 @@ func ProductSetPlanPrice(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, "商品套图运行配置无效")
 		return
 	}
-	modelName, err := resolveCaseModel("text", runtime.Model, user.Group)
+	modelName, err := resolveCaseModel("text", runtime.Model, user.Group, r)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	baseCredits, err := service.ModelCost(modelName)
+	baseCredits, err := service.ManagedModelCost(r.Context(), modelName)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -505,7 +505,7 @@ func ProductSetPlanPrice(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	OK(w, map[string]any{"points": int(math.Ceil(float64(baseCredits) * ratio))})
+	casePrice(w, r, map[string]any{"points": int(math.Ceil(float64(baseCredits) * ratio))})
 }
 
 func ProductSetImagePrice(w http.ResponseWriter, r *http.Request, id string) {
@@ -528,12 +528,12 @@ func ProductSetImagePrice(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, "商品套图运行配置无效")
 		return
 	}
-	modelName, err := resolveCaseModel("image", runtime.Model, user.Group)
+	modelName, err := resolveCaseModel("image", runtime.Model, user.Group, r)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	baseCredits, err := service.ModelCost(modelName)
+	baseCredits, err := service.ManagedModelCost(r.Context(), modelName)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -543,7 +543,10 @@ func ProductSetImagePrice(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	OK(w, map[string]any{"model": modelName, "pointsPerImage": int(math.Ceil(float64(baseCredits) * ratio))})
+	if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil {
+		modelName = selected.Model.ID
+	}
+	casePrice(w, r, map[string]any{"model": modelName, "pointsPerImage": int(math.Ceil(float64(baseCredits) * ratio))})
 }
 
 func parseProductSetPlan(text string, baseCards []productSetCard) ([]productSetCard, error) {
@@ -609,7 +612,7 @@ func ProductSetRun(w http.ResponseWriter, r *http.Request, id string) {
 		Fail(w, "商品套图运行配置无效")
 		return
 	}
-	modelName, err := resolveCaseModel("image", runtime.Model, user.Group)
+	modelName, err := resolveCaseModel("image", runtime.Model, user.Group, r)
 	if err != nil {
 		FailError(w, err)
 		return

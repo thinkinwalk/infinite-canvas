@@ -2,9 +2,9 @@ import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
-import { audioFormatOptions, audioSpeedLabel, audioVoiceOptions, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
+import { audioFormatOptions, audioSpeedLabel, audioVoiceOptions, cloudSpeechSpeakers, normalizeCloudSpeechVoice, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import type { AiConfig } from "@/stores/use-config-store";
+import { managedModelBinding, type AiConfig } from "@/stores/use-config-store";
 
 const speedOptions = ["0.75", "1", "1.25", "1.5"];
 
@@ -20,7 +20,9 @@ type AudioSettingsPanelProps = {
 
 export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: AudioSettingsPanelProps) {
     const { t } = useTranslation();
-    const voice = normalizeAudioVoiceValue(config.audioVoice);
+    const cloudSpeech = config.channelMode === "remote" && managedModelBinding(config, config.audioModel || config.model, "audio")?.adapter === "cloud:speech";
+    const voice = cloudSpeech ? normalizeCloudSpeechVoice(config.audioVoice) : normalizeAudioVoiceValue(config.audioVoice);
+    const voices = cloudSpeech ? cloudSpeechSpeakers.map((value) => ({ value, label: value })) : audioVoiceOptions;
     const format = normalizeAudioFormatValue(config.audioFormat);
     const speed = normalizeAudioSpeedValue(config.audioSpeed);
 
@@ -30,14 +32,14 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.audio.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.audio.voice")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
-                        {audioVoiceOptions.map((item) => (
+                        {voices.map((item) => (
                             <OptionPill key={item.value} selected={voice === item.value} theme={theme} onClick={() => onConfigChange("audioVoice", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
                     </div>
                 </SettingGroup>
-                <SettingGroup title={t("settingsPanels.audio.format")} color={theme.node.muted}>
+                {!cloudSpeech && <><SettingGroup title={t("settingsPanels.audio.format")} color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {audioFormatOptions.map((item) => (
                             <OptionPill key={item.value} selected={format === item.value} theme={theme} onClick={() => onConfigChange("audioFormat", item.value)}>
@@ -76,7 +78,7 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         onChange={(event) => onConfigChange("audioInstructions", event.target.value)}
                         onMouseDown={(event) => event.stopPropagation()}
                     />
-                </SettingGroup>
+                </SettingGroup></>}
             </div>
         </ImageSettingsTheme>
     );

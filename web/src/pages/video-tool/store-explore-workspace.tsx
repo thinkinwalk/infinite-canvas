@@ -6,6 +6,7 @@ import { ArrowLeft, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, Sp
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { ModelPicker } from "@/components/model-picker";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { videoSizeLabel } from "@/components/video-settings-panel";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { formatBytes } from "@/lib/image-utils";
@@ -82,6 +83,7 @@ export default function StoreExploreWorkspace() {
         config.videoModels,
         config.models,
         modelCosts,
+        config.managed?.revision,
         session,
     ]);
     const quote = price?.key === priceKey ? price.value : null;
@@ -471,6 +473,7 @@ export default function StoreExploreWorkspace() {
                                         label: "高级设置 · 文案与渠道",
                                         children: (
                                             <div className="space-y-3">
+                                                <FeatureModelPicker capability="text" featureId="store-explore.analyze" />
                                                 <ModelPicker
                                                     config={config}
                                                     capability="text"

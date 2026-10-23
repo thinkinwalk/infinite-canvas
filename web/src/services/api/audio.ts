@@ -1,14 +1,17 @@
 import axios from "axios";
+import { managedFixedHeaders } from "./model-management";
+import { nanoid } from "nanoid";
+import { createReplicateTask, fetchReplicateResult, quoteReplicate, waitForReplicateTask, type ReplicateQuote } from "./replicate";
 
 import i18n from "@/i18n";
-import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
+import { audioMimeType, normalizeCloudSpeechVoice, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, managedModelBinding, modelRequestHeaders, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { withLocalProxy } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; confirmReplicate?: (quote: ReplicateQuote, signal?: AbortSignal) => Promise<void>; onTaskSubmitted?: (id: string) => Promise<void>; onTaskFailed?: (id: string) => void; existingTaskId?: string };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -20,6 +23,7 @@ function aiHeaders(config: AiConfig) {
     if (config.channelMode === "remote") {
         const token = useUserStore.getState().token;
         return {
+            ...modelRequestHeaders(config,"audio"),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             "Content-Type": "application/json",
         };
@@ -31,6 +35,27 @@ function aiHeaders(config: AiConfig) {
 }
 
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
+    const restoreTask = async (id: string) => {
+        await waitForReplicateTask(id, options?.signal || new AbortController().signal, (task) => {
+            if (task.status === "failed" || task.status === "cancelled") options?.onTaskFailed?.(id);
+        });
+        return fetchReplicateResult(id);
+    };
+    if (options?.existingTaskId) {
+        return restoreTask(options.existingTaskId);
+    }
+    if (config.channelMode === "remote" && managedModelBinding(config,config.model || config.audioModel,"audio")?.adapter === "cloud:speech") {
+        if (!options?.confirmReplicate) throw new Error("请确认语音生成费用");
+        const selection = {config,model:config.model || config.audioModel};
+        const input = {text:prompt,mode:"custom_voice",language:"auto",speaker:normalizeCloudSpeechVoice(config.audioVoice)};
+        const quote = await quoteReplicate("speech",input,options.signal,selection);
+        await options.confirmReplicate(quote,options.signal);
+        options.signal?.throwIfAborted();
+        const id = nanoid();
+        await options.onTaskSubmitted?.(id);
+        await createReplicateTask(id,"speech",input,quote.credits,options.signal,{...selection,quoteToken:quote.quoteToken});
+        return restoreTask(id);
+    }
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);
@@ -67,7 +92,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
                 speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
                 ...(instructions ? { instructions } : {}),
             },
-            { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
+            { headers: {...aiHeaders(requestConfig),...await managedFixedHeaders(requestConfig,"audio",1,options?.signal)}, responseType: "blob", signal: options?.signal },
         );
         await assertAudioBlob(response.data);
         if (requestConfig.channelMode === "remote") void useUserStore.getState().hydrateUser();

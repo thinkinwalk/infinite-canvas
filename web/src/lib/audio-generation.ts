@@ -14,6 +14,12 @@ export const audioVoiceOptions = [
     { value: "cedar", label: "Cedar" },
 ];
 
+export const cloudSpeechSpeakers = ["Aiden", "Dylan", "Eric", "Ono_anna", "Ryan", "Serena", "Sohee", "Uncle_fu", "Vivian"];
+
+export function normalizeCloudSpeechVoice(value: string) {
+    return cloudSpeechSpeakers.includes(value) ? value : "Vivian";
+}
+
 export const audioFormatOptions = [
     { value: "mp3", label: "MP3" },
     { value: "wav", label: "WAV" },

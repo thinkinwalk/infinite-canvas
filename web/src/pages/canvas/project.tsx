@@ -7,7 +7,9 @@ import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
-import { createVideoGenerationTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
+import { createVideoGenerationTask, isVideoTaskFailed, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
+import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
+import { managedModelBinding, modelOptionLabel } from "@/stores/use-config-store";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { ensureImagePreview, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -158,6 +160,7 @@ export default function CanvasPage() {
 
 function InfiniteCanvasPage() {
     const { message, modal } = App.useApp();
+    const confirmReplicate = useReplicateConfirmation();
     const { t } = useTranslation();
     // Subscribe to the registry version so plugin registration changes rerender the canvas.
     const nodeRegistryVersion = useNodeRegistryVersion((state) => state.version);
@@ -318,9 +321,19 @@ function InfiniteCanvasPage() {
 
     const completeVideoNodeTask = useCallback(
         async (nodeId: string, config: Parameters<typeof buildGenerationConfig>[0], prompt: string, images: Parameters<typeof createVideoGenerationTask>[2], signal: AbortSignal, extra: CanvasNodeData["metadata"] = {}, videos: ReferenceVideo[] = [], audios: ReferenceAudio[] = []) => {
-            const task = await createVideoGenerationTask(config, prompt, images, videos, audios, { signal });
+            let expectedCredits: number | undefined;
+            if (config.managed?.enabled && config.channelMode === "remote" && !managedModelBinding(config,config.model,"video")?.adapter.startsWith("cloud:")) {
+                const quote = await quoteVideoModel(config,config.model,signal);
+                await new Promise<void>((resolve,reject) => modal.confirm({title:"确认视频生成",content:`${quote.calculation}；本次 ${quote.credits} 算力点。`,onOk:() => resolve(),onCancel:() => reject(new DOMException("已取消","AbortError"))}));
+                signal.throwIfAborted();
+                expectedCredits = quote.credits;
+            }
+            const rememberTask = async (task: Awaited<ReturnType<typeof createVideoGenerationTask>>) => {
+                setNodes((prev) => prev.map((item) => item.id === nodeId ? {...item,metadata:{...item.metadata,videoTaskId:task.id,videoTaskProvider:task.provider === "plugin" ? undefined : task.provider,videoTaskCreatedAt:task.createdAt,videoTaskState:"processing",model:config.model,modelLabel:modelOptionLabel(config,config.model)}} : item));
+            };
+            const task = await createVideoGenerationTask(config, prompt, images, videos, audios, { signal,expectedCredits,confirmReplicate,onTaskSubmitted:rememberTask });
             if (task.provider !== "plugin") {
-                setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider === "seedance" ? "seedance" : "openai", videoTaskCreatedAt: task.createdAt, videoTaskState: "processing", model: config.model } } : item)));
+                setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider, videoTaskCreatedAt: task.createdAt, videoTaskState: "processing", model: config.model } } : item)));
             }
             const video = await storeGeneratedVideo(
                 await waitForVideoGenerationTask(config, task, {
@@ -330,8 +343,19 @@ function InfiniteCanvasPage() {
             );
             setNodes((prev) => prev.map((item) => (item.id === nodeId ? applyGeneratedVideo(item, video, { prompt, model: config.model, ...extra }) : item)));
         },
-        [],
+        [modal,confirmReplicate],
     );
+
+    const completeAudioNodeTask = useCallback(async (nodeId: string, config: Parameters<typeof requestAudioGeneration>[0], prompt: string, signal: AbortSignal) => {
+        const existingTaskId = nodesRef.current.find((node) => node.id === nodeId)?.metadata?.audioTaskId;
+        const blob = await requestAudioGeneration(config,prompt,{signal,confirmReplicate,existingTaskId,onTaskFailed:(id) => {
+            setNodes((prev) => prev.map((node) => node.id === nodeId && node.metadata?.audioTaskId === id ? {...node,metadata:{...node.metadata,audioTaskId:undefined}} : node));
+        },onTaskSubmitted:async (audioTaskId) => {
+            setNodes((prev) => prev.map((node) => node.id === nodeId ? {...node,metadata:{...node.metadata,audioTaskId,modelLabel:modelOptionLabel(config,config.model)}} : node));
+        }});
+        const audio = await storeGeneratedAudio(blob,config.audioFormat);
+        setNodes((prev) => prev.map((node) => node.id === nodeId ? {...node,metadata:{...node.metadata,...audioMetadata(audio),prompt,...buildAudioGenerationMetadata(config),audioTaskId:undefined,modelLabel:node.metadata?.modelLabel || modelOptionLabel(config,config.model)}} : node));
+    },[confirmReplicate]);
 
     const pollVideoNodeTask = useCallback(
         async (node: CanvasNodeData, silent = false) => {
@@ -355,7 +379,7 @@ function InfiniteCanvasPage() {
                 const video = await storeGeneratedVideo(
                     await waitForVideoGenerationTask(
                         generationConfig,
-                        { id: taskId, provider: node.metadata?.videoTaskProvider === "seedance" ? "seedance" : "openai", model: generationConfig.model, createdAt: node.metadata?.videoTaskCreatedAt },
+                        { id: taskId, provider: node.metadata?.videoTaskProvider || "openai", model: node.metadata?.model || generationConfig.model, createdAt: node.metadata?.videoTaskCreatedAt },
                         {
                             signal: controller.signal,
                             onWaitState: (videoTaskState) => setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, videoTaskState } } : item))),
@@ -2617,8 +2641,7 @@ function InfiniteCanvasPage() {
                     if (!isEmptyAudioNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: audioId }]);
                     const controller = startGenerationRequest(audioId, nodeId, nodeId, runController);
                     try {
-                        const audio = await storeGeneratedAudio(await requestAudioGeneration(generationConfig, effectivePrompt, { signal: controller.signal }), generationConfig.audioFormat);
-                        setNodes((prev) => prev.map((node) => (node.id === audioId ? { ...node, metadata: { ...node.metadata, ...audioMetadata(audio), prompt: effectivePrompt, ...buildAudioGenerationMetadata(generationConfig) } } : node)));
+                        await completeAudioNodeTask(audioId,generationConfig,effectivePrompt,controller.signal);
                     } finally {
                         finishGenerationRequest(audioId, controller);
                     }
@@ -2765,7 +2788,7 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(null);
             }
         },
-        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
+        [completeAudioNodeTask, completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
     );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
@@ -2791,7 +2814,7 @@ function InfiniteCanvasPage() {
                           count: "1",
                       }
                     : { ...buildGenerationConfig(effectiveConfig, sourceNode, node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : node.type === CanvasNodeType.Audio ? "audio" : "image"), count: "1" };
-            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+            if (!node.metadata?.audioTaskId && !isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
                 return;
             }
@@ -2846,8 +2869,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 if (node.type === CanvasNodeType.Audio) {
-                    const audio = await storeGeneratedAudio(await requestAudioGeneration(generationConfig, prompt, { signal: controller.signal }), generationConfig.audioFormat);
-                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, ...audioMetadata(audio), prompt, ...buildAudioGenerationMetadata(generationConfig) } } : item)));
+                    await completeAudioNodeTask(node.id,generationConfig,prompt,controller.signal);
                     return;
                 }
 
@@ -2923,7 +2945,7 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(null);
             }
         },
-        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, pollVideoNodeTask, startGenerationRequest, t],
+        [completeAudioNodeTask, completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, pollVideoNodeTask, startGenerationRequest, t],
     );
 
     const deleteBatchImage = useCallback((nodeId: string, imageId: string) => {

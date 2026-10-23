@@ -6,6 +6,8 @@ import { ArrowLeft, Download, FolderPlus, Grid2X2, RefreshCw, Sparkles, Video, X
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { VideoLinkImport } from "@/components/video-link-import";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { getReplicateModels, publicServiceText, reconcileReplicateTask, type ReplicateQuote } from "@/services/api/replicate";
 import { getWorkerCapabilities, workbenchMediaBlob } from "@/services/api/video-worker";
@@ -24,6 +26,7 @@ export default function UpscaleWorkspace() {
     const { token } = theme.useToken();
     const { message, modal } = App.useApp();
     const platformToken = useUserStore((s) => s.token);
+    const modelConfig = useEffectiveConfig();
     const administrator = useUserStore((s) => s.user?.role === "admin");
     const [tab, setTab] = useState("current");
     const [view, setView] = useState("source");
@@ -81,7 +84,7 @@ export default function UpscaleWorkspace() {
                     if (!controller.signal.aborted) setModelLoading(false);
                 });
         return () => controller.abort();
-    }, [platformToken, cloud, revision]);
+    }, [platformToken, cloud, revision,modelConfig.managed?.revision,modelConfig.videoModel]);
 
     useEffect(() => {
         const refresh = () => {
@@ -130,7 +133,7 @@ export default function UpscaleWorkspace() {
         setQuoteError("");
         setQuoting(false);
         return () => quoteController.current?.abort();
-    }, [inputKey, platformToken, revision]);
+    }, [inputKey, platformToken, revision,modelConfig.managed?.revision,modelConfig.videoModel]);
     useEffect(() => {
         setPreviewError(false);
     }, [preview?.storageKey, preview?.url]);
@@ -454,6 +457,7 @@ export default function UpscaleWorkspace() {
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="text-sm">{cloud ? "平台视频增强" : "增强处理服务"}</span>
+                                    {cloud && <FeatureModelPicker capability="video" />}
                                     <Button
                                         type="text"
                                         size="small"

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
+import { App } from "antd";
 
 import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { imageToDataUrl } from "@/services/image-storage";
-import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
-import { decodeChannelModel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { quoteVideoModel, requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
+import { managedModelBinding, modelOptionLabel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { useReplicateConfirmation } from "@/hooks/use-replicate-confirmation";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
@@ -36,6 +38,8 @@ type PluginHostParams = {
  */
 export function usePluginHost(params: PluginHostParams) {
     const { t } = useTranslation();
+    const { modal } = App.useApp();
+    const confirmReplicate = useReplicateConfirmation();
     const { effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
 
     // Host capabilities available to plugin nodes; methods receive nodeId and are not bound to a specific node.
@@ -73,7 +77,14 @@ export function usePluginHost(params: PluginHostParams) {
                     ...(options?.seconds ? { videoSeconds: options.seconds } : {}),
                 };
                 ensureReady(config);
-                const file = await storeGeneratedVideo(await requestVideoGeneration(config, prompt, toReferences(options?.references), [], [], { signal: options?.signal }));
+                let expectedCredits: number | undefined;
+                if (config.managed?.enabled && config.channelMode === "remote" && !managedModelBinding(config, config.model, "video")?.adapter.startsWith("cloud:")) {
+                    const quote = await quoteVideoModel(config, config.model, options?.signal);
+                    await new Promise<void>((resolve, reject) => modal.confirm({ title: "确认视频生成", content: `${quote.calculation}；本次 ${quote.credits} 算力点。`, onOk: () => resolve(), onCancel: () => reject(new DOMException("已取消", "AbortError")) }));
+                    options?.signal?.throwIfAborted();
+                    expectedCredits = quote.credits;
+                }
+                const file = await storeGeneratedVideo(await requestVideoGeneration(config, prompt, toReferences(options?.references), [], [], { signal: options?.signal, expectedCredits, confirmReplicate }));
                 return { url: file.url, mimeType: file.mimeType, width: file.width, height: file.height, durationMs: file.durationMs };
             },
             generateText: async (prompt, options) => {
@@ -83,11 +94,10 @@ export function usePluginHost(params: PluginHostParams) {
                 const text = await requestImageQuestion(config, messages, (delta) => options?.onDelta?.(delta), { signal: options?.signal });
                 return { text };
             },
-            // List configured models for a capability; labels use the model name without the channel prefix.
-            listModels: (capability) => selectableModelsByCapability(effectiveConfig, capability as ModelCapability | undefined).map((value) => ({ value, label: decodeChannelModel(value)?.model || value })),
+            listModels: (capability) => selectableModelsByCapability(effectiveConfig, capability as ModelCapability | undefined).map((value) => ({ value, label: modelOptionLabel(effectiveConfig, value) })),
             defaultModel: (capability) => buildGenerationConfig(effectiveConfig, undefined, capability).model,
         };
-    }, [effectiveConfig, isAiConfigReady, openConfigDialog, t]);
+    }, [effectiveConfig, isAiConfigReady, openConfigDialog, t, modal, confirmReplicate]);
 
     const pluginHost = useMemo<CanvasPluginHost>(
         () => ({

@@ -85,7 +85,9 @@ export type CanvasNodeMetadata = {
     bytes?: number;
     durationMs?: number;
     videoTaskId?: string;
-    videoTaskProvider?: "openai" | "seedance" | "gemini";
+    audioTaskId?: string;
+    modelLabel?: string;
+    videoTaskProvider?: "openai" | "seedance" | "gemini" | "replicate";
     videoTaskCreatedAt?: number;
     videoTaskState?: "processing" | "background" | "query_interrupted";
     groupId?: string;

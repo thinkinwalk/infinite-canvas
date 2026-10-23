@@ -66,7 +66,7 @@ Key 与普通账号绑定，每个请求重新检查 Key 是否撤销及用户�
 | PATCH | `/api/v1/voices/{id}` | JSON `{"name":"新名称"}`；首版仅可重命名 |
 | DELETE | `/api/v1/voices/{id}` | 停用音色，禁止新任务，重复删除返回成功 |
 | POST | `/api/v1/speech/quote` | `voice_id,text,language` 报价，不扣费、不调用上游 |
-| POST | `/api/v1/speech/tasks` | 同上，可选 `expected_credits`；必须提供 `Idempotency-Key` |
+| POST | `/api/v1/speech/tasks` | 同上，可选 `expected_credits`；必须提供 `Idempotency-Key`；启用统一模型管理时还需传报价返回的 `quote_token` |
 | GET | `/api/v1/speech/tasks/{id}` | 状态、实际扣费、退款及成品信息 |
 | GET | `/api/v1/speech/tasks/{id}/audio` | 本人成功任务的音频二进制，支持 Range、ETag |
 
@@ -138,7 +138,7 @@ Authorization: Bearer ${VOICE_API_KEY}
 }
 ```
 
-报价不预留余额。创建时重新报价并事务检查余额；可传 `expected_credits` 防止报价变化后继续扣费。
+报价不预留余额。创建时重新报价并事务检查余额；可传 `expected_credits` 防止报价变化后继续扣费。启用统一模型管理时，模型由后台 `api.speech` 功能绑定解析，报价返回稳定平台模型 ID、数字配置版本和 `quote_token`。客户端应原样将凭据带入创建请求；它绑定当前账号、音色、文本、语言、渠道和配置版本。版本变化后重新报价，已创建任务仍可按原幂等键恢复。
 
 ```http
 POST /api/v1/speech/tasks
@@ -146,7 +146,7 @@ Content-Type: application/json
 Authorization: Bearer ${VOICE_API_KEY}
 Idempotency-Key: ${VOICE_IDEMPOTENCY_KEY}
 
-{"voice_id":"voice-<uuid>","text":"这是需要生成的新文字。","language":"Chinese","expected_credits":100}
+{"voice_id":"voice-<uuid>","text":"这是需要生成的新文字。","language":"Chinese","expected_credits":100,"quote_token":"<启用统一模型管理时原样传回报价凭据>"}
 ```
 
 首次接受为 HTTP 202；相同幂等请求恢复为 HTTP 200，均返回同一任务对象：

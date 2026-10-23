@@ -38,6 +38,7 @@ func (spec ReplicateModel) ProviderName() string {
 }
 
 type ReplicateQuote struct {
+	FeatureID           string  `json:"featureId,omitempty"`
 	Operation           string  `json:"operation"`
 	Label               string  `json:"label"`
 	Model               string  `json:"model"`
@@ -82,12 +83,30 @@ func FindReplicateModel(operation string) (ReplicateModel, error) {
 	return ReplicateModel{}, fmt.Errorf("未支持的云模型功能")
 }
 func QuoteReplicate(user model.AuthUser, spec ReplicateModel, input map[string]any) (ReplicateQuote, error) {
+	return quoteReplicate(user, spec, input, nil)
+}
+
+func QuoteManagedReplicate(user model.AuthUser, spec ReplicateModel, input map[string]any, selected *ManagedSelection) (ReplicateQuote, error) {
+	return quoteReplicate(user, spec, input, selected)
+}
+
+func quoteReplicate(user model.AuthUser, spec ReplicateModel, input map[string]any, selected *ManagedSelection) (ReplicateQuote, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return ReplicateQuote{}, err
 	}
 	settings.Private = normalizePrivateSetting(settings.Private)
 	pricing, configured := settings.Private.Replicate.Pricing[spec.Model]
+	if selected != nil {
+		configured = selected.Model.Pricing.Configured
+		if selected.Model.Pricing.Replicate != nil {
+			pricing = *selected.Model.Pricing.Replicate
+		}
+		pricing.Enabled, pricing.Model, pricing.Version = true, spec.Model, spec.Version
+		if selected.Model.Pricing.Free {
+			pricing.UnitCredits, pricing.MinimumCredits, pricing.BillingMode, pricing.Tiers = 0, 0, "fixed", nil
+		}
+	}
 	if pricing.Version != "" && pricing.Version != spec.Version {
 		configured = false
 	}
@@ -154,8 +173,12 @@ func QuoteReplicate(user model.AuthUser, spec ReplicateModel, input map[string]a
 		configured = false
 	}
 	quote.Configured = configured
-	if _, err := SelectReplicateChannel(spec.Model, user.Group); err != nil {
-		quote.Reason = err.Error()
+	channelErr := error(nil)
+	if selected == nil {
+		_, channelErr = SelectReplicateChannel(spec.Model, user.Group)
+	}
+	if channelErr != nil {
+		quote.Reason = channelErr.Error()
 		return quote, nil
 	}
 	if spec.Operation == "transcribe" && !configured {

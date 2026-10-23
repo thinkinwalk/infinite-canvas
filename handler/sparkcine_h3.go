@@ -119,8 +119,12 @@ func sparkCineH3Body(body []byte, userID string) ([]byte, error) {
 			item["text"] = replacer.Replace(text)
 		}
 	}
+	modelName := jsonStringValue(payload["model"])
+	if modelName == "" {
+		modelName = "h3-video"
+	}
 	return json.Marshal(map[string]any{
-		"model": "h3-video", "content": content, "resolution": resolution + "P",
+		"model": modelName, "content": content, "resolution": resolution + "P",
 		"duration": int(seconds), "ratio": ratio,
 		"extra": map[string]string{"prompt_expansion_mode": "disabled"},
 	})

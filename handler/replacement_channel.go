@@ -13,6 +13,12 @@ type replacementChannelKey struct{}
 // Only server-side orchestration sets this context value; clients cannot select
 // an unauthorized channel using a request field or header.
 func replacementModelChannel(ctx context.Context, name, group string, replicate bool) (model.ModelChannel, error) {
+	if selected := service.ManagedSelectionFromContext(ctx); selected != nil {
+		if selected.Route.Model != name {
+			return model.ModelChannel{}, fmt.Errorf("模型身份与执行上下文不一致")
+		}
+		return selected.Channel, nil
+	}
 	id, _ := ctx.Value(replacementChannelKey{}).(int)
 	if replicate {
 		return service.SelectReplicateChannelForID(name, group, id)

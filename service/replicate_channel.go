@@ -61,7 +61,9 @@ func initializeReplicateChannels(setting *model.PrivateSetting) {
 		}
 		models := []string{}
 		for _, spec := range SupportedReplicateModels() {
-			models = append(models, spec.Model)
+			if spec.Protocol == "replicate" {
+				models = append(models, spec.Model)
+			}
 		}
 		setting.Channels = append(setting.Channels, model.ModelChannel{ID: id, Protocol: "replicate", Name: "Replicate 官方", BaseURL: ReplicateBaseURL, APIKey: key, UseEnvironmentKey: environment, Models: models, Weight: 1, Enabled: true})
 		setting.NextChannelID = id + 1

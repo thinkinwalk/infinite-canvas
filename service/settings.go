@@ -30,6 +30,18 @@ func PublicSettingsForGroup(userGroup string) (model.PublicSetting, error) {
 		return model.PublicSetting{}, err
 	}
 	normalized := normalizeSettings(settings)
+	if normalized.Private.ModelManagement != nil && normalized.Private.ModelManagement.Enabled {
+		catalog, err := ManagedPublicCatalog(normalized, userGroup)
+		if err != nil {
+			return model.PublicSetting{}, err
+		}
+		normalized.Public.ModelChannel = model.PublicModelChannelSetting{
+			Managed: catalog, AllowCustomChannel: normalized.Public.ModelChannel.AllowCustomChannel,
+			SystemPrompt: normalized.Public.ModelChannel.SystemPrompt,
+			Models:       []model.PublicChannelModel{}, AvailableModels: []string{}, ModelCosts: []model.ModelCost{}, VideoModels: map[string]model.VideoModelProfile{},
+		}
+		return normalized.Public, nil
+	}
 	channels := modelChannelsForGroup(normalized.Private.Channels, "", userGroup)
 	normalized.Public.ModelChannel.AvailableModels = enabledChannelModels(channels)
 	normalized.Public.ModelChannel.VideoModels = publicVideoProfiles(channels)
@@ -49,6 +61,10 @@ func AdminSettings() (model.Settings, error) {
 }
 
 func SaveSettings(settings model.Settings) (model.Settings, error) {
+	if settings.Private.ModelManagement != nil {
+		detached := cloneManagement(*settings.Private.ModelManagement)
+		settings.Private.ModelManagement = &detached
+	}
 	saved, err := repository.GetSettings()
 	if err != nil {
 		return model.Settings{}, err
@@ -63,7 +79,13 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if err := validateReplicateChannels(settings.Private.Channels, saved.Private); err != nil {
 		return model.Settings{}, err
 	}
-	result, err := repository.SaveSettings(settings, now())
+	if err := ValidateModelManagement(settings); err != nil {
+		return model.Settings{}, err
+	}
+	if err := validateManagedReferences(saved, settings); err != nil {
+		return model.Settings{}, err
+	}
+	result, err := repository.SaveSettingsChecked(settings, saved.Private.ModelManagement, now())
 	if err == nil {
 		RefreshPromptSyncScheduler()
 	}
@@ -320,12 +342,20 @@ func orderModelChannels(channels []model.ModelChannel) []model.ModelChannel {
 }
 
 // ResolveModelChannelForTask returns the same configured channel that created an asynchronous task.
-func ResolveModelChannelForTask(channelName string, channelBaseURL string) (model.ModelChannel, error) {
+func ResolveModelChannelForTask(channelName string, channelBaseURL string, channelIDs ...int) (model.ModelChannel, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.ModelChannel{}, err
 	}
 	baseURL := normalizeModelChannelBaseURL(channelBaseURL)
+	if len(channelIDs) > 0 && channelIDs[0] > 0 {
+		for _, channel := range normalizePrivateSetting(settings.Private).Channels {
+			if channel.ID == channelIDs[0] && normalizeModelChannelBaseURL(channel.BaseURL) == baseURL {
+				return channel, nil
+			}
+		}
+		return model.ModelChannel{}, errors.New("视频任务原渠道不存在或配置已变更")
+	}
 	for _, channel := range normalizePrivateSetting(settings.Private).Channels {
 		if normalizeModelChannelBaseURL(channel.BaseURL) == baseURL && (channelName == "" || channel.Name == channelName) {
 			return channel, nil

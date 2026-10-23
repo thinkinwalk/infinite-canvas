@@ -25,6 +25,7 @@ type speechRequest struct {
 	Text            string `json:"text"`
 	Language        string `json:"language"`
 	ExpectedCredits *int   `json:"expected_credits,omitempty"`
+	QuoteToken      string `json:"quote_token,omitempty"`
 }
 
 func speechHash(value any) string {
@@ -73,10 +74,46 @@ func speechVoice(userID, id string) (model.Voice, error) {
 	return voice, nil
 }
 
-func speechQuote(user model.AuthUser, input speechRequest) (service.ReplicateQuote, service.ReplicateModel, error) {
+func speechQuote(r *http.Request, user model.AuthUser, input speechRequest, submitting bool) (service.ReplicateQuote, service.ReplicateModel, error) {
 	spec, err := service.FindReplicateModel("speech")
 	if err != nil {
 		return service.ReplicateQuote{}, spec, err
+	}
+	if enabled, err := service.ManagementEnabled(); err != nil || enabled {
+		if err != nil {
+			return service.ReplicateQuote{}, spec, err
+		}
+		channelID, revision, modelID := 0, 0, ""
+		if submitting {
+			proof, err := service.VerifyManagedQuote(input.QuoteToken, user.ID, []string{input.VoiceID, input.Text, input.Language})
+			if err != nil {
+				return service.ReplicateQuote{}, spec, voiceError(409, "QUOTE_CHANGED", err.Error())
+			}
+			if proof.Group != user.Group {
+				return service.ReplicateQuote{}, spec, voiceError(409, "QUOTE_CHANGED", "用户分组已变化，请重新确认报价")
+			}
+			if proof.FeatureID != "api.speech" {
+				return service.ReplicateQuote{}, spec, voiceError(400, "INVALID_MODEL", "报价不属于外部语音接口")
+			}
+			channelID, revision, modelID = proof.ChannelID, proof.Revision, proof.ModelID
+		}
+		selected, err := service.ResolveManagedModel("api.speech", modelID, user.Group, channelID)
+		if err != nil {
+			return service.ReplicateQuote{}, spec, voiceError(503, "MODEL_DISABLED", err.Error())
+		}
+		if submitting && selected.Revision != revision {
+			return service.ReplicateQuote{}, spec, voiceError(409, "QUOTE_CHANGED", "配置已变化，请重新报价")
+		}
+		*r = *r.WithContext(service.WithManagedSelection(r.Context(), selected))
+		_, spec, err = managedCloudSelection(r, replicateRequest{Operation: "speech"}, false)
+		if err != nil {
+			return service.ReplicateQuote{}, spec, err
+		}
+		quote, err := service.QuoteManagedReplicate(user, spec, map[string]any{"text": input.Text}, selected)
+		if err == nil && !quote.Available {
+			err = voiceError(503, "MODEL_NOT_CONFIGURED", quote.Reason)
+		}
+		return quote, spec, err
 	}
 	settings, err := repository.GetSettings()
 	if err != nil {
@@ -120,16 +157,21 @@ func SpeechQuote(w http.ResponseWriter, r *http.Request) {
 		voiceFailError(w, err)
 		return
 	}
-	quote, spec, err := speechQuote(user, input)
+	quote, spec, err := speechQuote(r, user, input, false)
 	if err != nil {
 		voiceFailError(w, err)
 		return
 	}
-	OK(w, map[string]any{
+	result := map[string]any{
 		"voice_id": voice.ID, "voice_version": voice.Version, "model": spec.Model, "model_version": spec.Version, "config_version": speechConfigVersion(spec),
 		"credits": quote.Credits, "balance": user.Credits, "sufficient_balance": user.Credits >= quote.Credits,
 		"billing_mode": quote.BillingMode, "billable_units": quote.BillableUnits, "unit_credits": quote.UnitCredits, "minimum_credits": quote.MinimumCredits, "calculation": quote.Calculation,
-	})
+	}
+	if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil {
+		result["model"], result["model_version"], result["config_version"] = selected.Model.ID, "", selected.Revision
+		result["quote_token"] = service.SignManagedQuote(user.ID, selected, []string{input.VoiceID, input.Text, input.Language})
+	}
+	OK(w, result)
 }
 
 func SpeechCreateTask(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +207,7 @@ func SpeechCreateTask(w http.ResponseWriter, r *http.Request) {
 		voiceFailError(w, err)
 		return
 	}
-	quote, _, err := speechQuote(user, input)
+	quote, _, err := speechQuote(r, user, input, true)
 	if err != nil {
 		voiceFailError(w, err)
 		return
@@ -204,6 +246,10 @@ func speechTaskView(task model.ReplicateTask) map[string]any {
 		"task_id": task.ID, "status": task.Status, "voice_id": task.SpeechVoiceID, "voice_version": task.SpeechVoiceVersion,
 		"model": task.Model, "model_version": task.Version, "config_version": speechHash([]string{task.Model, task.Version, "voice_clone"}), "language": task.SpeechLanguage,
 		"quoted_credits": task.Credits, "charged_credits": actual, "refunded": task.Refunded, "created_at": task.CreatedAt, "updated_at": task.UpdatedAt, "audio": nil, "error": nil,
+	}
+	if task.PlatformModelID != "" {
+		result["model"], result["model_version"], result["config_version"] = task.PlatformModelID, "", task.ConfigRevision
+		result["model_label"] = task.ModelLabel
 	}
 	if task.Status == "failed" || task.Status == "cancelled" {
 		result["error"] = map[string]string{"code": "UPSTREAM_FAILED", "message": "模型生成失败或已取消，对应扣费已按账本返还"}

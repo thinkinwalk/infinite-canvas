@@ -7,6 +7,7 @@ import AdminCreditLogsPage from "@/app/(admin)/admin/credit-logs/page";
 import AdminPromptsPage from "@/app/(admin)/admin/prompts/page";
 import AdminRedemptionCodesPage from "@/app/(admin)/admin/redemption-codes/page";
 import AdminSettingsPage from "@/app/(admin)/admin/settings/page";
+import ModelManagementPage from "@/app/(admin)/admin/models/page";
 import AdminUsersPage from "@/app/(admin)/admin/users/page";
 
 export default function AdminPage() {
@@ -16,6 +17,7 @@ export default function AdminPage() {
 }
 
 function adminChild(pathname: string) {
+    if (pathname.startsWith("/admin/models")) return <ModelManagementPage />;
     if (pathname.startsWith("/admin/settings")) return <AdminSettingsPage />;
     if (pathname.startsWith("/admin/assets")) return <AdminAssetsPage />;
     if (pathname.startsWith("/admin/cases")) return <AdminCasesPage />;

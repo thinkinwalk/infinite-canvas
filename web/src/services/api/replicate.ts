@@ -1,6 +1,7 @@
 import { apiPost } from "./request";
 import { fetchCurrentUser } from "./auth";
 import { useUserStore } from "@/stores/use-user-store";
+import { currentFeature, modelAdapter, modelOptionName, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { workbenchMediaBlob } from "./video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "./video";
@@ -9,7 +10,7 @@ export type ReplicateOperation = "transcribe" | "speech" | "digital-human" | "li
 export const REPLICATE_VIDEO_MODEL = "replicate::wan-video/wan-2.2-i2v-fast";
 export const REPLICATE_TEXT_VIDEO_MODEL = "replicate::wan-video/wan-2.2-t2v-fast";
 export const HAILUO_VIDEO_MODEL = "replicate::minimax/hailuo-2.3";
-export function isReplicateVideoModel(model: string) { return model === REPLICATE_VIDEO_MODEL || model === REPLICATE_TEXT_VIDEO_MODEL || model === HAILUO_VIDEO_MODEL; }
+export function isReplicateVideoModel(model: string) { return ["cloud:text-to-video","cloud:image-to-video","cloud:hailuo-video"].includes(modelAdapter(model)) || model === REPLICATE_VIDEO_MODEL || model === REPLICATE_TEXT_VIDEO_MODEL || model === HAILUO_VIDEO_MODEL; }
 export const REPLICATE_MODEL_NAMES: Record<ReplicateOperation, string> = {
     transcribe: "云端语音识别",
     speech: "系统音色与声音克隆",
@@ -87,6 +88,8 @@ export type ReplicateTask = {
     metrics: string;
 };
 export type ReplicateQuote = {
+    featureId?: string;
+    quoteToken?: string;
     inputSummary?: string;
     operation: ReplicateOperation;
     label: string;
@@ -148,8 +151,39 @@ async function cloudRequest<T>(path: string, body?: unknown, signal?: AbortSigna
     }
     return payload.data as T;
 }
-export function getReplicateModels(signal?: AbortSignal) {
-    return cloudRequest<ReplicateQuote[]>("models", undefined, signal);
+export async function getReplicateModels(signal?: AbortSignal) {
+    const items = await cloudRequest<ReplicateQuote[]>("models", undefined, signal);
+    if (!useConfigStore.getState().publicSettings?.modelChannel.managed?.enabled) return items;
+    return [...new Set([...Object.keys(REPLICATE_MODEL_NAMES) as ReplicateOperation[],...items.map((item) => item.operation)])].map((operation) => {
+        try {
+            const selected = cloudFeature(operation);
+            return items.find((item) => item.operation === operation && item.featureId === selected.featureId && item.model === selected.modelId)
+                || {operation,model:"",label:REPLICATE_MODEL_NAMES[operation],credits:0,available:false,configured:false,reason:"该功能尚未配置可用模型"};
+        } catch {
+            return {operation,model:"",label:REPLICATE_MODEL_NAMES[operation],credits:0,available:false,configured:false,reason:"该功能尚未配置可用模型"};
+        }
+    });
+}
+type ManagedCloudOptions = { config?: AiConfig; model?: string; featureId?: string; quoteToken?: string };
+const cloudQuotes = new Map<string,{ token: string; modelId: string; featureId: string }>();
+function cloudFeature(operation: ReplicateOperation, options?: ManagedCloudOptions) {
+    const catalog = options?.config?.managed || useConfigStore.getState().publicSettings?.modelChannel.managed;
+    if (!catalog?.enabled) return {};
+    const capability: ModelCapability = ["speech","transcribe"].includes(operation) ? "audio" : "video";
+    let featureId = options?.featureId || options?.config?.featureId || options?.config?.featureIds?.[capability] || currentFeature(capability);
+    const path = typeof window === "undefined" ? "" : window.location.pathname;
+    const tool = ["photo-talk","lipsync","store-explore","viral-recreate"].find((name) => path.includes(name)) || "digital-human";
+    if (!options?.featureId) {
+        if (operation === "transcribe") featureId = path.includes("content-replace") ? "replace.transcribe" : `${tool}.transcribe`;
+        if (operation === "digital-human" || operation === "lipsync") featureId = `${tool}.${operation === "lipsync" ? "lipsync" : "photo"}`;
+        if (operation === "track-mask") featureId = "replace.track";
+    }
+    const draft = useConfigStore.getState().featureModels[featureId];
+    const available = catalog.bindings.filter((b) => b.featureId === featureId && b.available && b.operations.includes(operation)).sort((a,b) => a.order-b.order);
+    const preferred = modelOptionName(options?.model || draft || "");
+    const binding = preferred ? available.find((b) => b.modelId === preferred) : available.find((b) => b.default) || available[0];
+    if (!binding) throw new Error("当前功能没有可用模型，请联系管理员配置");
+    return { featureId, modelId: binding.modelId };
 }
 export async function uploadReplicateReference(media: UploadedFile & { name?: string; kind?: string }, signal?: AbortSignal, purpose?: "transcribe"): Promise<string> {
     const { temporaryReferenceHeaders } = await import("@/services/video-reference-retention");
@@ -174,8 +208,11 @@ export async function uploadReplicateReference(media: UploadedFile & { name?: st
     }
     return payload.data.url;
 }
-export function quoteReplicate(operation: ReplicateOperation, input: Record<string, unknown>, signal?: AbortSignal) {
-    return cloudRequest<ReplicateQuote>("quote", { operation, input }, signal);
+export async function quoteReplicate(operation: ReplicateOperation, input: Record<string, unknown>, signal?: AbortSignal, options?: ManagedCloudOptions) {
+    const selection = cloudFeature(operation,options);
+    const quote = await cloudRequest<ReplicateQuote>("quote", { operation, input, ...selection }, signal);
+    if (quote.quoteToken && selection.modelId && selection.featureId) cloudQuotes.set(JSON.stringify([useUserStore.getState().token,operation,selection.featureId,selection.modelId,input]),{token:quote.quoteToken,modelId:selection.modelId,featureId:selection.featureId});
+    return quote;
 }
 async function refreshCloudBalance() {
     const { token } = useUserStore.getState();
@@ -186,8 +223,11 @@ async function refreshCloudBalance() {
         /* A balance refresh must not clear a valid session. */
     }
 }
-export async function createReplicateTask(id: string, operation: ReplicateOperation, input: Record<string, unknown>, expectedCredits: number, signal?: AbortSignal) {
-    const task = await cloudRequest<ReplicateTask>("tasks", { id, operation, input, expectedCredits }, signal);
+export async function createReplicateTask(id: string, operation: ReplicateOperation, input: Record<string, unknown>, expectedCredits: number, signal?: AbortSignal, options?: ManagedCloudOptions) {
+    const chosen = cloudFeature(operation,options);
+    const cached = cloudQuotes.get(JSON.stringify([useUserStore.getState().token,operation,chosen.featureId,chosen.modelId,input]));
+    const selection = cached ? {modelId:cached.modelId,featureId:cached.featureId,quoteToken:cached.token} : {...chosen,quoteToken:options?.quoteToken};
+    const task = await cloudRequest<ReplicateTask>("tasks", { id, operation, input, expectedCredits, ...selection }, signal);
     void refreshCloudBalance();
     return task;
 }

@@ -3,10 +3,13 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -36,6 +39,9 @@ func isImageResponsesRequest(path string, body []byte) bool {
 
 func proxyAIImageRequest(w http.ResponseWriter, r *http.Request, path string, body []byte, contentType, modelName string, user model.AuthUser, credits int) {
 	channels, err := service.SelectModelChannelsForGroup(modelName, user.Group)
+	if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil {
+		channels, err = []model.ModelChannel{selected.Channel}, nil
+	}
 	if err != nil {
 		FailError(w, err)
 		return
@@ -137,6 +143,56 @@ func retryableImageRejection(status int, body []byte) bool {
 }
 
 func requestAIImage(ctx context.Context, channel model.ModelChannel, path string, body []byte, contentType, modelName string) (*http.Response, bool, error) {
+	if selected := service.ManagedSelectionFromContext(ctx); selected != nil && path != "/responses" {
+		if selected.Route.Adapter == "image.responses" && path == "/images/edits" && strings.HasPrefix(contentType, "multipart/form-data") {
+			_, params, err := mime.ParseMediaType(contentType)
+			if err != nil {
+				return nil, false, err
+			}
+			form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+			if err != nil {
+				return nil, false, err
+			}
+			defer form.RemoveAll()
+			fields := map[string]any{}
+			for key, values := range form.Value {
+				if len(values) > 0 {
+					fields[key] = values[0]
+				}
+			}
+			references := []string{}
+			for _, key := range []string{"image", "image[]"} {
+				for _, file := range form.File[key] {
+					source, err := file.Open()
+					if err != nil {
+						return nil, false, err
+					}
+					data, err := io.ReadAll(source)
+					source.Close()
+					if err != nil {
+						return nil, false, err
+					}
+					references = append(references, "data:"+http.DetectContentType(data)+";base64,"+base64.StdEncoding.EncodeToString(data))
+				}
+			}
+			fields["reference_image_urls"] = references
+			converted, err := json.Marshal(fields)
+			if err != nil {
+				return nil, false, err
+			}
+			return requestLingzhouImageResponses(ctx, channel, converted, readAIRequestCount(body, contentType))
+		}
+		if selected.Route.Adapter == "image.responses" && path == "/images/generations" && strings.HasPrefix(contentType, "application/json") {
+			return requestLingzhouImageResponses(ctx, channel, body, readAIRequestCount(body, contentType))
+		}
+		if strings.HasPrefix(contentType, "application/json") && strings.Contains(strings.ToLower(modelName), "gpt-image") {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(body, &fields) == nil {
+				delete(fields, "response_format")
+				body, _ = json.Marshal(fields)
+			}
+		}
+	}
 	if useLingzhouResponsesImageProxy(channel, modelName, path, contentType) {
 		return requestLingzhouImageResponses(ctx, channel, body, readAIRequestCount(body, contentType))
 	}

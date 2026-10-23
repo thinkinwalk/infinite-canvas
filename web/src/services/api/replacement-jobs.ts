@@ -3,6 +3,8 @@ import { useUserStore } from "@/stores/use-user-store";
 export type ReplacementJob = {
     id: string;
     model: string;
+    modelLabel?: string;
+    featureId?: string;
     resolution: string;
     seconds: string;
     aspectRatio?: string;
@@ -56,7 +58,7 @@ async function request<T>(path: string, input?: unknown, signal?: AbortSignal): 
 }
 export const listReplacementJobs = (signal?: AbortSignal) => request<ReplacementJob[]>("", undefined, signal);
 export const createReplacementJob = (input: {
-    id: string; source: string; image: string; model: string; resolution: string; seconds: string; aspectRatio?: string;
+    id: string; source: string; image: string; model: string; featureId?: string; resolution: string; seconds: string; aspectRatio?: string;
     prompt: string; subtitles: boolean; regenerateSubtitles?: boolean; subtitleSize: number; subtitleColor: string; previewRequired?: boolean;
 }) => request<ReplacementJob>("", input);
 export const startReplacementJob = (job: ReplacementJob, approvePreview = false) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits, ...(approvePreview ? { approvePreview: true, previewResult: job.previewResult } : {}) });

@@ -1,6 +1,6 @@
 import { getNodeSpec, NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
-import type { AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, type AiConfig } from "@/stores/use-config-store";
 import type { UploadedImage } from "@/services/image-storage";
 import type { UploadedFile } from "@/services/file-storage";
 import type { ReferenceImage } from "@/types/image";
@@ -44,6 +44,7 @@ export function buildImageGenerationMetadata(type: CanvasImageGenerationType, co
     return {
         generationType: type,
         model: config.model,
+        modelLabel: modelOptionLabel(config,config.model),
         size: config.size,
         quality: config.quality,
         ...(config.background ? { background: config.background } : {}),
@@ -55,6 +56,7 @@ export function buildImageGenerationMetadata(type: CanvasImageGenerationType, co
 export function buildAudioGenerationMetadata(config: AiConfig): CanvasNodeMetadata {
     return {
         model: config.model,
+        modelLabel: modelOptionLabel(config,config.model),
         audioVoice: config.audioVoice,
         audioFormat: config.audioFormat,
         audioSpeed: config.audioSpeed,

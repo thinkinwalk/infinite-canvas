@@ -66,25 +66,25 @@ func CaseRunPrice(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if runtime.Operation == "cutout-replicate" || runtime.Operation == "upscale-replicate" {
-		_, err := service.SelectReplicateChannel(replicateToolModel(runtime.Operation), user.Group)
+		_, modelPoints, err := resolveCaseProcessor(r, id, runtime.Operation, user)
 		if err != nil {
 			FailError(w, err)
 			return
 		}
 		fee := max(item.PriceCredits, 0)
-		OK(w, map[string]any{"modelPoints": 0, "servicePoints": fee, "points": fee, "count": 1})
+		casePrice(w, r, map[string]any{"modelPoints": modelPoints, "servicePoints": fee, "points": fee + modelPoints, "count": 1})
 		return
 	}
-	modelName, err := resolveCaseModel(runtime.Kind, runtime.Model, user.Group)
+	modelName, err := resolveCaseModel(runtime.Kind, runtime.Model, user.Group, r)
 	if err != nil {
 		Fail(w, err.Error())
 		return
 	}
-	if _, err := service.SelectModelChannelForGroup(modelName, user.Group); err != nil {
+	if _, err := replacementModelChannel(r.Context(), modelName, user.Group, false); err != nil {
 		FailError(w, err)
 		return
 	}
-	base, err := service.ModelCost(modelName)
+	base, err := service.ManagedModelCost(r.Context(), modelName)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -108,7 +108,7 @@ func CaseRunPrice(w http.ResponseWriter, r *http.Request, id string) {
 		fee = 0
 	}
 	modelPoints := int(math.Ceil(float64(base)*ratio)) * count
-	OK(w, map[string]any{"modelPoints": modelPoints, "servicePoints": fee, "points": fee + modelPoints, "count": count})
+	casePrice(w, r, map[string]any{"modelPoints": modelPoints, "servicePoints": fee, "points": fee + modelPoints, "count": count})
 }
 
 func Cases(w http.ResponseWriter, r *http.Request) {
@@ -306,7 +306,10 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if runtime.Operation != "print-file" && runtime.Operation != "upscale-local" && runtime.Operation != "cutout-replicate" && runtime.Operation != "upscale-replicate" {
-		runtime.Model, err = resolveCaseModel(runtime.Kind, runtime.Model, user.Group)
+		if item.ID == "official-fusion" {
+			withManagedCaseCount(r, fusionCount(stringInput(input.Inputs, "count")))
+		}
+		runtime.Model, err = resolveCaseModel(runtime.Kind, runtime.Model, user.Group, r)
 		if err != nil {
 			FailError(w, err)
 			return
@@ -350,7 +353,7 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if runtime.Operation == "cutout-replicate" || runtime.Operation == "upscale-replicate" {
-		channel, err := service.SelectReplicateChannel(replicateToolModel(runtime.Operation), user.Group)
+		channel, modelPoints, err := resolveCaseProcessor(r, item.ID, runtime.Operation, user)
 		if err != nil {
 			FailError(w, err)
 			return
@@ -359,6 +362,7 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 		if fee < 0 {
 			fee = 0
 		}
+		fee += modelPoints
 		if fee > 0 {
 			if err := service.ConsumeUserCredits(user.ID, "case:"+item.ID, fee, "/cases/"+item.ID, channel); err != nil {
 				FailError(w, err)
@@ -570,11 +574,11 @@ func variationAssistModel(r *http.Request, id string) (model.AuthUser, string, e
 	if err := json.Unmarshal([]byte(item.RuntimeConfig), &runtime); err != nil {
 		return user, "", errors.New("图裂变运行配置无效")
 	}
-	name, err := resolveCaseModel("text", runtime.Model, user.Group)
+	name, err := resolveCaseModel("text", runtime.Model, user.Group, r)
 	if err != nil {
 		return user, "", err
 	}
-	if _, err := service.SelectModelChannelForGroup(name, user.Group); err != nil {
+	if _, err := replacementModelChannel(r.Context(), name, user.Group, false); err != nil {
 		return user, "", err
 	}
 	return user, name, nil
@@ -586,7 +590,7 @@ func VariationAssistPrice(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	base, err := service.ModelCost(name)
+	base, err := service.ManagedModelCost(r.Context(), name)
 	if err != nil {
 		FailError(w, err)
 		return
@@ -596,7 +600,7 @@ func VariationAssistPrice(w http.ResponseWriter, r *http.Request, id string) {
 		FailError(w, err)
 		return
 	}
-	OK(w, map[string]any{"points": int(math.Ceil(float64(base) * ratio))})
+	casePrice(w, r, map[string]any{"points": int(math.Ceil(float64(base) * ratio))})
 }
 
 func VariationAssist(w http.ResponseWriter, r *http.Request, id string) {
@@ -695,17 +699,18 @@ func runImageVariations(w http.ResponseWriter, r *http.Request, user model.AuthU
 	similarity, _ := inputs["similarity"].(string)
 	countValue, _ := inputs["count"].(string)
 	count := variationCount(countValue)
+	withManagedCaseCount(r, count)
 	var runtime caseRuntimeConfig
 	if err := json.Unmarshal([]byte(item.RuntimeConfig), &runtime); err != nil {
 		Fail(w, "图裂变运行配置无效")
 		return
 	}
-	modelName, err := resolveCaseModel("image", runtime.Model, user.Group)
+	modelName, err := resolveCaseModel("image", runtime.Model, user.Group, r)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
-	if _, err := service.SelectModelChannelForGroup(modelName, user.Group); err != nil {
+	if _, err := replacementModelChannel(r.Context(), modelName, user.Group, false); err != nil {
 		FailError(w, err)
 		return
 	}
@@ -983,7 +988,36 @@ func buildCaseAIRequest(runtime caseRuntimeConfig, prompt string, inputs map[str
 	return path, body, err
 }
 
-func resolveCaseModel(kind string, configured string, group string) (string, error) {
+func resolveCaseModel(kind string, configured string, group string, requests ...*http.Request) (string, error) {
+	if enabled, err := service.ManagementEnabled(); err != nil {
+		return "", err
+	} else if enabled {
+		if len(requests) == 0 {
+			return "", errors.New("案例调用缺少功能上下文")
+		}
+		r := requests[0]
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		id := ""
+		for i, part := range parts {
+			if part == "cases" && i+1 < len(parts) {
+				id = parts[i+1]
+				break
+			}
+		}
+		if id == "" {
+			return "", errors.New("案例功能编号不存在")
+		}
+		if kind == "" {
+			kind = "image"
+		}
+		feature := service.CaseModelFeature(id, kind)
+		selected, err := resolveManagedCase(r, feature, group)
+		if err != nil {
+			return "", err
+		}
+		*r = *r.WithContext(service.WithManagedSelection(r.Context(), selected))
+		return selected.Route.Model, nil
+	}
 	configured = strings.TrimSpace(configured)
 	if configured != "" && configured != "default" {
 		return configured, nil

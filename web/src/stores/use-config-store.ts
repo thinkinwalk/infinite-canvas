@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
@@ -8,12 +9,17 @@ import { isMiniMaxH3Name } from "@/lib/minimax-h3";
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings, VideoModelProfile } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
+import { modelFeatureForPath } from "@/lib/model-feature";
+import type { PublicManagedCatalog } from "@/services/api/model-management";
+import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
 export type ChannelModel = {
+    label?: string;
+    adapter?: string;
     name: string;
     capability: ModelCapability;
     script?: string;
@@ -29,6 +35,9 @@ export type ModelChannel = {
 };
 
 export type AiConfig = {
+    managed?: PublicManagedCatalog;
+    featureIds?: Partial<Record<ModelCapability, string>>;
+    featureId?: string;
     videoModels?: Record<string, VideoModelProfile>;
     channelMode: "remote" | "local";
     baseUrl: string;
@@ -140,6 +149,7 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
 };
 
 type ConfigStore = {
+    featureModels: Record<string, string>;
     config: AiConfig;
     webdav: WebdavSyncConfig;
     publicSettings: AdminPublicSettings | null;
@@ -195,12 +205,14 @@ function findChannelModel(config: AiConfig, value: string): { channel: ModelChan
 }
 
 export function modelCapabilityOf(config: AiConfig, value: string): ModelCapability | undefined {
+    if (config.managed?.enabled && config.channelMode === "remote") return config.managed.models.find((m) => m.id === modelOptionName(value))?.capability as ModelCapability | undefined;
     const model = findChannelModel(config, value)?.model;
     return model ? knownModelCapability(model.name) || model.capability : undefined;
 }
 
 export function modelMatchesCapability(config: AiConfig, value: string, capability?: ModelCapability) {
     if (!capability) return true;
+    if (config.managed?.enabled && config.channelMode === "remote") return modelCapabilityOf(config,value) === capability && selectableModelsByCapability(config,capability).some((m) => modelOptionName(m) === modelOptionName(value));
     return modelCapabilityOf(config, value) === capability;
 }
 
@@ -209,10 +221,15 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     const fallbackModel = capability === "image" ? defaultConfig.imageModel : capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
     if (currentModel && modelMatchesCapability(config, currentModel, capability)) return currentModel;
     if (defaultModel && modelMatchesCapability(config, defaultModel, capability)) return defaultModel;
-    return fallbackModel;
+    return config.managed?.enabled && config.channelMode === "remote" ? selectableModelsByCapability(config,capability)[0] || "" : fallbackModel;
 }
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
+    if (config.managed?.enabled && config.channelMode === "remote") {
+        const feature = config.featureId || (capability && config.featureIds?.[capability]);
+        const entries = config.managed.bindings.filter((b) => b.available && (!feature || b.featureId === feature)).sort((a,b) => a.order-b.order);
+        return [...new Set(entries.filter((b) => !capability || config.managed!.models.some((m) => m.id === b.modelId && m.capability === capability)).map((b) => encodeChannelModel("remote",b.modelId)))];
+    }
     if (!capability) return config.models;
     return config.channels.flatMap((channel) => channel.models.filter((model) => (knownModelCapability(model.name) || model.capability) === capability).map((model) => encodeChannelModel(channel.id, model.name)));
 }
@@ -231,6 +248,7 @@ function isAiConfigReady(config: AiConfig, model: string) {
 export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
+            featureModels: {},
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
             publicSettings: null,
@@ -241,6 +259,9 @@ export const useConfigStore = create<ConfigStore>()(
             shouldPromptContinue: false,
             updateConfig: (key, value) =>
                 set((state) => ({
+                    featureModels: key.endsWith("Model") && typeof value === "string" && state.publicSettings?.modelChannel.managed?.enabled
+                        ? { ...state.featureModels, [currentFeature(key.replace("Model", "") as ModelCapability)]: value }
+                        : state.featureModels,
                     config: {
                         ...state.config,
                         [key]: value,
@@ -280,7 +301,7 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            partialize: (state) => ({ config: state.config, webdav: state.webdav, featureModels: state.featureModels }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
@@ -291,6 +312,7 @@ export const useConfigStore = create<ConfigStore>()(
                 const models = modelOptionsFromChannels(channels);
                 return {
                     ...current,
+                    featureModels: persistedState.featureModels || {},
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
                     config: {
                         ...config,
@@ -323,16 +345,86 @@ export const useConfigStore = create<ConfigStore>()(
     ),
 );
 
-export function useEffectiveConfig() {
+export function useEffectiveConfig(featureId?: string) {
     const config = useConfigStore((state) => state.config);
     const publicSettings = useConfigStore((state) => state.publicSettings);
-    return useMemo(() => resolveEffectiveConfig(config, publicSettings), [config, publicSettings]);
+    const selections = useConfigStore((state) => state.featureModels);
+    const drafts = useVideoWorkbenchStore((state) => state.drafts);
+    const path = useLocation().pathname;
+    useEffect(() => {
+        const refresh = () => { void useConfigStore.getState().loadPublicSettings(); };
+        const visible = () => { if (document.visibilityState === "visible") refresh(); };
+        const storage = (event: StorageEvent) => { if (event.key === "platform-model-catalog-revision") refresh(); };
+        refresh();
+        window.addEventListener("focus", refresh);
+        window.addEventListener("platform-model-catalog-changed", refresh);
+        window.addEventListener("storage", storage);
+        document.addEventListener("visibilitychange", visible);
+        return () => { window.removeEventListener("focus", refresh); window.removeEventListener("platform-model-catalog-changed", refresh); window.removeEventListener("storage", storage); document.removeEventListener("visibilitychange", visible); };
+    }, []);
+    return useMemo(() => {
+        const effective = resolveEffectiveConfig(config, publicSettings);
+        const catalog = publicSettings?.modelChannel.managed;
+        if (!catalog?.enabled || effective.channelMode === "local") return effective;
+        const featureIds = Object.fromEntries((["image", "video", "text", "audio"] as ModelCapability[]).map((capability) => [capability, featureId || modelFeatureForPath(path, capability, featureDraft(path, drafts))]));
+        return managedEffectiveConfig(effective, catalog, featureIds, selections);
+    }, [config, publicSettings, selections, path, drafts, featureId]);
+}
+
+function featureDraft(path: string, drafts: ReturnType<typeof useVideoWorkbenchStore.getState>["drafts"]) {
+    const tool = path.includes("content-replace") ? "content-replace" : path.includes("photo-talk") ? "photo-talk" : path.includes("lipsync") ? "lipsync" : "digital-human";
+    const draft = drafts[tool];
+    return draft ? { ...draft, speechMode: draft.voiceMode === "clone" ? "voice_clone" : "api" } : undefined;
+}
+
+export function currentFeature(capability: ModelCapability, override?: string) {
+    if (override) return override;
+    const path = typeof window === "undefined" ? "" : window.location.pathname;
+    return modelFeatureForPath(path, capability, featureDraft(path, useVideoWorkbenchStore.getState().drafts));
+}
+
+export function managedEffectiveConfig(config: AiConfig, catalog: PublicManagedCatalog, featureIds: Partial<Record<ModelCapability,string>>, selections = useConfigStore.getState().featureModels): AiConfig {
+    const bindings = catalog.bindings.filter((b) => b.available && Object.values(featureIds).includes(b.featureId)).sort((a,b) => a.order-b.order);
+    const entries = catalog.models.filter((entry) => bindings.some((b) => b.modelId === entry.id));
+    const channel: ModelChannel = { id:"remote", name:"平台提供", baseUrl:"", apiKey:"", apiFormat:"openai", models: entries.map((entry) => ({ name:entry.id, label:entry.label, capability:entry.capability as ModelCapability, adapter:bindings.find((b) => b.modelId === entry.id)?.adapter })) };
+    const videoModels = Object.fromEntries(bindings.filter((b) => b.video).map((b) => [b.modelId,b.video!]));
+    const pick = (capability: ModelCapability) => {
+        const id = featureIds[capability] || "";
+        const options = catalog.bindings.filter((b) => b.featureId === id && b.available).sort((a,b) => a.order-b.order);
+        const selected = modelOptionName(selections[id] || "");
+        const chosen = options.find((b) => b.modelId === selected) || options.find((b) => b.default) || options[0];
+        return chosen ? encodeChannelModel("remote",chosen.modelId) : "";
+    };
+    return { ...config, managed:catalog, featureIds, channels:[channel], models:modelOptionsFromChannels([channel]), videoModels, model:pick("text"), textModel:pick("text"), imageModel:pick("image"), videoModel:pick("video"), audioModel:pick("audio") };
+}
+
+export function configForFeature(config: AiConfig, featureId: string, capability: ModelCapability): AiConfig {
+    if (!config.managed?.enabled || config.channelMode === "local") return { ...config, featureId };
+    const scoped = managedEffectiveConfig(config, config.managed, { [capability]:featureId });
+    return { ...scoped, featureId, model:scoped[`${capability}Model`] };
+}
+
+export function managedModelBinding(config: AiConfig, value: string, capability?: ModelCapability) {
+    const id = modelOptionName(value);
+    const feature = config.featureId || (capability && config.featureIds?.[capability]);
+    return config.managed?.bindings.find((b) => b.modelId === id && b.available && (!feature || b.featureId === feature));
+}
+
+export function modelAdapter(value: string, config?: AiConfig): string {
+    return (config?.managed || useConfigStore.getState().publicSettings?.modelChannel.managed)?.bindings.find((b) => b.modelId === modelOptionName(value) && b.available)?.adapter || "";
+}
+
+export function modelRequestHeaders(config: AiConfig, capability: ModelCapability) {
+    return config.channelMode === "remote" && config.managed?.enabled
+        ? { "X-Model-Feature": config.featureId || config.featureIds?.[capability] || currentFeature(capability), "X-Model-Revision": String(config.managed.revision) }
+        : {};
 }
 
 export function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
     const modelChannel = publicSettings?.modelChannel;
-    if (!modelChannel) return appendReplicateVideoChannel(config, undefined);
+    if (!modelChannel) return config.channelMode === "remote" ? { ...config,channels:[],models:[],model:"",imageModel:"",videoModel:"",textModel:"",audioModel:"" } : appendReplicateVideoChannel(config, undefined);
     const channelMode = modelChannel.allowCustomChannel && hasUsableLocalChannel(config) ? config.channelMode : "remote";
+    if (modelChannel.managed?.enabled && channelMode === "remote") return managedEffectiveConfig({ ...config,channelMode:"remote" },modelChannel.managed,Object.fromEntries((["image","video","text","audio"] as ModelCapability[]).map((c) => [c,currentFeature(c)])));
     if (channelMode === "local") return appendReplicateVideoChannel({ ...config, channelMode }, modelChannel?.models);
     const remoteConfig = appendReplicateVideoChannel(remoteConfigFromPublicSettings(config, modelChannel), modelChannel?.models);
     // Replicate models are added after the platform channel is normalized. Preserve a
@@ -511,6 +603,8 @@ export function modelOptionName(value: string) {
 }
 
 export function modelOptionLabel(config: AiConfig, value: string) {
+    const managed = config.managed?.models.find((m) => m.id === modelOptionName(value));
+    if (managed) return config.managed!.models.some((m) => m.id !== managed.id && m.label === managed.label) ? `${managed.label} · ${managed.id}` : managed.label;
     if (value === "replicate::wan-video/wan-2.2-i2v-fast") return "通义万相 Wan 2.2 · 图生视频";
     if (value === "replicate::wan-video/wan-2.2-t2v-fast") return "通义万相 Wan 2.2 · 文生视频";
     if (value === "replicate::minimax/hailuo-2.3") return "海螺 Hailuo 2.3";

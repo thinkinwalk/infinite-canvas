@@ -68,6 +68,12 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 		Fail(w, "视频任务不存在")
 		return
 	}
+	if tracked && task.PlatformModelID != "" {
+		selected := &service.ManagedSelection{Model: model.ManagedModel{ID: task.PlatformModelID, DisplayName: task.ModelLabel, DisplayMode: "alias"}, Route: model.ManagedRoute{Model: task.Model}}
+		var finish func()
+		w, finish = managedWriter(w, r.WithContext(service.WithManagedSelection(r.Context(), selected)))
+		defer finish()
+	}
 	modelName := r.URL.Query().Get("model")
 	if tracked {
 		modelName = task.Model
@@ -77,7 +83,7 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 	}
 	var channel model.ModelChannel
 	if tracked {
-		channel, err = service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL)
+		channel, err = service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL, task.ChannelID)
 	} else {
 		channel, err = service.SelectModelChannelForGroup(modelName, user.Group)
 	}
@@ -129,12 +135,19 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
+	r, body, contentType, modelName, err = prepareManagedAI(r, path, body, contentType, modelName)
+	if err != nil {
+		Fail(w, err.Error())
+		return
+	}
+	w, finishManaged := managedWriter(w, r)
+	defer finishManaged()
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
 	}
-	baseCredits, err := service.ModelCost(modelName)
+	baseCredits, err := service.ManagedModelCost(r.Context(), modelName)
 	if err != nil {
 		log.Printf("AI proxy read model cost failed: model=%s err=%v", modelName, err)
 		if service.IsH3Video2K(modelName) {
@@ -150,6 +163,12 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	credits := int(math.Ceil(float64(baseCredits)*ratio)) * readAIRequestCount(body, contentType)
+	if service.ManagedSelectionFromContext(r.Context()) != nil && !videoCreate {
+		if err := checkExpectedVideoCredits(r, credits); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+	}
 	if path == "/images/generations" || path == "/images/edits" || isImageResponsesRequest(path, body) {
 		proxyAIImageRequest(w, r, path, body, contentType, modelName, user, credits)
 		return
@@ -161,7 +180,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	if videoCreate {
-		if service.IsH3Video2K(modelName) {
+		if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil && selected.Model.Pricing.Free {
+			credits = 0
+		}
+		if channel.ManagedAdapter == "video.h3-2k" || channel.ManagedAdapter == "" && service.IsH3Video2K(modelName) {
 			if err := validateH3VideoRequest(body, contentType); err != nil {
 				Fail(w, err.Error())
 				return
@@ -171,6 +193,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			if quoted, _, ok := service.VideoQuote(channel, modelName, resolution, seconds); ok {
 				credits = int(math.Ceil(float64(quoted)*ratio)) * readAIRequestCount(body, contentType)
 			}
+		}
+		if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil && selected.Model.Pricing.Free {
+			credits = 0
 		}
 		if err := checkExpectedVideoCredits(r, credits); err != nil {
 			Fail(w, err.Error())
@@ -189,13 +214,25 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			}
 			contentType = "application/json"
 		}
+		miniMax := channel.ManagedAdapter == "video.minimax-h3" || channel.ManagedAdapter == "video.minimax-h3-frames"
+		if miniMax {
+			var payload map[string]any
+			_ = json.Unmarshal(body, &payload)
+			var valid bool
+			body, valid = buildMiniMaxH3VideoBody(payload)
+			if !valid {
+				Fail(w, "MiniMax H3 参数与适配器不匹配；本次未扣费")
+				return
+			}
+			contentType = "application/json"
+		}
 		body = stripVideoInputMode(body, contentType)
 		path = videoChannelPath(channel, modelName, path)
 		formatBase := ""
 		if profile.Interface == "ark" {
 			formatBase = "/api/plan/v3"
 		}
-		if profile.Interface != service.SparkCineH3Interface {
+		if profile.Interface != service.SparkCineH3Interface && !miniMax {
 			body, contentType = normalizeAIProxyVideoBody(formatBase, path, body, contentType)
 		}
 	}
@@ -232,10 +269,14 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	if videoCreate {
-		copyAIVideoCreateResponse(w, request, model.VideoTask{
+		task := model.VideoTask{
 			UserID: user.ID, Model: modelName, Credits: credits, Path: billingPath,
 			ChannelID: channel.ID, ChannelName: channel.Name, ChannelBaseURL: channel.BaseURL,
-		}, entry.ID, func() {
+		}
+		if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil {
+			task.PlatformModelID, task.ModelLabel, task.FeatureID, task.ConfigRevision = selected.Model.ID, service.ManagedLabel(selected.Model, []model.ManagedRoute{selected.Route}), selected.Feature.ID, selected.Revision
+		}
+		copyAIVideoCreateResponse(w, request, task, entry.ID, func() {
 			if err := service.RefundUserCredits(user.ID, modelName, credits, billingPath, channel); err != nil {
 				log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 			}

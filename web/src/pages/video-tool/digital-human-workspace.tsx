@@ -5,12 +5,13 @@ import { ArrowLeft, Download, FolderPlus, Grid2X2, RefreshCw, Sparkles, UploadCl
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
+import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { getWorkerCapabilities } from "@/services/api/video-worker";
 import { getReplicateModels, publicServiceText, REPLICATE_MODEL_NAMES, transcriptionUnavailable, type ReplicateQuote } from "@/services/api/replicate";
 import { imageToDataUrl } from "@/services/image-storage";
 import { uploadMediaFile } from "@/services/file-storage";
-import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { managedModelBinding, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { MediaRole, VideoRecord, WorkerCapabilities } from "@/types/video-workbench";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
@@ -77,6 +78,7 @@ export default function DigitalHumanWorkspace() {
     const mode = modeCopy[d.digitalHumanMode];
     const avatar = d.media.find((m) => m.role === "avatar" && m.kind === (d.digitalHumanMode === "video" ? "video" : "image"));
     const speech = d.speech;
+    const speechCloud = config.managed?.enabled && config.channelMode === "remote" ? managedModelBinding(config,config.audioModel,"audio")?.adapter === "cloud:speech" : d.route === "replicate";
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask));
     const previews = [
@@ -143,7 +145,7 @@ export default function DigitalHumanWorkspace() {
         }
         return "";
     };
-    const quoteKey = JSON.stringify([session, d.route, d.digitalHumanMode, d.digitalRevision, avatar?.storageKey, speech?.storageKey, avatar?.url, speech?.url]);
+    const quoteKey = JSON.stringify([session,config.managed?.revision,config.videoModel,config.audioModel, d.route, d.digitalHumanMode, d.digitalRevision, avatar?.storageKey, speech?.storageKey, avatar?.url, speech?.url]);
     useEffect(() => {
         quoteRequest.current?.abort();
         setQuote(null);
@@ -197,7 +199,7 @@ export default function DigitalHumanWorkspace() {
             request.abort();
             window.removeEventListener("focus", refresh);
         };
-    }, [wb.hydrated, session]);
+    }, [wb.hydrated, session,config.managed?.revision,config.videoModel,config.audioModel]);
     useEffect(() => {
         if (!wb.hydrated || appliedMode.current === location.search) return;
         appliedMode.current = location.search;
@@ -430,6 +432,7 @@ export default function DigitalHumanWorkspace() {
                         <div className="grid min-h-0 min-w-0 flex-1 lg:overflow-y-auto xl:grid-cols-2 xl:overflow-hidden">
                             <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-x-hidden p-3 xl:overflow-y-auto" data-testid="digital-human-input-scroll">
                                 <Card className="shrink-0 scroll-mt-3" id="dh-stage-speech" size="small" title="01 · 文案">
+                                    <FeatureModelPicker capability="text" />
                                     <Select className="mb-3 w-full" aria-label="文案来源" disabled={locked} value={d.digitalCopySource} onChange={(digitalCopySource) => wb.edit({ digitalCopySource }, "brief")} options={[{ value: "brief", label: "提供资料 · AI 写稿" }, { value: "reference", label: "视频学习 · 识别并改写" }, { value: "manual", label: "直接填写口播正文" }]} />
                                     {d.digitalCopySource === "reference" && (
                                         <div className="mb-3 space-y-3">
@@ -479,6 +482,7 @@ export default function DigitalHumanWorkspace() {
                                     </div>
                                 </Card>
                                 <Card className="shrink-0 scroll-mt-3" id="dh-stage-video" size="small" title="02 · 音频与人物">
+                                    <FeatureModelPicker capability="audio" />
                                     <div className="grid min-w-0 grid-cols-1 gap-3">
                                         <DigitalHumanPresets draft={d} locked={locked || Boolean(pending)} onApply={(value) => wb.edit(value, "speech")} />
                                         <div className="space-y-3">
@@ -499,7 +503,7 @@ export default function DigitalHumanWorkspace() {
                                                     onChange={(language) => wb.edit({ language }, "speech")}
                                                     options={["Chinese", "English", "Japanese", "Korean", "French", "German", "auto"].map((value) => ({ value, label: value === "Chinese" ? "中文" : value === "auto" ? "自动识别" : value }))}
                                                 />
-                                                {d.voiceMode === "api" && d.route === "replicate" && (
+                                                {d.voiceMode === "api" && speechCloud && (
                                                     <Select
                                                         aria-label="配音音色"
                                                         disabled={locked}
@@ -508,7 +512,7 @@ export default function DigitalHumanWorkspace() {
                                                         options={digitalSystemSpeakers.map((value) => ({ value, label: value }))}
                                                     />
                                                 )}
-                                                {d.voiceMode === "api" && d.route !== "replicate" && (
+                                                {d.voiceMode === "api" && !speechCloud && (
                                                     <Input aria-label="自定义配音音色" className="max-w-48" disabled={locked} value={d.voice} placeholder="模型音色，例如 alloy" onChange={(e) => wb.edit({ voice: e.target.value }, "speech")} />
                                                 )}
                                             </div>
@@ -561,6 +565,7 @@ export default function DigitalHumanWorkspace() {
                                         </div>
                                         <div className="space-y-3">
                                             <div className="space-y-2">
+                                                <FeatureModelPicker capability="video" />
                                                 <Select aria-label="人物生成方式" className="w-full" disabled={locked} value={d.digitalHumanMode} onChange={(digitalHumanMode) => wb.edit({ digitalHumanMode }, "video")} options={[{ value: "photo", label: "使用人物照片 · 照片说话" }, { value: "video", label: "使用人物视频 · 视频对口型" }]} />
                                                 <p className="text-xs" style={muted}>上传照片或人物视频后自动选择方式；切换方式保留口播音频，清理不匹配人物和视频结果。</p>
                                             </div>
@@ -606,7 +611,8 @@ export default function DigitalHumanWorkspace() {
                                                             })}
                                                         </div>
                                                     )}
-                                                    {d.route !== "replicate" && (
+                                                    <FeatureModelPicker capability="audio" featureId="digital-human.transcribe" />
+                                                    {d.route !== "replicate" && !config.managed?.enabled && (
                                                         <ModelPicker
                                                             config={config}
                                                             capability="audio"
@@ -762,6 +768,7 @@ export default function DigitalHumanWorkspace() {
                                             ]}
                                         />
                                         {action("cover", "生成封面")}
+                                          {d.coverMode === "image" && <FeatureModelPicker capability="image" />}
                                     </Space>
                                     <p className="mt-2 text-xs" style={muted}>
                                         可从当前视频抽取首帧；图片模型封面需填写标题。

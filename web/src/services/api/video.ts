@@ -1,4 +1,5 @@
 import axios from "axios";
+import { quoteManagedFixed } from "./model-management";
 import { videoProfile, videoInputMode, videoReferenceDurationError, videoReferenceError, sparkCineVideoSpecError } from "@/lib/video-capabilities";
 import { nanoid } from "nanoid";
 
@@ -9,7 +10,7 @@ import { isMiniMaxH3Name, miniMaxH3VideoBody } from "@/lib/minimax-h3";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { buildApiUrl, modelMatchesCapability, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, managedModelBinding, modelRequestHeaders, modelMatchesCapability, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
@@ -42,23 +43,28 @@ type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: strin
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
 type RequestOptions = { signal?: AbortSignal; expectedCredits?: number; onWaitState?: (state: VideoTaskWaitState) => void; confirmReplicate?: (quote: ReplicateQuote, signal?: AbortSignal) => Promise<void>; onTaskSubmitted?: (task: VideoGenerationTask) => Promise<void> };
 
-export type VideoPrice = { credits: number; calculation: string };
+export type VideoPrice = { credits: number; calculation: string; quoteToken?: string };
+const modelQuotes = new Map<string,string>();
+const quoteKey = (config: AiConfig, model: string) => JSON.stringify([useUserStore.getState().token,config.featureId || config.featureIds?.video,modelOptionName(model),config.managed?.revision,config.vquality.replace(/p$/,""),config.videoSeconds,inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size),config.videoInterpolate === "true"]);
 export async function quoteVideoModel(config: AiConfig, model: string, signal?: AbortSignal): Promise<VideoPrice> {
     if (!model || !modelMatchesCapability(config, model, "video")) throw new Error("请选择可用的视频模型后重试");
     const specError = sparkCineVideoSpecError(videoProfile(config, model), config.vquality, inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size), config.videoSeconds);
     if (specError) throw new Error(specError);
-    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: isReplicateVideoModel(model) ? "replicate" : "openai", model: modelOptionName(model), resolution: normalizeVideoResolution(config.vquality).replace(/p$/, ""), seconds: config.videoSeconds, aspect_ratio: inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size), interpolate: config.videoInterpolate === "true" }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
-    return unwrapEnvelope(response.data, "视频报价读取失败");
+    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: isReplicateVideoModel(model) ? "replicate" : "openai", model: modelOptionName(model), resolution: normalizeVideoResolution(config.vquality).replace(/p$/, ""), seconds: config.videoSeconds, aspect_ratio: inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size), interpolate: config.videoInterpolate === "true" }, { headers: aiHeaders({ ...config, model, channelMode: "remote" }, "application/json"), signal });
+    const price = unwrapEnvelope(response.data, "视频报价读取失败");
+    if (price.quoteToken) modelQuotes.set(quoteKey(config,model),price.quoteToken);
+    return price;
 }
 
 export async function quoteTextModel(config: AiConfig, model: string, signal?: AbortSignal): Promise<VideoPrice> {
     if (!model || !modelMatchesCapability(config, model, "text")) throw new Error("请选择可用的分析 / 文案模型后重试");
-    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: "openai", model: modelOptionName(model) }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
+    if (config.managed?.enabled && config.channelMode === "remote") return quoteManagedFixed({...config,model},"text",1,signal);
+    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: "openai", model: modelOptionName(model) }, { headers: aiHeaders({ ...config, model, channelMode: "remote" }, "application/json"), signal });
     return unwrapEnvelope(response.data, "文案报价读取失败");
 }
 
 function videoCreateHeaders(config: AiConfig, options?: RequestOptions, contentType?: string) {
-    return { ...aiHeaders(config, contentType), ...(config.channelMode === "remote" && options?.expectedCredits !== undefined ? { "X-Expected-Credits": String(options.expectedCredits) } : {}) };
+    return { ...aiHeaders(config, contentType), ...(config.managed?.enabled && config.channelMode === "remote" ? { "X-Model-Quote": modelQuotes.get(quoteKey(config,config.model)) || "" } : {}), ...(config.channelMode === "remote" && options?.expectedCredits !== undefined ? { "X-Expected-Credits": String(options.expectedCredits) } : {}) };
 }
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
@@ -82,6 +88,7 @@ function aiHeaders(config: AiConfig, contentType?: string) {
     if (config.channelMode === "remote") {
         const token = useUserStore.getState().token;
         return {
+            ...modelRequestHeaders(config, config.managed?.models.find((m) => m.id === modelOptionName(config.model))?.capability === "text" ? "text" : "video"),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(contentType ? { "Content-Type": contentType } : {}),
         };
@@ -138,8 +145,9 @@ function videoTaskFailed(message: string) {
 
 export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationTask> {
     const selectedModel = (config.model || config.videoModel).trim();
+    const managedOperation = managedModelBinding(config,selectedModel,"video")?.operations[0];
     if (!selectedModel || !modelMatchesCapability(config, selectedModel, "video")) throw new Error("请选择可用的视频模型后重试");
-    if (selectedModel === HAILUO_VIDEO_MODEL) {
+    if (selectedModel === HAILUO_VIDEO_MODEL || managedOperation === "hailuo-video") {
         if (!options?.confirmReplicate) throw new Error("请确认平台视频服务费用");
         if (!prompt.trim()) throw new Error("请填写视频脚本");
         if (references.length > 1 || videoReferences.length || audioReferences.length) throw new Error("当前快速视频服务最多支持 1 张首帧图片，不支持视频或音频参考");
@@ -151,16 +159,16 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
             const reference = references[0];
             input.first_frame_image = await uploadReplicateReference({ url: reference.dataUrl, storageKey: reference.storageKey || "", bytes: 0, mimeType: reference.type, name: reference.name, kind: "image" }, options.signal);
         }
-        const quote = await quoteReplicate("hailuo-video", input, options.signal);
+        const quote = await quoteReplicate("hailuo-video", input, options.signal, {config,model:selectedModel});
         await options.confirmReplicate({ ...quote, inputSummary: `输入：${references.length ? "1张首帧图（图生视频）" : "纯文字（文生视频）"}；输出：${duration}秒 · ${resolution}` }, options.signal);
         options.signal?.throwIfAborted();
         const task: VideoGenerationTask = { id: nanoid(), provider: "replicate", model: selectedModel, createdAt: Date.now() };
         await options.onTaskSubmitted?.(task);
-        await createReplicateTask(task.id, "hailuo-video", input, quote.credits, options.signal);
+        await createReplicateTask(task.id, "hailuo-video", input, quote.credits, options.signal, {config,model:selectedModel,quoteToken:quote.quoteToken});
         return task;
     }
-    if (selectedModel === REPLICATE_VIDEO_MODEL || selectedModel === REPLICATE_TEXT_VIDEO_MODEL) {
-        const textOnly = selectedModel === REPLICATE_TEXT_VIDEO_MODEL;
+    if (selectedModel === REPLICATE_VIDEO_MODEL || selectedModel === REPLICATE_TEXT_VIDEO_MODEL || managedOperation === "text-to-video" || managedOperation === "image-to-video") {
+        const textOnly = selectedModel === REPLICATE_TEXT_VIDEO_MODEL || managedOperation === "text-to-video";
         const operation = textOnly ? "text-to-video" : "image-to-video";
         if (!options?.confirmReplicate) throw new Error("请确认平台视频服务费用");
         if (!prompt.trim()) throw new Error("请填写视频脚本");
@@ -176,12 +184,12 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
         const ratio = inferVideoRatio(config.size);
         if (textOnly && !["auto", "16:9", "9:16"].includes(ratio)) throw new Error("文生视频支持横屏 16:9 或竖屏 9:16，请调整画面比例");
         const input = { ...(image ? { image } : {}), ...(lastImage ? { last_image: lastImage } : {}), ...(textOnly ? { aspect_ratio: ratio === "9:16" ? "9:16" : "16:9" } : {}), prompt, resolution, num_frames: config.videoSeconds === "7.5" ? 121 : 81, interpolate_output: config.videoInterpolate === "true" };
-        const quote = await quoteReplicate(operation, input, options.signal);
+        const quote = await quoteReplicate(operation, input, options.signal, {config,model:selectedModel});
         await options.confirmReplicate({ ...quote, inputSummary: `输入：${textOnly ? "纯文字（文生视频）" : `1张首帧图片${lastImage ? " + 1张尾帧图片" : "（不指定尾帧）"}`}；输出：约${config.videoSeconds}秒 · ${resolution}${textOnly ? ` · ${input.aspect_ratio}` : ` · ${wanFrameRatio(config.size)}（已统一首尾帧画幅）`}${config.videoInterpolate === "true" ? " · 插帧" : ""}` }, options.signal);
         options.signal?.throwIfAborted();
         const task: VideoGenerationTask = { id: nanoid(), provider: "replicate", model: selectedModel, createdAt: Date.now() };
         await options.onTaskSubmitted?.(task);
-        await createReplicateTask(task.id, operation, input, quote.credits, options.signal);
+        await createReplicateTask(task.id, operation, input, quote.credits, options.signal, {config,model:selectedModel,quoteToken:quote.quoteToken});
         return task;
     }
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
@@ -196,7 +204,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) throw new Error("当前模型不支持所选视频时长，请重新选择");
     if (profile.resolutions.length && !profile.resolutions.includes(normalizeVideoResolution(config.vquality).replace(/p$/, ""))) throw new Error("当前模型不支持所选分辨率，请重新选择");
     if (profile.interface === "relay" || profile.interface === "sparkcine_h3") return createPidoiJsonVideoTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
-    if (isSeedanceVideoConfig(requestConfig)) {
+    if (profile.interface === "ark" || isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
     if (videoReferences.length || audioReferences.length) {
@@ -223,7 +231,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
         return result ? { status: "completed", result } : { status: "failed", error: "插件视频任务已失效，请重新生成" };
     }
     const requestConfig = resolveModelRequestConfig(config, task.model);
-    assertVideoConfig(requestConfig, requestConfig.model);
+    if (requestConfig.channelMode !== "remote") assertVideoConfig(requestConfig, requestConfig.model);
     return task.provider === "seedance" ? pollSeedanceTask(requestConfig, task, options) : pollOpenAIVideoTask(requestConfig, task, options);
 }
 

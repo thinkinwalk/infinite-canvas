@@ -505,6 +505,7 @@ func ConsumeUserCreditsWithLog(userID string, modelName string, credits int, pat
 	details := map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits}
 	if len(channels) > 0 {
 		details["channelId"], details["channelName"] = channels[0].ID, channels[0].Name
+		details["platformModelId"], details["modelLabel"] = channels[0].PlatformModelID, channels[0].ModelLabel
 	}
 	extra, _ := json.Marshal(details)
 	return repository.SaveCreditLog(model.CreditLog{
@@ -554,6 +555,7 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 	details := map[string]any{"model": modelName, "path": path, "group": group, "creditRatio": ratio, "chargedCredits": credits}
 	if len(channels) > 0 {
 		details["channelId"], details["channelName"] = channels[0].ID, channels[0].Name
+		details["platformModelId"], details["modelLabel"] = channels[0].PlatformModelID, channels[0].ModelLabel
 	}
 	extra, _ := json.Marshal(details)
 	_, err = repository.SaveCreditLog(model.CreditLog{
@@ -591,7 +593,7 @@ func UpdateVideoTaskStatus(task model.VideoTask, status string) error {
 	if status != "failed" && status != "cancelled" && status != "expired" {
 		return repository.UpdateVideoTaskStatus(task.ID, task.UserID, status, now(), task.OutputURL)
 	}
-	extra, _ := json.Marshal(map[string]any{"model": task.Model, "path": task.Path, "chargedCredits": task.Credits, "videoTaskId": task.ID, "terminalStatus": status, "channelId": task.ChannelID, "channelName": task.ChannelName})
+	extra, _ := json.Marshal(map[string]any{"model": task.Model, "platformModelId": task.PlatformModelID, "modelLabel": task.ModelLabel, "path": task.Path, "chargedCredits": task.Credits, "videoTaskId": task.ID, "terminalStatus": status, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	_, err := repository.RefundFailedVideoTask(task.ID, task.UserID, status, model.CreditLog{
 		ID:     newID("credit"),
 		Remark: "视频任务失败返还 " + task.Model,
@@ -633,6 +635,24 @@ func ListUserCreditLogs(userID string, q model.Query) (model.CreditLogList, erro
 	logs, total, stats, err := repository.ListCreditLogsByUser(userID, q)
 	if err != nil {
 		return model.CreditLogList{}, err
+	}
+	for i := range logs {
+		var extra map[string]any
+		if json.Unmarshal([]byte(logs[i].Extra), &extra) != nil || extra["platformModelId"] == nil || extra["platformModelId"] == "" {
+			continue
+		}
+		extra["model"] = extra["platformModelId"]
+		delete(extra, "channelId")
+		delete(extra, "channelName")
+		delete(extra, "predictionId")
+		prefix := "调用模型 "
+		if logs[i].Amount > 0 {
+			prefix = "模型调用失败返还 "
+		}
+		label, _ := extra["modelLabel"].(string)
+		logs[i].Remark = prefix + label
+		data, _ := json.Marshal(extra)
+		logs[i].Extra = string(data)
 	}
 	return model.CreditLogList{Items: logs, Total: int(total), Stats: stats}, nil
 }

@@ -60,6 +60,7 @@ $quote = Invoke-VoiceJson -Method POST -Path "/api/v1/speech/quote" -Body $reque
 Write-Host "本次报价：$($quote.credits) 点；余额：$($quote.balance) 点；$($quote.calculation)"
 if (!$quote.sufficient_balance) { throw "算力点不足。" }
 $request.expected_credits = $quote.credits
+if ($quote.quote_token) { $request.quote_token = $quote.quote_token }
 $task = Invoke-VoiceJson -Method POST -Path "/api/v1/speech/tasks" -Body $request -ExtraHeaders @{ "Idempotency-Key" = $env:VOICE_IDEMPOTENCY_KEY }
 Write-Host "任务：$($task.task_id)"
 while ($task.status -in @("creating", "running", "generated")) {

@@ -15,6 +15,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -341,6 +342,31 @@ func replicateToolModel(operation string) string {
 	return "men1scus/birefnet"
 }
 
+func resolveCaseProcessor(r *http.Request, id, operation string, user model.AuthUser) (model.ModelChannel, int, error) {
+	enabled, err := service.ManagementEnabled()
+	if err != nil {
+		return model.ModelChannel{}, 0, err
+	}
+	if !enabled {
+		channel, err := service.SelectReplicateChannel(replicateToolModel(operation), user.Group)
+		return channel, 0, err
+	}
+	selected, err := resolveManagedCase(r, service.CaseModelFeature(id, "process"), user.Group)
+	if err != nil {
+		return model.ModelChannel{}, 0, err
+	}
+	if !managedHas(selected.Route.Operations, operation) || selected.Route.Model != replicateToolModel(operation) {
+		return model.ModelChannel{}, 0, fmt.Errorf("案例没有配置所需的图像处理模型")
+	}
+	*r = *r.WithContext(service.WithManagedSelection(r.Context(), selected))
+	credits, err := service.ManagedModelCost(r.Context(), selected.Route.Model)
+	if err != nil {
+		return model.ModelChannel{}, 0, err
+	}
+	ratio, err := service.UserGroupRatio(user.Group)
+	return selected.Channel, int(math.Ceil(float64(credits) * ratio)), err
+}
+
 func runReplicateTool(r *http.Request, channel model.ModelChannel, operation string, inputs map[string]any) (map[string]any, error) {
 	token := channel.APIKey
 	sourceBytes, sourceMime, err := caseImageBytes(inputs["imageUrl"])
@@ -353,6 +379,14 @@ func runReplicateTool(r *http.Request, channel model.ModelChannel, operation str
 		}
 	}
 	modelID := replicateToolModel(operation)
+	if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil {
+		ctx, err := service.RevalidateManagedSelection(r.Context())
+		if err != nil {
+			return nil, err
+		}
+		r = r.WithContext(ctx)
+		modelID = selected.Route.Model
+	}
 	arguments := map[string]any{"image": "data:" + sourceMime + ";base64," + base64.StdEncoding.EncodeToString(sourceBytes)}
 	if operation == "upscale-replicate" {
 		scale := 2
@@ -362,23 +396,30 @@ func runReplicateTool(r *http.Request, channel model.ModelChannel, operation str
 		arguments["scale"] = scale
 		arguments["face_enhance"] = inputs["direction"] == "人像"
 	}
-	modelRequest, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.replicate.com/v1/models/"+modelID, nil)
-	modelRequest.Header.Set("Authorization", "Bearer "+token)
-	modelResponse, err := aiHTTPClient.Do(modelRequest)
-	if err != nil {
-		return nil, errors.New("专用模型连接失败")
+	version := ""
+	if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil {
+		version = selected.Route.Version
 	}
-	var modelInfo struct {
-		LatestVersion struct {
-			ID string `json:"id"`
-		} `json:"latest_version"`
+	if version == "" {
+		modelRequest, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.replicate.com/v1/models/"+modelID, nil)
+		modelRequest.Header.Set("Authorization", "Bearer "+token)
+		modelResponse, err := aiHTTPClient.Do(modelRequest)
+		if err != nil {
+			return nil, errors.New("专用模型连接失败")
+		}
+		var modelInfo struct {
+			LatestVersion struct {
+				ID string `json:"id"`
+			} `json:"latest_version"`
+		}
+		decodeErr := json.NewDecoder(modelResponse.Body).Decode(&modelInfo)
+		_ = modelResponse.Body.Close()
+		if modelResponse.StatusCode >= 400 || decodeErr != nil || modelInfo.LatestVersion.ID == "" {
+			return nil, errors.New("专用模型版本读取失败，请检查服务凭据")
+		}
+		version = modelInfo.LatestVersion.ID
 	}
-	decodeErr := json.NewDecoder(modelResponse.Body).Decode(&modelInfo)
-	_ = modelResponse.Body.Close()
-	if modelResponse.StatusCode >= 400 || decodeErr != nil || modelInfo.LatestVersion.ID == "" {
-		return nil, errors.New("专用模型版本读取失败，请检查服务凭据")
-	}
-	body, _ := json.Marshal(map[string]any{"version": modelInfo.LatestVersion.ID, "input": arguments})
+	body, _ := json.Marshal(map[string]any{"version": version, "input": arguments})
 	create, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://api.replicate.com/v1/predictions", bytes.NewReader(body))
 	create.Header.Set("Authorization", "Bearer "+token)
 	create.Header.Set("Content-Type", "application/json")
@@ -388,7 +429,7 @@ func runReplicateTool(r *http.Request, channel model.ModelChannel, operation str
 		return nil, errors.New("专用模型请求失败")
 	}
 	var prediction replicatePrediction
-	decodeErr = json.NewDecoder(response.Body).Decode(&prediction)
+	decodeErr := json.NewDecoder(response.Body).Decode(&prediction)
 	_ = response.Body.Close()
 	if response.StatusCode >= 400 || decodeErr != nil {
 		return nil, errors.New("专用模型请求被拒绝，请检查服务配置")

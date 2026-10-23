@@ -31,12 +31,13 @@ export async function apiGet<T>(url: string, params?: ApiParams, token?: string)
     });
 }
 
-export async function apiPost<T>(url: string, body?: unknown, token?: string) {
+export async function apiPost<T>(url: string, body?: unknown, token?: string, headers?: Record<string,string>) {
     return apiRequest<T>({
         url,
         method: "POST",
         data: body ?? {},
         headers: {
+            ...headers,
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },

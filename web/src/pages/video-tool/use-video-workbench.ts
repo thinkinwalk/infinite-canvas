@@ -24,7 +24,7 @@ import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile, type UploadedFile 
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { resolveModelRequestConfig, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { configForFeature, managedModelBinding, resolveModelRequestConfig, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { cancelReplicateTask, createReplicateTask, getReplicateModels, quoteReplicate, readReplicateTask, storeReplicateResult, uploadReplicateReference, waitForReplicateTask, type ReplicateOperation, type ReplicateQuote, type ReplicateTask } from "@/services/api/replicate";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -354,10 +354,10 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (cfg.channelMode !== "remote" && !isReplicateVideoModel(cfg.videoModel)) throw new Error("自定义渠道费用以该服务账单为准");
         return quoteVideoModel(cfg, cfg.videoModel, signal);
     };
-    const text = async (ctx: Context, instruction: string, imageFiles: UploadedFile[] = []) => {
+    const text = async (ctx: Context, instruction: string, imageFiles: UploadedFile[] = [], analyze = false) => {
+        const cfg = analyze && ["store-explore","viral-recreate"].includes(tool) ? configForFeature(config,`${tool}.analyze`,"text") : modelConfig("text");
         if (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && config.channelMode === "remote") {
-            const cfg = modelConfig("text");
-            const quote = await quoteTextModel(cfg, cfg.model, ctx.signal);
+            const quote = await quoteTextModel(cfg, cfg.textModel, ctx.signal);
             await confirmStorePrice(quote, "文案处理", ctx.signal, "分析 / 撰写按当前文字模型单独计费");
             ctx.signal.throwIfAborted();
         }
@@ -365,7 +365,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         for (const image of imageFiles) {
             content.push({ type: "image_url", image_url: { url: await imageToDataUrl({ dataUrl: image.url, storageKey: image.storageKey }) } });
         }
-        const value = await requestImageQuestion(modelConfig("text"), [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, { text: value }), { signal: ctx.signal });
+        const value = await requestImageQuestion({...cfg,model:cfg.textModel}, [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, { text: value }), { signal: ctx.signal });
         if (!value.trim()) throw new Error("模型没有返回内容");
         return value;
     };
@@ -727,7 +727,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                                 .map((m) => m.name)
                                 .join("、") || "尚未选择"
                         }；未发送的新人物/商品须准备相应首帧，不承诺凭文字即可精准替换。`;
-            const value = await text(ctx, instruction, images);
+            const value = await text(ctx, instruction, images, stage !== "script");
             if (stage === "analyze") return { ...(d.analysis ? { viralAnalysisSuggestion: value } : { analysis: value, viralAnalysisStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
             if (stage === "product-analyze") return { ...(d.viralProductAnalysis ? { viralProductSuggestion: value } : { viralProductAnalysis: value, viralProductStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
             return d.script ? { viralScriptSuggestion: value } : { script: value, viralScriptStale: false, viralOutputStale: true };
@@ -772,7 +772,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     stage === "analyze"
                         ? `分析门店环境、商品和可用镜头，只描述图片可见事实。价格、地址、活动只能引用用户真实资料，未知事项标记待确认。人物图只用于描述人物。真实资料：${d.storeFacts || "未提供"}。创作要求：${d.instructions}`
                         : `为探店视频写一段可直接提交模型的中文镜头脚本。只输出脚本，适配实际${cfg.videoSeconds}秒单条片段，不能承诺长视频、多镜头剪辑、配音或字幕已经完成。门店价格、地址和活动只能引用用户真实资料。资料：${d.storeFacts || "未提供，不虚构"}。要求：${d.instructions}。视觉分析：${d.analysis}。原稿供参考：${d.script}。素材编号：${labels.map((m) => `${m.label}=${m.name}`).join("；")}；保留用户的@素材编号，不添加不存在的编号。`;
-                const value = await text(ctx, instruction, images);
+                const value = await text(ctx, instruction, images, stage === "analyze");
                 return stage === "analyze"
                     ? { ...(d.analysis ? { storeAnalysisSuggestion: value } : { analysis: value, storeAnalysisStale: false }), storeScriptStale: Boolean(d.script), storeOutputStale: true }
                     : d.script
@@ -822,6 +822,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     ctx,
                     `分析这些${tool === "store-explore" ? "门店/商品素材，按空间、产品卖点、可用镜头" : "按时间顺序抽取的参考视频帧及商品/模特素材，按开场钩子、镜头顺序、动作、转场、节奏、卖点、结尾转化"}整理成中文拍摄分析。只描述可见事实，不编造价格、门店位置或促销。用户资料：${d.instructions}。${d.transcript ? `已转写的音轨：${d.transcript}` : "当前没有语音转写，明确注明仅根据画面进行分析，不声称听到了原视频。"}`,
                     [...d.frames, ...d.media.filter((m) => m.kind === "image" && ["reference", "model", "background"].includes(m.role))],
+                    true,
                 ),
             };
         if (stage === "script") {
@@ -840,7 +841,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (stage === "speech" || stage === "speech-preview") {
             const narration = stage === "speech-preview" ? d.digitalPreviewText.trim() : d.narration.trim() || d.script.trim();
             if (!narration) throw new Error("请先填写或生成口播文案");
-            if (d.route === "replicate") {
+            if (config.managed?.enabled && config.channelMode === "remote" ? managedModelBinding(config,config.audioModel,"audio")?.adapter === "cloud:speech" : d.route === "replicate") {
                 const materials: Record<string, UploadedFile | UploadedFile[]> = {};
                 if (d.voiceMode === "clone")
                     materials.reference_audio = required(
@@ -861,6 +862,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 );
             }
             if (d.voiceMode === "clone") {
+                if (config.managed?.enabled && config.channelMode === "remote") throw new Error("当前功能所选模型不支持声音克隆，请选择已适配的克隆模型");
                 if (!d.promptTranscript.trim()) throw new Error("请填写声音样本的原文，供 CosyVoice 对齐");
                 return applyWorkerResult(
                     stage,
@@ -885,7 +887,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             };
         }
         if (stage === "video") {
-            if (d.route === "replicate") {
+            if (config.managed?.enabled && config.channelMode === "remote" ? managedModelBinding(config,config.videoModel,"video")?.adapter.startsWith("cloud:") : d.route === "replicate") {
                 if (digital) {
                     const { operation, fields, materials } = digitalHumanRequest(d);
                     return cloud(ctx, stage, operation, fields, materials);
@@ -956,7 +958,13 @@ export function useVideoWorkbench(tool: VideoTool) {
             const materials = d.media.filter((m) => (tool === "content-replace" ? m.role === "reference" || m.role === (d.replacement === "background" ? "background" : "model") : ["reference", "model", "background"].includes(m.role)));
             const generation = tool === "content-replace" ? store().records.find((r) => r.id === ctx.recordId)?.replacementPipeline?.generation : undefined;
             const requestConfig = modelConfig("video", generation);
-            const task = await createVideoGenerationTask(requestConfig, prompt, imagesOf(materials), mediaOf(materials, "video"), mediaOf(materials, "audio"), { signal: ctx.signal });
+            let expectedCredits: number | undefined;
+            if (requestConfig.managed?.enabled && requestConfig.channelMode === "remote" && !isReplicateVideoModel(requestConfig.model)) {
+                const quote = await quoteVideoModel(requestConfig,requestConfig.model,ctx.signal);
+                await confirmStorePrice(quote,"视频制作",ctx.signal,"按当前功能的已配置模型生成");
+                expectedCredits = quote.credits;
+            }
+            const task = await createVideoGenerationTask(requestConfig, prompt, imagesOf(materials), mediaOf(materials, "video"), mediaOf(materials, "audio"), { signal: ctx.signal,expectedCredits,confirmReplicate,onTaskSubmitted:async (task) => {store().patchRecord(ctx.recordId,{modelTask:task});} });
             store().patchRecord(ctx.recordId, { modelTask: task });
             return {
                 video: await storeGeneratedVideo(
