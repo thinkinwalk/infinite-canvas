@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.91
-- Current production source: tag v0.19.91, commit 364b28789cdcac6e19bc7de4add57249cd3c44d1
+- Current production image: infinite-canvas:v0.19.92
+- Current production source: tag v0.19.92, commit de6dfd3555fe57e42d906d56c689fe0e6a57b86b
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.92 deployment
+
+- Release tag `v0.19.92`, commit `de6dfd3555fe57e42d906d56c689fe0e6a57b86b`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.92. Production image `infinite-canvas:v0.19.92`, ID `sha256:b6dd0966640216205ea7ca94af820f2da6df56a2736566137c94e1aaec3039e8`, was built on the server from the exact tag.
+- Unified model management is available at `https://studio.lingzhouai.com/admin/models`. Authenticated admin reads and non-persisting conversion preview passed: 162 feature steps, 62 platform models/routes and 1,453 draft bindings. H3 person replacement is excluded from the preview, while its ordinary video binding remains enabled. Anonymous and ordinary-user access to the admin API was denied. No management configuration was saved or enabled; the administrator must review the preview, pricing, display names and bindings before saving.
+- Only app was recreated. Existing work was checked before restart; a historical stored `planning` replacement was confirmed paused through its owning-user API with a completed linked Worker step and preserved byte-for-byte. Worker ID, image, start time and `v0.19.87-worker` mounts remain unchanged.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.92-20261023-153624/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.92-prebuild-20261023-153259/`. Startup added `platform_model_id`, `model_label`, `feature_id` and `config_revision` to each of `video_tasks` and `replicate_tasks`. SQLite quick_check, all 13 table counts, saved settings, user balances/roles/groups/status, default/VIP model catalogs/pricing/permissions, H3 quotes and 8,829 existing file hashes matched.
+- Internal/external health, 10 public routes, ordinary-user Worker gateways including `segment-plan`, replacement history and retention-status reads passed. Published `/assets/index-D9tOYs7b.js` contains v0.19.92 and the model management UI; independent workstation requests confirmed health, admin page and asset markers. No local tests/builds were repeated during release; only the production image was built on the server.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.92-deployment.json`; workstation copy: outer workspace `artifacts/release-v0.19.92/deployment.json`. Development verification and 39 isolated browser checks are recorded in `docs/model-management-handoff.md`. Real online editing/saving, conversion enablement, paid generation, billing/refunds and upstream quality remain for the user's manual acceptance. No paid generation was submitted.
+- Prior v0.19.91 image remains available. Rollback restores the saved Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; keep the additive columns and never restore an old database over subsequent user activity. If management is enabled after release, review configuration compatibility before any rollback to v0.19.91.
 
 ## v0.19.91 deployment
 
