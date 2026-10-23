@@ -18,8 +18,9 @@ import { viralInput, viralMaterialLabels, viralSource, viralVideoConfig, viralVi
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
 import { contentReplacementPrompt } from "./content-replace-prompt";
-import { readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
-import { deleteStoredMedia, readPlayableVideoMeta, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { analysisReferenceVideo, readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeTemporaryWorkbenchVideo, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
+import { originalVideoSizeError } from "@/lib/video-reference-retention";
+import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -54,7 +55,7 @@ const store = () => useVideoWorkbenchStore.getState();
 const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-replace" ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
 const imagesOf = (media: WorkbenchMedia[]): ReferenceImage[] => media.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name, type: m.mimeType, dataUrl: m.url, storageKey: m.storageKey }));
 const mediaOf = (media: WorkbenchMedia[], kind: "video" | "audio") =>
-    media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs }));
+    media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs, referenceId: m.referenceId }));
 function replacementRequest(d: VideoDraft, cleanSubtitles = false): { operation: ReplicateOperation; fields: Record<string, unknown>; materials: Record<string, UploadedFile | UploadedFile[]> } {
     const video = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const image = d.media.find((m) => m.role === (d.replacement === "background" ? "background" : "model") && m.kind === "image");
@@ -122,6 +123,10 @@ function subtitleRemoveRequest(d: VideoDraft): { operation: ReplicateOperation; 
     };
 }
 export async function restoreWorkbenchFile(file: UploadedFile): Promise<UploadedFile> {
+    if (file.referenceId) {
+        const { readVideoReferenceRetention } = await import("@/services/video-reference-retention");
+        if ((await readVideoReferenceRetention(file.referenceId))?.cleanedAt) return { ...file, url: "" };
+    }
     return { ...file, url: await (file.mimeType.startsWith("image/") ? resolveImageUrl(file.storageKey, file.url) : resolveMediaUrl(file.storageKey, file.url)) };
 }
 
@@ -248,8 +253,12 @@ export function useVideoWorkbench(tool: VideoTool) {
             for (const file of files) {
                 imported?.signal.throwIfAborted();
                 if (!accept.split(",").some((a) => file.type.startsWith(a.trim().replace("*", "")))) throw new Error("请选择该位置支持的图片、视频或音频格式");
-                const blob = !imported && tool === "content-replace" && file.type.startsWith("video/") ? await prepareWorkbenchVideo(store().worker, file, file.name) : file;
-                const result = file.type.startsWith("image/") ? await uploadImage(file) : await uploadMediaFile(blob, "video-material");
+                if (file.type.startsWith("video/") && originalVideoSizeError(file.size)) throw new Error(originalVideoSizeError(file.size));
+                const temporary = file.type.startsWith("video/") && ["reference", "learning"].includes(role);
+                const blob = !temporary && file.type.startsWith("video/") && (imported || tool === "content-replace") ? await prepareWorkbenchVideo(store().worker, file, file.name, imported?.signal) : file;
+                const result = temporary
+                    ? await storeTemporaryWorkbenchVideo(store().worker, file, file.name, { source: imported?.source, signal: imported?.signal, compatible: Boolean(imported) || tool === "content-replace" })
+                    : file.type.startsWith("image/") ? await uploadImage(file) : await uploadMediaFile(blob, "video-material");
                 added.push({ ...result, storageKey: result.storageKey || "", id: nanoid(), name: file.name, kind: file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "video", role, ...(imported ? { source: imported.source } : {}) });
             }
             imported?.signal.throwIfAborted();
@@ -287,10 +296,8 @@ export function useVideoWorkbench(tool: VideoTool) {
         try {
             validate();
             const { file, source } = await importVideoURL(text, signal);
-            const blob = await prepareWorkbenchVideo(store().worker, file, file.name, signal);
-            await readPlayableVideoMeta(blob);
             validate();
-            const added = await addFiles([new File([blob], file.name, { type: blob.type || "video/mp4" })], role, "video/*", { source, signal, validate });
+            const added = await addFiles([file], role, "video/*", { source, signal, validate });
             return Array.isArray(added);
         } finally {
             importSignal.current = null;
@@ -369,9 +376,13 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (!capability?.available) throw new Error(capability?.reason || `处理服务不支持 ${operation}`);
         const uploaded: Record<string, string | string[]> = {};
         for (const [key, files] of Object.entries(inputs)) {
+            const prepare = async (file: UploadedFile) => {
+                const prepared = ["frames", "transcribe"].includes(operation) && file.mimeType.startsWith("video/") ? await analysisReferenceVideo(ctx.worker, file, ctx.signal) : file;
+                return uploadWorkerMedia(ctx.worker, { ...prepared, kind: prepared.mimeType.startsWith("image/") ? "image" : prepared.mimeType.startsWith("audio/") ? "audio" : "video" }, ctx.signal);
+            };
             uploaded[key] = Array.isArray(files)
-                ? await Promise.all(files.map((file) => uploadWorkerMedia(ctx.worker, { ...file, kind: file.mimeType.startsWith("image/") ? "image" : file.mimeType.startsWith("audio/") ? "audio" : "video" }, ctx.signal)))
-                : await uploadWorkerMedia(ctx.worker, { ...files, kind: files.mimeType.startsWith("image/") ? "image" : files.mimeType.startsWith("audio/") ? "audio" : "video" }, ctx.signal);
+                ? await Promise.all(files.map(prepare))
+                : await prepare(files);
         }
         const job = await createWorkerJob(ctx.worker, operation, uploaded, options, ctx.signal);
         store().patchRecord(ctx.recordId, { workerJob: { id: job.id, url: resolveWorkerUrl(ctx.worker) } });
@@ -440,6 +451,10 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (cloudReferences.current.token !== session) cloudReferences.current = { token: session, urls: new Map() };
         const cache = cloudReferences.current;
         const upload = async (file: UploadedFile) => {
+            if (file.referenceId) {
+                const { updateVideoReferenceRetention } = await import("@/services/video-reference-retention");
+                await updateVideoReferenceRetention(file.referenceId, "use", signal);
+            }
             if (!["content-replace", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool)) return uploadReplicateReference(file, signal);
             const key = `${purpose || "media"}:${file.storageKey || file.url}`;
             if (cache.urls.has(key)) return cache.urls.get(key)!;

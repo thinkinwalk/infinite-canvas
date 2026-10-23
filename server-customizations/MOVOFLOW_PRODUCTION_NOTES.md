@@ -19,6 +19,12 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Current production source: tag v0.19.78, commit ea9efc4915f31018ecb15cea516f07d8212cc432
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
 
+## v0.19.79 release preparation
+
+- Release scope: 300 MiB original reference imports, separate 720p analysis copies and model-budget conversion, explicit keep/review controls, and opt-in reference retention. Previously stored media, task snapshots and generated results are not enrolled for automatic deletion.
+- Requires coordinated app image and versioned Worker source mounts. Previous production remains v0.19.78 until deployment verification completes. The application schema is unchanged; take an online SQLite backup and preserve Compose, environment, original task/media inventory and prior Worker mounts before restarting either service.
+- Development verification passed 15 focused frontend lifecycle/worker-adapter tests, 8 Worker tests and focused Go regressions, including real media. Full TypeScript checking still has three existing errors, and one existing Wan30 adapter test assumes the old 15-second limit. Browser and real-platform/paid-generation acceptance remain pending. Release does not repeat local builds or test suites.
+
 ## v0.19.78 deployment
 
 - Release commit `ea9efc4915f31018ecb15cea516f07d8212cc432` and tag `v0.19.78` are published on `release/v0.19.60`. This release completes the video-link import flow and supported-platform resolution through the configured extraction provider.

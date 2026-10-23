@@ -371,7 +371,7 @@ export default function UpscaleWorkspace() {
                                 <Button type="text" size="small" className="mt-1" disabled={locked} onClick={() => setAssetOpen(true)}>
                                     从我的素材选择
                                 </Button>
-                                <VideoLinkImport disabled={locked} source={reference?.source} onImport={async (text, signal) => {
+                                <VideoLinkImport disabled={locked} media={reference} completed={Boolean(d.final)} source={reference?.source} onImport={async (text, signal) => {
                                     const added = await wb.importLink(text, "reference", signal);
                                     if (added) {
                                         setHistoryPreview(null);

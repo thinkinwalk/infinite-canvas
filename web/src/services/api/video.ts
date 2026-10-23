@@ -524,7 +524,7 @@ async function resolveSeedanceVideoUrl(config: AiConfig, video: ReferenceVideo, 
     if (video.storageKey) blob = await getMediaBlob(video.storageKey);
     if (!blob && video.url?.startsWith("blob:")) blob = await (await fetch(video.url)).blob();
     if (!blob) throw new Error("参考视频必须是公网 URL、资产 ID，或本地已保存的视频");
-    if (config.channelMode === "remote") return uploadReferenceMedia(new File([blob], video.name || "reference-video.mp4", { type: video.type || blob.type || "video/mp4" }), options);
+    if (config.channelMode === "remote") return uploadReferenceMedia(new File([blob], video.name || "reference-video.mp4", { type: video.type || blob.type || "video/mp4" }), options, video.referenceId);
     return blobToDataUrl(blob);
 }
 
@@ -553,14 +553,16 @@ async function resolvePidoiReferenceUrls(references: ReferenceImage[], options?:
     return result;
 }
 
-async function uploadReferenceMedia(file: File, options?: RequestOptions) {
+async function uploadReferenceMedia(file: File, options?: RequestOptions, referenceId?: string) {
     const token = useUserStore.getState().token;
     if (!token) throw new Error("使用本地参考素材需要先登录，并在服务端配置 PUBLIC_BASE_URL");
     const body = new FormData();
+    const { temporaryReferenceHeaders } = await import("@/services/video-reference-retention");
+    const retentionHeaders = await temporaryReferenceHeaders({ referenceId }, options?.signal);
     body.append("file", file, file.name);
     let response: { data: ApiEnvelope<ReferenceMediaUploadResponse> };
     try {
-        response = await axios.post<ApiEnvelope<ReferenceMediaUploadResponse>>("/api/v1/media/references", body, { headers: { Authorization: `Bearer ${token}` }, signal: options?.signal });
+        response = await axios.post<ApiEnvelope<ReferenceMediaUploadResponse>>("/api/v1/media/references", body, { headers: { Authorization: `Bearer ${token}`, ...retentionHeaders }, signal: options?.signal });
     } catch (error) {
         if (axios.isCancel(error) || options?.signal?.aborted) throw error;
         const message = axios.isAxiosError(error) ? readApiErrorMessage(error.response?.data) : "";

@@ -180,7 +180,7 @@ function VideoWorkbench({ tool }: { tool: VideoTool }) {
                     </Button>
                 )}
             </Space>
-            {accept.includes("video/") && <VideoLinkImport disabled={busy || wb.importing} source={d.media.find((media) => media.role === role && media.kind === "video")?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
+            {accept.includes("video/") && <VideoLinkImport disabled={busy || wb.importing} media={d.media.find((media) => media.role === role && media.kind === "video")} completed={Boolean(d.final || d.edited || d.video)} source={d.media.find((media) => media.role === role && media.kind === "video")?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
             <div className="mt-3 flex flex-wrap gap-3">
                 {d.media
                     .filter((m) => m.role === role)

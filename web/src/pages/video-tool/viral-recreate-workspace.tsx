@@ -240,7 +240,7 @@ export default function ViralRecreateWorkspace() {
             <Button type="text" size="small" disabled={locked} onClick={() => setAssetRole(role)}>
                 从我的素材选择
             </Button>
-            {role === "reference" && <VideoLinkImport disabled={locked} source={reference?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
+            {role === "reference" && <VideoLinkImport disabled={locked} media={reference} completed={Boolean(d.video)} source={reference?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
             {errors[role] && (
                 <div role="alert" className="text-xs" style={{ color: token.colorError }}>
                     {errors[role]}

@@ -15,7 +15,8 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { isWan30, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
 import { getWorkerCapabilities, prepareWorkbenchVideo, workbenchMediaBlob } from "@/services/api/video-worker";
-import { replaceStoredVideo, type UploadedFile } from "@/services/file-storage";
+import { replaceStoredVideo, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { registerTemporaryReferenceCopy } from "@/services/video-reference-retention";
 import { imageToDataUrl } from "@/services/image-storage";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -311,8 +312,10 @@ export default function ContentReplaceWorkspace() {
         if (!reference || locked) return;
         setRepairingSource(true);
         try {
-            const blob = await prepareWorkbenchVideo(wb.worker, await workbenchMediaBlob(reference), reference.name);
-            const repaired = await replaceStoredVideo(reference.storageKey, blob);
+            const blob = await prepareWorkbenchVideo(wb.worker, await workbenchMediaBlob(reference), reference.name, undefined, reference);
+            const repaired = reference.referenceId
+                ? await registerTemporaryReferenceCopy(reference.referenceId, await uploadMediaFile(blob, "video-compatible"))
+                : await replaceStoredVideo(reference.storageKey, blob);
             const state = useVideoWorkbenchStore.getState();
             wb.patch({ media: (state.drafts["content-replace"]?.media || []).map((media) => media.storageKey === reference.storageKey ? { ...media, ...repaired } : media) });
             for (const record of state.records) {
@@ -426,7 +429,7 @@ export default function ContentReplaceWorkspace() {
                 <Button type="text" className="mt-1" size="small" disabled={locked} onClick={() => setAssetRole({ role, accept })}>
                     {media ? "从我的素材更换" : "从我的素材选择"}
                 </Button>
-                {accept === "video/*" && <VideoLinkImport disabled={locked} source={media?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
+                {accept === "video/*" && <VideoLinkImport disabled={locked} media={media} completed={Boolean(d.final || d.edited || d.video)} source={media?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
                 {uploadErrors[role] && (
                     <div role="alert" className="mt-1 text-xs" style={{ color: token.colorError }}>
                         {uploadErrors[role]}
@@ -870,11 +873,11 @@ export default function ContentReplaceWorkspace() {
                                     {!showBatchWorkspace && <div className="grid flex-1 gap-4 xl:grid-cols-2">
                                         <div className="flex min-w-0 flex-col gap-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                             <div className="text-sm font-medium">原视频</div>
-                                            {previewSource ? (
+                                            {previewSource?.url ? (
                                                 <video key={previewSource.url} src={previewSource.url} controls preload="metadata" onError={() => { if (!historyPreview) setSourcePreviewError(true); }} onLoadedMetadata={(event) => { if (!historyPreview && !event.currentTarget.videoWidth) setSourcePreviewError(true); }} className="my-auto max-h-[60vh] w-full rounded-lg object-contain" />
                                             ) : (
                                                 <div className="flex min-h-48 flex-1 items-center justify-center">
-                                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyPreview ? "此记录未保存原片" : "上传后立即预览原视频"} />
+                                                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={previewSource?.referenceId && !previewSource.url ? "参考原片已清理，生成作品仍保留" : historyPreview ? "此记录未保存原片" : "上传后立即预览原视频"} />
                                                 </div>
                                             )}
                                         </div>
@@ -889,7 +892,7 @@ export default function ContentReplaceWorkspace() {
                                             )}
                                         </div>
                                     </div>}
-                                    {sourcePreviewError && !historyPreview && (
+                                    {sourcePreviewError && previewSource?.url && !historyPreview && (
                                         <Alert type="warning" showIcon title="原视频编码不兼容" description="可转换为兼容的 MP4 后继续预览；转换失败会保留原素材。" action={<Button size="small" loading={repairingSource} disabled={locked} onClick={() => void repairSource()}>修复视频预览</Button>} />
                                     )}
                                     {previewError && <Alert type="warning" showIcon title="当前浏览器无法播放此编码" description="文件仍可下载，请从任务记录核对作品。" />}

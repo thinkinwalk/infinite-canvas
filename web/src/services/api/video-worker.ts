@@ -3,6 +3,7 @@ import { getMediaBlob, readPlayableVideoMeta, uploadMediaFile, type UploadedFile
 import { uploadImage, imageToDataUrl } from "@/services/image-storage";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "./video";
 import type { WorkbenchMedia, WorkerCapabilities, WorkerConfig, WorkerJob } from "@/types/video-workbench";
+import type { VideoImportSource } from "@/types/video-workbench";
 
 export function resolveWorkerUrl(config: WorkerConfig) {
     const url = new URL(config.url, window.location.origin);
@@ -40,6 +41,10 @@ export async function getWorkerCapabilities(config: WorkerConfig, signal?: Abort
 }
 
 export async function workbenchMediaBlob(media: UploadedFile & { kind?: string }) {
+    if (media.referenceId) {
+        const { readVideoReferenceRetention } = await import("@/services/video-reference-retention");
+        if ((await readVideoReferenceRetention(media.referenceId))?.cleanedAt) throw new Error("参考视频已清理，请重新导入");
+    }
     if (media.kind === "image") {
         const data = await imageToDataUrl({ dataUrl: media.url, storageKey: media.storageKey });
         return (await fetch(data)).blob();
@@ -52,13 +57,54 @@ export async function workbenchMediaBlob(media: UploadedFile & { kind?: string }
 }
 
 export async function uploadWorkerMedia(config: WorkerConfig, media: UploadedFile & { name?: string; kind?: WorkbenchMedia["kind"] }, signal?: AbortSignal): Promise<string> {
+    const { temporaryReferenceHeaders } = await import("@/services/video-reference-retention");
+    const headers = await temporaryReferenceHeaders(media, signal);
     const form = new FormData();
     form.append("file", await workbenchMediaBlob(media), media.name || `media.${media.mimeType.startsWith("audio/") ? "wav" : media.mimeType.startsWith("image/") ? "png" : "mp4"}`);
     form.append("metadata", JSON.stringify({ width: media.width, height: media.height, durationMs: media.durationMs }));
-    return (await (await workerRequest(config, "media", { method: "POST", body: form, signal })).json()).id;
+    return (await (await workerRequest(config, "media", { method: "POST", body: form, signal, headers })).json()).id;
 }
 
-export async function prepareWorkbenchVideo(config: WorkerConfig, blob: Blob, name?: string, signal?: AbortSignal): Promise<Blob> {
+export async function analysisReferenceVideo(config: WorkerConfig, media: UploadedFile, signal: AbortSignal): Promise<UploadedFile> {
+    if (!media.referenceId) return media;
+    const { readVideoReferenceRetention, saveAnalysisReference, updateVideoReferenceRetention } = await import("@/services/video-reference-retention");
+    await updateVideoReferenceRetention(media.referenceId, "use", signal);
+    const saved = await readVideoReferenceRetention(media.referenceId);
+    if (saved?.analysis && saved.analysisSourceKey === media.storageKey) return { ...saved.analysis, referenceId: media.referenceId };
+    const capabilities = await getWorkerCapabilities(config, signal);
+    if (!capabilities.some((item) => item.name === "analysis-proxy" && item.available)) throw new Error("处理服务尚不支持分析副本，请更新视频处理服务后重试，原视频已保留");
+    const video = await uploadWorkerMedia(config, media, signal);
+    const job = await createWorkerJob(config, "analysis-proxy", { video }, {}, signal);
+    try {
+        const completed = await waitForWorkerJob(config, job.id, signal, () => {});
+        if (!completed.result?.file) throw new Error("分析副本准备失败，原视频已保留");
+        await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}/temporary`, {
+            method: "POST", signal, headers: { "X-Video-Reference-ID": media.referenceId },
+        });
+        const file = await storeWorkerResult(config, completed.result.file);
+        signal.throwIfAborted();
+        await saveAnalysisReference(media.referenceId, media.storageKey, file);
+        return { ...file, referenceId: media.referenceId };
+    } catch (error) {
+        if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
+        throw error;
+    }
+}
+
+export async function storeTemporaryWorkbenchVideo(config: WorkerConfig, blob: Blob, name: string, options: {
+    source?: VideoImportSource; signal?: AbortSignal; compatible?: boolean;
+} = {}): Promise<UploadedFile> {
+    const { trackTemporaryVideo, registerTemporaryReferenceCopy } = await import("@/services/video-reference-retention");
+    const original = await trackTemporaryVideo(await uploadMediaFile(blob, "video-original"), name, options.source);
+    options.signal?.throwIfAborted();
+    if (!options.compatible) return original;
+    const prepared = await prepareWorkbenchVideo(config, blob, name, options.signal, original);
+    if (prepared === blob) return original;
+    const copy = await uploadMediaFile(prepared, "video-compatible");
+    return registerTemporaryReferenceCopy(original.referenceId!, copy);
+}
+
+export async function prepareWorkbenchVideo(config: WorkerConfig, blob: Blob, name?: string, signal?: AbortSignal, reference?: UploadedFile): Promise<Blob> {
     signal?.throwIfAborted();
     try {
         await readPlayableVideoMeta(blob);
@@ -75,14 +121,17 @@ export async function prepareWorkbenchVideo(config: WorkerConfig, blob: Blob, na
         const url = URL.createObjectURL(blob);
         let id: string;
         try {
-            id = await uploadWorkerMedia(config, { url, storageKey: "", bytes: blob.size, mimeType: blob.type, name }, signal);
+            id = await uploadWorkerMedia(config, { url, storageKey: "", bytes: blob.size, mimeType: blob.type, name, referenceId: reference?.referenceId }, signal);
         } finally {
             URL.revokeObjectURL(url);
         }
-        const job = await createWorkerJob(config, "compose", { video: id }, {}, signal);
+        const job = await createWorkerJob(config, "compose", { video: id }, reference?.referenceId ? { referenceCompatibility: true } : {}, signal);
         jobId = job.id;
         const completed = await waitForWorkerJob(config, job.id, signal || new AbortController().signal, () => {});
         if (!completed.result?.file) throw new Error("处理服务未返回转换后的视频");
+        if (reference?.referenceId) await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}/temporary`, {
+            method: "POST", signal, headers: { "X-Video-Reference-ID": reference.referenceId },
+        });
         const converted = await (await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}`, { signal })).blob();
         await readPlayableVideoMeta(converted);
         signal?.throwIfAborted();
@@ -110,11 +159,17 @@ export async function trimWorkbenchVideo(config: WorkerConfig, media: UploadedFi
     try {
         const completed = await waitForWorkerJob(config, job.id, signal, () => {});
         if (!completed.result?.file) throw new Error("剪辑服务未返回视频");
+        if (media.referenceId) await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}/temporary`, {
+            method: "POST", signal, headers: { "X-Video-Reference-ID": media.referenceId },
+        });
         const blob = await (await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}`, { signal })).blob();
         const meta = await readPlayableVideoMeta(blob);
         if (!meta.durationMs || meta.durationMs < 1000 || meta.durationMs > 30000) throw new Error("裁剪结果不在 1–30 秒内，请缩短选区后重试");
         signal.throwIfAborted();
-        return uploadMediaFile(blob, "video-trim");
+        const file = await uploadMediaFile(blob, "video-trim");
+        if (!media.referenceId) return file;
+        const { registerTemporaryReferenceCopy } = await import("@/services/video-reference-retention");
+        return registerTemporaryReferenceCopy(media.referenceId, file);
     } catch (error) {
         if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
         throw error;
@@ -146,7 +201,11 @@ export async function waitForWorkerJob(config: WorkerConfig, id: string, signal:
 
 export async function storeWorkerResult(config: WorkerConfig, file: string): Promise<UploadedFile> {
     const response = await workerRequest(config, `media/${encodeURIComponent(file)}`);
-    return uploadMediaFile(await response.blob(), "video-worker");
+    const media = await uploadMediaFile(await response.blob(), "video-worker");
+    const id = response.headers.get("X-Video-Reference-ID");
+    if (!id) return media;
+    const { registerTemporaryReferenceCopy } = await import("@/services/video-reference-retention");
+    return registerTemporaryReferenceCopy(id, media);
 }
 
 export async function storeWorkerImage(config: WorkerConfig, file: string): Promise<UploadedFile> {

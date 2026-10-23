@@ -4,11 +4,15 @@ import { Link2, X } from "lucide-react";
 import { useUserStore } from "@/stores/use-user-store";
 import { videoImportPlatformName } from "@/lib/video-import";
 import type { VideoImportSource } from "@/types/video-workbench";
+import type { UploadedFile } from "@/services/file-storage";
+import { VideoReferenceRetention } from "./video-reference-retention";
 
-export function VideoLinkImport({ disabled, onImport, source }: {
+export function VideoLinkImport({ disabled, onImport, source, media, completed }: {
     disabled?: boolean;
     onImport: (text: string, signal: AbortSignal) => Promise<boolean>;
     source?: VideoImportSource;
+    media?: UploadedFile;
+    completed?: boolean;
 }) {
     const { token } = theme.useToken();
     const session = useUserStore((state) => state.token);
@@ -63,8 +67,10 @@ export function VideoLinkImport({ disabled, onImport, source }: {
             {!session && <div className="text-xs" style={{ color: token.colorTextSecondary }}>请登录后提取视频</div>}
             {busy && <div role="status" className="text-xs" style={{ color: token.colorTextSecondary }}>正在提取并检查视频…</div>}
             {error && <div role="alert" className="break-words text-xs" style={{ color: token.colorError }}>{error}</div>}
+            <div className="text-xs" style={{ color: token.colorTextSecondary }}>原视频上限 300MB；生成时按模型要求准备参考片段。</div>
             <div className="text-xs" style={{ color: token.colorTextSecondary }}>链接将发送至第三方解析服务；仅提取公开可访问的视频。</div>
             {source && <div className="break-words text-xs" title={source.sourceUrl} style={{ color: token.colorTextSecondary }}>{videoImportPlatformName(source.platform)}{source.author ? ` · ${source.author}` : ""}{source.title ? ` · ${source.title}` : ""}</div>}
+            <VideoReferenceRetention media={media} completed={completed} disabled={disabled || busy} onReimport={onImport} />
         </div>
     );
 }

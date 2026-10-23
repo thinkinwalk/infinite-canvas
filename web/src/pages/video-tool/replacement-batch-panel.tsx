@@ -136,12 +136,12 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     useEffect(() => {
         let cancelled = false;
         setSourceLoadError("");
-        if (hydrated && token && currentJob && !d.replacementSource && !currentJob.result) {
+        if (hydrated && token && currentJob && !d.replacementSource?.url) {
             const id = currentJob.id;
             void storeWorkerResult(worker, currentJob.source).then((file) => {
                 if (!cancelled && useVideoWorkbenchStore.getState().drafts["content-replace"]?.replacementJobId === id)
                     useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementSource: file });
-            }).catch((e) => { if (!cancelled) setSourceLoadError(publicServiceText(e instanceof Error ? e.message : "原片载入失败")); });
+            }).catch(() => { if (!cancelled) setSourceLoadError("原片暂不可用，可能已到期清理；已生成结果仍可查看和下载。"); });
         }
         return () => { cancelled = true; };
     }, [hydrated, currentJob?.id, currentJob?.result, d.replacementSource, token, sourceReload]);
@@ -267,9 +267,8 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         setBusy(true);
         try {
             const final = await storeWorkerResult(worker, result);
-            const original = await storeWorkerResult(worker, job.source);
             if (revision !== previewRevision.current || useVideoWorkbenchStore.getState().drafts["content-replace"]?.replacementJobId !== job.id) return;
-            useVideoWorkbenchStore.getState().patchDraft("content-replace", { final, replacementResultKey: result, replacementSource: original });
+            useVideoWorkbenchStore.getState().patchDraft("content-replace", { final, replacementResultKey: result });
             if (!automatic) message.success(result === job.captionResult ? "已载入带字幕版本" : job.subtitleOutput === "editable" && result === job.result ? "已载入无字幕整片，请检查人物与接缝" : "已载入整片结果，请检查人物、字幕与接缝");
         } catch (e) { if (revision === previewRevision.current) setError(`结果载入失败，可点击查看完整视频重试：${e instanceof Error ? e.message : "读取失败"}`); }
         finally { if (revision === previewRevision.current) setBusy(false); }
@@ -322,7 +321,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
                 <div className="order-2 grid gap-4 xl:grid-cols-2">
                     <div className="min-w-0 space-y-3 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}>
                         <div className="text-sm font-medium">{view === "full" ? "完整原视频" : `第 ${segment + 1} 段 · 原片试看`}</div>
-                        {d.replacementSource ? view === "full" ? <video controls preload="metadata" src={d.replacementSource.url} className="max-h-[55vh] w-full rounded-lg" /> : selectedPart && <ReplacementSegmentPlayer key={`${d.replacementSource.url}:${segment}`} url={d.replacementSource.url} start={selectedPart.start} end={selectedPart.end} label={`第 ${segment + 1} 段原片`} />
+                        {d.replacementSource?.url ? view === "full" ? <video controls preload="metadata" src={d.replacementSource.url} className="max-h-[55vh] w-full rounded-lg" /> : selectedPart && <ReplacementSegmentPlayer key={`${d.replacementSource.url}:${segment}`} url={d.replacementSource.url} start={selectedPart.start} end={selectedPart.end} label={`第 ${segment + 1} 段原片`} />
                             : sourceLoadError ? <Alert type="warning" title={sourceLoadError} action={<Button size="small" onClick={() => setSourceReload((value) => value + 1)}>重新载入原片</Button>} /> : <div className="py-12 text-center text-sm">正在载入原片…</div>}
                     </div>
                     <div className="min-w-0 space-y-3 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}>

@@ -316,7 +316,7 @@ export default function DigitalHumanWorkspace() {
                         从我的素材选择
                     </Button>
                 )}
-                {accept.includes("video/") && <VideoLinkImport disabled={locked} source={files.find((file) => file.kind === "video")?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
+                {accept.includes("video/") && <VideoLinkImport disabled={locked} media={files.find((file) => file.kind === "video")} completed={Boolean(d.final || d.video)} source={files.find((file) => file.kind === "video")?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
             </section>
         );
     };

@@ -34,6 +34,10 @@ func VideoWorkerGateway(w http.ResponseWriter, r *http.Request, path string) {
 		if !workerOwned(w, user.ID, "media", parts[1]) {
 			return
 		}
+	case action == "POST media" && len(parts) == 3 && parts[2] == "temporary":
+		if !workerOwned(w, user.ID, "media", parts[1]) {
+			return
+		}
 	case action == "POST jobs" && len(parts) == 1:
 		var job struct {
 			ID        string         `json:"id"`
@@ -98,6 +102,13 @@ func VideoWorkerGateway(w http.ResponseWriter, r *http.Request, path string) {
 	if rangeValue := r.Header.Get("Range"); rangeValue != "" {
 		request.Header.Set("Range", rangeValue)
 	}
+	if id := r.Header.Get(temporaryReferenceHeader); id != "" && action == "POST media" {
+		if _, err := referenceRetentionPath(user.ID, id); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+		request.Header.Set(temporaryReferenceHeader, id)
+	}
 	response, err := aiHTTPClient.Do(request)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -106,7 +117,7 @@ func VideoWorkerGateway(w http.ResponseWriter, r *http.Request, path string) {
 	}
 	defer response.Body.Close()
 	if action == "GET media" {
-		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"} {
+		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", temporaryReferenceHeader} {
 			if value := response.Header.Get(name); value != "" {
 				w.Header().Set(name, value)
 			}
@@ -133,6 +144,9 @@ func VideoWorkerGateway(w http.ResponseWriter, r *http.Request, path string) {
 		if json.Unmarshal(data, &payload) == nil {
 			if action == "POST media" {
 				err = saveWorkerOwner(user.ID, "media", payload.ID)
+				if err == nil {
+					err = attachTemporaryReference(r, "", payload.ID)
+				}
 			}
 			if action == "POST jobs" {
 				err = saveWorkerOwner(user.ID, "job", payload.ID)

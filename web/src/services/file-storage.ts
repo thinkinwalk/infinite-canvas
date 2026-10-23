@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 
 import { withLocalProxy } from "@/stores/use-config-store";
 
-export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
+export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number; referenceId?: string };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
@@ -78,6 +78,10 @@ export async function cleanupUnusedMedia(usedData: unknown) {
     const usedKeys = collectMediaStorageKeys(usedData);
     const videoLogs = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
     await videoLogs.iterate((value) => { collectMediaStorageKeys(value, usedKeys); });
+    const temporaryReferences = localforage.createInstance({ name: "infinite-canvas", storeName: "temporary_video_references" });
+    await temporaryReferences.iterate((value: { keys?: string[]; cleanedAt?: number }) => {
+        if (!value.cleanedAt) value.keys?.forEach((key) => usedKeys.add(key));
+    });
     const unused: string[] = [];
     await store.iterate((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);

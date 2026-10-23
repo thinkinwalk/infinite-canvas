@@ -12,7 +12,10 @@ import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { importVideoURL } from "@/services/api/video-import";
 import { videoImportPlatformName } from "@/lib/video-import";
-import { prepareWorkbenchVideo } from "@/services/api/video-worker";
+import { clearExpiredReferenceURLs, originalVideoSizeError } from "@/lib/video-reference-retention";
+import { collectTemporaryReferences, readVideoReferenceRetention, subscribeVideoReferenceRetention, trackTemporaryVideo, videoReferenceRetentionRevision } from "@/services/video-reference-retention";
+import { VideoReferenceRetention } from "@/components/video-reference-retention";
+import { storeTemporaryWorkbenchVideo } from "@/services/api/video-worker";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { wanFrameRatio } from "@/lib/video-frames";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -146,6 +149,18 @@ export default function VideoPage() {
     const [elapsedMs, setElapsedMs] = useState(0);
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
+    const referenceRevision = useSyncExternalStore(subscribeVideoReferenceRetention, videoReferenceRetentionRevision);
+    useEffect(() => {
+        let cancelled = false;
+        void collectTemporaryReferences().then((items) => {
+            const keys = new Set(items.filter((item) => item.cleanedAt).flatMap((item) => item.keys));
+            if (cancelled || !keys.size) return;
+            setVideoReferences((value) => clearExpiredReferenceURLs(value, keys));
+            setLogs((value) => clearExpiredReferenceURLs(value, keys));
+            setPreviewLog((value) => clearExpiredReferenceURLs(value, keys));
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [referenceRevision]);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [referenceDragTarget, setReferenceDragTarget] = useState(false);
     const [autoRunToken, setAutoRunToken] = useState(0);
@@ -370,7 +385,9 @@ export default function VideoPage() {
             if (selected.filter((item) => item.type.startsWith("video/")).length + videoReferences.length > maxVideos || selected.filter((item) => item.type.startsWith("audio/")).length + audioReferences.length > maxAudios) throw new Error("当前模型不支持这些素材或素材数量已达到上限");
             for (const file of Array.from(files || [])) {
                 if (!file.type.startsWith("video/") && !file.type.startsWith("audio/")) throw new Error("请选择视频或音频文件");
-                const media = await uploadMediaFile(file, "video-reference");
+                if (file.type.startsWith("video/") && originalVideoSizeError(file.size)) throw new Error(originalVideoSizeError(file.size));
+                let media = await uploadMediaFile(file, "video-reference");
+                if (file.type.startsWith("video/")) media = await trackTemporaryVideo(media, file.name);
                 const item = { ...media, id: nanoid(), name: file.name, type: file.type };
                 if (file.type.startsWith("video/")) setVideoReferences((items) => [...items, item]);
                 else setAudioReferences((items) => [...items, item]);
@@ -391,9 +408,7 @@ export default function VideoPage() {
         };
         try {
             const { file, source } = await importVideoURL(text, signal);
-            const blob = await prepareWorkbenchVideo(useVideoWorkbenchStore.getState().worker, file, file.name, signal);
-            validate();
-            const media = await uploadMediaFile(blob, "video-reference");
+            const media = await storeTemporaryWorkbenchVideo(useVideoWorkbenchStore.getState().worker, file, file.name, { source, signal, compatible: true });
             storedKey = media.storageKey;
             validate();
             setVideoReferences((items) => [...items, { ...media, id: nanoid(), name: file.name, type: media.mimeType, source }]);
@@ -778,13 +793,14 @@ export default function VideoPage() {
                                 {maxAudios > 0 && <Button size="small" disabled={running || writing} onClick={() => audioInputRef.current?.click()}>添加音频</Button>}
                             </div>
                             {maxVideos > 0 && <VideoLinkImport disabled={running || writing || trimming || linkImporting || videoReferences.length >= maxVideos} onImport={importReferenceLink} />}
+                            {videoReferences.map((reference) => <VideoReferenceRetention key={reference.id} media={reference} disabled={running || writing || trimming || linkImporting} completed={results.some((item) => item.status === "success")} />)}
                             <div className={`min-h-28 rounded-lg border border-dashed p-3 ${referenceDragTarget ? "border-primary bg-primary/5" : "border-border"}`} onDragEnter={handleReferenceDragEnter} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={handleReferenceDragLeave} onDrop={handleReferenceDrop}>
                                 {!materialLabels.length && <div className="py-5 text-center text-sm text-muted-foreground">{creationMode === "first_last" ? "上传首帧和尾帧图片控制开始与结束画面" : "只写文字生成文生视频；上传图片、视频或音频后仅显示对应能力的模型"}</div>}
                                 <div className="grid grid-cols-3 gap-2">
                                     {references.map((item, index) => <div key={item.id} className="group relative overflow-hidden rounded-md border border-border"><button type="button" disabled={running || writing} className="block w-full cursor-pointer" onClick={() => { if (!frameMode) insertMention(`图片${index + 1}`); }}><img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="aspect-square w-full object-cover" /><span className="block truncate px-1 py-1 text-xs">{frameMode ? (index === 0 ? "首帧" : "尾帧") : `图片${index + 1}`}</span></button>{!frameMode && <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => { if (!running && !writing) changeImages(moveListItem(references, index, offset)); }} />}<button type="button" disabled={running || writing} className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white" aria-label={`移除图片${index + 1}`} onClick={() => removeMaterial(item.id)}><Trash2 size={12} /></button></div>)}
                                 </div>
                                 {model === REPLICATE_VIDEO_MODEL && references.length > 0 && <div className="mt-3 space-y-2"><Button block disabled={running || writing} onClick={() => setFrameEditorOpen(true)}>{framesNeedReview ? "确认首尾帧构图" : "调整首尾帧构图"} · {frameRatio}</Button><p className="text-xs text-muted-foreground">{framesNeedReview ? "生成前先查看裁剪预览；首尾帧将统一画幅，不会拉伸。" : `已确认 ${frameRatio} 构图，原图保留；修改画幅后需重新确认。`}</p></div>}
-                                {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><video src={item.url} controls className="max-h-32 w-full rounded" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing || linkImporting} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing || linkImporting || trimming} onClick={() => removeMaterial(item.id)}>移除</Button></div>{isWan30(model) && <VideoReferenceTrimmer media={{ ...item, storageKey: item.storageKey || "", bytes: item.bytes || 0, mimeType: item.type }} disabled={running || writing || linkImporting || trimming} onBusyChange={setTrimming} onApply={(file) => setVideoReferences((items) => items.map((current) => current.id === item.id ? { ...current, ...file, type: file.mimeType } : current))} />}</div>)}
+                                {videoReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1">{item.url && <video src={item.url} controls className="max-h-32 w-full rounded" />}<div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing || linkImporting} onClick={() => insertMention(`视频${index + 1}`)} className="cursor-pointer truncate text-primary">@视频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing || linkImporting || trimming} onClick={() => removeMaterial(item.id)}>移除</Button></div>{isWan30(model) && item.url && <VideoReferenceTrimmer media={{ ...item, storageKey: item.storageKey || "", bytes: item.bytes || 0, mimeType: item.type }} disabled={running || writing || linkImporting || trimming} onBusyChange={setTrimming} onApply={(file) => setVideoReferences((items) => items.map((current) => current.id === item.id ? { ...current, ...file, type: file.mimeType } : current))} />}</div>)}
                                 {audioReferences.map((item, index) => <div key={item.id} className="mt-3 space-y-1"><audio src={item.url} controls className="w-full" /><div className="flex items-center justify-between gap-2 text-xs"><button type="button" disabled={running || writing} onClick={() => insertMention(`音频${index + 1}`)} className="cursor-pointer truncate text-primary">@音频{index + 1} · {formatDuration(item.durationMs || 0)} · {item.name}</button><Button size="small" type="text" disabled={running || writing} onClick={() => removeMaterial(item.id)}>移除</Button></div></div>)}
                                 {videoReferences.filter((item) => item.source).map((item) => <div key={`source:${item.id}`} className="mt-1 break-words text-xs text-muted-foreground" title={item.source?.sourceUrl}>{videoImportPlatformName(item.source?.platform || "other")} · {item.source?.author || "未知作者"} · {item.source?.title}</div>)}
                             </div>
@@ -1091,7 +1107,9 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
             return { ...item, dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl) };
         }),
     );
-    const videoReferences = await Promise.all((log.videoReferences || []).map(async (item) => ({ ...item, url: await resolveMediaUrl(item.storageKey, item.url) })));
+    const videoReferences = await Promise.all((log.videoReferences || []).map(async (item) => ({
+        ...item, url: item.referenceId && (await readVideoReferenceRetention(item.referenceId))?.cleanedAt ? "" : await resolveMediaUrl(item.storageKey, item.url),
+    })));
     const audioReferences = await Promise.all((log.audioReferences || []).map(async (item) => ({ ...item, url: await resolveMediaUrl(item.storageKey, item.url) })));
     const config = normalizeLogConfig(log);
     return {

@@ -53,7 +53,7 @@ async def authorize(request: Request):
 
 
 app = FastAPI(title="灵图视频处理服务", dependencies=[Depends(authorize)])
-app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-Canvas-Worker"])
+app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-Canvas-Worker", "X-Video-Reference-ID"], expose_headers=["X-Video-Reference-ID"])
 
 
 class JobRequest(BaseModel):
@@ -99,6 +99,7 @@ def capabilities():
         {"name": "frames", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "compose", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "trim", "available": ffmpeg, "reason": "需要 FFmpeg"},
+        {"name": "analysis-proxy", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "cut", "available": ffmpeg and whisper, "reason": "需要配置 Whisper 转写模型"},
         {"name": "transcribe", "available": ffmpeg and whisper, "reason": "需要安装 faster-whisper 并配置 WHISPER_MODEL"},
         {"name": "upscale", "available": ffmpeg and engine_ready("realesrgan"), "reason": "需要配置 Real-ESRGAN 引擎及权重"},
@@ -146,7 +147,7 @@ def media_path(identifier: str):
 
 
 @app.post("/media")
-async def upload(file: UploadFile = File(...), metadata: str = Form("{}")):
+async def upload(request: Request, file: UploadFile = File(...), metadata: str = Form("{}")):
     mime = file.content_type or ""
     if not mime.startswith(("image/", "video/", "audio/")):
         raise HTTPException(400, "仅支持图片、视频或音频素材")
@@ -163,6 +164,12 @@ async def upload(file: UploadFile = File(...), metadata: str = Form("{}")):
             await asyncio.to_thread(shutil.copyfileobj, file.file, destination)
         if path.stat().st_size == 0:
             raise ValueError("上传的文件为空")
+        details.pop("temporaryReference", None)
+        reference_id = request.headers.get("X-Video-Reference-ID", "")
+        if reference_id:
+            if str(uuid.UUID(reference_id)) != reference_id:
+                raise ValueError("临时参考素材编号无效")
+            details["temporaryReference"] = reference_id
         atomic_json(path.with_suffix(path.suffix + ".json"), {"mime": mime, **details})
         return {"id": identifier}
     except (ValueError, json.JSONDecodeError) as error:
@@ -175,7 +182,75 @@ async def upload(file: UploadFile = File(...), metadata: str = Form("{}")):
 @app.get("/media/{identifier}")
 async def download(identifier: str):
     path = media_path(identifier)
-    return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0])
+    details_path = path.with_suffix(path.suffix + ".json")
+    details = json.loads(details_path.read_text(encoding="utf-8")) if details_path.is_file() else {}
+    headers = {"X-Video-Reference-ID": details["temporaryReference"]} if details.get("temporaryReference") else {}
+    return FileResponse(path, media_type=mimetypes.guess_type(path.name)[0], headers=headers)
+
+
+@app.post("/media/{identifier}/temporary")
+async def register_temporary_output(identifier: str, request: Request):
+    path = media_path(identifier)
+    details = path.with_suffix(path.suffix + ".json")
+    if not details.is_file() or json.loads(details.read_text(encoding="utf-8")).get("temporaryReference") != request.headers.get("X-Video-Reference-ID"):
+        raise HTTPException(422, "此文件不是临时参考副本")
+    return {"id": identifier}
+
+
+@app.post("/temporary-references/cleanup")
+async def cleanup_temporary_reference(request: Request):
+    payload = await request.json()
+    reference_id = payload.get("referenceId", "")
+    try:
+        if str(uuid.UUID(reference_id)) != reference_id:
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(422, "临时参考素材编号无效")
+    files = payload.get("files")
+    if not isinstance(files, list) or not all(isinstance(item, str) for item in files):
+        raise HTTPException(422, "临时参考文件列表无效")
+    files = set(files)
+    # A tab can close after publication but before registering the derived output.
+    for sidecar in MEDIA.glob("*.json"):
+        try:
+            details = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"cleaned": False}
+        if details.get("temporaryReference") == reference_id:
+            files.add(sidecar.with_suffix("").name)
+    paths = []
+    for identifier in files:
+        if Path(identifier).name != identifier or identifier.startswith("."):
+            raise HTTPException(422, "临时参考文件标识无效")
+        path = (MEDIA / identifier).resolve()
+        if path.parent != MEDIA or path.suffix == ".json":
+            raise HTTPException(422, "临时参考文件标识无效")
+        if not path.exists():
+            continue
+        details_path = path.with_suffix(path.suffix + ".json")
+        try:
+            details = json.loads(details_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"cleaned": False}
+        if details.get("temporaryReference") != reference_id:
+            return {"cleaned": False}
+        paths.append(path)
+    for job_file in JOBS.glob("*.json"):
+        try:
+            job = json.loads(job_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"cleaned": False}
+        if job.get("status") not in ("completed", "failed", "cancelled") or job.get("id") in TASKS:
+            inputs = job.get("request", {}).get("inputs", {})
+            used = [item for value in inputs.values() for item in (value if isinstance(value, list) else [value])]
+            if files.intersection(used):
+                return {"cleaned": False}
+    # No await between checking live jobs and unlinking: job creation cannot interleave.
+    if not payload.get("dryRun"):
+        for path in paths:
+            path.unlink(missing_ok=True)
+            path.with_suffix(path.suffix + ".json").unlink(missing_ok=True)
+    return {"cleaned": True}
 
 
 def job_path(identifier: str):
@@ -721,6 +796,19 @@ async def run_job(identifier: str, request: JobRequest):
         result = {}
         if operation in ("replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment"):
             result = await process_replacement(operation, identifier, inputs, options, work, ffmpeg=ffmpeg, probe_video=probe_video, publish=publish)
+        elif operation == "analysis-proxy":
+            output = work / "analysis.mp4"
+            await ffmpeg(identifier, "-i", inputs["video"], "-map", "0:v:0", "-map", "0:a:0?",
+                         "-vf", "scale=w='min(iw,if(gte(iw,ih),1280,720))':h='min(ih,if(gte(iw,ih),720,1280))':force_original_aspect_ratio=decrease:force_divisible_by=2",
+                         "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p",
+                         "-c:a", "aac", "-movflags", "+faststart", output)
+            published = publish(output)
+            details = inputs["video"].with_suffix(inputs["video"].suffix + ".json")
+            if details.is_file():
+                reference_id = json.loads(details.read_text(encoding="utf-8")).get("temporaryReference")
+                if reference_id:
+                    atomic_json((MEDIA / published).with_suffix(".mp4.json"), {"temporaryReference": reference_id, "mime": "video/mp4"})
+            result = {"file": published}
         elif operation == "frames":
             source = inputs["video"]
             info = await asyncio.to_thread(metadata, source)
@@ -1045,6 +1133,14 @@ async def run_job(identifier: str, request: JobRequest):
             output = work / "final.mp4"
             await ffmpeg(identifier, *arguments, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", output)
             result = {"file": publish(output)}
+        if (operation == "trim" or (operation == "compose" and options.get("referenceCompatibility") is True)) and result.get("file"):
+            source = inputs["video"]
+            details = source.with_suffix(source.suffix + ".json")
+            if details.is_file():
+                reference_id = json.loads(details.read_text(encoding="utf-8")).get("temporaryReference")
+                if reference_id:
+                    output = MEDIA / result["file"]
+                    atomic_json(output.with_suffix(output.suffix + ".json"), {"temporaryReference": reference_id, "mime": "video/mp4"})
         if read_job(identifier)["status"] != "cancelled":
             update_job(identifier, status="completed", step="已完成", result=result)
     except asyncio.CancelledError:
@@ -1055,3 +1151,16 @@ async def run_job(identifier: str, request: JobRequest):
             update_job(identifier, status="failed", step="处理失败", error=str(error))
     finally:
         TASKS.pop(identifier, None)
+        # Newly managed inputs opt in; old jobs and their work directories are untouched.
+        try:
+            managed = False
+            for value in request.inputs.values():
+                for item in value if isinstance(value, list) else [value]:
+                    path = MEDIA / item
+                    details = path.with_suffix(path.suffix + ".json")
+                    if details.is_file() and json.loads(details.read_text(encoding="utf-8")).get("temporaryReference"):
+                        managed = True
+            if managed and read_job(identifier)["status"] == "completed" and work.resolve().parent == JOBS.resolve():
+                shutil.rmtree(work)
+        except (OSError, ValueError):
+            pass

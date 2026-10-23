@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/basketikun/infinite-canvas/config"
+	"github.com/basketikun/infinite-canvas/handler"
 	"github.com/basketikun/infinite-canvas/router"
 	"github.com/basketikun/infinite-canvas/service"
 )
@@ -16,5 +17,6 @@ func main() {
 		log.Fatal(err)
 	}
 	service.StartPromptSyncScheduler()
+	handler.StartTemporaryReferenceCleanup()
 	log.Fatal(router.New().Run(":" + config.Cfg.Port))
 }

@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
+import { cleanupTemporaryVideoReferences } from "@/services/video-reference-retention";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -18,6 +19,18 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const token = useUserStore((state) => state.token);
 
     usePromptSourceScheduler();
+
+    useEffect(() => {
+        const sweep = () => { void cleanupTemporaryVideoReferences().catch((error) => console.warn("临时参考素材清理已暂停", error)); };
+        const ready = window.setTimeout(sweep, 1000);
+        const timer = window.setInterval(sweep, 60 * 60 * 1000);
+        window.addEventListener("focus", sweep);
+        return () => {
+            window.clearTimeout(ready);
+            window.clearInterval(timer);
+            window.removeEventListener("focus", sweep);
+        };
+    }, []);
 
     useEffect(() => {
         void loadPublicSettings();

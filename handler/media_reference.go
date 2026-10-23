@@ -39,7 +39,7 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "未配置 PUBLIC_BASE_URL，无法向云模型提供参考素材")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, referenceMediaMaxBytes+1)
+	r.Body = http.MaxBytesReader(w, r.Body, service.OriginalVideoMaxBytes+referenceMediaMaxBytes)
 	if err := r.ParseMultipartForm(referenceMediaMaxBytes); err != nil {
 		Fail(w, "参考素材过大或上传格式不正确")
 		return
@@ -70,7 +70,11 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "参考素材保存失败")
 		return
 	}
-	bytes, copyErr := io.Copy(target, file)
+	inputLimit := referenceMediaTypeMaxBytes(mimeType)
+	if strings.HasPrefix(mimeType, "video/") {
+		inputLimit = service.OriginalVideoMaxBytes
+	}
+	bytes, copyErr := io.Copy(target, io.LimitReader(file, inputLimit+1))
 	closeErr := target.Close()
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(targetPath)
@@ -82,9 +86,13 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "参考素材为空")
 		return
 	}
-	if limit := referenceMediaTypeMaxBytes(mimeType); limit > 0 && bytes > limit {
+	if bytes > inputLimit {
 		_ = os.Remove(targetPath)
-		Fail(w, referenceMediaSizeMessage(mimeType))
+		if strings.HasPrefix(mimeType, "video/") {
+			Fail(w, originalVideoSizeMessage(bytes))
+		} else {
+			Fail(w, referenceMediaSizeMessage(mimeType))
+		}
 		return
 	}
 	user, authenticated := service.UserFromContext(r.Context())
@@ -92,6 +100,24 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 		_ = os.Remove(targetPath)
 		Fail(w, "请登录后上传素材")
 		return
+	}
+	if r.FormValue("purpose") != "transcribe" && strings.HasPrefix(mimeType, "video/") && bytes > referenceVideoMaxBytes {
+		preparedID := uuid.NewString() + ".mp4"
+		preparedPath := filepath.Join(referenceMediaDir(), preparedID)
+		err := service.PrepareModelReferenceVideo(r.Context(), targetPath, preparedPath, referenceVideoMaxBytes)
+		_ = os.Remove(targetPath)
+		if err != nil {
+			_ = os.Remove(preparedPath)
+			Fail(w, err.Error())
+			return
+		}
+		info, err := os.Stat(preparedPath)
+		if err != nil {
+			_ = os.Remove(preparedPath)
+			Fail(w, "参考视频压缩结果读取失败")
+			return
+		}
+		id, targetPath, mimeType, bytes = preparedID, preparedPath, "video/mp4", info.Size()
 	}
 	duration := 0.0
 	if r.FormValue("purpose") == "transcribe" {
@@ -128,6 +154,11 @@ func UploadReferenceMedia(w http.ResponseWriter, r *http.Request) {
 	if err := repository.SaveReferenceMediaOwner(model.ReferenceMediaOwner{ID: id, UserID: user.ID, MimeType: mimeType, Bytes: bytes, DurationSeconds: duration}); err != nil {
 		_ = os.Remove(targetPath)
 		Fail(w, "素材归属保存失败")
+		return
+	}
+	if err := attachTemporaryReference(r, id, ""); err != nil {
+		_ = os.Remove(targetPath)
+		Fail(w, err.Error())
 		return
 	}
 	OK(w, referenceMediaUploadResult{

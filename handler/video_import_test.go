@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -57,6 +58,43 @@ func TestImportVideoURLValidMP4(t *testing.T) {
 	}
 }
 
+func TestImportVideoURLOverModelLimitValidMP4(t *testing.T) {
+	ffmpeg := os.Getenv("FFMPEG_PATH")
+	if ffmpeg == "" {
+		ffmpeg = "ffmpeg"
+	}
+	if _, err := exec.LookPath(ffmpeg); err != nil {
+		t.Skip("FFmpeg required for a real MP4 above the model-reference limit")
+	}
+	fixture := filepath.Join(t.TempDir(), "large-original.mp4")
+	if output, err := exec.Command(ffmpeg, "-y", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64:d=1",
+		"-c:v", "libx264", "-movflags", "+faststart", fixture).CombinedOutput(); err != nil {
+		t.Fatalf("fixture: %v %s", err, output)
+	}
+	file, err := os.OpenFile(fixture, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	info, _ := file.Stat()
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		t.Fatal(err)
+	}
+	// A valid MP4 free box pads the fixture past 50 MiB without a costly long encode.
+	size := referenceVideoMaxBytes + 1024 - info.Size()
+	box := make([]byte, 8)
+	binary.BigEndian.PutUint32(box, uint32(size))
+	copy(box[4:], "free")
+	if _, err := file.Write(box); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(referenceVideoMaxBytes + 1024); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIDEO_IMPORT_TEST_MP4", fixture)
+	TestImportVideoURLValidMP4(t)
+}
+
 type failedVideoImportReader struct{}
 
 func (failedVideoImportReader) Read([]byte) (int, error) {
@@ -74,8 +112,9 @@ func TestImportVideoURLDownloadFailuresCleanUp(t *testing.T) {
 		status        int
 	}{
 		{"upstream-status", "下载失败", strings.NewReader(""), 0, http.StatusForbidden},
-		{"declared-oversize", "50", strings.NewReader(""), referenceVideoMaxBytes + 1, http.StatusOK},
-		{"stream-oversize", "50", io.LimitReader(repeatingVideoImportReader{}, referenceVideoMaxBytes+1), -1, http.StatusOK},
+		{"declared-oversize", "300", strings.NewReader(""), service.OriginalVideoMaxBytes + 1, http.StatusOK},
+		{"stream-oversize", "300", io.LimitReader(repeatingVideoImportReader{}, service.OriginalVideoMaxBytes+1), -1, http.StatusOK},
+		{"over-model-limit-within-import-limit", "下载中断", strings.NewReader(""), referenceVideoMaxBytes + 1, http.StatusOK},
 		{"broken-stream", "下载中断", failedVideoImportReader{}, -1, http.StatusOK},
 		{"empty", "下载中断", strings.NewReader(""), 0, http.StatusOK},
 		{"not-video", "MP4", strings.NewReader("<html>not a video</html>"), -1, http.StatusOK},

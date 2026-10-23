@@ -152,13 +152,15 @@ export function getReplicateModels(signal?: AbortSignal) {
     return cloudRequest<ReplicateQuote[]>("models", undefined, signal);
 }
 export async function uploadReplicateReference(media: UploadedFile & { name?: string; kind?: string }, signal?: AbortSignal, purpose?: "transcribe"): Promise<string> {
+    const { temporaryReferenceHeaders } = await import("@/services/video-reference-retention");
+    const retentionHeaders = await temporaryReferenceHeaders(media, signal);
     const blob = await workbenchMediaBlob({ ...media, kind: media.mimeType.startsWith("image/") ? "image" : media.kind });
     const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "video/mp4": "mp4", "video/webm": "webm", "audio/wav": "wav", "audio/x-wav": "wav", "audio/mpeg": "mp3", "audio/mp4": "m4a" };
     const extension = extensions[media.mimeType] || media.mimeType.split("/")[1];
     const form = new FormData();
     form.append("file", blob, media.name || `reference.${extension}`);
     if (purpose) form.append("purpose", purpose);
-    const response = await fetch("/api/v1/media/references", { method: "POST", signal, body: form, headers: { Authorization: `Bearer ${sessionToken()}` } });
+    const response = await fetch("/api/v1/media/references", { method: "POST", signal, body: form, headers: { Authorization: `Bearer ${sessionToken()}`, ...retentionHeaders } });
     const raw = await response.text();
     let payload: { code?: number | string; data?: { url?: string } | null; msg?: string; message?: string } | null = null;
     try {

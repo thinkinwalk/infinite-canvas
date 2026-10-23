@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -70,8 +71,8 @@ func serveImportedVideo(w http.ResponseWriter, r *http.Request, ctx context.Cont
 		Fail(w, "视频下载失败，链接可能已过期或不可访问，请重新提取")
 		return
 	}
-	if remote.ContentLength > referenceVideoMaxBytes {
-		Fail(w, referenceMediaSizeMessage("video/mp4"))
+	if remote.ContentLength > service.OriginalVideoMaxBytes {
+		Fail(w, originalVideoSizeMessage(remote.ContentLength))
 		return
 	}
 	file, err := os.CreateTemp("", "canvas-video-import-*.mp4")
@@ -81,13 +82,13 @@ func serveImportedVideo(w http.ResponseWriter, r *http.Request, ctx context.Cont
 	}
 	defer os.Remove(file.Name())
 	defer file.Close()
-	n, err := io.Copy(file, io.LimitReader(remote.Body, referenceVideoMaxBytes+1))
+	n, err := io.Copy(file, io.LimitReader(remote.Body, service.OriginalVideoMaxBytes+1))
 	if err != nil || n == 0 || ctx.Err() != nil {
 		Fail(w, "视频下载中断，请重试，原素材已保留")
 		return
 	}
-	if n > referenceVideoMaxBytes {
-		Fail(w, referenceMediaSizeMessage("video/mp4"))
+	if n > service.OriginalVideoMaxBytes {
+		Fail(w, originalVideoSizeMessage(0))
 		return
 	}
 	header := make([]byte, 512)
@@ -111,4 +112,11 @@ func serveImportedVideo(w http.ResponseWriter, r *http.Request, ctx context.Cont
 	w.Header().Set("Content-Disposition", `attachment; filename="wechat-video.mp4"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, "wechat-video.mp4", info.ModTime(), file)
+}
+
+func originalVideoSizeMessage(bytes int64) string {
+	if bytes > 0 {
+		return fmt.Sprintf("原视频大小约 %.1fMB，超过 300MB 导入上限，请选择较短片段或压缩后上传，原素材已保留", float64(bytes)/(1<<20))
+	}
+	return "原视频下载量超过 300MB 导入上限，请选择较短片段或压缩后上传，原素材已保留"
 }
