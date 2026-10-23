@@ -177,6 +177,6 @@ $env:VIDEO_WORKER_ORIGINS = 'https://studio.lingzhouai.com'
 
 生产配置草案为 ../server-customizations/docker-compose.video.example.yml；部署、数据库备份、镜像回退及验收清单见 IMPLEMENTATION_REPORT.md。worker 不映射公网端口，模型权重挂载 /models，处理文件挂载 /data。应用数据挂载 /app/data 内保存 reference-media 和 replicate-results，不能只挂载 SQLite 数据库单个文件。
 
-CPU 队列、并发值、历史文件与生成结果的清理、无人打开页面时的云结果归档仍待完成。新增临时参考素材的清理策略已实现，待协调发布应用与 Worker 并整站验收；不追溯旧文件。结果目前在查询中下载保存，离开页面不会重新创建模型任务；长时间不恢复查询时需要核对供应商文件是否仍可取。后续新边界值仍按 AGENTS.md 在实施前确认。
+CPU 队列、并发值、历史文件与生成结果的清理、无人打开页面时的云结果归档仍待完成。新增临时参考素材的清理策略已随 v0.19.79 同步部署应用与 Worker，能力清单和清理预检通过，真实浏览器与业务素材整站验收仍待完成；不追溯旧文件。结果目前在查询中下载保存，离开页面不会重新创建模型任务；长时间不恢复查询时需要核对供应商文件是否仍可取。后续新边界值仍按 AGENTS.md 在实施前确认。
 
 已有 adapters/gpu_worker.py 与 engines.remote.example.json 可供未来自托管，未运行远程推理。站内登录网关、收费事务和用户归属已写入代码，仍需新版后端运行验收；素材库与阶段历史保存在本浏览器，并非跨浏览器云同步。

@@ -15,14 +15,17 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.78
-- Current production source: tag v0.19.78, commit ea9efc4915f31018ecb15cea516f07d8212cc432
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.65-worker/
+- Current production image: infinite-canvas:v0.19.79
+- Current production source: tag v0.19.79, commit 26773a708c402111f1e86646ad3a773bfa758f7a
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.79-worker/
 
-## v0.19.79 release preparation
+## v0.19.79 deployment
 
 - Release scope: 300 MiB original reference imports, separate 720p analysis copies and model-budget conversion, explicit keep/review controls, and opt-in reference retention. Previously stored media, task snapshots and generated results are not enrolled for automatic deletion.
-- Requires coordinated app image and versioned Worker source mounts. Previous production remains v0.19.78 until deployment verification completes. The application schema is unchanged; take an online SQLite backup and preserve Compose, environment, original task/media inventory and prior Worker mounts before restarting either service.
+- Release commit `26773a708c402111f1e86646ad3a773bfa758f7a` and tag `v0.19.79` are published on `release/v0.19.60`; GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.79. The app image `infinite-canvas:v0.19.79`, ID `sha256:f2d638507c0975ea517dbc5fb6462b280e8594018d0cec5fa3e5361c0acf4211`, was built on the server. App and Worker were recreated; Worker retains its existing dependency image and now mounts the versioned v0.19.79 sources.
+- Online SQLite backup, previous Compose, root-only environment and before/after evidence: `/opt/infinite-canvas/backups/v0.19.79-20261023-033810/`. Prebuild backup: `/opt/infinite-canvas/backups/v0.19.79-prebuild-20261023-033410/`. Both database quick checks passed. All 11 table counts, model catalogs/pricing/permissions, saved settings and hashes for 8,241 existing task/media files were unchanged. No active jobs were present at restart. Previous v0.19.78 app image and v0.19.65 Worker mounts remain available for rollback.
+- Internal/external health, video/content-replace/viral-recreate/image/canvas pages and authenticated ordinary-user Worker gateway passed. Published `/assets/index-DPaqZSYR.js` contains v0.19.79, the 300MB limit, keep/review controls and new API paths; an independent workstation request confirmed them. Worker advertises `analysis-proxy` and existing processing capabilities; cleanup dry-run passed without deletion. Retention status accepts authenticated ordinary users and denies anonymous access. The production Nginx site already permits 600m request bodies, so no proxy-limit change was required.
+- Deployment evidence: `/opt/infinite-canvas/releases/v0.19.79-deployment.json`. Verification did not create paid tasks or enroll/delete user material; no existing retention markers were added by the read-only status probe. The application schema is unchanged.
 - Development verification passed 15 focused frontend lifecycle/worker-adapter tests, 8 Worker tests and focused Go regressions, including real media. Full TypeScript checking still has three existing errors, and one existing Wan30 adapter test assumes the old 15-second limit. Browser and real-platform/paid-generation acceptance remain pending. Release does not repeat local builds or test suites.
 
 ## v0.19.78 deployment
