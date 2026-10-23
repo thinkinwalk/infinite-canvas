@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.89
-- Current production source: tag v0.19.89, commit 87120f794450d8425fa7956ab8acb9dd228e269e
+- Current production image: infinite-canvas:v0.19.90
+- Current production source: tag v0.19.90, commit c6a51c0f2a17bd4be640bc7d101e95f7239ca20d
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.90 deployment
+
+- Release tag `v0.19.90`, commit `c6a51c0f2a17bd4be640bc7d101e95f7239ca20d`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.90. Production app image `infinite-canvas:v0.19.90`, ID `sha256:ab0a1460fa2328f1290bbcfc66d362e3534bfd003a54fc438afc0158958e69e2`, was built on the server from the exact tag.
+- Video extraction labels now read "分段规格" and "自定义时长". Automatic segmentation, segment editing and batch-save errors appear below the segmentation controls, while other operation errors retain their original location. The segmentation algorithm, model duration constraints and billing behavior are unchanged.
+- Only app was recreated after checking database and Worker activity. An existing replacement record with stored `planning` status was confirmed paused through its owning-user API, with a completed linked Worker step; its file was preserved. Worker container ID, image, start time and `v0.19.87-worker` mounts remain unchanged.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.90-20261023-105054/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.90-prebuild-20261023-104917/`. SQLite quick checks passed. All 11 table counts, settings, balances/roles/groups/status, model catalogs/pricing/permissions, H3 quotes and hashes for 8,821 existing task/media files matched. Prior app image v0.19.89 remains available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; no database restore or schema migration is required.
+- Internal/external health, nine page routes, default/VIP ordinary-user Worker capabilities including `segment-plan`, replacement-job reads, retention status and anonymous permission checks passed. Published `/assets/index-K2ebozRI.js` contains the new labels and segment-error placement conditions; the obsolete custom-option label is absent. Independent workstation requests confirmed the same public asset and version.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.90-deployment.json`; workstation evidence is in the outer workspace `artifacts/release-v0.19.90/`. Development verification passed 11 focused frontend tests (41 assertions) and a real local six-second, two-scene segmentation request. No local builds/tests were repeated during release and no paid generation was submitted. Production browser interaction and the user's 53-second video's actual segmentation remain pending acceptance.
 
 ## v0.19.89 deployment
 

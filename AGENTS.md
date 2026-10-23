@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`（部署目录，只含配置和数据），完整源码仓库在 `/opt/infinite-canvas-repo`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产版本为 `infinite-canvas:v0.19.89`（源码 tag `v0.19.89`，提交 `87120f7`），使用服务器本地构建的镜像；Worker 使用 `infinite-canvas-video-worker:v0.19.87` 依赖镜像与 `v0.19.87-worker` 源码挂载，包含自动分段依赖，维持单 Uvicorn 进程，本次未重启。发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产版本为 `infinite-canvas:v0.19.90`（源码 tag `v0.19.90`，提交 `c6a51c0`），使用服务器本地构建的镜像；Worker 使用 `infinite-canvas-video-worker:v0.19.87` 依赖镜像与 `v0.19.87-worker` 源码挂载，包含自动分段依赖，维持单 Uvicorn 进程，本次未重启。发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 部署采用服务器本地构建方式，源码仓库位于 `/opt/infinite-canvas-repo`，不依赖 GitHub Actions 和 GHCR。
 - 生产部署不依赖 GitHub Actions：服务器检出发布 tag 并构建版本化镜像，按下述核对与备份要求更新 Compose，分别更新 app 与 video-worker，再验证内外健康、普通用户处理服务网关及静态资源版本。
 - 使用 `scripts/release-and-deploy.sh` 或 `scripts/deploy.sh` 前先审查脚本：不得在发布分支上误推 main，也不能漏部署 Worker 源码。本轮按实际配置执行受控部署，备份位置见生产交接记录。
