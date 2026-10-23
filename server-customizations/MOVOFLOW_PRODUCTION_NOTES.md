@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.83
-- Current production source: tag v0.19.83, commit c75265efc9e29ed4c72852158b7d6c7a0d6b6f61
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.79-worker/
+- Current production image: infinite-canvas:v0.19.84
+- Current production source: tag v0.19.84, commit 050ce8a2920b8ebf109ceae2518d989239c5e790
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.84-worker/
+
+## v0.19.84 deployment
+
+- Release tag `v0.19.84`, commit `050ce8a2920b8ebf109ceae2518d989239c5e790`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.84. Production image `infinite-canvas:v0.19.84`, ID `sha256:99033116ffe469ce88aaff4e69f3a69e7f2c72db9e19775cc19a3612d0d1b81c`, was built on the server from the exact tag.
+- Extraction now shows actual stages and elapsed time, with cancellation. Manual range selection saves multiple named 1-30 second clips with independent preview, download, asset saving and handoff to four video tools. Original media and source ranges are retained. Decimal boundary validation and FFmpeg frame timing were corrected, including silent video.
+- Both app and Worker were recreated after confirming no active database, replacement or Worker jobs. Worker source mounts now point to `/opt/infinite-canvas/releases/v0.19.84-worker`; the dependency image, data/model/cache mounts and settings are unchanged. Running Worker source SHA-256 `4d5602c5db760c25ed2a6e2013f26ddbcd151f187a149572e5397896eb48a6e6` matches the versioned source.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.84-20261023-055739/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.84-prebuild-20261023-055614/`. SQLite quick checks passed. All 11 table counts, saved settings, user balances/roles/groups/status, model catalogs/pricing/permissions, H3 quotes and hashes for 8,439 existing task/media files matched before and after deployment. Prior app image v0.19.83 and Worker sources v0.19.79 remain available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps video-worker app`; no database restore or schema migration is required.
+- Internal/external health, nine routes, ordinary-user Worker capabilities, replacement-job reads, retention status and anonymous permission checks passed. Published `/assets/index-DXBr9ufP.js` contains v0.19.84, progress stages, elapsed time, range controls and clip actions. An independent workstation request confirmed the same bundle and markers.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.84-deployment.json`. Development verification passed 55 frontend tests, 8 Worker tests and 10 isolated browser flow checks, including a live local Worker. No local builds/tests were repeated during release and no paid generation was submitted. Real platform extraction, production browser interaction/cropping and downstream output remain pending acceptance. Concurrent unfinished replacement-alert changes remain local and are excluded.
 
 ## v0.19.83 deployment
 
