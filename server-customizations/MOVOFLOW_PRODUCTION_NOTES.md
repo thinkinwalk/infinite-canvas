@@ -15,9 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.80
-- Current production source: tag v0.19.80, commit 09c9a3e8b8f1979398360f02d8fb82c8a1cde0d8
+- Current production image: infinite-canvas:v0.19.81
+- Current production source: tag v0.19.81, commit 5a0f8f181a8a187ac2059590bb714e1dda5f139c
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.79-worker/
+
+## v0.19.81 deployment
+
+- Release tag `v0.19.81`, commit `5a0f8f181a8a187ac2059590bb714e1dda5f139c`, is published on `release/v0.19.60`. Production image `infinite-canvas:v0.19.81`, ID `sha256:493a30ddcc67f09112eebe7a9265a7c6a11a66d9ce8e0572ff38933cd2fd04fa`, was built on the server from the exact release tag. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.81.
+- SparkCine `h3-video` uses its dedicated H3 v2 adapter. Default/VIP catalogs now publish 9 images, 3 independent audios, 1 reference video, 2–15 second reference bounds and content-replacement eligibility. Replacement uses published channel capabilities and retains Wan30 priority. Existing stored settings, catalogs, permissions and prices are preserved; five-second quotes remain 30 credits at 480/720/768p, 240 at 960p and 320 at 1080p for both verified groups. Invalid H3 output durations/ratios are rejected by quote validation.
+- The release also contains concurrent video-extraction shared types, optional stage callbacks, clip-storage helpers and cancellation propagation. These additions do not expose the unfinished clip editor; the new editor/player/progress components and page changes remain local and were not deployed.
+- Only app was recreated; no active database, replacement or Worker jobs were present at restart. Worker container ID, start time, dependency image and v0.19.79 mounts remain unchanged. The previous v0.19.80 image is retained for rollback.
+- Online SQLite, previous Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.81-20261023-051856/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.81-prebuild-20261023-051656/`. SQLite quick checks passed. All 11 table counts, saved settings, user balances/roles/groups/status and hashes for 8,403 existing task/media files matched before and after deployment. To roll back the application, restore the saved Compose and run `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app` from the runtime directory; the release did not require a database restore or schema migration.
+- Internal/external health, nine routes including video/content-replace/admin settings, ordinary-user Worker gateway and replacement-job reads passed. Authenticated retention status works; anonymous retention/import requests are denied. Published `/assets/index-BCOSl0Hv.js` contains the release version, H3 adapter, replacement flag and video reference bounds.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.81-deployment.json`. Development verification passed 33 Go and 40 frontend tests; no local build/tests were repeated during release. Server frontend/API builds passed with existing bundle-size warnings. No paid generation was submitted; browser interactions, upstream authentication, real reference-video output, identity/motion fidelity and actual charging/refunds remain pending acceptance.
 
 ## v0.19.80 deployment
 
