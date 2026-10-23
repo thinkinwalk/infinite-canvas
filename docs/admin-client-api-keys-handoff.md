@@ -48,7 +48,15 @@ JSON 严格校验，不能通过 body 指定另一个归属账号。所有操作
 - 用户禁用或改管理员后旧 Key 无法调用语音；管理员可查看/撤销历史 Key，恢复普通身份后撤销仍生效。
 - 账号余额不变；原完整语音 HTTP 回归通过，模型响应使用模拟，无真实付费请求。
 
-当前尚未发布此优化。前端交互待验收：浏览器工具仅有空 MCP App 页面，没有可用网页连接；不能把源码入口或后端测试通过视为管理员弹窗已点击验收。遵循仓库约定未运行本地构建和类型检查。
+已随 **v0.19.93** 发布生产，提交 `77d8f2341682a64378e8fd196f502a0b4f2af8b5`，GitHub Release：<https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.93>。管理员打开网站后刷新页面，即可从账号菜单或后台 `https://studio.lingzhouai.com/admin/users` 进入。
+
+生产真实 HTTPS 验证完成，使用三个专用临时账号覆盖代建、归属及摘要、本人查看、管理接口越权拒绝、错误归属、账号禁用/改角色后历史撤销及撤销后失效；所有临时账号和 Key 已清理。未修改真实用户配置、余额或素材，未请求付费模型。
+
+内外健康均为 HTTP 200 `ok`，实际资源为 `/assets/index-CMpRJrnG.js`，独立工作站核对版本、所属账号选择器及 Key API 代码。13 张表记录数、设置、余额/角色/分组/状态、default/VIP 模型目录和六项可用模型报价、8,829 个既有任务/媒体文件哈希一致。没有新迁移；Worker 未重启。
+
+在线 SQLite、旧 Compose 与私有环境备份：`/opt/infinite-canvas/backups/v0.19.93-20261023-165211/`，构建前备份 `v0.19.93-prebuild-20261023-164621/`。回滚恢复旧 Compose 并执行 `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`，不恢复旧数据库。生产证据为 `/opt/infinite-canvas/releases/v0.19.93-deployment.json`、`v0.19.93-keys-smoke.json`，工作站副本位于外层工作区 `artifacts/release-v0.19.93/`。首次部署预检因用户组默认项假设停止在切换前，修正验证脚本后完成；未改变模型配置。
+
+前端交互待验收：浏览器工具仅有空 MCP App 页面，没有可用网页连接；不能把资源代码或后端测试通过视为管理员弹窗已点击验收。遵循仓库约定未运行本地构建和类型检查，服务器按精确发布 tag 构建生产镜像成功。
 
 ## 修改文件
 

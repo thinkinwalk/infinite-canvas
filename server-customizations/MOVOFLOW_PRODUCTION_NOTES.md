@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.92
-- Current production source: tag v0.19.92, commit de6dfd3555fe57e42d906d56c689fe0e6a57b86b
+- Current production image: infinite-canvas:v0.19.93
+- Current production source: tag v0.19.93, commit 77d8f2341682a64378e8fd196f502a0b4f2af8b5
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.93 deployment
+
+- Release tag `v0.19.93`, commit `77d8f2341682a64378e8fd196f502a0b4f2af8b5`, is published on `release/v0.19.60`: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.93. Server-built app image `infinite-canvas:v0.19.93`, ID `sha256:51f34c8d1257cbf7ca7eb10f71d92fad09b5d73a3f306db763ce6c92cb299b42`, matches the tag.
+- Administrator client Key management is available from the account menu and each user's key icon under `/admin/users`. Admins can search/select an ordinary account, create its restricted client Key, list metadata and revoke. Disabled or promoted accounts cannot receive new Keys; historical Keys remain revocable. Ordinary self-service, voice scope, private resources and owner billing are retained; no schema/config migration.
+- Online SQLite/Compose/private environment backups: `/opt/infinite-canvas/backups/v0.19.93-20261023-165211/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.93-prebuild-20261023-164621/`. All 13 table counts, settings, user balances/roles/groups/status, default/VIP catalogs and six available managed quotes matched; 8,829 existing task/media hashes matched. The first preflight assumed every selected feature had an available default; it stopped before runtime changes. The corrected preflight selected each group's actual available bindings and left configuration untouched.
+- Only app was recreated; Worker ID/image/start time and `v0.19.87-worker` source mounts are unchanged. Internal/external health, nine existing pages, default/VIP Worker gateways and `/assets/index-CMpRJrnG.js` passed. Independent workstation requests confirmed the release, owner selector and Key API code. These asset checks are not browser click acceptance.
+- Real production HTTPS checks used three dedicated temporary accounts, verified delegated Key ownership/digest and safe admin/self lists, ordinary/anonymous/client access denial, administrator token exclusion from voice, wrong-owner and malformed requests, banned-user creation refusal, historical revoke after role change and effective revocation. All fixture accounts and Keys were removed; original counts/settings/balances matched. No real model request or paid generation ran.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.93-deployment.json` and `v0.19.93-keys-smoke.json`; workstation copies in the outer workspace `artifacts/release-v0.19.93/`. Quote proofs are excluded from saved evidence. See `docs/admin-client-api-keys-handoff.md` for API and test details. Local real HTTP permissions plus full voice regression passed; release did not repeat local builds/tests. Browser connection is unavailable, so desktop/mobile dialog interactions remain pending.
+- Rollback uses saved Compose and `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; v0.19.92 image remains available. No database restore is required. Concurrent uncommitted model-management UI/document changes were preserved and excluded from this release.
 
 ## v0.19.92 deployment
 
