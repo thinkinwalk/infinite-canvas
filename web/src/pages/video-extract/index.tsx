@@ -33,6 +33,7 @@ export default function VideoExtractPage() {
     const [selected, setSelected] = useState("");
     const [busy, setBusy] = useState("");
     const [error, setError] = useState("");
+    const [errorAction, setErrorAction] = useState("");
     const [preview, setPreview] = useState({ id: "", url: "", error: "" });
     const [stage, setStage] = useState<ExtractionStage>("extract");
     const [editing, setEditing] = useState<VideoExtractionClip>();
@@ -84,10 +85,14 @@ export default function VideoExtractPage() {
         request.current = controller;
         setBusy(action);
         setError("");
+        setErrorAction("");
         try {
             await work(controller, session);
         } catch (failure) {
-            if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "操作失败，请重试");
+            if (!controller.signal.aborted) {
+                setError(failure instanceof Error ? failure.message : "操作失败，请重试");
+                setErrorAction(action);
+            }
         } finally {
             if (request.current === controller) { request.current = null; setBusy(""); }
         }
@@ -127,7 +132,7 @@ export default function VideoExtractPage() {
         if (!record || request.current) return;
         const state = useVideoWorkbenchStore.getState();
         const blocked = extractionTargetError(tool, state);
-        if (blocked) { setError(blocked); return; }
+        if (blocked) { setError(blocked); setErrorAction(""); return; }
         const previous = state.drafts[tool];
         const perform = () => run("handoff", async (controller, originalSession) => {
             await sendExtractionToWorkbench(record, tool, previous, controller.signal);
@@ -191,7 +196,7 @@ export default function VideoExtractPage() {
                     </div>
                     {!session && <div className="flex items-center gap-3 text-sm"><span>请登录后提取视频</span><UserStatusActions accountOnly /></div>}
                     {history.error && <Alert type="error" showIcon title={history.error} action={<Button size="small" onClick={() => void history.load(userId)}>重试</Button>} />}
-                    {error && <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />}
+                    {error && !errorAction.startsWith("segment-") && <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />}
                     {busy === "clip" && <div role="status" className="flex items-center gap-2 text-sm" style={{ color: colors.colorTextSecondary }}><Spin size="small" />正在裁剪并保存片段…</div>}
                 </section>
                 <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
@@ -202,6 +207,7 @@ export default function VideoExtractPage() {
                                     <div className="flex aspect-video max-h-[60dvh] w-full items-center justify-center rounded-md" style={{ background: colors.colorFillAlter }}>{current && preview.id !== current.id ? <Spin /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={current ? preview.error || "视频不可用" : "暂无提取视频"} />}</div>}
                         </div>
                         {current && ready && <ExtractionSegments key={`${userId}:${current.id}`} record={current} url={preview.url} disabled={locked} busy={busy} run={run} onCancel={() => request.current?.abort()} />}
+                        {error && errorAction.startsWith("segment-") && <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />}
                         {current && <>
                             <div className="space-y-2">
                                 <div className="flex min-w-0 items-start gap-2"><Tag>{videoImportPlatformName(source?.platform || "other")}</Tag><h2 className="min-w-0 break-words text-base font-medium">{source?.title || current.media.name}</h2></div>

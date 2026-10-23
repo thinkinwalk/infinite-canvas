@@ -90,9 +90,9 @@ export function ExtractionSegments({ record, url, disabled, busy, run, onCancel 
     return <section aria-label="自动分段" className="space-y-3 border-b pb-4" style={{ borderColor: token.colorBorderSecondary }}>
         <h3 className="flex items-center gap-2 text-sm font-medium"><Sparkles size={16} />自动分段</h3>
         <div className="flex min-w-0 flex-wrap items-end gap-3">
-            <label className="flex min-w-0 flex-col gap-1 text-xs">目标模型
-                <Select aria-label="自动分段目标模型" className="w-60 max-w-full" value={model} disabled={disabled}
-                    options={[{ value: "", label: "自定义分段" }, ...models]} onChange={(value) => {
+            <label className="flex min-w-0 flex-col gap-1 text-xs">分段规格
+                <Select aria-label="自动分段规格" className="w-60 max-w-full" value={model} disabled={disabled}
+                    options={[{ value: "", label: "自定义时长" }, ...models]} onChange={(value) => {
                         setModel(value);
                         const next = models.find((item) => item.value === value);
                         if (next) setTarget(Math.min(next.max, Math.max(next.min, target)));
