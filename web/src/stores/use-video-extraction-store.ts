@@ -1,9 +1,10 @@
 import localforage from "localforage";
 import { create } from "zustand";
 import type { WorkbenchMedia } from "@/types/video-workbench";
+import type { SegmentPlan } from "@/lib/video-segmentation";
 
 export type VideoExtractionClip = { id: string; createdAt: number; start: number; end: number; media: WorkbenchMedia };
-export type VideoExtraction = { id: string; createdAt: number; originalBytes: number; originalStorageKey?: string; media: WorkbenchMedia; clips?: VideoExtractionClip[] };
+export type VideoExtraction = { id: string; createdAt: number; originalBytes: number; originalStorageKey?: string; media: WorkbenchMedia; clips?: VideoExtractionClip[]; segmentPlan?: SegmentPlan };
 const storage = localforage.createInstance({ name: "infinite-canvas", storeName: "video_extractions" });
 let loadVersion = 0;
 async function withOwnerLock(owner: string, action: () => Promise<void>): Promise<void> {
@@ -20,11 +21,12 @@ type ExtractionState = {
     load: (owner: string) => Promise<void>;
     add: (owner: string, record: VideoExtraction) => Promise<void>;
     remove: (owner: string, id: string) => Promise<void>;
-    saveClip: (owner: string, parentId: string, clip: VideoExtractionClip, previous?: VideoExtractionClip, validate?: () => void) => Promise<void>;
+    saveClip: (owner: string, parentId: string, clip: VideoExtractionClip, previous?: VideoExtractionClip, validate?: () => void, planSourceId?: string) => Promise<void>;
     removeClip: (owner: string, parentId: string, clip: VideoExtractionClip, validate?: () => void) => Promise<void>;
+    savePlan: (owner: string, parentId: string, plan: SegmentPlan, validate: () => void, previous?: SegmentPlan) => Promise<void>;
 };
 
-async function updateClips(owner: string, parentId: string, update: (clips: VideoExtractionClip[]) => VideoExtractionClip[], validate?: () => void): Promise<void> {
+async function updateExtraction(owner: string, parentId: string, update: (record: VideoExtraction) => VideoExtraction, validate?: () => void): Promise<void> {
     const version = loadVersion;
     const check = () => {
         validate?.();
@@ -38,7 +40,7 @@ async function updateClips(owner: string, parentId: string, update: (clips: Vide
         check();
         const parent = records.find((record) => record.id === parentId);
         if (!parent) throw new Error("原视频记录已移除，无法保存片段");
-        const next = records.map((record) => record === parent ? { ...record, clips: update(record.clips || []) } : record);
+        const next = records.map((record) => record === parent ? update(record) : record);
         check();
         await storage.setItem(owner, next);
         if (useVideoExtractionStore.getState().owner === owner && version === loadVersion) useVideoExtractionStore.setState({ records: next });
@@ -78,13 +80,28 @@ export const useVideoExtractionStore = create<ExtractionState>((set, get) => ({
             if (get().owner === owner && version === loadVersion) set({ records });
         });
     },
-    saveClip: (owner, parentId, clip, previous, validate) => updateClips(owner, parentId, (clips) => {
-        if (!previous) return [...clips, clip];
-        if (JSON.stringify(clips.find((item) => item.id === previous.id)) !== JSON.stringify(previous)) throw new Error("片段已在其他页面修改，请重新选择");
-        return clips.map((item) => item.id === previous.id ? clip : item);
+    savePlan: (owner, parentId, plan, validate, previous) => updateExtraction(owner, parentId, (record) => {
+        if (JSON.stringify(record.segmentPlan) !== JSON.stringify(previous)) throw new Error("分段方案已在其他页面变化，请刷新后重试");
+        return { ...record, segmentPlan: plan };
     }, validate),
-    removeClip: (owner, parentId, clip, validate) => updateClips(owner, parentId, (clips) => {
+    saveClip: (owner, parentId, clip, previous, validate, planSourceId) => updateExtraction(owner, parentId, (record) => {
+        const clips = record.clips || [];
+        if (planSourceId) {
+            const plan = record.segmentPlan;
+            const index = plan?.parts.findIndex((part) => part.start === clip.start && part.end === clip.end && !part.savedClipId);
+            if (!plan || plan.sourceId !== planSourceId || index === undefined || index < 0) throw new Error("分段方案已变化，请重新打开方案");
+            return { ...record, clips: [...clips, clip], segmentPlan: { ...plan, parts: plan.parts.map((part, position) => position === index ? { ...part, savedClipId: clip.id } : part) } };
+        }
+        if (!previous) return { ...record, clips: [...clips, clip] };
+        if (JSON.stringify(clips.find((item) => item.id === previous.id)) !== JSON.stringify(previous)) throw new Error("片段已在其他页面修改，请重新选择");
+        return { ...record, clips: clips.map((item) => item.id === previous.id ? clip : item),
+            segmentPlan: record.segmentPlan && { ...record.segmentPlan, parts: record.segmentPlan.parts.map((part) => part.savedClipId === previous.id
+                ? { ...part, savedClipId: part.start === clip.start && part.end === clip.end ? clip.id : undefined, name: part.start === clip.start && part.end === clip.end ? clip.media.name.replace(/\.mp4$/i, "") : part.name } : part) } };
+    }, validate),
+    removeClip: (owner, parentId, clip, validate) => updateExtraction(owner, parentId, (record) => {
+        const clips = record.clips || [];
         if (JSON.stringify(clips.find((item) => item.id === clip.id)) !== JSON.stringify(clip)) throw new Error("片段已变化，请重新选择");
-        return clips.filter((item) => item.id !== clip.id);
+        return { ...record, clips: clips.filter((item) => item.id !== clip.id),
+            segmentPlan: record.segmentPlan && { ...record.segmentPlan, parts: record.segmentPlan.parts.map((part) => part.savedClipId === clip.id ? { ...part, savedClipId: undefined } : part) } };
     }, validate),
 }));

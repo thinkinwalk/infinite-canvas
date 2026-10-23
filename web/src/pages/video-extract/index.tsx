@@ -19,6 +19,7 @@ import { readExtractedVideo, sendExtractionToWorkbench } from "./extraction-acti
 import { saveExtractionClip } from "./extraction-clips";
 import { ExtractionProgress } from "./extraction-progress";
 import { ExtractionPlayer } from "./extraction-player";
+import { ExtractionSegments } from "./extraction-segments";
 
 export default function VideoExtractPage() {
     const { token: colors } = theme.useToken();
@@ -200,6 +201,7 @@ export default function VideoExtractPage() {
                                 ready ? <ExtractionPlayer key={`${current.id}:${editing?.id || "new"}:${editorVersion}`} url={preview.url} durationMs={current.media.durationMs} disabled={locked} busy={busy === "clip"} editing={editing} onSave={(name, range) => void saveClip(name, range)} onCancelEdit={() => busy === "clip" ? request.current?.abort() : setEditing(undefined)} onError={() => setPreview({ id: current.id, url: "", error: "视频播放失败，请重新提取或下载原视频后检查" })} /> :
                                     <div className="flex aspect-video max-h-[60dvh] w-full items-center justify-center rounded-md" style={{ background: colors.colorFillAlter }}>{current && preview.id !== current.id ? <Spin /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={current ? preview.error || "视频不可用" : "暂无提取视频"} />}</div>}
                         </div>
+                        {current && ready && <ExtractionSegments key={`${userId}:${current.id}`} record={current} url={preview.url} disabled={locked} busy={busy} run={run} onCancel={() => request.current?.abort()} />}
                         {current && <>
                             <div className="space-y-2">
                                 <div className="flex min-w-0 items-start gap-2"><Tag>{videoImportPlatformName(source?.platform || "other")}</Tag><h2 className="min-w-0 break-words text-base font-medium">{source?.title || current.media.name}</h2></div>

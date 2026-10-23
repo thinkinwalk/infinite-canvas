@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, test } from "bun:test";
+import type { SegmentPlan } from "../src/lib/video-segmentation";
 
 const memory = new Map<string, unknown>();
 let failRead = false;
@@ -112,4 +113,44 @@ test("removed parents, changed accounts, cancelled commits and quota failures ne
     await store.getState().load("bob");
     await expect(store.getState().saveClip("alice", record.id, clip)).rejects.toThrow("账号已变化");
     expect((memory.get("alice") as typeof record[])[0]).toEqual(record);
+});
+
+const segmentationPlan = (): SegmentPlan => ({
+    sourceId: "source.mp4", workerUrl: "/worker", model: "", minSeconds: 1, maxSeconds: 4, targetSeconds: 3,
+    duration: 6, sceneCount: 1, pauseCount: 0, parts: [
+        { start: 0, end: 3, name: "开场", boundary: "scene", selected: true },
+        { start: 3, end: 6, name: "结尾", boundary: "end", selected: true },
+    ],
+});
+test("segment plans reload and stale tabs cannot erase a newer plan or a saved marker", async () => {
+    await store.getState().load("alice");
+    await store.getState().add("alice", record);
+    const plan = segmentationPlan();
+    await store.getState().savePlan("alice", record.id, plan, () => {});
+    await store.getState().load("alice");
+    expect(store.getState().records[0].segmentPlan).toEqual(plan);
+    await expect(store.getState().savePlan("alice", record.id, plan, () => {})).rejects.toThrow("其他页面变化");
+    const cropped = { ...clip, start: 0, end: 3 };
+    await store.getState().saveClip("alice", record.id, cropped, undefined, () => {}, plan.sourceId);
+    expect(store.getState().records[0].segmentPlan?.parts[0].savedClipId).toBe(cropped.id);
+    await expect(store.getState().saveClip("alice", record.id, cropped, undefined, () => {}, plan.sourceId)).rejects.toThrow("已变化");
+    await expect(store.getState().savePlan("alice", record.id, plan, () => {}, plan)).rejects.toThrow("其他页面变化");
+    expect(store.getState().records[0].clips).toHaveLength(1);
+});
+
+test("quota failure writes neither clip nor saved marker; removing the clip makes the range available again", async () => {
+    await store.getState().load("alice");
+    await store.getState().add("alice", record);
+    const plan = segmentationPlan();
+    await store.getState().savePlan("alice", record.id, plan, () => {});
+    const cropped = { ...clip, start: 0, end: 3 };
+    failWrite = true;
+    await expect(store.getState().saveClip("alice", record.id, cropped, undefined, () => {}, plan.sourceId)).rejects.toThrow("quota");
+    expect(store.getState().records[0].clips).toBeUndefined();
+    expect(store.getState().records[0].segmentPlan?.parts[0].savedClipId).toBeUndefined();
+    failWrite = false;
+    await store.getState().saveClip("alice", record.id, cropped, undefined, () => {}, plan.sourceId);
+    await store.getState().removeClip("alice", record.id, cropped);
+    expect(store.getState().records[0].segmentPlan?.parts[0].savedClipId).toBeUndefined();
+    expect(store.getState().records[0].media).toEqual(record.media);
 });

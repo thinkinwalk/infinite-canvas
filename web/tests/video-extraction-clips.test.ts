@@ -10,6 +10,8 @@ let failTrim = false;
 let failSave = false;
 let committed: VideoExtractionClip | undefined;
 let replaced: VideoExtractionClip | undefined;
+let returnedDuration = 5000;
+let reusedSource: string | undefined;
 const source = { platform: "douyin", title: "原片", author: "作者", sourceUrl: "https://v.douyin.com/test/" };
 const parent: VideoExtraction = {
     id: "parent", createdAt: 1, originalBytes: 1000,
@@ -21,14 +23,15 @@ mock.module("../src/stores/use-user-store", () => ({ useUserStore: { getState: (
 mock.module("../src/stores/use-video-workbench-store", () => ({ useVideoWorkbenchStore: { getState: () => ({ worker: { url: "/worker", token: "" } }) } }));
 mock.module("../src/services/file-storage", () => ({ readPlayableVideoMeta: async () => ({ durationMs: 60_000, width: 720, height: 1280 }) }));
 mock.module("../src/pages/video-extract/extraction-actions", () => ({ readExtractedVideo: async () => { afterRead(); return new Blob(["original"]); } }));
-mock.module("../src/services/api/video-worker", () => ({ trimWorkbenchVideo: async (_worker: unknown, media: unknown, start: number, end: number, signal: AbortSignal) => {
+mock.module("../src/services/api/video-worker", () => ({ trimWorkbenchVideo: async (_worker: unknown, media: unknown, start: number, end: number, signal: AbortSignal, sourceId?: string) => {
     trims++;
     expect(media).toMatchObject({ storageKey: parent.media.storageKey, referenceId: "ref" });
     expect([start, end]).toEqual([5, 10]);
     expect(signal).toBe(controller.signal);
     afterTrim();
+    reusedSource = sourceId;
     if (failTrim) throw new Error("裁剪失败");
-    return file;
+    return { ...file, durationMs: returnedDuration };
 } }));
 mock.module("../src/stores/use-video-extraction-store", () => ({ useVideoExtractionStore: { getState: () => ({
     saveClip: async (owner: string, parentId: string, clip: VideoExtractionClip, previous: VideoExtractionClip | undefined, validate: () => void) => {
@@ -42,6 +45,7 @@ const { saveExtractionClip } = await import("../src/pages/video-extract/extracti
 afterEach(() => {
     session = { token: "session", user: { id: "alice" } }; controller = new AbortController();
     afterRead = () => {}; afterTrim = () => {}; trims = 0; failTrim = false; failSave = false; committed = undefined; replaced = undefined;
+    returnedDuration = 5000; reusedSource = undefined;
 });
 
 test("a clip persists its own file, source range and shared retention group", async () => {
@@ -105,4 +109,18 @@ test("worker and history storage failures preserve the parent and do not report 
     await expect(saveExtractionClip(parent, "片段", [5, 10], controller.signal)).rejects.toThrow("quota");
     expect(committed).toBeUndefined();
     expect(parent.media.storageKey).toBe("video:original");
+});
+
+test("automatic crops reuse the planned input and reject a range outside its model bounds before trimming", async () => {
+    await saveExtractionClip(parent, "自动片段", [5, 10], controller.signal, undefined, { sourceId: "planned.mp4", minSeconds: 2, maxSeconds: 6 });
+    expect(reusedSource).toBe("planned.mp4");
+    const previousTrims = trims;
+    await expect(saveExtractionClip(parent, "超长", [5, 10], controller.signal, undefined, { sourceId: "planned.mp4", minSeconds: 2, maxSeconds: 4 })).rejects.toThrow("区间超出");
+    expect(trims).toBe(previousTrims);
+});
+
+test("actual encoded duration is checked against model limits before a successful clip is committed", async () => {
+    returnedDuration = 5001;
+    await expect(saveExtractionClip(parent, "自动片段", [5, 10], controller.signal, undefined, { sourceId: "planned.mp4", minSeconds: 2, maxSeconds: 5 })).rejects.toThrow("实际裁剪结果");
+    expect(committed).toBeUndefined();
 });

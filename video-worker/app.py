@@ -11,6 +11,7 @@ import sys
 import uuid
 import wave
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 
 import httpx
@@ -26,6 +27,7 @@ from replacement import fit_frame_count, probe as probe_replacement_video, proce
 from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
 from replacement_subtitles import caption_lane_boxes, locate_caption_masks, audio_captions
 from replacement_masks import composite_masked_frames, validate_mask_frames
+from segmentation import analyze as analyze_segments, segment_limits
 
 
 ROOT = Path(os.environ.get("VIDEO_WORKER_DATA", Path(__file__).parent / "data")).resolve()
@@ -41,6 +43,7 @@ FFMPEG = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg") or imageio_ffmp
 FFPROBE = os.environ.get("FFPROBE_PATH") or shutil.which("ffprobe")
 TASKS: dict[str, asyncio.Task] = {}
 PROCESSES: dict[str, asyncio.subprocess.Process] = {}
+SEGMENT_QUEUE = asyncio.Semaphore(1)
 
 
 async def authorize(request: Request):
@@ -100,6 +103,7 @@ def capabilities():
         {"name": "frames", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "compose", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "trim", "available": ffmpeg, "reason": "需要 FFmpeg"},
+        {"name": "segment-plan", "available": ffmpeg and bool(FFPROBE) and bool(importlib.util.find_spec("scenedetect")) and bool(importlib.util.find_spec("cv2")), "reason": "自动分段需要更新 Worker 并安装 requirements.txt 中的 PySceneDetect"},
         {"name": "analysis-proxy", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "cut", "available": ffmpeg and whisper, "reason": "需要配置 Whisper 转写模型"},
         {"name": "transcribe", "available": ffmpeg and whisper, "reason": "需要安装 faster-whisper 并配置 WHISPER_MODEL"},
@@ -287,6 +291,12 @@ async def recover():
 
 def validate_options(request: JobRequest):
     try:
+        if request.operation == "segment-plan":
+            segment_limits(request.options)
+            if not isinstance(request.inputs.get("video"), str):
+                raise ValueError("请提供需要分段的视频")
+        if "segmentQueue" in request.options and not isinstance(request.options["segmentQueue"], bool):
+            raise ValueError("分段排队参数不正确")
         if request.operation in ("replacement-prepare", "replacement-finish", "replacement-transcribe", "replacement-render-captions"):
             if request.options.get("subtitleMethod") not in (None, "audio-after-generation"):
                 raise ValueError("不支持该字幕流程，请更新处理服务")
@@ -791,11 +801,18 @@ async def run_job(identifier: str, request: JobRequest):
     work = JOBS / identifier
     work.mkdir(exist_ok=True)
     options = request.options
+    acquired = False
     try:
+        if request.operation == "segment-plan" or request.operation == "trim" and options.get("segmentQueue") is True:
+            update_job(identifier, step="等待分段处理")
+            await SEGMENT_QUEUE.acquire()
+            acquired = True
         inputs = {key: [media_path(item) for item in value] if isinstance(value, list) else media_path(value) for key, value in request.inputs.items()}
         operation = request.operation
         result = {}
-        if operation in ("replacement-plan", "replacement-fit", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment"):
+        if operation == "segment-plan":
+            result = await analyze_segments(identifier, inputs["video"], options, command=command, ffmpeg=ffmpeg, probe_video=probe_video, update_job=update_job)
+        elif operation in ("replacement-plan", "replacement-fit", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment"):
             result = await process_replacement(operation, identifier, inputs, options, work, ffmpeg=ffmpeg, probe_video=probe_video, publish=publish)
         elif operation == "analysis-proxy":
             output = work / "analysis.mp4"
@@ -1086,16 +1103,29 @@ async def run_job(identifier: str, request: JobRequest):
                 video = interpolated
             result = {"file": publish(video)}
         elif operation == "trim":
+            update_job(identifier, step="裁剪视频片段")
             source = inputs["video"]
             start, end = float(options["start"]), float(options["end"])
             info = await asyncio.to_thread(metadata, source)
             if end > info["duration"]:
                 raise ValueError("裁剪结束时间超过原视频时长")
+            span = Decimal(str(end)) - Decimal(str(start))
+            frame_options = []
+            rate = info["fps"]
+            if options.get("segmentQueue"):
+                # Sample an integer frame count over the exact selected duration.
+                # Keeping 29.97 fps would turn a 15 s selection into 15.015 s.
+                frames = max(1, round(float(span) * rate))
+                exact_rate = Fraction(frames, 1) / Fraction(span)
+                rate = f"{exact_rate.numerator}/{exact_rate.denominator}"
+                frame_options = ["-frames:v", frames]
             output = work / "trim.mp4"
-            await ffmpeg(identifier, "-ss", start, "-i", source, "-t", Decimal(str(end)) - Decimal(str(start)),
-                         "-map", "0:v:0", "-map", "0:a?", "-vf", f"fps={info['fps']}:start_time=0",
+            await ffmpeg(identifier, *(["-threads", "1"] if options.get("segmentQueue") else []),
+                         "-ss", start, "-i", source, "-t", span,
+                         "-map", "0:v:0", "-map", "0:a?", "-vf", f"fps={rate}:start_time=0",
                          "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                         "-c:a", "aac", "-movflags", "+faststart", output)
+                         "-c:a", "aac", *frame_options, *(["-threads", "1"] if options.get("segmentQueue") else []),
+                         "-movflags", "+faststart", output)
             result = {"file": publish(output)}
         elif operation == "cut":
             source = inputs["video"]
@@ -1152,6 +1182,8 @@ async def run_job(identifier: str, request: JobRequest):
         if read_job(identifier)["status"] != "cancelled":
             update_job(identifier, status="failed", step="处理失败", error=str(error))
     finally:
+        if acquired:
+            SEGMENT_QUEUE.release()
         TASKS.pop(identifier, None)
         # Newly managed inputs opt in; old jobs and their work directories are untouched.
         try:
@@ -1162,7 +1194,8 @@ async def run_job(identifier: str, request: JobRequest):
                     details = path.with_suffix(path.suffix + ".json")
                     if details.is_file() and json.loads(details.read_text(encoding="utf-8")).get("temporaryReference"):
                         managed = True
-            if managed and read_job(identifier)["status"] == "completed" and work.resolve().parent == JOBS.resolve():
+            disposable = request.operation == "segment-plan" or request.operation == "trim" and options.get("segmentQueue") is True
+            if managed and (read_job(identifier)["status"] == "completed" or disposable) and work.resolve().parent == JOBS.resolve():
                 shutil.rmtree(work)
         except (OSError, ValueError):
             pass

@@ -6,3 +6,4 @@ Pillow>=10
 httpx>=0.27,<1
 PyYAML>=6
 opencc-python-reimplemented>=0.1.7,<0.2
+scenedetect-headless==0.7.2

@@ -4,6 +4,7 @@ import { uploadImage, imageToDataUrl } from "@/services/image-storage";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "./video";
 import type { WorkbenchMedia, WorkerCapabilities, WorkerConfig, WorkerJob } from "@/types/video-workbench";
 import type { VideoImportSource } from "@/types/video-workbench";
+import type { SegmentPlan } from "@/lib/video-segmentation";
 
 export function resolveWorkerUrl(config: WorkerConfig) {
     const url = new URL(config.url, window.location.origin);
@@ -145,20 +146,46 @@ export async function prepareWorkbenchVideo(config: WorkerConfig, blob: Blob, na
     }
 }
 
-export async function createWorkerJob(config: WorkerConfig, operation: string, inputs: Record<string, string | string[]>, options: Record<string, unknown>, signal?: AbortSignal): Promise<WorkerJob> {
-    return (await workerRequest(config, "jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation, inputs, options }), signal })).json();
+export async function createWorkerJob(config: WorkerConfig, operation: string, inputs: Record<string, string | string[]>, options: Record<string, unknown>, signal?: AbortSignal, id?: string): Promise<WorkerJob> {
+    return (await workerRequest(config, "jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation, inputs, options, id }), signal })).json();
 }
 
-export async function trimWorkbenchVideo(config: WorkerConfig, media: UploadedFile & { name?: string }, start: number, end: number, signal: AbortSignal): Promise<UploadedFile> {
+export async function planWorkbenchSegments(config: WorkerConfig, media: UploadedFile & { name?: string }, options: { minSeconds: number; maxSeconds: number; targetSeconds: number }, signal: AbortSignal, progress: (step: string) => void): Promise<SegmentPlan> {
+    const capabilities = await getWorkerCapabilities(config, signal);
+    if (!capabilities.some((item) => item.name === "segment-plan" && item.available)) throw new Error("自动分段服务尚未就绪，请更新 Worker 并安装 PySceneDetect");
+    progress("上传原视频");
+    const sourceId = await uploadWorkerMedia(config, media, signal);
+    signal.throwIfAborted();
+    progress("等待分段处理");
+    const id = crypto.randomUUID();
+    try {
+        // Let submission acknowledge its ID before cancelling, so a cancelled POST cannot orphan a job.
+        await createWorkerJob(config, "segment-plan", { video: sourceId }, options, undefined, id);
+        signal.throwIfAborted();
+        const completed = await waitForWorkerJob(config, id, signal, (state) => progress(state.step));
+        const metadata = completed.result?.metadata;
+        if (!metadata || !Array.isArray(metadata.parts)) throw new Error("处理服务未返回分段方案");
+        return { ...metadata, sourceId, workerUrl: resolveWorkerUrl(config), model: "", parts: metadata.parts.map((part: { start: number; end: number; boundary: string }, index: number) => ({ ...part, name: `片段 ${index + 1}`, selected: true })) } as SegmentPlan;
+    } catch (error) {
+        if (signal.aborted) void cancelWorkerJob(config, id).catch(() => {});
+        throw error;
+    }
+}
+
+export async function trimWorkbenchVideo(config: WorkerConfig, media: UploadedFile & { name?: string }, start: number, end: number, signal: AbortSignal, sourceId?: string, onProgress?: (step: string) => void): Promise<UploadedFile> {
     const spanMs = Math.round(end * 1000) - Math.round(start * 1000);
     if (![start, end].every(Number.isFinite) || start < 0 || spanMs < 1000 || spanMs > 30000) throw new Error("请选择 1–30 秒的参考片段");
     const capabilities = await getWorkerCapabilities(config, signal);
     signal.throwIfAborted();
     if (!capabilities.some((item) => item.name === "trim" && item.available)) throw new Error("当前剪辑服务暂不支持裁剪，请更新或连接处理服务后重试");
-    const id = await uploadWorkerMedia(config, media, signal);
-    const job = await createWorkerJob(config, "trim", { video: id }, { start, end }, signal);
+    const id = sourceId || await uploadWorkerMedia(config, media, signal);
+    const jobId = sourceId ? crypto.randomUUID() : undefined;
+    let activeId = jobId;
     try {
-        const completed = await waitForWorkerJob(config, job.id, signal, () => {});
+        const job = await createWorkerJob(config, "trim", { video: id }, { start, end, ...(sourceId ? { segmentQueue: true } : {}) }, sourceId ? undefined : signal, jobId);
+        activeId = job.id;
+        signal.throwIfAborted();
+        const completed = await waitForWorkerJob(config, job.id, signal, (state) => onProgress?.(state.step));
         if (!completed.result?.file) throw new Error("剪辑服务未返回视频");
         if (media.referenceId) await workerRequest(config, `media/${encodeURIComponent(completed.result.file)}/temporary`, {
             method: "POST", signal, headers: { "X-Video-Reference-ID": media.referenceId },
@@ -172,7 +199,7 @@ export async function trimWorkbenchVideo(config: WorkerConfig, media: UploadedFi
         const { registerTemporaryReferenceCopy } = await import("@/services/video-reference-retention");
         return registerTemporaryReferenceCopy(media.referenceId, file);
     } catch (error) {
-        if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
+        if (signal.aborted && activeId) void cancelWorkerJob(config, activeId).catch(() => {});
         throw error;
     }
 }
