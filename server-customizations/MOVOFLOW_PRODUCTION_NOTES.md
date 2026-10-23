@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.88
-- Current production source: tag v0.19.88, commit 09981798e087ad174c735c5aab5d427685e7d011
+- Current production image: infinite-canvas:v0.19.89
+- Current production source: tag v0.19.89, commit 87120f794450d8425fa7956ab8acb9dd228e269e
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.89 deployment
+
+- Release tag `v0.19.89`, commit `87120f794450d8425fa7956ab8acb9dd228e269e`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.89. Production app image `infinite-canvas:v0.19.89`, ID `sha256:492066af0086a338a53efd9ee9c421c3ad04fce8474cf2f36be7ba3feaab43a6`, was built on the server from the exact tag.
+- Replacement result areas now show rotating activity, preparation/generation/result stages and actual generated-part counts. Segment labels follow selected work, preview export, completion and pause states; the outdated first-preview instruction is absent during generation. Reduced-motion preferences are respected; no speculative percentages or remaining time are shown.
+- Only app was recreated. Worker container ID, image, start time and `v0.19.87-worker` mounts are unchanged. Initial restart preflight stopped before any runtime change because one stored record still said `planning`; its owning-user GET classified it as paused after a prior service restart, and its linked Worker step was completed. Both live checks passed before proceeding, and the original task file remained byte-identical. No active database or Worker work was interrupted.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.89-20261023-090406/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.89-prebuild-20261023-085853/`. SQLite quick checks passed. All 11 table counts, settings, user balances/roles/groups/status, full model catalogs/pricing/permissions, H3 quotes and hashes for 8,658 existing task/media files matched. Prior app image v0.19.88 remains available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; no database restore or schema migration is required.
+- Internal/external health, nine routes, default/VIP ordinary-user Worker capabilities, replacement-job reads, retention status and anonymous permission checks passed. Published `/assets/index-zaZPX6hH.js` contains v0.19.89, progress/stage labels and reduced-motion classes; prior H3 prompt, segmentation and reminder controls remain present. Independent workstation requests confirmed public health, the new resource, markers and published GitHub Release.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.89-deployment.json`; workstation evidence is in the outer workspace `artifacts/release-v0.19.89/`. Development verification passed 4 focused state tests (21 assertions) and 9 isolated browser checks. No local builds/tests were repeated during release and no paid generation was submitted. Production browser interaction and actual upstream generation remain pending acceptance.
 
 ## v0.19.88 deployment
 
