@@ -54,6 +54,7 @@ export default function ContentReplaceWorkspace() {
     const [checking, setChecking] = useState(false);
     const [serviceRevision, setServiceRevision] = useState(0);
     const [tab, setTab] = useState("current");
+    const [dismissedPendingId, setDismissedPendingId] = useState<string | null>(null);
     const [batchWorkspace, setBatchWorkspace] = useState<HTMLDivElement | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [assetRole, setAssetRole] = useState<{ role: MediaRole; accept: string } | null>(null);
@@ -818,10 +819,12 @@ export default function ContentReplaceWorkspace() {
                                     }
                                 />
                             )}
-                            {!busy && pending && (
+                            {!busy && pending && pending.id !== dismissedPendingId && (
                                 <Alert
+                                    key={pending.id}
                                     type="info"
                                     showIcon
+                                    closable={{ "aria-label": "关闭历史任务提醒", onClose: () => setDismissedPendingId(pending.id) }}
                                     title="历史任务可继续处理"
                                     description={
                                         <Button
