@@ -5,6 +5,13 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 微信语音工作台外部 API
+
+- 新增普通账号客户端 API Key 创建、列表与撤销入口，Key 只显示一次并保存摘要；新增私有个人音色、Qwen 固定版本克隆报价、幂等任务、结果归档及鉴权下载。
+- 复用 Replicate 事务扣费、单次退款与提交不确定状态；参考录音不使用公开临时素材 URL，后台恢复已知任务及归档。接口与 PowerShell 完整示例见仓库 `docs/wechat-voice-api-handoff.md` 和 `scripts/wechat-voice-api.ps1`。
+- 验证：相关 handler/repository/router 测试包、4 项既有计价定向测试、后端构建及物理路径下前端构建通过；真实本地 HTTP 和 PowerShell 完整链路使用模拟模型响应，SQLite 旧表迁移、重开持久化和退款恢复通过。全量 Go 仍有两项已在 HEAD 复现的既有渠道导入失败，TypeScript 存在既有视频模块类型错误；详情见交接文档。
+- 待真实验收：部署迁移、普通账号管理界面、HTTPS 入口、本人授权录音的 Qwen 生成及音质。模拟模型与合成 WAV 的接口测试不代表真实声音克隆成功。
+
 ## 内容替换生成状态反馈
 
 - 替换效果区在处理期间显示旋转动画、当前阶段及真实已生成段数，分为准备片段、模型生成和整理结果；分析分段阶段也显示处理中状态。不推算生成百分比或剩余时间，完成后沿用原结果播放器。

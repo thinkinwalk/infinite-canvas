@@ -20,14 +20,21 @@ type ReplicateTask struct {
 	// OutputURLs preserves iterator-style provider output (for example SAM 2
 	// may return one URI per mask frame). OutputURL remains the single-file
 	// fast path used by the other models.
-	OutputURLs string `json:"-" gorm:"type:text"`
-	ResultFile string `json:"-"`
-	ResultJSON string `json:"-" gorm:"type:text"`
-	MimeType   string `json:"mimeType"`
-	Error      string `json:"error,omitempty"`
-	Metrics    string `json:"metrics" gorm:"type:text"`
-	CreatedAt  string `json:"createdAt"`
-	UpdatedAt  string `json:"updatedAt"`
+	OutputURLs         string  `json:"-" gorm:"type:text"`
+	ResultFile         string  `json:"-"`
+	ResultJSON         string  `json:"-" gorm:"type:text"`
+	MimeType           string  `json:"mimeType"`
+	Error              string  `json:"error,omitempty"`
+	Metrics            string  `json:"metrics" gorm:"type:text"`
+	CreatedAt          string  `json:"createdAt"`
+	UpdatedAt          string  `json:"updatedAt"`
+	SpeechVoiceID      string  `json:"-" gorm:"index"`
+	SpeechVoiceVersion string  `json:"-"`
+	SpeechLanguage     string  `json:"-"`
+	SpeechRequestHash  string  `json:"-"`
+	AudioDuration      float64 `json:"-"`
+	AudioBytes         int64   `json:"-"`
+	AudioSHA256        string  `json:"-"`
 }
 
 // ReferenceMediaOwner records ownership of public opaque reference URLs.

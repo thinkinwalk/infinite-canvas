@@ -4,9 +4,11 @@ import (
 	"errors"
 	"github.com/basketikun/infinite-canvas/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrReplicateCredits = errors.New("算力点不足")
+var ErrSpeechVoiceUnavailable = errors.New("音色已停用或发生变化")
 
 func ReplicateChannelInUse(channelID int, legacy bool) (bool, error) {
 	db, err := DB()
@@ -42,6 +44,16 @@ func CreateReplicateTask(task model.ReplicateTask, log model.CreditLog) error {
 		return err
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		if task.SpeechVoiceID != "" {
+			var voice model.Voice
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ? AND disabled_at = ? AND version = ?", task.SpeechVoiceID, task.UserID, "", task.SpeechVoiceVersion).First(&voice).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSpeechVoiceUnavailable
+			}
+			if err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(&task).Error; err != nil {
 			return err
 		}
@@ -85,7 +97,7 @@ func UpdateReplicateTask(task model.ReplicateTask) error {
 	if task.Status == "running" || task.Status == "uncertain" {
 		query = query.Where("status <> ?", "generated")
 	}
-	return query.Updates(map[string]any{"prediction_id": task.PredictionID, "provider_key": replicateProviderKey(task.PredictionID), "status": task.Status, "output_url": task.OutputURL, "output_urls": task.OutputURLs, "result_file": task.ResultFile, "result_json": task.ResultJSON, "mime_type": task.MimeType, "error": task.Error, "metrics": task.Metrics, "pricing_snapshot": task.PricingSnapshot, "updated_at": task.UpdatedAt}).Error
+	return query.Updates(map[string]any{"prediction_id": task.PredictionID, "provider_key": replicateProviderKey(task.PredictionID), "status": task.Status, "output_url": task.OutputURL, "output_urls": task.OutputURLs, "result_file": task.ResultFile, "result_json": task.ResultJSON, "mime_type": task.MimeType, "error": task.Error, "metrics": task.Metrics, "pricing_snapshot": task.PricingSnapshot, "updated_at": task.UpdatedAt, "audio_duration": task.AudioDuration, "audio_bytes": task.AudioBytes, "audio_sha256": task.AudioSHA256}).Error
 }
 
 func FailReplicateTask(task model.ReplicateTask, log model.CreditLog) error {

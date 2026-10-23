@@ -25,12 +25,16 @@ import (
 )
 
 var replicateSubmitting sync.Map
+var replicateRefreshLocks [64]sync.Mutex
 
 type replicateRequest struct {
-	ID              string         `json:"id"`
-	Operation       string         `json:"operation"`
-	Input           map[string]any `json:"input"`
-	ExpectedCredits *int           `json:"expectedCredits"`
+	ID                string         `json:"id"`
+	Operation         string         `json:"operation"`
+	Input             map[string]any `json:"input"`
+	ExpectedCredits   *int           `json:"expectedCredits"`
+	Voice             *model.Voice   `json:"-"`
+	SpeechRequestHash string         `json:"-"`
+	SpeechLanguage    string         `json:"-"`
 }
 type cloudPrediction struct {
 	Model   string         `json:"model"`
@@ -92,79 +96,87 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 		Fail(w, "需要任务编号和已确认的算力点报价")
 		return
 	}
+	task, err := submitReplicateTask(r, user, input)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, task)
+}
+
+// Both public model tasks and the voice facade use this one submission and ledger path.
+func submitReplicateTask(r *http.Request, user model.AuthUser, input replicateRequest) (model.ReplicateTask, error) {
 	spec, err := service.FindReplicateModel(input.Operation)
 	if err != nil {
-		Fail(w, err.Error())
-		return
+		return model.ReplicateTask{}, voiceError(400, "INVALID_MODEL", err.Error())
 	}
 	encoded, _ := json.Marshal(map[string]any{"operation": input.Operation, "input": input.Input})
 	fingerprint := sha256.Sum256(encoded)
 	hash := hex.EncodeToString(fingerprint[:])
 	existing, found, err := repository.GetReplicateTask(input.ID)
 	if err != nil {
-		FailError(w, err)
-		return
+		return model.ReplicateTask{}, err
 	}
 	if found {
-		if existing.UserID != user.ID || existing.RequestHash != hash {
-			Fail(w, "任务编号已被使用")
-			return
+		if existing.UserID != user.ID || (input.Voice == nil && existing.RequestHash != hash) || (input.Voice != nil && existing.SpeechRequestHash != input.SpeechRequestHash) {
+			return model.ReplicateTask{}, voiceError(409, "IDEMPOTENCY_CONFLICT", "任务编号已被使用或幂等请求内容冲突")
 		}
-		// Return the first task even if a previous client lost its response.
-		OK(w, existing)
-		return
+		return existing, nil
 	}
-	if err := service.ValidateReplicateInput(user.ID, spec, input.Input); err != nil {
-		Fail(w, err.Error())
-		return
+	// Voice inputs are constructed from an owned, validated private file by SpeechCreateTask.
+	if input.Voice == nil {
+		if err := service.ValidateReplicateInput(user.ID, spec, input.Input); err != nil {
+			return model.ReplicateTask{}, voiceError(400, "INVALID_REQUEST", err.Error())
+		}
 	}
 	if spec.Operation == "image-to-video" {
 		if err := validateWanVideoFrames(input.Input); err != nil {
-			Fail(w, err.Error())
-			return
+			return model.ReplicateTask{}, voiceError(400, "INVALID_REQUEST", err.Error())
 		}
 	}
 	quote, err := service.QuoteReplicate(user, spec, input.Input)
 	if err != nil {
-		FailError(w, err)
-		return
+		return model.ReplicateTask{}, err
 	}
 	if !quote.Available {
-		Fail(w, quote.Reason)
-		return
+		return model.ReplicateTask{}, voiceError(503, "MODEL_UNAVAILABLE", quote.Reason)
 	}
 	if quote.Credits != *input.ExpectedCredits {
-		Fail(w, "算力点报价已变化，请重新确认")
-		return
+		return model.ReplicateTask{}, voiceError(409, "QUOTE_CHANGED", "算力点报价已变化，请重新确认")
 	}
 	channel, err := replacementModelChannel(r.Context(), spec.Model, user.Group, true)
 	if err != nil {
-		FailError(w, err)
-		return
+		return model.ReplicateTask{}, err
 	}
 	token := channel.APIKey
 	cacheKey := user.ID + ":" + input.ID
 	if _, active := replicateSubmitting.LoadOrStore(cacheKey, true); active {
-		Fail(w, "任务正在提交，请恢复查询")
-		return
+		return model.ReplicateTask{}, voiceError(409, "SUBMISSION_IN_PROGRESS", "任务正在提交，请使用相同幂等键恢复查询")
 	}
 	defer replicateSubmitting.Delete(cacheKey)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	task := model.ReplicateTask{ChannelID: channel.ID, ChannelName: channel.Name, ID: input.ID, UserID: user.ID, Operation: spec.Operation, Model: spec.Model, Version: spec.Version, RequestHash: hash, Status: "creating", Credits: quote.Credits, PricingSnapshot: quote.PricingSnapshot, CreatedAt: now, UpdatedAt: now}
+	if input.Voice != nil {
+		task.SpeechVoiceID, task.SpeechVoiceVersion = input.Voice.ID, input.Voice.Version
+		task.SpeechRequestHash, task.SpeechLanguage = input.SpeechRequestHash, input.SpeechLanguage
+	}
 	extra, _ := json.Marshal(map[string]any{"model": task.Model, "operation": task.Operation, "taskId": task.ID, "chargedCredits": task.Credits, "channelId": task.ChannelID, "channelName": task.ChannelName})
 	err = repository.CreateReplicateTask(task, model.CreditLog{ID: uuid.NewString(), Remark: "云模型 " + spec.Label, Extra: string(extra)})
 	if err != nil {
 		first, found, readErr := repository.GetReplicateTask(input.ID)
-		if readErr == nil && found && first.UserID == user.ID && first.RequestHash == hash {
-			OK(w, first)
-			return
+		if readErr == nil && found && first.UserID == user.ID && ((input.Voice == nil && first.RequestHash == hash) || (input.Voice != nil && first.SpeechRequestHash == input.SpeechRequestHash)) {
+			return first, nil
+		}
+		if readErr == nil && found {
+			return model.ReplicateTask{}, voiceError(409, "IDEMPOTENCY_CONFLICT", "同一幂等键已用于不同的生成内容")
 		}
 		if errors.Is(err, repository.ErrReplicateCredits) {
-			Fail(w, "算力点不足")
-			return
+			return model.ReplicateTask{}, voiceError(402, "INSUFFICIENT_CREDITS", "算力点不足")
 		}
-		FailError(w, err)
-		return
+		if errors.Is(err, repository.ErrSpeechVoiceUnavailable) {
+			return model.ReplicateTask{}, voiceError(409, "VOICE_DISABLED", "音色已停用或发生变化")
+		}
+		return model.ReplicateTask{}, err
 	}
 	// Persist the provider ID even after the browser stops waiting.
 	ctx := context.WithoutCancel(r.Context())
@@ -175,33 +187,27 @@ func CreateReplicateTask(w http.ResponseWriter, r *http.Request) {
 			task.Status = "failed"
 			task.Error = err.Error()
 			if err := refundReplicateTask(&task); err != nil {
-				FailError(w, err)
-				return
+				return task, err
 			}
 		} else {
 			task.Status = "uncertain"
 			task.Error = "提交结果未确认，请管理员核对上游任务；恢复查询不会重新创建收费任务"
 			if err := repository.UpdateReplicateTask(task); err != nil {
-				FailError(w, err)
-				return
+				return task, err
 			}
 		}
-		OK(w, task)
-		return
+		return task, nil
 	}
 	task.PredictionID = prediction.ID
 	if task.PredictionID == "" {
 		task.Status = "uncertain"
 		task.Error = "上游没有返回任务编号，请管理员核对"
-		_ = repository.UpdateReplicateTask(task)
-		OK(w, task)
-		return
+		return task, repository.UpdateReplicateTask(task)
 	}
 	if err := applyReplicatePrediction(&task, prediction); err != nil {
-		FailError(w, err)
-		return
+		return task, err
 	}
-	OK(w, task)
+	return task, nil
 }
 
 func ReadReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
@@ -209,53 +215,67 @@ func ReadReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 	if !ok {
 		return
 	}
-	if task.Status == "completed" || task.Status == "failed" || task.Status == "cancelled" || task.Status == "uncertain" {
-		OK(w, task)
+	task, err := refreshReplicateTask(r.Context(), task)
+	if err != nil {
+		FailError(w, err)
 		return
+	}
+	OK(w, task)
+}
+
+func refreshReplicateTask(ctx context.Context, task model.ReplicateTask) (model.ReplicateTask, error) {
+	lockHash := sha256.Sum256([]byte(task.ID))
+	lock := &replicateRefreshLocks[int(lockHash[0])%len(replicateRefreshLocks)]
+	lock.Lock()
+	defer lock.Unlock()
+	current, found, err := repository.GetReplicateTask(task.ID)
+	if err != nil {
+		return task, err
+	}
+	if !found {
+		return task, voiceError(404, "TASK_NOT_FOUND", "任务不存在")
+	}
+	task = current
+	if task.Status == "completed" || task.Status == "failed" || task.Status == "cancelled" || task.Status == "uncertain" {
+		return task, nil
 	}
 	if task.PredictionID == "" {
 		if _, active := replicateSubmitting.Load(task.UserID + ":" + task.ID); !active {
 			task.Status = "uncertain"
 			task.Error = "服务重启或提交中断，尚未确认上游任务，请管理员核对后再执行"
 			if err := repository.UpdateReplicateTask(task); err != nil {
-				FailError(w, err)
-				return
+				return task, err
 			}
 		}
-		OK(w, task)
-		return
+		return task, nil
 	}
 	if task.Status != "generated" {
 		channel, err := service.ResolveReplicateTaskChannel(task)
 		if err != nil {
-			FailError(w, err)
-			return
+			return task, voiceError(503, "CHANNEL_NOT_CONFIGURED", "原任务渠道暂不可用，请管理员恢复配置")
 		}
-		prediction, _, err := pollProviderTask(r.Context(), service.ProviderForModel(task.Model), channel.APIKey, task.PredictionID)
+		prediction, _, err := pollProviderTask(ctx, service.ProviderForModel(task.Model), channel.APIKey, task.PredictionID)
 		if err != nil {
-			Fail(w, "任务查询暂时失败，可恢复查询；不会重新创建模型任务")
-			return
+			return task, voiceError(502, "UPSTREAM_QUERY_FAILED", "任务查询暂时失败，可恢复查询；不会重新创建模型任务")
 		}
 		if err := applyReplicatePrediction(&task, prediction); err != nil {
-			FailError(w, err)
-			return
+			return task, err
 		}
 	}
 	if task.Status == "generated" {
-		if err := saveReplicateMedia(r.Context(), &task); err != nil {
-			task.Error = err.Error()
-			OK(w, task)
-			return
+		if err := saveReplicateMedia(ctx, &task); err != nil {
+			task.Error = "生成文件归档暂时失败，请恢复查询"
+			_ = persistReplicateTask(&task)
+			return task, nil
 		}
 		task.Status = "completed"
 		task.Error = ""
 		task.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 		if err := persistReplicateTask(&task); err != nil {
-			FailError(w, err)
-			return
+			return task, err
 		}
 	}
-	OK(w, task)
+	return task, nil
 }
 func CancelReplicateTask(w http.ResponseWriter, r *http.Request, id string) {
 	task, ok := ownedReplicateTask(w, r, id)
@@ -597,6 +617,19 @@ func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
 	}
 	fingerprint := sha256.Sum256([]byte(task.ID))
 	base := hex.EncodeToString(fingerprint[:])
+	if task.SpeechVoiceID != "" {
+		for _, extension := range []string{".wav", ".mp3", ".flac", ".m4a", ".ogg"} {
+			name := base + extension
+			path := filepath.Join(directory, name)
+			if _, err := os.Stat(path); err == nil {
+				if err := inspectSavedSpeech(ctx, task, path); err != nil {
+					return err
+				}
+				task.ResultFile = name
+				return nil
+			}
+		}
+	}
 	filename := base + ".mp4"
 	target := filepath.Join(directory, filename)
 	if _, err := os.Stat(target); err == nil {
@@ -631,6 +664,26 @@ func saveReplicateMedia(ctx context.Context, task *model.ReplicateTask) error {
 		}
 		filename = base + extension
 		target = filepath.Join(directory, filename)
+		if task.SpeechVoiceID != "" {
+			if err := inspectSavedSpeech(ctx, task, tempName); err != nil {
+				return err
+			}
+			// The actual demuxer, rather than a provider URL suffix, determines the format.
+			switch task.MimeType {
+			case "audio/wav":
+				extension = ".wav"
+			case "audio/mpeg":
+				extension = ".mp3"
+			case "audio/flac":
+				extension = ".flac"
+			case "audio/mp4":
+				extension = ".m4a"
+			case "audio/ogg":
+				extension = ".ogg"
+			}
+			filename, mimeType = base+extension, task.MimeType
+			target = filepath.Join(directory, filename)
+		}
 	} else {
 		if !strings.HasPrefix(mimeType, "video/") {
 			return fmt.Errorf("模型返回了不支持的视频媒体类型")

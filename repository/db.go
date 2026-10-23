@@ -69,6 +69,8 @@ func DB() (*gorm.DB, error) {
 			&model.VideoTask{},
 			&model.ReplicateTask{},
 			&model.ReferenceMediaOwner{},
+			&model.ClientAPIKey{},
+			&model.Voice{},
 			&model.RedemptionCode{},
 			&model.Prompt{},
 			&model.Asset{},

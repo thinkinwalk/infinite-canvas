@@ -1,9 +1,10 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { App, Dropdown, Form, Input, Modal, Segmented, Tooltip } from "antd";
-import { BookOpen, Keyboard, LogOut, Puzzle, Settings2, UserRound, Zap } from "lucide-react";
+import { BookOpen, KeyRound, Keyboard, LogOut, Puzzle, Settings2, UserRound, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CreditCenterModal } from "@/components/layout/credit-center-modal";
+import { ClientAPIKeysModal } from "@/components/layout/client-api-keys-modal";
 import { GitHubLink } from "@/components/layout/github-link";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { DOCS_URL } from "@/constant/env";
@@ -35,6 +36,7 @@ export function UserStatusActions({ accountOnly = false, showConfig = true, show
     const [authOpen, setAuthOpen] = useState(false);
     const [authMode, setAuthMode] = useState<AuthMode>("login");
     const [creditCenterOpen, setCreditCenterOpen] = useState(false);
+    const [clientKeysOpen, setClientKeysOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [form] = Form.useForm<AuthPayload>();
     const theme = useThemeStore((state) => state.theme);
@@ -127,7 +129,7 @@ export function UserStatusActions({ accountOnly = false, showConfig = true, show
                             <span className="font-medium opacity-75">点</span>
                         </button>
                     ) : null}
-                    <Dropdown menu={{ items: [{ key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: clearSession }] }} trigger={["click"]} placement="bottomRight">
+                    <Dropdown menu={{ items: [...(user.role === "user" ? [{ key: "client-keys", icon: <KeyRound className="size-4" />, label: "客户端 API Key", onClick: () => setClientKeysOpen(true) }] : []), { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: clearSession }] }} trigger={["click"]} placement="bottomRight">
                         <button type="button" className={naturalIconClass} style={iconStyle} aria-label={`${userName}，打开账户菜单`} title={`${userName} · 账户菜单`}>
                             <UserRound className="size-4" />
                         </button>
@@ -172,6 +174,7 @@ export function UserStatusActions({ accountOnly = false, showConfig = true, show
                 </div>
             ) : null}
             <CreditCenterModal open={creditCenterOpen} onOpenChange={setCreditCenterOpen} />
+            {user && <ClientAPIKeysModal key={user.id} open={clientKeysOpen} onClose={() => setClientKeysOpen(false)} />}
             <Modal title={authMode === "register" ? "注册账号" : "登录账号"} open={authOpen} onCancel={() => setAuthOpen(false)} onOk={() => form.submit()} okText={authMode === "register" ? "注册" : "登录"} cancelText="取消" confirmLoading={submitting} destroyOnHidden>
                 <div className="mb-4">
                     <Segmented<AuthMode> options={authOptions} value={authMode} onChange={(value) => setAuthMode(value)} />

@@ -18,5 +18,6 @@ func main() {
 	}
 	service.StartPromptSyncScheduler()
 	handler.StartTemporaryReferenceCleanup()
+	handler.StartSpeechTaskRecovery()
 	log.Fatal(router.New().Run(":" + config.Cfg.Port))
 }

@@ -48,6 +48,38 @@ func UserAuth(c *gin.Context) {
 	c.Next()
 }
 
+// Client keys are scoped to the stable voice API, never administrator or key management routes.
+func VoiceAuth(c *gin.Context) {
+	if !strings.HasPrefix(c.GetHeader("Authorization"), "Bearer ") {
+		handler.VoiceAPIFail(c.Writer, 401, "UNAUTHORIZED", "请通过 Authorization: Bearer 提供客户端 Key")
+		c.Abort()
+		return
+	}
+	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	user, ok := service.ClientAPIKeyUser(token)
+	if !ok && !strings.HasPrefix(token, "icv_") {
+		user, ok = service.CurrentAuthUser(token)
+	}
+	if !ok || user.Role != model.UserRoleUser {
+		handler.VoiceAPIFail(c.Writer, 401, "UNAUTHORIZED", "客户端 Key 无效、已撤销或账号不可用")
+		c.Abort()
+		return
+	}
+	c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
+	c.Next()
+}
+
+func ClientKeyManagementAuth(c *gin.Context) {
+	user, ok := authUser(c)
+	if !ok || user.Role != model.UserRoleUser {
+		handler.VoiceAPIFail(c.Writer, 401, "SESSION_REQUIRED", "请使用普通用户网页登录状态管理客户端 Key")
+		c.Abort()
+		return
+	}
+	c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))
+	c.Next()
+}
+
 func OptionalAuth(c *gin.Context) {
 	if user, ok := authUser(c); ok {
 		c.Request = c.Request.WithContext(service.WithUser(c.Request.Context(), user))

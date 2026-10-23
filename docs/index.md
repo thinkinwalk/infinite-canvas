@@ -15,6 +15,8 @@
 
 ## Development and Data
 
+- [微信语音工作台 API 交接](wechat-voice-api-handoff.md)
+
 - [Local Development](/docs/development/local-development)
 - [Canvas Data Structure](/docs/development/canvas-data-structure)
 - [How the Local Codex Connection Works](/docs/development/local-codex-canvas)
