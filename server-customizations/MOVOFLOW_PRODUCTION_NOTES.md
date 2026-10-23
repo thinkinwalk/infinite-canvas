@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.93
-- Current production source: tag v0.19.93, commit 77d8f2341682a64378e8fd196f502a0b4f2af8b5
+- Current production image: infinite-canvas:v0.19.94
+- Current production source: tag v0.19.94, commit 72882e01afd7f363bdd839ebb74bdabfee090f51
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.94 deployment
+
+- Release tag `v0.19.94`, commit `72882e01afd7f363bdd839ebb74bdabfee090f51`, is published on `release/v0.19.60`: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.94. Server-built app image `infinite-canvas:v0.19.94`, ID `sha256:376af969b19f9546ed11451a6f4f4b0dba161b129d4f26fd44d08722dd927644`, matches the exact tag.
+- `/admin/models` now has all/text/image/video/audio categories, linked module/channel filters, reset, compact feature/route counts and on-demand drawers. Pre-release isolated browser checks passed in 14 category groups and 10 summary/drawer groups. Existing real model identities, aliases, pricing and bindings are retained.
+- Online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.94-20261023-171818/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.94-prebuild-20261023-171602/`. SQLite quick_check, all 13 table counts, settings, user balances/roles/groups/status, default/VIP catalogs and six existing quotes matched; 8,830 existing task/media file hashes matched. Configuration remains revision 1.
+- Only app was recreated. Worker ID/image/start time and `v0.19.87-worker` mounts are unchanged. Internal/external health, nine public pages, default/VIP Worker gateways and `/assets/index-d9FecF_0.js` passed. No local build/test was repeated during release; the required production image was built on the server. No paid generation was submitted.
+- Five real read-only browser groups passed in an isolated BitBrowser 464 context: category counts/identities (35 total, 2 text, 9 image, 22 video, 2 audio), retained category and linked filters across views, compact rows and feature/route drawers, desktop and actual 390px/320px CSS viewports, unchanged management revision 1 with no writes or page errors. Existing browser tabs were retained. The origin's 90% browser zoom was accounted for within test viewport dimensions. Actual edits/saves, concurrent administration and paid outputs remain manual acceptance items.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.94-deployment.json`; workstation copy: `.codex_tmp/release-v0.19.94/deployment.json`. Rollback restores this release's saved Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database. The prior v0.19.93 image remains available.
 
 ## v0.19.93 deployment
 
