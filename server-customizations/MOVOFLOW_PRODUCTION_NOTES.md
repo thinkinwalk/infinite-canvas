@@ -15,9 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.86
-- Current production source: tag v0.19.86, commit 497587cec62bd1876b1e20452a9dc679379ce822
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.86-worker/
+- Current production image: infinite-canvas:v0.19.87
+- Current production source: tag v0.19.87, commit c26cd4bbe9f6d1aa4bdfc2a5402a9d09f7ebdfa1
+- Current worker image: infinite-canvas-video-worker:v0.19.87
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.87 deployment
+
+- Release tag `v0.19.87`, commit `c26cd4bbe9f6d1aa4bdfc2a5402a9d09f7ebdfa1`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.87. Production app image `infinite-canvas:v0.19.87`, ID `sha256:a47df9fd214f4cd21973c74a758849bc9e93f96529f2cdd2fdf9ab6ddfbf4f83`, was built on the server from the exact tag.
+- Video extraction now plans continuous segments using reference-model duration constraints, PySceneDetect scene cuts, audio pauses and balanced fallback durations. Users can preview, adjust boundaries, split/merge, name and select segments before rendering; canceled or partially failed saves retain completed clips. Existing manual clipping, original media and downstream tool entrypoints remain available. Automatic analysis and automatic trim share one process-local queue, with one Uvicorn process; no automatic paid generation is submitted.
+- Worker dependency image `infinite-canvas-video-worker:v0.19.87`, ID `sha256:ba384be7a93c55bf66198efa50065cb5a1bdc62542a616908533a5e528777f66`, extends the previous image. It adds `scenedetect-headless==0.7.2` and `platformdirs==4.13.5` without replacing the existing `opencv-contrib-python==4.10.0.84` or other AI dependencies. Existing OpenCV, OCR, Paddle and Whisper imports pass. The initial image-reference error and missing-platformdirs preparation failure occurred before any runtime switch and were corrected in the deployment scripts.
+- App and Worker were recreated after confirming no active database, replacement or Worker jobs. Worker sources are mounted from `/opt/infinite-canvas/releases/v0.19.87-worker`, including the new `segmentation.py` mount and scene adapter. Running source hashes match the tag; `app.py` SHA-256 is `36c9a4bcff6a9c835652ea76261a0cd7f187ee54e73bd5c9e314d4659961630e`. Data/model/cache mounts and environment are preserved. Both default and VIP ordinary-user gateways advertise `segment-plan`; all previously available capabilities remain available.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.87-20261023-071251/`; successful prebuild backup: `/opt/infinite-canvas/backups/v0.19.87-prebuild-20261023-071118/`. SQLite quick checks passed. All 11 table counts, saved settings, balances/roles/groups/status, model catalogs/pricing/permissions, H3 quotes and hashes for 8,439 existing task/media files matched. Prior v0.19.86 app, Worker image and source mounts remain available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps video-worker app`; no schema migration or database restore is required.
+- Internal/external health, nine routes, ordinary-user Worker gateway, ownership denials, replacement-job reads, retention status and anonymous permission checks passed. Published `/assets/index-jzoASbAT.js` contains the release, automatic segmentation controls, selected-segment saving and previous H3 aspect controls; independent workstation requests confirmed these markers.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.87-deployment.json`. Development verification passed 22 focused frontend tests, 18 Worker tests and 8 isolated browser flow checks; no local build/tests were repeated during release. Real-platform extraction, production browser upload/analysis/cropping, semantic boundary quality, long-video resource peaks and downstream paid generation remain pending acceptance. No user media was deleted and no paid generation ran during release.
 
 ## v0.19.86 deployment
 

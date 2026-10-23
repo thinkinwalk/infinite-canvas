@@ -15,7 +15,9 @@ description: Implemented changes that still need manual verification
 - 自动裁剪按所选时长采样整数帧，修正 29.97 fps 的 15 秒选区被编码为约 15.02 秒后超过模型上限的问题，不改变播放速度；保存前仍校验浏览器实际可播放时长。手动裁剪保持原有规则。
 - 本地前端定向 22 项、Worker 定向 18 项通过，包含随机规格抽样的可行时间轴、真实镜头检测、有/无音轨、29.97 fps 的 15 秒裁剪、队列取消与失败释放、原片哈希及临时归属不变、实际输出时长校验、原子保存与旧标签页保护。未执行构建或全量语法/类型检查。
 - 隔离 Chrome 连接当前源码 Worker 完成 8 项端到端检查：生成方案时不裁剪、边界调整/错误回退/拆分合并、区间试看、选择保存与源文件复用、失败后刷新续存不重复、规格变更重算、取消保留旧方案、模型参考限制与停用拦截。桌面与 390px 手机深浅主题截图已检查，无横向溢出或页面脚本异常。证据为 `.codex_tmp/video-segmentation/report.json` 与同目录截图；解析/登录为隔离测试响应，镜头检测和视频裁剪调用真实本机 Worker，不代表真实抖音/小红书链路已验收，未发起收费生成。
-- 本地页面为 `http://127.0.0.1:3001/video/extract`，本轮独立 Worker 为 `http://127.0.0.1:8771`（仅监听本机，数据在 `.codex_tmp/video-segmentation-worker-data`）；未替换原 8767 服务。整理为 v0.19.87 发布，部署结果待核验。发布同步更新应用、Worker 版本化源码（包含 `segmentation.py` 和 `adapters/detect_scenes.py`）与包含 `scenedetect-headless` 的 Worker 依赖镜像。
+- 已随 v0.19.87（`c26cd4b`）发布生产，入口为 `https://studio.lingzhouai.com/video/extract`。应用、`v0.19.87-worker` 版本化源码与 `infinite-canvas-video-worker:v0.19.87` 依赖镜像同步更新；新增 `scenedetect-headless==0.7.2` 与 `platformdirs==4.13.5`，使用原有 `opencv-contrib-python==4.10.0.84` 提供的 OpenCV，保留既有 OCR/Whisper 依赖和模型缓存。运行中 `app.py`、`segmentation.py`、检测适配器和替换模块与发布源码哈希一致，单 Uvicorn 进程保持不变。本地独立 8771 Worker 和原 8767 服务未替换。
+- 内外健康、9 个页面、default/VIP 普通用户的 `segment-plan` 能力、既有处理能力、归属检查和匿名拦截通过。工作站独立请求确认 `/assets/index-jzoASbAT.js` 包含 v0.19.87、自动分段、选中保存以及此前 H3 画幅功能。备份为 `/opt/infinite-canvas/backups/v0.19.87-20261023-071251/`，证据为 `/opt/infinite-canvas/releases/v0.19.87-deployment.json`；数据库完整性、11 张表记录数、余额/角色/分组、保存配置、模型目录/报价/权限及 8,439 个既有任务/媒体文件哈希一致。确认无活动任务后切换，旧应用与 Worker 镜像、挂载保留用于回滚。
+- 发布期间未重复本地构建或测试，仅在服务器准备部署镜像并检查依赖、接口与资源，未发起收费生成或删除用户媒体。生产浏览器实际上传、分析、裁剪和恢复尚未验收；本地隔离浏览器结果不代表生产端到端验收完成。
 - 待真实素材验收：口播句意完整性、快切/运动/淡入淡出、音乐/噪音/无声视频、4K/可变帧率和长片的分段边界、四类后续工具的限制及真实生成效果；生产 4 vCPU/8GB 与其他业务共享时的 CPU/内存峰值、排队时间和磁盘增长尚未压测。
 
 ## 内容替换 H3 生成画幅适配
