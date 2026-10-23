@@ -824,7 +824,7 @@ export default function ContentReplaceWorkspace() {
                                     key={pending.id}
                                     type="info"
                                     showIcon
-                                    closable={{ "aria-label": "关闭历史任务提醒", onClose: () => setDismissedPendingId(pending.id) }}
+                                    closable={{ closeIcon: true, "aria-label": "关闭历史任务提醒", onClose: () => setDismissedPendingId(pending.id) }}
                                     title="历史任务可继续处理"
                                     description={
                                         <Button
