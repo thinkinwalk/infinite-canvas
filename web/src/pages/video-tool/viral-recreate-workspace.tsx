@@ -893,11 +893,26 @@ export default function ViralRecreateWorkspace() {
                                                     <Button
                                                         size="small"
                                                         disabled={locked}
-                                                        onClick={() =>
-                                                            void reconcileReplicateTask(r.replicateTask!.id)
-                                                                .then(() => message.success("已核对原任务"))
-                                                                .catch((e) => message.error(e.message))
-                                                        }
+                                                        onClick={() => {
+                                                            let predictionId = "";
+                                                            modal.confirm({
+                                                                title: "核对并关联已有平台任务",
+                                                                content: <Input aria-label="Replicate 上游任务编号" placeholder="Replicate 上游任务编号" onChange={(event) => { predictionId = event.target.value.trim(); }} />,
+                                                                okText: "核对关联",
+                                                                cancelText: "取消",
+                                                                onOk: async () => {
+                                                                    try {
+                                                                        if (!predictionId) throw new Error("请填写已在 Replicate 核对的任务编号");
+                                                                        if (useUserStore.getState().token !== session) throw new Error("登录状态已变化，请重新操作");
+                                                                        await reconcileReplicateTask(r.replicateTask!.id, predictionId);
+                                                                        message.success("已核对原任务，可恢复查询取得结果");
+                                                                    } catch (error) {
+                                                                        message.error(publicServiceText(error instanceof Error ? error.message : "关联失败"));
+                                                                        throw error;
+                                                                    }
+                                                                },
+                                                            });
+                                                        }}
                                                     >
                                                         核对平台任务
                                                     </Button>

@@ -1,4 +1,4 @@
-import { Blend, Captions, Clapperboard, Copy, Eraser, FileText, ImagePlus, Layers3, Maximize2, Palette, Replace, Scissors, ShieldCheck, Shirt, Sparkles, Stamp, Type, Wand2, Wind, type LucideIcon } from "lucide-react";
+import { Blend, Captions, Clapperboard, Copy, Eraser, FileText, ImagePlus, Layers3, Link2, Maximize2, Palette, Replace, Scissors, ShieldCheck, Shirt, Sparkles, Stamp, Type, Wand2, Wind, type LucideIcon } from "lucide-react";
 
 export type CatalogItem = {
     id: string;
@@ -108,6 +108,7 @@ export const videoToolGroups = [
         { id: "video-recreate", title: "爆款复刻", description: "参考热门视频复刻脚本、动作和节奏。", category: "视频创作", medium: "video", source: "official", price: "按任务报价", href: "/video/viral-recreate", icon: Clapperboard },
     ] satisfies CatalogItem[] },
     { label: "视频处理", items: [
+        { id: "video-extract", title: "视频提取", description: "从分享链接提取视频，下载、保存素材或用于制作。", category: "视频处理", medium: "video", source: "official", price: "沿用平台解析服务", href: "/video/extract", icon: Link2 },
         { id: "video-lipsync", title: "视频对口型", description: "上传人物视频和新音频，保留画面动作并匹配新口型。", category: "视频处理", medium: "video", source: "official", price: "按音频时长报价", href: "/video/lipsync", icon: Replace },
         { id: "video-upscale", title: "视频高清", description: "提升视频清晰度并补帧。", category: "视频处理", medium: "video", source: "official", price: "按任务报价", href: "/video/upscale", icon: Wand2 },
         { id: "video-subtitle-remove", title: "字幕去除", description: "识别并修复视频中的硬字幕区域。", category: "视频处理", medium: "video", source: "official", price: "按任务报价", href: "/video/subtitle-remove", icon: Captions },

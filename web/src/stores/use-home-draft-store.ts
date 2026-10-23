@@ -17,7 +17,7 @@ type HomeDraftState = {
 };
 const storage = localforage.createInstance({ name: "infinite-canvas", storeName: "home_drafts" });
 
-export const useHomeDraftStore = create<HomeDraftState>()(persist((set) => ({
+export const useHomeDraftStore = create<HomeDraftState>()(persist((set): HomeDraftState => ({
     hydrated: false, storageError: false, kind: "image", prompts: { image: "", video: "", human: "" }, humanMode: "photo", humanCopySource: "manual",
     setKind: (kind) => set({ kind }),
     setPrompt: (kind, prompt) => set((state) => ({ prompts: { ...state.prompts, [kind]: prompt } })),
@@ -27,7 +27,7 @@ export const useHomeDraftStore = create<HomeDraftState>()(persist((set) => ({
     name: "home-creation",
     storage: createJSONStorage(() => ({
         getItem: (key) => storage.getItem<string>(key),
-        setItem: async (key, value) => { try { await storage.setItem(key, value); } catch { useHomeDraftStore.setState({ storageError: true }); } },
+        setItem: async (key, value) => { try { await storage.setItem(key, value); } catch { if (!useHomeDraftStore.getState().storageError) useHomeDraftStore.setState({ storageError: true }); } },
         removeItem: (key) => storage.removeItem(key),
     })),
     partialize: ({ kind, prompts, humanMode, humanCopySource }) => ({ kind, prompts, humanMode, humanCopySource }),

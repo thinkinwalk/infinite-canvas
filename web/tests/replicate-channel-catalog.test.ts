@@ -47,6 +47,17 @@ test("local channel selection survives an updated platform catalog", () => {
     expect(next.models.includes(hailuo)).toBe(true);
 });
 
+test("missing public settings preserve local models and remove unavailable platform models", () => {
+    const channel = createModelChannel({ id: "local", baseUrl: "https://local.example", apiKey: "local-key", models: [{ name: "my-video", capability: "video" }] });
+    const current = resolveEffectiveConfig({ ...defaultConfig, channelMode: "local", channels: [channel], videoModel: "local::my-video" }, settings);
+    const next = resolveEffectiveConfig(current, null);
+    expect(next.channelMode).toBe("local");
+    expect(next.videoModel).toBe("local::my-video");
+    expect(next.channels.find((item) => item.id === "local")).toEqual(channel);
+    expect(next.channels.some((item) => item.id === "replicate")).toBe(false);
+    expect(next.models).toEqual(["local::my-video"]);
+});
+
 test("video quotes identify the protocol even when providers use the same model name", async () => {
     const axios = (await import("axios")).default;
     const { quoteVideoModel } = await import("../src/services/api/video");

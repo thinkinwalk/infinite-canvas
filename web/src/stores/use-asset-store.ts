@@ -11,6 +11,12 @@ export type TextAsset = AssetBase<"text"> & { data: { content: string } };
 export type ImageAsset = AssetBase<"image"> & { data: { dataUrl: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
 export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
 export type Asset = TextAsset | ImageAsset | VideoAsset;
+type NewAsset = Omit<Asset, "id" | "createdAt" | "updatedAt">;
+
+function assetWithIdentity(asset: NewAsset): Asset {
+    const now = new Date().toISOString();
+    return { ...asset, id: nanoid(), createdAt: now, updatedAt: now } as Asset;
+}
 
 type AssetBase<T extends AssetKind> = {
     id: string;
@@ -29,6 +35,7 @@ type AssetStore = {
     hydrated: boolean;
     assets: Asset[];
     addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
+    addAssetPersisted: (asset: NewAsset) => Promise<string>;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
     removeAsset: (id: string) => void;
     replaceAssets: (assets: Asset[]) => void;
@@ -78,10 +85,19 @@ export const useAssetStore = create<AssetStore>()(
             hydrated: false,
             assets: [],
             addAsset: (asset) => {
-                const now = new Date().toISOString();
-                const id = nanoid();
-                set((state) => ({ assets: [{ ...asset, id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
-                return id;
+                const entry = assetWithIdentity(asset);
+                set((state) => ({ assets: [entry, ...state.assets] }));
+                return entry.id;
+            },
+            addAssetPersisted: async (asset) => {
+                const entry = assetWithIdentity(asset);
+                try {
+                    await set((state) => ({ assets: [entry, ...state.assets] }));
+                } catch {
+                    try { await set((state) => ({ assets: state.assets.filter((item) => item.id !== entry.id) })); } catch { /* Preserve the in-memory rollback when storage remains unavailable. */ }
+                    throw new Error("资产保存失败，请检查浏览器存储后重试");
+                }
+                return entry.id;
             },
             updateAsset: (id, patch) =>
                 set((state) => ({

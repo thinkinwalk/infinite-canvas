@@ -19,6 +19,7 @@ type WorkbenchState = {
     worker: WorkerConfig;
     setHydrated: () => void;
     patchDraft: (tool: VideoTool, patch: Partial<VideoDraft>) => void;
+    replaceDraft: (tool: VideoTool, draft: VideoDraft) => Promise<void>;
     addRecord: (record: VideoRecord) => void;
     patchRecord: (id: string, patch: Partial<VideoRecord>) => void;
     setWorker: (patch: Partial<WorkerConfig>) => void;
@@ -38,6 +39,12 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
                 const draft = { ...emptyVideoDraft(tool), ...state.drafts[tool], ...patch };
                 return { drafts: { ...state.drafts, [tool]: tool === "content-replace" ? normalizeContentReplacementDraft(draft) : draft } };
             }),
+            replaceDraft: async (tool, draft) => {
+                await set((state) => ({
+                    drafts: { ...state.drafts, [tool]: tool === "content-replace" ? normalizeContentReplacementDraft(draft) : draft },
+                }));
+                if (useVideoWorkbenchStore.getState().storageError) throw new Error("草稿保存失败，请检查浏览器存储后重试");
+            },
             addRecord: (record) => set((state) => ({ records: [record, ...state.records] })),
             patchRecord: (id, patch) => set((state) => ({ records: state.records.map((record) => record.id === id ? { ...record, ...patch } : record) })),
             setWorker: (patch) => set((state) => ({ worker: { ...state.worker, ...patch } })),

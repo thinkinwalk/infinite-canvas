@@ -20,6 +20,7 @@ import PromptsPage from "@/pages/prompts";
 import RegisterPage from "@/pages/register";
 import VideoPage from "@/pages/video";
 import VideoToolPage from "@/pages/video-tool";
+import VideoExtractPage from "@/pages/video-extract";
 
 export const router = createBrowserRouter([
     {
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
             { path: "/home", element: <HomePage /> },
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
+            { path: "/video/extract", element: <VideoExtractPage /> },
             { path: "/video/:tool", element: <VideoToolPage /> },
             { path: "/digital-human", element: <VideoToolPage /> },
             { path: "/assets", element: <AssetsPage /> },

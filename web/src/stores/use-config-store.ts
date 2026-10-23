@@ -331,7 +331,7 @@ export function useEffectiveConfig() {
 
 export function resolveEffectiveConfig(config: AiConfig, publicSettings: AdminPublicSettings | null): AiConfig {
     const modelChannel = publicSettings?.modelChannel;
-    if (!modelChannel) return appendReplicateVideoChannel(config, modelChannel?.models);
+    if (!modelChannel) return appendReplicateVideoChannel(config, undefined);
     const channelMode = modelChannel.allowCustomChannel && hasUsableLocalChannel(config) ? config.channelMode : "remote";
     if (channelMode === "local") return appendReplicateVideoChannel({ ...config, channelMode }, modelChannel?.models);
     const remoteConfig = appendReplicateVideoChannel(remoteConfigFromPublicSettings(config, modelChannel), modelChannel?.models);
