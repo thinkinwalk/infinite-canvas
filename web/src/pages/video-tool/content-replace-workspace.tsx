@@ -261,7 +261,7 @@ export default function ContentReplaceWorkspace() {
                     : "";
     const regionMissing = d.route === "worker" && !person && !d.media.some((m) => m.role === "mask") && d.regions.length !== 1
         ? d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
-    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable || (pending ? "已有任务，请先恢复或完成历史任务" : "");
+    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable;
     const prepareQuote = async () => {
         if (blocked || busy || quoteController.current) return;
         const key = inputKey;
@@ -822,7 +822,7 @@ export default function ContentReplaceWorkspace() {
                                 <Alert
                                     type="info"
                                     showIcon
-                                    title="已有任务可继续处理"
+                                    title="历史任务可继续处理"
                                     description={
                                         <Button
                                             size="small"
