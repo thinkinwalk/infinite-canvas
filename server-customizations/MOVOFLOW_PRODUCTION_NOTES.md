@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.79
-- Current production source: tag v0.19.79, commit 26773a708c402111f1e86646ad3a773bfa758f7a
+- Current production image: infinite-canvas:v0.19.80
+- Current production source: tag v0.19.80, commit 09c9a3e8b8f1979398360f02d8fb82c8a1cde0d8
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.79-worker/
+
+## v0.19.80 deployment
+
+- Standalone `/video/extract` adds share-text import, preview, original download, saved assets, account-scoped local history and handoff to four video tools. Fixes cover the administrator upstream-task reconciliation input, missing public model settings and home-draft typing/storage-failure recursion. WeChat Channels still requires its separate configured parser.
+- Release tag `v0.19.80`, commit `09c9a3e8b8f1979398360f02d8fb82c8a1cde0d8`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.80. Production image `infinite-canvas:v0.19.80`, ID `sha256:e92b91aa92a6ebb26f9ff00275e57e2f674a6adae9d30a414747752cc1a30c88`, was built on the server from the exact release tag. Concurrent unfinished H3 changes remain local and are excluded.
+- Only app was recreated. Worker container ID, start time, dependency image and v0.19.79 source mounts were unchanged. Before restart there were no active database, replacement or Worker tasks. The previous v0.19.79 application image is retained for rollback.
+- Online SQLite, previous Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.80-20261023-045709/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.80-prebuild-20261023-045531/`. Database quick checks passed. All 11 table counts, saved settings, default/VIP model catalogs/pricing/permissions and hashes for 8,387 existing task/media files matched before and after deployment.
+- Internal/external health, nine public routes including extraction, four tool destinations and assets, ordinary-user Worker gateway and replacement-job reads passed. Authenticated retention status works; anonymous retention/import access is denied. Published `/assets/index-DtOcUmfv.js` contains the release version, extraction route/actions, reconciliation dialog and existing retention limits. An independent workstation request confirmed health, page, bundle and feature markers.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.80-deployment.json`. Development full TypeScript checking passed, with 25 extraction tests, 18 existing regression tests and 10 fix-related tests passing in their respective runs. No local build/tests were repeated for release, no paid generation was submitted, and no user media was deleted. Browser interaction, decoding/download, desktop/mobile presentation and real Douyin/Xiaohongshu end-to-end acceptance remain pending.
 
 ## v0.19.79 deployment
 
