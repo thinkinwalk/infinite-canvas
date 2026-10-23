@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.85
-- Current production source: tag v0.19.85, commit 46171482bb975c1651d9fcd9b51f05576ca1aaaa
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.84-worker/
+- Current production image: infinite-canvas:v0.19.86
+- Current production source: tag v0.19.86, commit 497587cec62bd1876b1e20452a9dc679379ce822
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.86-worker/
+
+## v0.19.86 deployment
+
+- Release tag `v0.19.86`, commit `497587cec62bd1876b1e20452a9dc679379ce822`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.86. Production image `infinite-canvas:v0.19.86`, ID `sha256:79d2448647d3126a013fd65d951d1dc2827e6151312759b5b507d67ac248f4df`, was built on the server from the exact tag.
+- SparkCine H3 replacement exposes supported generation ratios with recommendations and padding previews. Separate fitted sources preserve the original file and audio, and are used by extraction, output and assembly. Unsubmitted jobs can change ratio and replan; old quotes and submitted/uncertain tasks are protected. Equal ratios such as 21:9 and 7:3 are compared numerically. Concurrent unfinished automatic video-segmentation work remains local and is excluded.
+- App and Worker were recreated after confirming no active database, replacement or Worker jobs. Worker mounts now point to `/opt/infinite-canvas/releases/v0.19.86-worker`; dependency image, data/model/cache mounts and environment are unchanged. Mounted `app.py` SHA-256 is `4111a1c1629bff8b2e9a234d66fcda9ac2f30dd73247d124322926cfe32014d7`; both running `app.py` and `replacement.py` match the versioned source. Ordinary-user health advertises available `replacement-fit`.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.86-20261023-070404/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.86-prebuild-20261023-070201/`. SQLite quick checks passed. All 11 table counts, saved settings, balances/roles/groups/status, model catalogs/pricing/permissions, H3 quotes and hashes for 8,439 existing task/media files matched. Prior app v0.19.85 and Worker v0.19.84 sources remain available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps video-worker app`; no database restore or schema migration is required.
+- Internal/external health, nine routes, ordinary-user Worker gateway, replacement-job reads, retention status and anonymous permission checks passed. Published `/assets/index-DHjMdlUx.js` contains the release and new ratio controls. A separate unauthenticated Chrome context using the actual production catalog and a local 544x960 video passed four checks: H3 ratio control, recommended 9:16, square preview with side padding, and 390px layout without horizontal overflow. Desktop/mobile screenshots were inspected; there were no page errors or API POST requests.
+- Deployment evidence: `/opt/infinite-canvas/releases/v0.19.86-deployment.json`; browser evidence: `/opt/infinite-canvas/releases/v0.19.86-browser-smoke.json`. Development verification passed 17 frontend tests, 35 related Worker tests, targeted Go tests and type checking; no local build/tests were repeated during release. No paid generation ran. Authenticated replanning and real generated output still need acceptance. The pre-existing FFmpeg 30fps one-frame assembly discrepancy remains recorded separately.
 
 ## v0.19.85 deployment
 
