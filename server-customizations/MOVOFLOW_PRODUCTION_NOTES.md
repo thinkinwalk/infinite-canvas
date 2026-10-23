@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.87
-- Current production source: tag v0.19.87, commit c26cd4bbe9f6d1aa4bdfc2a5402a9d09f7ebdfa1
+- Current production image: infinite-canvas:v0.19.88
+- Current production source: tag v0.19.88, commit 09981798e087ad174c735c5aab5d427685e7d011
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.88 deployment
+
+- Release tag `v0.19.88`, commit `09981798e087ad174c735c5aab5d427685e7d011`, is published on `release/v0.19.60`. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.88. Production app image `infinite-canvas:v0.19.88`, ID `sha256:a6743f54b592e225e72526d15020f78605e48588b6df9da702eff9a08f3c4bd9`, was built on the server from the exact tag.
+- H3 image mentions now use the documented `<Picture N>` token instead of `<Image N>`. The prior failed task received both the correct portrait and source video; the upstream portrait was byte-identical to the original. The token mismatch is a confirmed adapter defect, but its exclusive responsibility for unchanged identity has not been established by a new paid comparison. Shared replacement prompts strengthen identity/clothing precedence and source-subtitle glyph/style/timing preservation; the subtitle-removal branch remains separate and paid upstream prompt expansion stays disabled. The duplicate small aspect preview was removed.
+- Only app was recreated after confirming no active database, replacement or Worker jobs. Worker container ID, image, start time and `v0.19.87-worker` source mounts are unchanged. The single Uvicorn process and automatic-segmentation capabilities remain available to default and VIP users.
+- Online SQLite, prior Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.88-20261023-082155/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.88-prebuild-20261023-081958/`. SQLite quick checks passed. All 11 table counts, saved settings, balances/roles/groups/status, full model catalogs/pricing/permissions, H3 quotes and hashes for 8,549 existing task/media files matched. Prior app image v0.19.87 remains available. Rollback restores the saved Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; no database restore or schema migration is required.
+- Internal/external health, nine routes, default/VIP ordinary-user Worker capabilities, replacement-job reads, retention status and anonymous permission checks passed. Published `/assets/index-CW5LSdQf.js` contains v0.19.88, both new prompt rules and prior segmentation/reminder controls; the duplicate aspect preview is absent. Independent workstation requests confirmed the same public resource and markers. H3 5-second 768p quotes remain 30 credits for default and VIP.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.88-deployment.json`; workstation evidence is in the outer workspace `artifacts/release-v0.19.88/`. Development verification passed 8 focused frontend tests with 93 assertions and targeted Go regressions. No local builds/tests were repeated during release and no paid generation was submitted. Production browser interaction and same-source identity/subtitle quality remain pending; existing completed videos are unaffected.
 
 ## v0.19.87 deployment
 
