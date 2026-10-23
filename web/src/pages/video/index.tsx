@@ -227,7 +227,7 @@ export default function VideoPage() {
         setWriting(false);
         setWritingOpen(false);
     };
-    const referenceError = (trimming ? "参考视频正在裁剪，请稍候" : "") || (!manualModel && !model ? "暂无支持这些输入的可用服务，请调整素材或联系管理员启用相应服务。" : videoReferenceError(effectiveConfig, model, references.length, videoReferences.length, audioReferences.length)) || videoReferenceDurationError(model, videoReferences) || materialMentionError(prompt, materialLabels);
+    const referenceError = (trimming ? "参考视频正在裁剪，请稍候" : "") || (!manualModel && !model ? "暂无支持这些输入的可用服务，请调整素材或联系管理员启用相应服务。" : videoReferenceError(effectiveConfig, model, references.length, videoReferences.length, audioReferences.length)) || videoReferenceDurationError(model, videoReferences, effectiveConfig) || materialMentionError(prompt, materialLabels);
     const quoteKey = [model, effectiveConfig.channelMode, effectiveConfig.vquality, effectiveConfig.videoSeconds, effectiveConfig.videoInputMode, effectiveConfig.videoInterpolate, token, quoteRevision, pricingRevision].join("|");
     const price = quotedPrice?.key === quoteKey ? quotedPrice.value : null;
     useEffect(() => { setSettingsOpen(false); }, [model, running, writing]);

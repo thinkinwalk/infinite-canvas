@@ -276,6 +276,9 @@ export type AdminModelChannel = {
 };
 
 export type VideoModelProfile = {
+    contentReplacement?: boolean;
+    referenceVideoMinSeconds?: number;
+    referenceVideoMaxSeconds?: number;
     inputModes?: string[];
     firstFrameRequired?: boolean;
     lastFrameOptional?: boolean;
@@ -283,7 +286,7 @@ export type VideoModelProfile = {
     lastFrameField?: string;
     displayName: string;
     description: string;
-    interface: "openai" | "relay" | "ark" | "unavailable";
+    interface: "openai" | "relay" | "ark" | "sparkcine_h3" | "unavailable";
     maxImages: number;
     maxVideos: number;
     maxAudios: number;

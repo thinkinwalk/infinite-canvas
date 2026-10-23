@@ -86,6 +86,14 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 		FailError(w, err)
 		return
 	}
+	if service.IsSparkCineH3(channel, modelName) {
+		if !tracked {
+			Fail(w, "视频任务不存在")
+			return
+		}
+		copySparkCineH3Video(w, r, channel, task, content)
+		return
+	}
 	path := "/videos/" + url.PathEscape(id)
 	if content {
 		path += "/content"
@@ -173,13 +181,23 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			Fail(w, err.Error())
 			return
 		}
+		if profile.Interface == service.SparkCineH3Interface {
+			body, err = sparkCineH3Body(body, user.ID)
+			if err != nil {
+				Fail(w, err.Error())
+				return
+			}
+			contentType = "application/json"
+		}
 		body = stripVideoInputMode(body, contentType)
 		path = videoChannelPath(channel, modelName, path)
 		formatBase := ""
 		if profile.Interface == "ark" {
 			formatBase = "/api/plan/v3"
 		}
-		body, contentType = normalizeAIProxyVideoBody(formatBase, path, body, contentType)
+		if profile.Interface != service.SparkCineH3Interface {
+			body, contentType = normalizeAIProxyVideoBody(formatBase, path, body, contentType)
+		}
 	}
 	logAIImageUpstreamParams(channel, path, modelName, body, contentType)
 	if path == "/responses" {
@@ -194,7 +212,11 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		})
 		return
 	}
-	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
+	upstreamURL := service.BuildModelChannelURL(channel, path)
+	if videoCreate && service.IsSparkCineH3(channel, modelName) {
+		upstreamURL = service.SparkCineH3URL(channel, "/v2/video_generation")
+	}
+	request, err := http.NewRequest(http.MethodPost, upstreamURL, bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
 		Fail(w, "AI 接口请求失败")

@@ -8,10 +8,20 @@ export const VIDEO_INPUT_MODES = [
     { value: "first_frame_only", label: "文生 / 单首帧" },
 ];
 
+export function sparkCineH3Preset(): VideoModelProfile {
+    return {
+        displayName: "MiniMax H3 Video", description: "支持图片、音频及一段 2–15 秒视频参考；内容替换效果待实测确认。",
+        interface: "sparkcine_h3", maxImages: 9, maxVideos: 1, maxAudios: 3,
+        resolutions: ["480", "720", "768", "960", "1080"], seconds: Array.from({ length: 27 }, (_, i) => String(i + 4)),
+        inputModes: ["reference"], generateAudio: false, contentReplacement: true,
+        referenceVideoMinSeconds: 2, referenceVideoMaxSeconds: 15,
+    };
+}
+
 export function videoProfile(config: AiConfig, model: string): VideoModelProfile {
     const name = modelOptionName(model);
     if (isMiniMaxH3Name(name)) return { ...miniMaxH3Profile(name), ...(config.channelMode === "remote" ? config.videoModels?.[name] : undefined) };
-    if (isH3Video2K(model)) return { displayName: name, description: "支持 768p / 2K，支持 5 / 10 / 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", interface: "relay", maxImages: 9, maxVideos: 3, maxAudios: 3, resolutions: ["2K", "768"], seconds: ["15", "5", "10"], generateAudio: false, inputModes: ["reference"] };
+    if (isH3Video2K(model)) return { displayName: name, description: "支持 768p / 2K，支持 5 / 10 / 15 秒，按次计费；2K 为模型输出档位，实际像素以成片为准。", interface: "relay", maxImages: 9, maxVideos: 3, maxAudios: 3, resolutions: ["2K", "768"], seconds: ["15", "5", "10"], generateAudio: false, inputModes: ["reference"], contentReplacement: config.channelMode === "remote" && config.videoModels?.[name]?.contentReplacement === true };
     if (model.startsWith("replicate::") && name === "wan-video/wan-2.2-t2v-fast") return { displayName: modelOptionLabel(config, model), description: "只写文字即可生成视频，支持横屏 / 竖屏、约 5 秒或 7.5 秒。", interface: "relay", maxImages: 0, maxVideos: 0, maxAudios: 0, resolutions: ["480", "720"], seconds: ["5", "7.5"], generateAudio: false, inputModes: ["reference"] };
     if (model.startsWith("replicate::") && name === "wan-video/wan-2.2-i2v-fast") return { displayName: modelOptionLabel(config, model), description: "首帧必填、尾帧可选；可选横屏 / 竖屏，确认裁剪构图后生成，支持约 5 秒或 7.5 秒。", interface: "relay", maxImages: 2, maxVideos: 0, maxAudios: 0, resolutions: ["480", "720"], seconds: ["5", "7.5"], generateAudio: false, inputModes: ["first_last"], firstFrameRequired: true, lastFrameOptional: true, firstFrameField: "image", lastFrameField: "last_image" };
     if (model.startsWith("replicate::") && name === "minimax/hailuo-2.3") return { displayName: modelOptionLabel(config, model), description: "可直接输入文字，也可上传1张首帧图片。768p支持6/10秒，1080p仅支持6秒。", interface: "relay", maxImages: 1, maxVideos: 0, maxAudios: 0, resolutions: ["768", "1080"], seconds: config.vquality.replace(/p$/i, "") === "1080" ? ["6"] : ["6", "10"], generateAudio: false, inputModes: ["first_frame_only"], firstFrameRequired: false, firstFrameField: "first_frame_image" };
@@ -35,14 +45,39 @@ export function isWan30(model: string) {
     return modelOptionName(model).trim().toLowerCase() === "wan30-720p";
 }
 
-export function videoReferenceDurationError(model: string, videos: { durationMs?: number }[]) {
-    if (!isWan30(model)) return "";
+export function videoReferenceDurationError(model: string, videos: { durationMs?: number }[], config?: AiConfig) {
+    const profile = config ? videoProfile(config, model) : undefined;
+    const minimum = profile?.referenceVideoMinSeconds || (isWan30(model) ? 1 : 0);
+    const maximum = profile?.referenceVideoMaxSeconds || (isWan30(model) ? 30 : 0);
+    if (!minimum && !maximum) return "";
     for (const [index, video] of videos.entries()) {
         const duration = video.durationMs;
         if (!duration || !Number.isFinite(duration)) return `第 ${index + 1} 个参考视频时长无法读取，请重新上传`;
-        if (duration < 1000 || duration > 30000) return `第 ${index + 1} 个参考视频需为 1–30 秒，请裁剪后再提交`;
+        if (duration < minimum * 1000 || maximum > 0 && duration > maximum * 1000) return `第 ${index + 1} 个参考视频需为 ${minimum}–${maximum || "不限"} 秒，请裁剪后再提交`;
     }
     return "";
+}
+
+export function contentReplacementModels(config: AiConfig) {
+    return selectableModelsByCapability(config, "video").filter((model) => {
+        const profile = config.videoModels?.[modelOptionName(model)] ?? videoProfile(config, model);
+        return model.startsWith("remote::") && profile.contentReplacement === true &&
+            ["relay", "ark", "sparkcine_h3"].includes(profile.interface) && profile.maxImages > 0 && profile.maxVideos > 0 &&
+            supportedVideoInputModes(profile).includes("reference");
+    }).sort((a, b) => Number(isWan30(b)) - Number(isWan30(a)));
+}
+
+export function sparkCineVideoSeconds(profile: VideoModelProfile, resolution: string, ratio: string) {
+    if (profile.interface !== "sparkcine_h3") return profile.seconds;
+    const limit = ["960", "1080"].includes(resolution.replace(/p$/i, "")) ? 15 : resolution.replace(/p$/i, "") === "768" && ratio === "21:9" ? 20 : 30;
+    return profile.seconds.filter((value) => Number.isInteger(Number(value)) && Number(value) >= 4 && Number(value) <= limit);
+}
+
+export function sparkCineVideoSpecError(profile: VideoModelProfile, resolution: string, ratio: string, seconds: string) {
+    if (profile.interface !== "sparkcine_h3") return "";
+    if (!["16:9", "9:16", "21:9", "4:3", "1:1", "3:4"].includes(ratio)) return "H3 不支持当前画幅，请重新选择";
+    if (resolution.replace(/p$/i, "") === "720" && !["16:9", "9:16"].includes(ratio)) return "H3 的 720P 仅支持 16:9 / 9:16";
+    return sparkCineVideoSeconds(profile, resolution, ratio).includes(seconds) ? "" : "H3 当前画幅和清晰度不支持所选时长，请重新选择";
 }
 
 export function resolveAutomaticVideoModel(config: AiConfig, images: number, videos: number, audios: number, requestedMode?: string) {

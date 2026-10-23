@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Alert, App, Button, Checkbox, Collapse, Dropdown, Empty, Modal, Segmented, Select, theme } from "antd";
-import { useConfigStore, resolveEffectiveConfig, modelOptionName, selectableModelsByCapability } from "@/stores/use-config-store";
+import { useConfigStore, resolveEffectiveConfig, modelOptionName } from "@/stores/use-config-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { emptyVideoDraft } from "@/types/video-workbench";
-import { isWan30, videoProfile } from "@/lib/video-capabilities";
+import { contentReplacementModels, isWan30, videoProfile } from "@/lib/video-capabilities";
 import { isPendingReplacement } from "@/lib/content-replacement-state";
 import { publicServiceText, uploadReplicateReference } from "@/services/api/replicate";
 import { storeWorkerResult, uploadWorkerMedia } from "@/services/api/video-worker";
@@ -21,7 +21,6 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 const worker = { url: "/api/v1/video-worker", token: "" };
 const wanReplace = "wan-video/wan-2.2-animate-replace";
 const headSwapModel = "wavespeed-ai/video-head-swap";
-const preferred = ["wan30-720p", "grok-imagine-video-1.5-preview", "seedance-2.0-mini", "h3video-768", "h3video-2k"];
 const labels = { planning: "分析中", ready: "待确认费用", preview: "预览待确认", running: "处理中", paused: "已暂停", completed: "已合成" };
 const modelLabel = (name: string) => name === headSwapModel ? "智能换脸" : name === wanReplace ? "Wan 2.2 整人替换" : modelOptionName(name);
 const jobStep = (job: ReplacementJob) => job.planned && job.status === "ready" && !job.parts?.some((part) => part.submitted || part.input)
@@ -73,14 +72,12 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const attemptedResult = useRef("");
     const previewRevision = useRef(0);
     const pendingRequest = useRef<{ key: string; id: string; source?: string; image?: string } | undefined>(undefined);
-    const candidates = selectableModelsByCapability(config, "video")
-        .filter((name) => name.startsWith("remote::") && preferred.includes(modelOptionName(name).toLowerCase()))
-        .filter((name) => { const p = videoProfile({ ...config, channelMode: "remote" }, name); return p.maxVideos > 0 && p.maxImages > 0; })
-        .sort((a, b) => preferred.indexOf(modelOptionName(a).toLowerCase()) - preferred.indexOf(modelOptionName(b).toLowerCase()));
+    const candidates = contentReplacementModels(config);
+    const label = (name: string) => name === wanReplace || name === headSwapModel ? modelLabel(name) : videoProfile(config, name).displayName || modelLabel(name);
     const selected = headSwap ? headSwapModel : candidates.includes(model) || model === wanReplace ? model : candidates[0] || wanReplace;
     const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? headSwap ? "当前换脸模型不能同时去除原字幕，请关闭「去除原字幕」后继续。" : "当前模型不能同时换人和去除原字幕。请在「高级设置」中选择 Wan 3.0（wan30-720p），或关闭「去除原字幕」后继续。" : "");
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
-    const durations = selected === headSwapModel ? ["15"] : selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
+    const durations = selected === headSwapModel ? ["15"] : selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
     const sizes = selected === wanReplace || headSwap ? ["720", "480"] : profile.resolutions;
     const duration = durations[0];
     const size = sizes.includes(resolution) ? resolution : sizes[0];
@@ -279,10 +276,10 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <span>清晰度</span>
             <Select className="w-full" aria-label="清晰度" value={size} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"} options={sizes.map((v) => ({ value: v, label: /^\d+p?$/.test(v) ? `${v.replace(/p$/i, "")}p` : v }))} onChange={(value) => { setResolution(value); selectJob(); }} />
         </label>
-        {!headSwap && <Collapse size="small" items={[{ key: "model", label: `高级设置 · ${modelLabel(selected)}`, children: <label className="block space-y-2 text-sm">
+        {!headSwap && <Collapse size="small" items={[{ key: "model", label: `高级设置 · ${label(selected)}`, children: <label className="block space-y-2 text-sm">
             <span>生成模型</span>
-            <Select className="w-full" aria-label="生成模型" value={selected} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"}
-                options={[...candidates.map((v) => ({ value: v, label: modelLabel(v) })), { value: wanReplace, label: modelLabel(wanReplace) }]}
+            <Select showSearch optionFilterProp="label" className="w-full" aria-label="生成模型" value={selected} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"}
+                options={[...candidates.map((v) => ({ value: v, label: `${label(v)} · ${modelOptionName(v)}` })), { value: wanReplace, label: modelLabel(wanReplace) }]}
                 onChange={(v) => { setModel(v); setResolution(""); selectJob(); }} />
             <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>只调用所选模型，系统根据其支持的时长自动分段。</span>
         </label> }]} />}

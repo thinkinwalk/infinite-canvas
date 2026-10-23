@@ -38,10 +38,10 @@ test("Wan30 rejects invalid reference durations before submitting or uploading",
     const wan = { ...config, channels: [createModelChannel({ id: "remote", models: [{ name: "wan30-720p", capability: "video" }] })], model: "wan30-720p", videoModel: "wan30-720p", videoModels: { "wan30-720p": profile } };
     let requests = 0;
     axios.post = (async () => { requests++; return { data: { id: "mock" } }; }) as typeof axios.post;
-    for (const durationMs of [undefined, 0, 999, 15001, Infinity, NaN]) await expect(createVideoGenerationTask(wan, "参考视频", [], [{ ...video, durationMs }])).rejects.toThrow("参考视频");
+    for (const durationMs of [undefined, 0, 999, 30001, Infinity, NaN]) await expect(createVideoGenerationTask(wan, "参考视频", [], [{ ...video, durationMs }])).rejects.toThrow("参考视频");
     expect(requests).toBe(0);
-    for (const durationMs of [1000, 15000]) await createVideoGenerationTask(wan, "参考视频", [], [{ ...video, durationMs }]);
-    expect(requests).toBe(2);
+    for (const durationMs of [1000, 15000, 30000]) await createVideoGenerationTask(wan, "参考视频", [], [{ ...video, durationMs }]);
+    expect(requests).toBe(3);
 });
 
 test("relay sends real video/audio fields and the confirmed price without creating a real prediction", async () => {

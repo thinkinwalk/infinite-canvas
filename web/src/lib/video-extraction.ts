@@ -1,4 +1,17 @@
 import { emptyVideoDraft, type VideoDraft, type VideoRecord, type VideoTool, type WorkbenchMedia } from "@/types/video-workbench";
+import type { VideoExtraction, VideoExtractionClip } from "@/stores/use-video-extraction-store";
+
+export function extractionClipError(start: number, end: number, durationMs?: number) {
+    const duration = (durationMs || 0) / 1000;
+    if (!Number.isFinite(duration) || duration <= 0) return "视频时长尚未识别，请等待视频载入";
+    if (![start, end].every(Number.isFinite) || start < 0 || end > duration || end <= start) return "片段起止时间必须在原视频范围内";
+    if (end - start < 1 || end - start > 30) return "请选择 1–30 秒的片段";
+    return "";
+}
+
+export function clipExtraction(clip: VideoExtractionClip): VideoExtraction {
+    return { id: clip.id, createdAt: clip.createdAt, originalBytes: clip.media.bytes, media: clip.media };
+}
 
 export const extractionTargets = [
     { key: "viral-recreate", label: "爆款复刻" },

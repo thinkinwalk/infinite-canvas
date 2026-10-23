@@ -174,6 +174,15 @@ func AdminCreditLogVideoContent(w http.ResponseWriter, r *http.Request, id strin
 }
 
 func creditLogVideoRequest(r *http.Request, task model.VideoTask) (*http.Request, *http.Client, error) {
+	channel, channelErr := service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL)
+	if channelErr == nil && service.IsSparkCineH3(channel, task.Model) {
+		body, err := querySparkCineH3(r.Context(), channel, task.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		request, err := sparkCineDownloadRequest(r.Context(), videoResponseOutputURL(body))
+		return request, creditLogVideoClient, err
+	}
 	address, client, token := task.OutputURL, creditLogVideoClient, ""
 	switch strings.ToLower(strings.TrimSpace(task.Model)) {
 	case "grok-imagine-video-1.5-preview", "grok-imagine-video-1.5-fast", "grok-imagine-1.0-video":

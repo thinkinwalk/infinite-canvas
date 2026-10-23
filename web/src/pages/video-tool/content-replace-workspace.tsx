@@ -18,7 +18,8 @@ import { getWorkerCapabilities, prepareWorkbenchVideo, workbenchMediaBlob } from
 import { replaceStoredVideo, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { registerTemporaryReferenceCopy } from "@/services/video-reference-retention";
 import { imageToDataUrl } from "@/services/image-storage";
-import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { useConfigStore } from "@/stores/use-config-store";
+import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
@@ -37,7 +38,7 @@ export default function ContentReplaceWorkspace() {
     const { token } = theme.useToken();
     const { message, modal } = App.useApp();
     const location = useLocation();
-    const config = useEffectiveConfig();
+    const config = useVideoCreationConfig();
     const openConfig = useConfigStore((s) => s.openConfigDialog);
     const updateConfig = useConfigStore((s) => s.updateConfig);
     const themeMode = useThemeStore((s) => s.theme);
@@ -233,7 +234,7 @@ export default function ContentReplaceWorkspace() {
         const capability = capabilities?.find((c) => c.name === (person ? "replace-person" : "replace-product"));
         unavailable = checking ? "正在检查处理服务" : !capability?.available ? serviceError || capability?.reason || "当前处理服务尚未配置替换能力" : "";
         if (!unavailable && d.replacement === "product" && !d.media.some((m) => m.role === "mask") && !capabilities?.some((c) => c.name === "track-product" && c.available)) unavailable = "商品自动跟踪尚未就绪，请管理员配置跟踪服务";
-    } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : []);
+    } else unavailable = !config.videoModel ? "请在高级设置中选择视频模型" : videoReferenceError(config, config.videoModel, 1, 1, 0) || videoReferenceDurationError(config.videoModel, reference ? [reference] : [], config);
     const subtitleCapabilities = ["replacement-finish", "replacement-transcribe"];
     const subtitleCapability = subtitleCapabilities.map((name) => capabilities?.find((item) => item.name === name)).find((item) => !item?.available);
     const subtitleUnavailable = !d.replaceSubtitles || person && wholeVideo && !d.regenerateSubtitles ? ""

@@ -2,7 +2,8 @@ import localforage from "localforage";
 import { create } from "zustand";
 import type { WorkbenchMedia } from "@/types/video-workbench";
 
-export type VideoExtraction = { id: string; createdAt: number; originalBytes: number; media: WorkbenchMedia };
+export type VideoExtractionClip = { id: string; createdAt: number; start: number; end: number; media: WorkbenchMedia };
+export type VideoExtraction = { id: string; createdAt: number; originalBytes: number; media: WorkbenchMedia; clips?: VideoExtractionClip[] };
 const storage = localforage.createInstance({ name: "infinite-canvas", storeName: "video_extractions" });
 let loadVersion = 0;
 async function withOwnerLock(owner: string, action: () => Promise<void>): Promise<void> {
@@ -19,7 +20,30 @@ type ExtractionState = {
     load: (owner: string) => Promise<void>;
     add: (owner: string, record: VideoExtraction) => Promise<void>;
     remove: (owner: string, id: string) => Promise<void>;
+    saveClip: (owner: string, parentId: string, clip: VideoExtractionClip, previous?: VideoExtractionClip, validate?: () => void) => Promise<void>;
+    removeClip: (owner: string, parentId: string, clip: VideoExtractionClip, validate?: () => void) => Promise<void>;
 };
+
+async function updateClips(owner: string, parentId: string, update: (clips: VideoExtractionClip[]) => VideoExtractionClip[], validate?: () => void): Promise<void> {
+    const version = loadVersion;
+    const check = () => {
+        validate?.();
+        const state = useVideoExtractionStore.getState();
+        if (!owner || state.owner !== owner || !state.hydrated || state.error || version !== loadVersion) throw new Error("提取记录尚未恢复或账号已变化，请重新打开页面");
+    };
+    check();
+    await withOwnerLock(owner, async () => {
+        check();
+        const records = await storage.getItem<VideoExtraction[]>(owner) || [];
+        check();
+        const parent = records.find((record) => record.id === parentId);
+        if (!parent) throw new Error("原视频记录已移除，无法保存片段");
+        const next = records.map((record) => record === parent ? { ...record, clips: update(record.clips || []) } : record);
+        check();
+        await storage.setItem(owner, next);
+        if (useVideoExtractionStore.getState().owner === owner && version === loadVersion) useVideoExtractionStore.setState({ records: next });
+    });
+}
 
 export const useVideoExtractionStore = create<ExtractionState>((set, get) => ({
     owner: "", hydrated: false, error: "", records: [],
@@ -54,4 +78,13 @@ export const useVideoExtractionStore = create<ExtractionState>((set, get) => ({
             if (get().owner === owner && version === loadVersion) set({ records });
         });
     },
+    saveClip: (owner, parentId, clip, previous, validate) => updateClips(owner, parentId, (clips) => {
+        if (!previous) return [...clips, clip];
+        if (JSON.stringify(clips.find((item) => item.id === previous.id)) !== JSON.stringify(previous)) throw new Error("片段已在其他页面修改，请重新选择");
+        return clips.map((item) => item.id === previous.id ? clip : item);
+    }, validate),
+    removeClip: (owner, parentId, clip, validate) => updateClips(owner, parentId, (clips) => {
+        if (JSON.stringify(clips.find((item) => item.id === clip.id)) !== JSON.stringify(clip)) throw new Error("片段已变化，请重新选择");
+        return clips.filter((item) => item.id !== clip.id);
+    }, validate),
 }));

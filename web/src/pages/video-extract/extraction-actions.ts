@@ -27,7 +27,7 @@ export async function readExtractedVideo(record: VideoExtraction, signal: AbortS
     validate();
     const reference = await readVideoReferenceRetention(record.media.referenceId);
     if (!reference || reference.cleanedAt) throw new Error("原视频已清理，请重新提取");
-    const blob = await getMediaBlob(original ? reference.storageKey : record.media.storageKey);
+    const blob = await getMediaBlob(original && !record.media.source?.clip ? reference.storageKey : record.media.storageKey);
     validate();
     if (!blob) throw new Error("本地视频已清理，请重新提取");
     return blob;

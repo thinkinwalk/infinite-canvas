@@ -1,5 +1,5 @@
 import axios from "axios";
-import { videoProfile, videoInputMode, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
+import { videoProfile, videoInputMode, videoReferenceDurationError, videoReferenceError, sparkCineVideoSpecError } from "@/lib/video-capabilities";
 import { nanoid } from "nanoid";
 
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -45,7 +45,9 @@ type RequestOptions = { signal?: AbortSignal; expectedCredits?: number; onWaitSt
 export type VideoPrice = { credits: number; calculation: string };
 export async function quoteVideoModel(config: AiConfig, model: string, signal?: AbortSignal): Promise<VideoPrice> {
     if (!model || !modelMatchesCapability(config, model, "video")) throw new Error("请选择可用的视频模型后重试");
-    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: isReplicateVideoModel(model) ? "replicate" : "openai", model: modelOptionName(model), resolution: normalizeVideoResolution(config.vquality).replace(/p$/, ""), seconds: config.videoSeconds, interpolate: config.videoInterpolate === "true" }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
+    const specError = sparkCineVideoSpecError(videoProfile(config, model), config.vquality, inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size), config.videoSeconds);
+    if (specError) throw new Error(specError);
+    const response = await axios.post<ApiEnvelope<VideoPrice>>("/api/v1/models/quote", { protocol: isReplicateVideoModel(model) ? "replicate" : "openai", model: modelOptionName(model), resolution: normalizeVideoResolution(config.vquality).replace(/p$/, ""), seconds: config.videoSeconds, aspect_ratio: inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size), interpolate: config.videoInterpolate === "true" }, { headers: aiHeaders({ ...config, channelMode: "remote" }, "application/json"), signal });
     return unwrapEnvelope(response.data, "视频报价读取失败");
 }
 
@@ -188,11 +190,12 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, videoReferences, audioReferences, options);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (profile.interface === "unavailable") throw new Error(profile.description);
-    const referenceError = videoReferenceError(config, selectedModel, references.length, videoReferences.length, audioReferences.length) || videoReferenceDurationError(selectedModel, videoReferences);
+    const referenceError = videoReferenceError(config, selectedModel, references.length, videoReferences.length, audioReferences.length) || videoReferenceDurationError(selectedModel, videoReferences, config) ||
+        sparkCineVideoSpecError(profile, config.vquality, inferVideoRatio(config.size) === "auto" ? "16:9" : inferVideoRatio(config.size), config.videoSeconds);
     if (referenceError) throw new Error(referenceError);
     if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) throw new Error("当前模型不支持所选视频时长，请重新选择");
     if (profile.resolutions.length && !profile.resolutions.includes(normalizeVideoResolution(config.vquality).replace(/p$/, ""))) throw new Error("当前模型不支持所选分辨率，请重新选择");
-    if (profile.interface === "relay") return createPidoiJsonVideoTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
+    if (profile.interface === "relay" || profile.interface === "sparkcine_h3") return createPidoiJsonVideoTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     if (isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -385,7 +388,7 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
                     return { status: "completed", result };
                 }
             }
-            const url = videoResultUrl(video);
+            const url = videoProfile(config, task.model).interface === "sparkcine_h3" ? "" : videoResultUrl(video);
             if (url) {
                 const result = await videoResultFromUrl(url, options);
                 if (result) {

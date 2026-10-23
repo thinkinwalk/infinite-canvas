@@ -38,7 +38,24 @@ func VideoQuote(channel model.ModelChannel, modelName, resolution string, second
 	return credits, fmt.Sprintf("%sp · %g 秒：%g 算力点/秒，最低 %d 点", resolution, duration, rate, profile.MinimumCredits), true
 }
 
-func VideoProfile(channel model.ModelChannel, name string) model.VideoModelProfile {
+func VideoProfile(channel model.ModelChannel, name string) (result model.VideoModelProfile) {
+	defer func() {
+		if result.Interface == SparkCineH3Interface && name != "h3-video" {
+			result.Interface = "unavailable"
+			result.Description = "SparkCine H3 v2 接口目前只适配 h3-video，请检查完整模型 ID。"
+		}
+		if result.ContentReplacement == nil {
+			enabled := false
+			switch strings.ToLower(strings.TrimSpace(name)) {
+			case "wan30-720p", "grok-imagine-video-1.5-preview", "seedance-2.0-mini", "h3video-768", "h3video-2k":
+				enabled = true
+			}
+			result.ContentReplacement = &enabled
+		}
+	}()
+	if IsSparkCineH3(channel, name) {
+		return sparkCineH3Profile(channel.VideoModels[name])
+	}
 	if IsMiniMaxH3(name) && channel.VideoModels[name].Interface == "" {
 		profile := channel.VideoModels[name]
 		profile.DisplayName, profile.Interface = name, "relay"
@@ -138,7 +155,11 @@ func normalizeVideoInputProfile(profile model.VideoModelProfile) model.VideoMode
 func publicVideoProfiles(channels []model.ModelChannel) map[string]model.VideoModelProfile {
 	profiles := map[string]model.VideoModelProfile{}
 	for _, name := range enabledChannelModels(channels) {
-		if !isVideoModelName(name) {
+		video := isVideoModelName(name)
+		for _, channel := range channels {
+			video = video || channel.VideoModels[name].Interface != ""
+		}
+		if !video {
 			continue
 		}
 		candidates := modelChannelsForModel(channels, name)
@@ -156,6 +177,12 @@ func publicVideoProfiles(channels []model.ModelChannel) map[string]model.VideoMo
 			profile.MaxVideos = min(profile.MaxVideos, other.MaxVideos)
 			profile.MaxAudios = min(profile.MaxAudios, other.MaxAudios)
 			profile.GenerateAudio = profile.GenerateAudio && other.GenerateAudio
+			replacement := *profile.ContentReplacement && *other.ContentReplacement
+			profile.ContentReplacement = &replacement
+			profile.ReferenceVideoMinSeconds = max(profile.ReferenceVideoMinSeconds, other.ReferenceVideoMinSeconds)
+			if profile.ReferenceVideoMaxSeconds == 0 || other.ReferenceVideoMaxSeconds > 0 && other.ReferenceVideoMaxSeconds < profile.ReferenceVideoMaxSeconds {
+				profile.ReferenceVideoMaxSeconds = other.ReferenceVideoMaxSeconds
+			}
 			profile.InputModes = sharedVideoOptions(profile.InputModes, other.InputModes)
 			if profile.FirstFrameField != other.FirstFrameField || profile.LastFrameField != other.LastFrameField {
 				modes := []string{}
@@ -172,7 +199,7 @@ func publicVideoProfiles(channels []model.ModelChannel) map[string]model.VideoMo
 			profile.Resolutions = sharedVideoOptions(profile.Resolutions, other.Resolutions)
 			profile.Seconds = sharedVideoOptions(profile.Seconds, other.Seconds)
 		}
-		if len(profile.Resolutions) > 0 && profile.Resolutions[0] == "unavailable" || len(profile.Seconds) > 0 && profile.Seconds[0] == "unavailable" {
+		if len(profile.Resolutions) > 0 && profile.Resolutions[0] == "unavailable" || len(profile.Seconds) > 0 && profile.Seconds[0] == "unavailable" || profile.ReferenceVideoMaxSeconds > 0 && profile.ReferenceVideoMinSeconds > profile.ReferenceVideoMaxSeconds {
 			profile.Interface = "unavailable"
 			profile.Description = "该模型的多个渠道没有共同的视频规格，请管理员统一配置后使用。"
 		}

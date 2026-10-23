@@ -24,6 +24,7 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 		Protocol    string `json:"protocol"`
 		Resolution  string `json:"resolution"`
 		Seconds     string `json:"seconds"`
+		AspectRatio string `json:"aspect_ratio"`
 		Interpolate bool   `json:"interpolate"`
 	}
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.Model == "" {
@@ -103,6 +104,20 @@ func ModelQuote(w http.ResponseWriter, r *http.Request) {
 	}
 	if service.IsH3Video2K(input.Model) {
 		if err := validateH3VideoSettings(input.Resolution, input.Seconds); err != nil {
+			Fail(w, err.Error())
+			return
+		}
+	}
+	if service.IsSparkCineH3(channel, input.Model) {
+		seconds, err := strconv.ParseFloat(input.Seconds, 64)
+		if input.AspectRatio == "" {
+			input.AspectRatio = "16:9"
+		}
+		if err != nil {
+			Fail(w, "请选择 H3 输出秒数")
+			return
+		}
+		if err := service.SparkCineH3SpecError(input.Resolution, input.AspectRatio, seconds); err != nil {
 			Fail(w, err.Error())
 			return
 		}
@@ -249,7 +264,7 @@ func validateVideoProfileRequest(profile model.VideoModelProfile, body []byte, c
 			}
 			part.Close()
 		}
-		if profile.Interface == "ark" || profile.Interface == "relay" {
+		if profile.Interface == "ark" || profile.Interface == "relay" || profile.Interface == service.SparkCineH3Interface {
 			return fmt.Errorf("该视频渠道需要 JSON 格式，请刷新页面后重试")
 		}
 	} else {
@@ -377,7 +392,7 @@ func validateVideoProfileRequest(profile model.VideoModelProfile, body []byte, c
 			return fmt.Errorf("当前模型渠道不支持这些参考素材或已超过素材数量，请刷新模型配置后重试")
 		}
 	}
-	if counts["video"]+counts["audio"] > 0 && profile.Interface != "ark" && profile.Interface != "relay" {
+	if counts["video"]+counts["audio"] > 0 && profile.Interface != "ark" && profile.Interface != "relay" && profile.Interface != service.SparkCineH3Interface {
 		return fmt.Errorf("当前视频接口未接通视频或音频参考")
 	}
 	for _, item := range []struct {

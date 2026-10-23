@@ -874,8 +874,8 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		}
 		job.ChannelID = channel.ID
 		profile := service.VideoProfile(channel, job.Model)
-		if profile.MaxVideos < 1 || profile.MaxImages < 1 || profile.Interface == "unavailable" {
-			return fmt.Errorf("该渠道未配置图片加视频参考能力，不能用于人物替换评估")
+		if profile.ContentReplacement == nil || !*profile.ContentReplacement || profile.MaxVideos < 1 || profile.MaxImages < 1 || profile.Interface == "unavailable" {
+			return fmt.Errorf("该渠道未开启内容替换或未配置图片加视频参考能力")
 		}
 		allowed := false
 		for _, s := range profile.Seconds {
@@ -885,6 +885,14 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		}
 		if !allowed {
 			return fmt.Errorf("请使用渠道明确支持的输出时长")
+		}
+		if profile.ReferenceVideoMaxSeconds > 0 && seconds > profile.ReferenceVideoMaxSeconds {
+			return fmt.Errorf("当前渠道参考视频最多 %g 秒，请缩短分段", profile.ReferenceVideoMaxSeconds)
+		}
+		if service.IsSparkCineH3(channel, job.Model) {
+			if err := validateSparkCineReference("image", job.Image, job.UserID); err != nil {
+				return err
+			}
 		}
 		if strings.EqualFold(job.Model, "wan30-720p") && seconds > 30 {
 			return fmt.Errorf("Wan30 当前参考视频接入支持 1–30 秒，请选择不超过 30 秒的分段")
@@ -963,18 +971,26 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			if err != nil {
 				return err
 			}
-			choices := service.VideoProfile(channel, job.Model).Seconds
+			profile := service.VideoProfile(channel, job.Model)
+			choices := profile.Seconds
 			for i := range job.Parts {
 				part := &job.Parts[i]
 				part.Seconds = math.Inf(1)
 				for _, choice := range choices {
 					value, err := strconv.ParseFloat(choice, 64)
-					if err == nil && value >= part.InputEnd-part.InputStart && value < part.Seconds {
+					if err == nil && value >= part.InputEnd-part.InputStart && value < part.Seconds &&
+						(profile.ReferenceVideoMaxSeconds == 0 || value <= profile.ReferenceVideoMaxSeconds) &&
+						value >= profile.ReferenceVideoMinSeconds {
 						part.Seconds = value
 					}
 				}
 				if math.IsInf(part.Seconds, 1) {
 					return fmt.Errorf("当前模型没有能够容纳此片段的时长档位")
+				}
+				if service.IsSparkCineH3(channel, job.Model) {
+					if err := service.SparkCineH3SpecError(job.Resolution, job.AspectRatio, part.Seconds); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -1288,7 +1304,7 @@ func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replac
 		}
 		return quote.Credits, nil
 	}
-	raw, err := replacementCall(ctx, ModelQuote, "POST", "/api/v1/models/quote", map[string]any{"model": job.Model, "protocol": "openai", "resolution": job.Resolution, "seconds": strconv.FormatFloat(part.Seconds, 'f', -1, 64)}, nil)
+	raw, err := replacementCall(ctx, ModelQuote, "POST", "/api/v1/models/quote", map[string]any{"model": job.Model, "protocol": "openai", "resolution": job.Resolution, "seconds": strconv.FormatFloat(part.Seconds, 'f', -1, 64), "aspect_ratio": job.AspectRatio}, nil)
 	if err != nil {
 		return 0, err
 	}

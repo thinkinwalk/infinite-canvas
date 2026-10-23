@@ -267,12 +267,14 @@ func testReplicateChannelModel(channel model.ModelChannel, name string) (string,
 
 func publicChannelModels(settings model.Settings, group string) []model.PublicChannelModel {
 	items := []model.PublicChannelModel{}
-	for _, name := range enabledChannelModels(modelChannelsForGroup(settings.Private.Channels, "", group)) {
+	channels := modelChannelsForGroup(settings.Private.Channels, "", group)
+	videos := publicVideoProfiles(channels)
+	for _, name := range enabledChannelModels(channels) {
 		capability := "text"
-		if isImageModelName(name) {
-			capability = "image"
-		} else if isVideoModelName(name) {
+		if _, configured := videos[name]; configured {
 			capability = "video"
+		} else if isImageModelName(name) {
+			capability = "image"
 		}
 		items = append(items, model.PublicChannelModel{Model: name, Label: name, Protocol: "openai", Capabilities: []string{capability}})
 	}

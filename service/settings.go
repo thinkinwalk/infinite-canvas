@@ -33,10 +33,12 @@ func PublicSettingsForGroup(userGroup string) (model.PublicSetting, error) {
 	channels := modelChannelsForGroup(normalized.Private.Channels, "", userGroup)
 	normalized.Public.ModelChannel.AvailableModels = enabledChannelModels(channels)
 	normalized.Public.ModelChannel.VideoModels = publicVideoProfiles(channels)
-	normalized.Public.ModelChannel.DefaultTextModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultTextModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
+	video := func(name string) bool { _, ok := normalized.Public.ModelChannel.VideoModels[name]; return ok }
+	text := func(name string) bool { return !video(name) && isTextModelName(name) }
+	normalized.Public.ModelChannel.DefaultTextModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultTextModel, normalized.Public.ModelChannel.AvailableModels, text)
 	normalized.Public.ModelChannel.DefaultImageModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultImageModel, normalized.Public.ModelChannel.AvailableModels, isImageModelName)
-	normalized.Public.ModelChannel.DefaultVideoModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultVideoModel, normalized.Public.ModelChannel.AvailableModels, isVideoModelName)
-	normalized.Public.ModelChannel.DefaultModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultModel, normalized.Public.ModelChannel.AvailableModels, isTextModelName)
+	normalized.Public.ModelChannel.DefaultVideoModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultVideoModel, normalized.Public.ModelChannel.AvailableModels, video)
+	normalized.Public.ModelChannel.DefaultModel = repairDefaultModel(normalized.Public.ModelChannel.DefaultModel, normalized.Public.ModelChannel.AvailableModels, text)
 	normalized.Public.ModelChannel.Models = publicChannelModels(normalized, userGroup)
 	return normalized.Public, nil
 }
@@ -90,7 +92,7 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if isArkAgentPlanChannel(resolved) {
 		return testArkSeedanceChannelModel(resolved, modelName)
 	}
-	if isVideoModelName(modelName) {
+	if isVideoModelName(modelName) || resolved.VideoModels[modelName].Interface != "" {
 		return testVideoChannelModel(resolved, modelName)
 	}
 	return testAdminChannelModel(resolved, modelName)
@@ -453,7 +455,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		channel.VideoModels = map[string]model.VideoModelProfile{}
 	}
 	for _, name := range channel.Models {
-		if !isVideoModelName(name) {
+		if !isVideoModelName(name) && channel.VideoModels[name].Interface == "" {
 			continue
 		}
 		profile := VideoProfile(channel, name)
@@ -469,7 +471,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		if profile.Seconds == nil {
 			profile.Seconds = []string{}
 		}
-		imageLimit, mediaLimit := 7, 3
+		imageLimit, mediaLimit := profile.MaxImages, 3
 		if IsH3Video2K(name) || IsMiniMaxH3(name) {
 			imageLimit = 9
 		}
@@ -479,7 +481,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		profile.MaxImages = max(0, min(imageLimit, profile.MaxImages))
 		profile.MaxVideos = max(0, min(mediaLimit, profile.MaxVideos))
 		profile.MaxAudios = max(0, min(mediaLimit, profile.MaxAudios))
-		if profile.Interface != "relay" && profile.Interface != "ark" && profile.Interface != "unavailable" {
+		if profile.Interface != "relay" && profile.Interface != "ark" && profile.Interface != SparkCineH3Interface && profile.Interface != "unavailable" {
 			profile.Interface, profile.MaxVideos, profile.MaxAudios = "openai", 0, 0
 		}
 		channel.VideoModels[name] = profile

@@ -12,6 +12,7 @@ import { REPLICATE_FEATURES, REPLICATE_IMAGE_MODELS, REPLICATE_SUPPORTED_MODELS,
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { isMiniMaxH3Name, miniMaxH3Profile } from "@/lib/minimax-h3";
+import { sparkCineH3Preset } from "@/lib/video-capabilities";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
 const jsonEditorTheme = EditorView.theme({
@@ -79,12 +80,16 @@ export default function AdminSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const channelProtocol = Form.useWatch("protocol", channelForm) || "openai";
+    const channelBaseURL = Form.useWatch("baseUrl", channelForm) || "";
+    let sparkCineChannel = false;
+    try { sparkCineChannel = new URL(channelBaseURL).hostname === "hi.hi.run"; } catch { /* URL may be incomplete while editing. */ }
     // Replicate 与 WaveSpeed 都由后端固定接口地址和适配模型列表。
     const cloudProtocol = channelProtocol === "replicate" || channelProtocol === "wavespeed";
     const channelUsesEnvironment = Form.useWatch("useEnvironmentKey", channelForm);
     const channelSelectedModels = (Form.useWatch("models", channelForm) || []) as string[];
     const replicatePrices = Form.useWatch("replicatePricing", { form: channelForm, preserve: true }) || {};
-    const channelVideoModels = (cloudProtocol ? [] : channelSelectedModels).filter((name) => isMiniMaxH3Name(name) || /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
+    const channelVideoProfiles = Form.useWatch("videoModels", { form: channelForm, preserve: true }) || {};
+    const channelVideoModels = (cloudProtocol ? [] : channelSelectedModels).filter((name) => !!channelVideoProfiles[name]?.interface || isMiniMaxH3Name(name) || /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
     const channelModels = useMemo(() => collectChannelModels(channels), [channels]);
@@ -781,15 +786,16 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             {channelVideoModels.map((name) => {
-                                const preset = isMiniMaxH3Name(name) ? miniMaxH3Profile(name) : undefined;
+                                const sparkCine = name === "h3-video" && (sparkCineChannel || channelForm.getFieldValue(["videoModels", name, "interface"]) === "sparkcine_h3");
+                                const preset = sparkCine ? sparkCineH3Preset() : isMiniMaxH3Name(name) ? miniMaxH3Profile(name) : undefined;
                                 return (
                                 <Col span={24} key={name}>
                                     <Card size="small" title={`视频能力 · ${name}`}>
                                         <Typography.Paragraph type="secondary">只开启该渠道已确认支持的素材。接口名称相同也可能能力不同；数量设为0表示不支持。价格仍在公共配置的模型算力点中调整。</Typography.Paragraph>
-                                        <Form.Item name={["videoModels", name, "displayName"]} label="前台展示名称" initialValue={name}><Input /></Form.Item>
+                                        <Form.Item name={["videoModels", name, "displayName"]} label="前台展示名称" initialValue={preset?.displayName || name}><Input /></Form.Item>
                                         <Form.Item name={["videoModels", name, "description"]} label="一句话用途" initialValue={preset?.description}><Input.TextArea rows={2} /></Form.Item>
                                         <Form.Item name={["videoModels", name, "interface"]} label="视频调用方式" initialValue={preset?.interface || (/seedance|seedace/i.test(name) ? "relay" : "openai")}>
-                                            <Select options={[{ value: "openai", label: "普通视频接口（图片参考）" }, { value: "relay", label: "JSON视频中转（reference_videos / audio_urls）" }, { value: "ark", label: "火山多素材接口（content）" }]} />
+                                            <Select options={[{ value: "openai", label: "普通视频接口（图片参考）" }, { value: "relay", label: "JSON视频中转（reference_videos / audio_urls）" }, { value: "ark", label: "火山多素材接口（content）" }, ...(name === "h3-video" ? [{ value: "sparkcine_h3", label: "SparkCine H3 v2（图片 / 视频 / 音频参考）" }] : [])]} />
                                         </Form.Item>
                                         <Form.Item name={["videoModels", name, "inputModes"]} label="支持的输入模式" initialValue={preset?.inputModes || ["reference"]} extra="只开启上游文档和实测已确认的模式；首尾帧与普通参考图片独立。">
                                             <Select mode="multiple" options={[{ value: "reference", label: "参考模式" }, { value: "first_last", label: "首尾帧模式" }, { value: "first_frame_only", label: "文生 / 单首帧模式" }]} />
@@ -801,11 +807,12 @@ export default function AdminSettingsPage() {
                                             <Col span={12}><Form.Item name={["videoModels", name, "lastFrameOptional"]} label="尾帧可选" valuePropName="checked" initialValue={true}><Switch /></Form.Item></Col>
                                         </Row>
                                         <Row gutter={12}>
-                                            {([['maxImages', '最多参考图片（张）', 7], ['maxVideos', '视频数量', 3], ['maxAudios', '音频数量', 3]] as const).map(([field, label, maximum]) => <Col span={8} key={field}><Form.Item name={["videoModels", name, field]} label={label} initialValue={preset?.[field] ?? (field === 'maxImages' ? 7 : 0)}><InputNumber min={0} max={name.trim().toLowerCase() === 'wan30-720p' ? field === 'maxImages' ? 10 : 5 : preset?.[field] ?? maximum} precision={0} className="!w-full" /></Form.Item></Col>)}
+                                            {([['maxImages', '最多参考图片（张）', undefined], ['maxVideos', '视频数量', 3], ['maxAudios', '音频数量', 3]] as const).map(([field, label, maximum]) => <Col span={8} key={field}><Form.Item name={["videoModels", name, field]} label={label} initialValue={preset?.[field] ?? (field === 'maxImages' ? 7 : 0)}><InputNumber min={0} max={name.trim().toLowerCase() === 'wan30-720p' ? field === 'maxImages' ? 10 : 5 : preset?.[field] ?? maximum} precision={0} className="!w-full" /></Form.Item></Col>)}
                                         </Row>
+                                        <Form.Item name={["videoModels", name, "contentReplacement"]} label="可用于内容替换" valuePropName="checked" initialValue={preset?.contentReplacement ?? false}><Switch /></Form.Item>
                                         <Form.Item name={["videoModels", name, "resolutions"]} label="支持分辨率" initialValue={preset?.resolutions || (/seedance|seedace/i.test(name) ? ["480", "720"] : ["480", "720", "1080"])}><Select mode="multiple" options={(preset?.resolutions || ["480", "720", "1080"]).map((value) => ({ value, label: /K$/.test(value) ? value : `${value}p` }))} /></Form.Item>
                                         <Form.Item name={["videoModels", name, "seconds"]} label="支持输出秒数" extra="填写上游支持的档位；留空沿用现有4至30秒设置。" initialValue={preset?.seconds || (/seedance|seedace/i.test(name) ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [])}><Select mode="tags" tokenSeparators={[",", " "]} /></Form.Item>
-                                        <Form.Item name={["videoModels", name, "generateAudio"]} label="支持生成声音开关" valuePropName="checked" initialValue={false}><Switch /></Form.Item>
+                                        <Form.Item name={["videoModels", name, "generateAudio"]} label="支持生成声音开关" valuePropName="checked" initialValue={false}><Switch disabled={sparkCine} /></Form.Item>
                                     </Card>
                                 </Col>
                             ); })}

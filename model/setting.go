@@ -29,20 +29,23 @@ type ModelChannel struct {
 
 // VideoModelProfile describes the inputs verified for a model on this channel.
 type VideoModelProfile struct {
-	InputModes         []string `json:"inputModes"`
-	FirstFrameRequired bool     `json:"firstFrameRequired"`
-	LastFrameOptional  bool     `json:"lastFrameOptional"`
-	FirstFrameField    string   `json:"firstFrameField"`
-	LastFrameField     string   `json:"lastFrameField"`
-	DisplayName        string   `json:"displayName"`
-	Description        string   `json:"description"`
-	Interface          string   `json:"interface"`
-	MaxImages          int      `json:"maxImages"`
-	MaxVideos          int      `json:"maxVideos"`
-	MaxAudios          int      `json:"maxAudios"`
-	Resolutions        []string `json:"resolutions"`
-	Seconds            []string `json:"seconds"`
-	GenerateAudio      bool     `json:"generateAudio"`
+	ContentReplacement       *bool    `json:"contentReplacement,omitempty"`
+	ReferenceVideoMinSeconds float64  `json:"referenceVideoMinSeconds,omitempty"`
+	ReferenceVideoMaxSeconds float64  `json:"referenceVideoMaxSeconds,omitempty"`
+	InputModes               []string `json:"inputModes"`
+	FirstFrameRequired       bool     `json:"firstFrameRequired"`
+	LastFrameOptional        bool     `json:"lastFrameOptional"`
+	FirstFrameField          string   `json:"firstFrameField"`
+	LastFrameField           string   `json:"lastFrameField"`
+	DisplayName              string   `json:"displayName"`
+	Description              string   `json:"description"`
+	Interface                string   `json:"interface"`
+	MaxImages                int      `json:"maxImages"`
+	MaxVideos                int      `json:"maxVideos"`
+	MaxAudios                int      `json:"maxAudios"`
+	Resolutions              []string `json:"resolutions"`
+	Seconds                  []string `json:"seconds"`
+	GenerateAudio            bool     `json:"generateAudio"`
 	// Billing fields are optional. When configured, video requests use the
 	// corresponding duration/resolution price instead of the fixed model cost.
 	BillingMode    string             `json:"billingMode,omitempty"`
