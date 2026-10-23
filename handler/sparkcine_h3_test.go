@@ -56,7 +56,9 @@ func TestSparkCineVideoLifecycleOwnershipAndRefund(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			content := body["content"].([]any)
 			if body["resolution"] != "720P" || body["duration"] != float64(5) || body["ratio"] != "16:9" || len(content) != 14 ||
-				content[0].(map[string]any)["text"] != "参考 <Image 1> 人物与 <Video 1> 运镜，使用 <Audio 2>" ||
+				content[0].(map[string]any)["text"] != "参考 <Picture 1> 人物与 <Video 1> 运镜，使用 <Audio 2>" ||
+				content[1].(map[string]any)["role"] != "reference_image" ||
+				content[1].(map[string]any)["image_url"].(map[string]any)["url"] != "https://cdn.example/1.png" ||
 				content[10].(map[string]any)["url"] != config.Cfg.PublicBaseURL+"/api/media/references/"+video.ID ||
 				content[10].(map[string]any)["video_url"] != nil || body["reference_videos"] != nil || body["input_mode"] != nil ||
 				body["extra"].(map[string]any)["prompt_expansion_mode"] != "disabled" {
@@ -158,6 +160,43 @@ func TestSparkCineVideoLifecycleOwnershipAndRefund(t *testing.T) {
 		current, _, _ = repository.GetUserByID(user.ID)
 		if current.Credits != 470 {
 			t.Fatalf("invalid %s charged", invalid)
+		}
+	}
+}
+
+func TestSparkCineImageMentionsUseDocumentedPictureTokens(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		payload := map[string]any{
+			"model": "h3-video", "resolution": "768p", "seconds": "5", "aspect_ratio": "9:16",
+		}
+		prompt := "以@图片1替换人物，图片9提供服装，保留<Picture 2>。"
+		if nested {
+			payload["content"] = []any{
+				map[string]any{"type": "text", "text": prompt},
+				map[string]any{"type": "image_url", "image_url": map[string]string{"url": "https://cdn.example/person.png"}, "role": "reference_image"},
+			}
+		} else {
+			payload["prompt"], payload["image_url"] = prompt, "https://cdn.example/person.png"
+		}
+		body, err := sparkCineH3Body(mustReplacementJSON(payload), "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result struct {
+			Content []struct {
+				Text     string `json:"text"`
+				Role     string `json:"role"`
+				ImageURL struct {
+					URL string `json:"url"`
+				} `json:"image_url"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Content) != 2 || result.Content[0].Text != "以<Picture 1>替换人物，<Picture 9>提供服装，保留<Picture 2>。" ||
+			result.Content[1].Role != "reference_image" || result.Content[1].ImageURL.URL != "https://cdn.example/person.png" {
+			t.Fatalf("incorrect picture binding (nested=%t): %s", nested, body)
 		}
 	}
 }

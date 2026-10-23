@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import axios from "axios";
+import { contentReplacementPrompt } from "../src/pages/video-tool/content-replace-prompt";
 
 const memory = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value), removeItem: (key: string) => memory.delete(key) } });
@@ -60,6 +61,23 @@ test("SparkCine sends nine images, one video and three audios through the platfo
     await expect(createVideoGenerationTask(config, "测试", [], [{ ...videos[0], durationMs: 15001 }])).rejects.toThrow("参考视频");
     await expect(quoteVideoModel({ ...config, vquality: "1080", videoSeconds: "16" }, config.videoModel)).rejects.toThrow("时长");
     expect(requests).toBe(1);
+});
+
+test("H3 content replacement submits the replacement portrait separately from the source video", async () => {
+    const portrait = { id: "new-person", name: "portrait.png", type: "image/png", dataUrl: "https://cdn.example/new-person.png" };
+    const source = { id: "source", name: "source.mp4", type: "video/mp4", url: "https://platform.example/api/media/references/source.mp4", durationMs: 5000 };
+    const prompt = contentReplacementPrompt("person", "");
+    axios.post = (async (url, body) => {
+        expect(url).toBe("/api/v1/videos");
+        expect(body.model).toBe("h3-video");
+        expect(body.input_mode).toBe("reference");
+        expect(body.image_url).toBe(portrait.dataUrl);
+        expect(body.reference_image_urls).toBeUndefined();
+        expect(body.reference_videos).toEqual([source.url]);
+        expect(body.prompt).toContain(prompt);
+        return { data: { task_id: "replacement-task" } };
+    }) as typeof axios.post;
+    expect((await createVideoGenerationTask(config, prompt, [portrait], [source])).id).toBe("replacement-task");
 });
 
 test("a refreshed public catalog enables H3 on the ordinary model list without changing local channels", () => {

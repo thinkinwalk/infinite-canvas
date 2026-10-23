@@ -90,15 +90,12 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const image = d.media.find((m) => m.role === "model" && m.kind === "image");
     const h3 = profile.interface === "sparkcine_h3";
     const ratios = replacementAspectRatios(size || "");
-    const aspectSource = currentJob ? d.replacementSource : source;
     const sourceWidth = currentJob?.sourceSize?.[0] || source?.width;
     const sourceHeight = currentJob?.sourceSize?.[1] || source?.height;
     const recommendedRatio = nearestReplacementAspect(ratios, sourceWidth, sourceHeight);
     const canAdjustAspect = Boolean(currentJob && !currentJob.result && !currentJob.previewResult && !currentJob.parts?.some((part) => part.submitted || part.taskId || part.generated || part.validated));
     const requestedRatio = !canAdjustAspect && currentJob ? currentJob.aspectRatio : d.replacementAspectRatio || currentJob?.requestedAspectRatio || currentJob?.aspectRatio;
     const ratio = ratios.includes(requestedRatio || "") ? requestedRatio! : recommendedRatio;
-    const targetAspect = ratio ? ratio.split(":").map(Number).reduce((w, h) => w / h) : 0;
-    const sourceAspect = sourceWidth && sourceHeight ? sourceWidth / sourceHeight : 0;
     const aspectChanged = Boolean(h3 && currentJob && ratio && ratio !== currentJob.aspectRatio);
     const needsReplan = Boolean(h3 && ratio && canAdjustAspect && (aspectChanged || !currentJob?.planned));
     const canPrepare = needsReplan || Boolean(source && image && duration && size);
@@ -313,10 +310,6 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <div className="text-xs" style={{ color: colors.colorTextSecondary }}>
                 {sourceWidth && sourceHeight ? `原视频 ${sourceWidth}×${sourceHeight} · ` : ""}等比例居中补边，保留完整画面与原音轨。
             </div>
-            {ratio && sourceAspect > 0 && aspectSource?.url && <div className="mx-auto flex items-center justify-center overflow-hidden" style={{ aspectRatio: ratio.replace(":", "/"), width: ratio === "9:16" || ratio === "3:4" ? 108 : 192, maxHeight: 192, maxWidth: "100%", background: "#000" }}>
-                <video key={aspectSource.url} src={aspectSource.url} muted controls playsInline preload="metadata" aria-label="画幅适配预览"
-                    className="max-w-none max-h-none flex-none" style={{ width: sourceAspect >= targetAspect ? "100%" : "auto", height: sourceAspect >= targetAspect ? "auto" : "100%" }} />
-            </div>}
         </div>}
         {!headSwap && <Collapse size="small" items={[{ key: "model", label: `高级设置 · ${label(selected)}`, children: <label className="block space-y-2 text-sm">
             <span>生成模型</span>

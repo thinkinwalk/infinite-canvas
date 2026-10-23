@@ -100,8 +100,9 @@ func sparkCineH3Body(body []byte, userID string) ([]byte, error) {
 		return nil, fmt.Errorf("请填写提示词或添加参考素材")
 	}
 	mentions := []string{}
-	for kind, count := range map[string]int{"Image": 9, "Video": 1, "Audio": 3} {
-		label := map[string]string{"Image": "图片", "Video": "视频", "Audio": "音频"}[kind]
+	// H3 uses <Picture N>, not <Image N>, for image references.
+	for kind, count := range map[string]int{"Picture": 9, "Video": 1, "Audio": 3} {
+		label := map[string]string{"Picture": "图片", "Video": "视频", "Audio": "音频"}[kind]
 		for i := 1; i <= count; i++ {
 			index := i
 			if kind == "Audio" && hasVideo {
