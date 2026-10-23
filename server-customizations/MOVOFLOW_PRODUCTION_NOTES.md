@@ -15,9 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.82
-- Current production source: tag v0.19.82, commit b9ebdb85e75a37e9ad033bcca6d3729bd9395d58
+- Current production image: infinite-canvas:v0.19.83
+- Current production source: tag v0.19.83, commit c75265efc9e29ed4c72852158b7d6c7a0d6b6f61
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.79-worker/
+
+## v0.19.83 deployment
+
+- Release tag `v0.19.83`, commit `c75265efc9e29ed4c72852158b7d6c7a0d6b6f61`, is published on `release/v0.19.60`. Production image `infinite-canvas:v0.19.83`, ID `sha256:fd38f1de61d0d4b364c335d6ffebf2210ea094ecb784e18e2a6dfefdc764053a`, was built on the server from the exact release tag. GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.83.
+- The historical replacement reminder has an accessible close button. Dismissing it hides that task's reminder during the current page session; another pending task can still be shown. Dismissal does not modify/cancel/delete tasks, and browser-local history retains recovery. Concurrent extraction/editor and Worker changes remain local and are excluded.
+- Only app was recreated; no active database, replacement or Worker tasks were present at restart. Worker container ID, image, start time and v0.19.79 mounts are unchanged. The previous v0.19.82 app image remains available for rollback.
+- Online SQLite, previous Compose and root-only environment backups: `/opt/infinite-canvas/backups/v0.19.83-20261023-054946/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.83-prebuild-20261023-054827/`. SQLite quick checks passed. All 11 table counts, saved settings, user balances/roles/groups/status, model catalogs/pricing/permissions and hashes for 8,439 existing task/media files matched before and after deployment. Rollback restores the saved Compose and recreates app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; no schema migration is required.
+- Internal/external health, nine routes, ordinary-user Worker gateway, replacement-job reads, retention status and anonymous permission checks passed. Default/VIP H3 quotes are unchanged. Published `/assets/index-Br1NvbGO.js` includes v0.19.83 and the close-control label, and retains the prior replacement fixes. Independent workstation requests confirmed health, page and bundle markers.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.83-deployment.json`. No local build/tests or paid generation ran during release. Desktop/mobile closing, reminder visibility after changing tabs/materials and history recovery remain pending browser acceptance.
 
 ## v0.19.82 deployment
 
