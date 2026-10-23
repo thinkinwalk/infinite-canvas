@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`（部署目录，只含配置和数据），完整源码仓库在 `/opt/infinite-canvas-repo`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产版本为 `infinite-canvas:v0.19.84`（源码 tag `v0.19.84`，提交 `050ce8a`），使用服务器本地构建的镜像；Worker 使用 `v0.19.84-worker` 挂载。发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产版本为 `infinite-canvas:v0.19.85`（源码 tag `v0.19.85`，提交 `4617148`），使用服务器本地构建的镜像；Worker 使用 `v0.19.84-worker` 挂载。发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 部署采用服务器本地构建方式，源码仓库位于 `/opt/infinite-canvas-repo`，不依赖 GitHub Actions 和 GHCR。
 - 生产部署不依赖 GitHub Actions：服务器检出发布 tag 并构建版本化镜像，按下述核对与备份要求更新 Compose，分别更新 app 与 video-worker，再验证内外健康、普通用户处理服务网关及静态资源版本。
 - 使用 `scripts/release-and-deploy.sh` 或 `scripts/deploy.sh` 前先审查脚本：不得在发布分支上误推 main，也不能漏部署 Worker 源码。本轮按实际配置执行受控部署，备份位置见生产交接记录。
@@ -108,6 +108,7 @@
 ## 项目注意事项
 
 - 交付本地前端修改前，确认用户实际使用的地址、端口及资源来源；Vite 开发页面的验收不能代表 Go 静态页面已更新。用户反馈旧界面时，检查静态资源版本并在用户原地址验收，最终回复明确可测试地址。
+- 调整提醒关闭按钮时，核对当前组件依赖真正启用按钮的配置；静态包包含关闭文案或回调不能作为按钮显示和点击通过的证据。浏览器验收受限时须明确记录未完成，不能宣称交互已验证。
 - 本地前端热更新不会更新 Go 后端。排查接口新增字段未生效时，须核对后端进程启动时间与源码修改时间；用户要求修复本地实际行为时，应启动当前源码的后端并核对接口数据，不能把前端新增列当作完整功能已生效。
 - 调整后台模型目录或报价后，须验证普通页面入口和已打开标签页能更新配置；不能只用新开页面或带指定模型的查询参数作为验收证据。
 - 官方创作工具的前后对比示例必须来自该工具实际处理同一输入得到的结果，并核对所选模式、输出格式与页面文案一致；没有验收通过的真实样例时不得复用其他工具的图片或对标项目素材冒充本站效果。
