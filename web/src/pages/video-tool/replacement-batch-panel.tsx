@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Alert, App, Button, Checkbox, Collapse, Dropdown, Empty, Modal, Segmented, Select, theme } from "antd";
+import { Check, LoaderCircle, Pause } from "lucide-react";
 import { useConfigStore, resolveEffectiveConfig, modelOptionName } from "@/stores/use-config-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -15,6 +16,8 @@ import { replacementDurationSummary } from "./replacement-summary";
 import { nearestReplacementAspect, replacementAspectRatios } from "./replacement-aspect";
 import { ReplacementCaptionEditor } from "./replacement-caption-editor";
 import { ReplacementSegmentPlayer } from "./replacement-segment-player";
+import { ReplacementProgress } from "./replacement-progress-view";
+import { replacementPartStatus, replacementProgress } from "./replacement-progress";
 import { useVideoWorkbench } from "./use-video-workbench";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 
@@ -325,13 +328,17 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         {workspace && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
             <div className="min-w-0">
                 <div className="text-sm font-medium">当前任务{currentJob ? ` · ${labels[currentJob.status]}` : ""}</div>
-                {currentJob ? <div className="mt-1 text-xs" style={{ color: colors.colorTextSecondary }}>{jobStep(currentJob)}{currentJob.parts?.length ? ` · 已完成 ${currentJob.parts.filter((part) => part.validated).length}/${currentJob.parts.length} 段` : ""}</div>
+                {currentJob ? <div className="mt-1 flex items-start gap-2 text-xs" style={{ color: colors.colorTextSecondary }} role="status">
+                    {replacementProgress(currentJob).processing && <LoaderCircle size={14} className="shrink-0 animate-spin motion-reduce:animate-none" style={{ color: colors.colorPrimary }} aria-hidden />}
+                    <span>{jobStep(currentJob)}{currentJob.parts?.length ? ` · 已生成 ${currentJob.parts.filter((part) => part.validated).length}/${currentJob.parts.length} 段` : ""}</span>
+                </div>
                     : <div className="mt-1 text-xs" style={{ color: colors.colorTextSecondary }}>{d.replacementJobId ? "正在载入任务详情…" : activeCount ? `${activeCount} 项任务处理中` : "分析并确认费用后，任务会显示在这里"}</div>}
             </div>
             <Button size="small" onClick={() => setHistoryOpen(true)}>任务记录（{jobs.length}）</Button>
         </div>, workspace)}
         {workspace && createPortal((currentJob ? [currentJob] : []).map((job) => <div key={job.id} className="flex flex-col gap-4" aria-label="分段与效果预览">
             <div className="order-1"><Dropdown menu={{ items: [{ key: "archive", label: "归档任务", disabled: !canArchive(job), onClick: () => void setArchived(job, true) }, { key: "close", label: "收起当前任务", onClick: () => selectJob() }] }} placement="bottomRight"><Button size="small" type="text">任务操作⌄</Button></Dropdown></div>
+            {job.status === "planning" && <div className="order-2"><ReplacementProgress job={job} /></div>}
             {job.planned && <>
                 <div className="order-1 text-sm">整片模型预算 {job.credits} 点 · {job.resolution.replace(/p$/i, "")}p{job.aspectRatio ? ` · ${job.aspectRatio}` : ""}</div>
                 <p className="order-1 m-0 text-xs" style={{ color: colors.colorTextSecondary }}>点片段名称试看原片；勾选框决定生成范围。可只生成一段，也可一次勾选多段。生成时才按需切出文件，不会自动处理未勾选片段。</p>
@@ -340,12 +347,21 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             {job.parts && job.parts.length > 0 && <>
                 <div className="order-3 flex items-center justify-between gap-2"><div className="text-sm font-medium">分段列表 · {job.parts.length} 段</div><div className="flex gap-1"><Button size="small" type="link" onClick={() => setSelectedParts(selectableParts)}>全选未生成</Button><Button size="small" type="link" onClick={() => setSelectedParts([])}>清空</Button></div></div>
                 <div className="order-3 grid max-h-56 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 2xl:grid-cols-4" aria-label="选择原片片段">
-                    {job.parts.map((part, index) => <div key={index} className="space-y-1 rounded-lg border p-3 text-left text-xs"
+                    {job.parts.map((part, index) => {
+                        const status = replacementPartStatus(job, index);
+                        return <div key={index} className="space-y-1 rounded-lg border p-3 text-left text-xs"
                         style={{ borderColor: segment === index && view === "segments" ? colors.colorPrimary : colors.colorBorderSecondary, background: segment === index && view === "segments" ? colors.colorPrimaryBg : colors.colorBgContainer }}
                         ><div className="flex items-start gap-2"><Checkbox checked={selectedParts.includes(index)} disabled={hasPartResult(job, index) || job.status === "running"} onChange={(event) => setSelectedParts((items) => event.target.checked ? [...items, index] : items.filter((item) => item !== index))} /><button type="button" className="min-w-0 flex-1 text-left" onClick={() => { setSegment(index); setView("segments"); }}><div className="text-sm font-medium">第 {index + 1} 段 · {(part.end - part.start).toFixed(2)} 秒{hasPartResult(job, index) ? " · 已完成" : ""}</div>
                         <div>{part.start.toFixed(2)}–{part.end.toFixed(2)} 秒</div>
-                        <div style={{ color: colors.colorTextSecondary }}>{part.validated && !part.result ? "已生成，待导出" : part.validated ? "已生成" : part.submitted ? "已提交生成" : part.input ? "已切出，待生成" : "已规划，待生成"} · {part.credits} 点</div>
-                        </button></div></div>)}
+                        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1" style={{ color: status.active ? colors.colorPrimary : status.completed ? colors.colorSuccessText : colors.colorTextSecondary }}>
+                            <span className="inline-flex max-w-full items-center gap-1.5">
+                                {status.active ? <LoaderCircle size={13} className="shrink-0 animate-spin motion-reduce:animate-none" aria-hidden /> : status.completed ? <Check size={13} className="shrink-0" aria-hidden /> : job.status === "paused" && part.submitted ? <Pause size={13} className="shrink-0" aria-hidden /> : null}
+                                <span>{status.label}</span>
+                            </span>
+                            <span className="whitespace-nowrap">{part.credits} 点</span>
+                        </div>
+                        </button></div></div>;
+                    })}
                 </div>
                 <div className="order-3 flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}><div className="text-sm">已选 {selectedParts.length} 段 · 预计 {selectedCredits} 点</div><Button type="primary" disabled={!job.planned || aspectChanged || !selectedParts.length || (selectedCredits <= 0 && !selectedPending) || job.status === "running" || job.status === "planning"} onClick={() => void generateSelected(job)}>{selectedPending && selectedCredits === 0 ? "继续处理所选片段" : "生成所选片段"}</Button></div>
                 {fullResult && <div className="order-2"><Segmented value={view} onChange={setView} options={[{ value: "segments", label: "分段对照" }, { value: "full", label: "完整视频" }]} /></div>}
@@ -355,14 +371,15 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
                         {d.replacementSource?.url ? view === "full" ? <video controls preload="metadata" src={d.replacementSource.url} className="max-h-[55vh] w-full rounded-lg" /> : selectedPart && <ReplacementSegmentPlayer key={`${d.replacementSource.url}:${segment}`} url={d.replacementSource.url} start={selectedPart.start} end={selectedPart.end} label={`第 ${segment + 1} 段原片`} />
                             : sourceLoadError ? <Alert type="warning" title={sourceLoadError} action={<Button size="small" onClick={() => setSourceReload((value) => value + 1)}>重新载入原片</Button>} /> : <div className="py-12 text-center text-sm">正在载入原片…</div>}
                     </div>
-                    <div className="min-w-0 space-y-3 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}>
+                    <div className="flex min-w-0 flex-col gap-3 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}>
                         <div className="text-sm font-medium">{view === "full" ? "完整替换结果" : `第 ${segment + 1} 段 · 替换效果`}</div>
                         {view === "full" && fullResult ? <video controls preload="metadata" src={fullResult.url} className="max-h-[55vh] w-full rounded-lg" />
                             : selectedPart?.result ? segmentLoadError ? <Alert type="warning" title={segmentLoadError} action={<Button size="small" onClick={() => setSegmentReload((value) => value + 1)}>重新载入片段</Button>} /> : segmentMedia ? <><ReplacementSegmentPlayer key={`${segmentMedia.url}:${segment}`} url={segmentMedia.url} start={0} end={segmentMedia.durationMs ? segmentMedia.durationMs / 1000 : selectedPart.end - selectedPart.start} label={`第 ${segment + 1} 段替换效果`} /><Button size="small" onClick={() => void wb.download(segmentMedia)}>下载当前片段</Button></> : <div className="py-12 text-center text-sm">正在载入片段结果…</div>
                             : selectedPart && fullResult ? <ReplacementSegmentPlayer key={`${fullResult.url}:${segment}`} url={fullResult.url} start={selectedPart.start} end={selectedPart.end} label={`第 ${segment + 1} 段替换效果`} />
                             : segment === 0 && previewMedia && selectedPart ? <ReplacementSegmentPlayer key={previewMedia.url} url={previewMedia.url} start={selectedPart.start - selectedPart.inputStart} end={selectedPart.end - selectedPart.inputStart} label="第一段替换预览" />
                             : segment === 0 && previewPath ? previewLoadError ? <Alert type="warning" title={previewLoadError} action={<Button size="small" onClick={() => setPreviewReload((value) => value + 1)}>重新载入预览</Button>} /> : previewMedia ? <><ReplacementSegmentPlayer key={previewMedia.url} url={previewMedia.url} start={selectedPart ? selectedPart.start - selectedPart.inputStart : 0} end={selectedPart ? selectedPart.end - selectedPart.inputStart : previewMedia.durationMs ? previewMedia.durationMs / 1000 : 15} label="第一段替换预览" /><Button size="small" onClick={() => void wb.download(previewMedia)}>下载当前片段</Button></> : <div className="py-12 text-center text-sm">正在载入预览…</div>
-                            : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={segment === 0 ? "确认费用并生成第一段后，在这里查看效果" : "先确认第一段效果，其余片段处理并合并后可在这里对照查看"} />}
+                            : replacementProgress(job).processing && (replacementProgress(job).activeIndex === segment || replacementProgress(job).activeIndex < 0) ? <ReplacementProgress job={job} />
+                            : <div className="flex min-h-64 flex-1 items-center justify-center"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={job.status === "paused" ? "任务已暂停，可继续处理或恢复查询" : job.status === "running" ? "此片段尚未生成，正在处理其他片段" : selectedPart?.validated ? "片段已生成，待继续整理结果" : "此片段尚未生成，勾选后确认费用并生成"} /></div>}
                     </div>
                 </div>
                 {view === "segments" && selectedPart && <div className="order-2 text-xs" style={{ color: colors.colorTextSecondary }}>第 {segment + 1} 段原片 {(selectedPart.end - selectedPart.start).toFixed(2)} 秒 · 模型输入 {selectedPart.seconds} 秒 · 该段报价 {selectedPart.credits} 点。播放器只展示有效片段，合并时去除重叠与补齐部分。</div>}

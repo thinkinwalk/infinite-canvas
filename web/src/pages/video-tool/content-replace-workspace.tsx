@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
-import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, RefreshCw, Sparkles, Video, X } from "lucide-react";
+import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, LoaderCircle, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -889,6 +889,12 @@ export default function ContentReplaceWorkspace() {
                                             <div className="text-sm font-medium">替换结果</div>
                                             {result ? (
                                                 <video key={result.storageKey || result.url} src={result.url} controls preload="metadata" onError={() => setPreviewError(true)} className="my-auto max-h-[60vh] w-full rounded-lg object-contain" />
+                                            ) : busy && !historyPreview ? (
+                                                <div className="flex min-h-64 flex-1 flex-col items-center justify-center gap-4 px-3 py-8 text-center" role="status" aria-live="polite">
+                                                    <LoaderCircle size={42} className="animate-spin motion-reduce:animate-none" style={{ color: token.colorPrimary }} aria-hidden />
+                                                    <div className="text-base font-medium">{publicServiceText(active?.step || "正在准备替换任务")}</div>
+                                                    <div className="text-xs" style={muted}>完成后将自动显示结果</div>
+                                                </div>
                                             ) : (
                                                 <div className="flex min-h-48 flex-1 items-center justify-center">
                                                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="处理完成后在这里对照结果" />
