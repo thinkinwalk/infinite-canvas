@@ -106,6 +106,25 @@ async def probe(identifier, path, command, ffprobe):
 
 async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe_video, publish):
     source = inputs["video"]
+    if operation == "replacement-fit":
+        ratio = options.get("aspectRatio")
+        if ratio not in ("16:9", "9:16", "21:9", "4:3", "1:1", "3:4"):
+            raise ValueError("请选择模型支持的生成画幅")
+        info = await probe_video(identifier, source)
+        rw, rh = map(int, ratio.split(":"))
+        # Expand to exact even dimensions; every original pixel stays visible.
+        factor = math.ceil(max(info["size"][0] / rw, info["size"][1] / rh) / 2) * 2
+        width, height = rw * factor, rh * factor
+        output = work / "fitted.mp4"
+        await ffmpeg(identifier, "-i", source, "-map", "0:v:0", "-map", "0:a?",
+                     "-vf", f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy",
+                     "-movflags", "+faststart", output)
+        fitted = await probe_video(identifier, output)
+        validate_duration(info, fitted)
+        if fitted["size"] != (width, height) or fitted["audio"] != info["audio"]:
+            raise ValueError("画幅适配结果不正确，原视频已保留")
+        return {"file": publish(output), "metadata": fitted}
     if operation == "replacement-plan":
         info = await probe_video(identifier, source)
         seconds = float(options["seconds"])

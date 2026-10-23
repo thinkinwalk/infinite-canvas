@@ -5,6 +5,9 @@ export type ReplacementJob = {
     model: string;
     resolution: string;
     seconds: string;
+    aspectRatio?: string;
+    requestedAspectRatio?: string;
+    sourceSize?: [number, number];
     status: "planning" | "ready" | "preview" | "running" | "paused" | "completed";
     step: string;
     error?: string;
@@ -53,7 +56,7 @@ async function request<T>(path: string, input?: unknown, signal?: AbortSignal): 
 }
 export const listReplacementJobs = (signal?: AbortSignal) => request<ReplacementJob[]>("", undefined, signal);
 export const createReplacementJob = (input: {
-    id: string; source: string; image: string; model: string; resolution: string; seconds: string;
+    id: string; source: string; image: string; model: string; resolution: string; seconds: string; aspectRatio?: string;
     prompt: string; subtitles: boolean; regenerateSubtitles?: boolean; subtitleSize: number; subtitleColor: string; previewRequired?: boolean;
 }) => request<ReplacementJob>("", input);
 export const startReplacementJob = (job: ReplacementJob, approvePreview = false) => request<ReplacementJob>(`/${job.id}/start`, { expectedCredits: job.credits, ...(approvePreview ? { approvePreview: true, previewResult: job.previewResult } : {}) });
@@ -63,6 +66,7 @@ export const archiveReplacementJob = (id: string, archived: boolean) => request<
 
 export const quoteReplacementPart = (id: string, part: number) => request<{ credits: number }>(`/${id}/quote-part`, { part });
 export const repriceReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/reprice`, {});
+export const setReplacementAspectRatio = (id: string, aspectRatio: string) => request<ReplacementJob>(`/${id}/set-aspect-ratio`, { aspectRatio });
 export const retryReplacementPart = (job: ReplacementJob, part: number, expectedCredits: number) => request<ReplacementJob>(`/${job.id}/retry`, { part, expectedCredits });
 export const reviewReplacementJob = (id: string) => request<ReplacementJob>(`/${id}/review`, {});
 export const saveReplacementCaptions = (id: string, input: { revision: number; segments: ReplacementCaption[]; size: number; color: string; bottom: number; font: string }) => request<ReplacementJob>(`/${id}/save-captions`, input);

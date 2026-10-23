@@ -53,51 +53,54 @@ type replacementCaption struct {
 	Text  string  `json:"text"`
 }
 type replacementJob struct {
-	ID                  string               `json:"id"`
-	UserID              string               `json:"userId"`
-	Source              string               `json:"source"`
-	Image               string               `json:"image"`
-	Model               string               `json:"model"`
-	ChannelID           int                  `json:"channelId"`
-	Resolution          string               `json:"resolution"`
-	Seconds             string               `json:"seconds"`
-	Prompt              string               `json:"prompt"`
-	Subtitles           bool                 `json:"subtitles"`
-	RegenerateSubtitles bool                 `json:"regenerateSubtitles"`
-	SubtitleSize        float64              `json:"subtitleSize"`
-	SubtitleColor       string               `json:"subtitleColor"`
-	SubtitleFont        string               `json:"subtitleFont"`
-	SubtitleMethod      string               `json:"subtitleMethod,omitempty"`
-	SubtitleOutput      string               `json:"subtitleOutput,omitempty"`
-	CaptionSegments     []replacementCaption `json:"captionSegments,omitempty"`
-	CaptionRevision     int                  `json:"captionRevision"`
-	CaptionStatus       string               `json:"captionStatus,omitempty"`
-	CaptionError        string               `json:"captionError,omitempty"`
-	CaptionResult       string               `json:"captionResult,omitempty"`
-	SubtitleBottom      float64              `json:"subtitleBottom"`
-	PreparedSource      string               `json:"preparedSource,omitempty"`
-	Status              string               `json:"status"`
-	Step                string               `json:"step"`
-	Error               string               `json:"error,omitempty"`
-	Credits             int                  `json:"credits"`
-	Parts               []replacementPart    `json:"parts"`
-	Planned             bool                 `json:"planned"`
-	SelectionMode       bool                 `json:"selectionMode"`
-	SelectedParts       []int                `json:"selectedParts,omitempty"`
-	PreviewRequired     bool                 `json:"previewRequired"`
-	PreviewReady        bool                 `json:"previewReady"`
-	PreviewApproved     bool                 `json:"previewApproved"`
-	PreviewResult       string               `json:"previewResult,omitempty"`
-	AspectRatio         string               `json:"aspectRatio"`
-	WorkerStep          string               `json:"workerStep,omitempty"`
-	WorkerID            string               `json:"workerId,omitempty"`
-	Assembled           string               `json:"assembled,omitempty"`
-	Result              string               `json:"result,omitempty"`
-	PreviousResults     []string             `json:"previousResults,omitempty"`
-	Reviewed            bool                 `json:"reviewed"`
-	Archived            bool                 `json:"archived"`
-	CreatedAt           string               `json:"createdAt"`
-	UpdatedAt           string               `json:"updatedAt"`
+	ID                   string               `json:"id"`
+	UserID               string               `json:"userId"`
+	Source               string               `json:"source"`
+	Image                string               `json:"image"`
+	Model                string               `json:"model"`
+	ChannelID            int                  `json:"channelId"`
+	Resolution           string               `json:"resolution"`
+	Seconds              string               `json:"seconds"`
+	Prompt               string               `json:"prompt"`
+	Subtitles            bool                 `json:"subtitles"`
+	RegenerateSubtitles  bool                 `json:"regenerateSubtitles"`
+	SubtitleSize         float64              `json:"subtitleSize"`
+	SubtitleColor        string               `json:"subtitleColor"`
+	SubtitleFont         string               `json:"subtitleFont"`
+	SubtitleMethod       string               `json:"subtitleMethod,omitempty"`
+	SubtitleOutput       string               `json:"subtitleOutput,omitempty"`
+	CaptionSegments      []replacementCaption `json:"captionSegments,omitempty"`
+	CaptionRevision      int                  `json:"captionRevision"`
+	CaptionStatus        string               `json:"captionStatus,omitempty"`
+	CaptionError         string               `json:"captionError,omitempty"`
+	CaptionResult        string               `json:"captionResult,omitempty"`
+	SubtitleBottom       float64              `json:"subtitleBottom"`
+	PreparedSource       string               `json:"preparedSource,omitempty"`
+	Status               string               `json:"status"`
+	Step                 string               `json:"step"`
+	Error                string               `json:"error,omitempty"`
+	Credits              int                  `json:"credits"`
+	Parts                []replacementPart    `json:"parts"`
+	Planned              bool                 `json:"planned"`
+	SelectionMode        bool                 `json:"selectionMode"`
+	SelectedParts        []int                `json:"selectedParts,omitempty"`
+	PreviewRequired      bool                 `json:"previewRequired"`
+	PreviewReady         bool                 `json:"previewReady"`
+	PreviewApproved      bool                 `json:"previewApproved"`
+	PreviewResult        string               `json:"previewResult,omitempty"`
+	AspectRatio          string               `json:"aspectRatio"`
+	RequestedAspectRatio string               `json:"requestedAspectRatio,omitempty"`
+	SourceSize           [2]int               `json:"sourceSize"`
+	FittedSource         string               `json:"fittedSource,omitempty"`
+	WorkerStep           string               `json:"workerStep,omitempty"`
+	WorkerID             string               `json:"workerId,omitempty"`
+	Assembled            string               `json:"assembled,omitempty"`
+	Result               string               `json:"result,omitempty"`
+	PreviousResults      []string             `json:"previousResults,omitempty"`
+	Reviewed             bool                 `json:"reviewed"`
+	Archived             bool                 `json:"archived"`
+	CreatedAt            string               `json:"createdAt"`
+	UpdatedAt            string               `json:"updatedAt"`
 }
 type replacementControl struct {
 	running atomic.Bool
@@ -116,6 +119,41 @@ func replacementCloudOperation(name string) string {
 	default:
 		return ""
 	}
+}
+
+func replacementSource(job *replacementJob) string {
+	return firstReplacementText(job.FittedSource, job.Source)
+}
+
+func replacementAspectMatches(ratio string, width, height int) bool {
+	var w, h int
+	_, err := fmt.Sscanf(ratio, "%d:%d", &w, &h)
+	return err == nil && width > 0 && height > 0 && w > 0 && h > 0 && width*h == height*w
+}
+
+func nearestReplacementAspect(resolution string, width, height int) string {
+	best, distance := "", math.Inf(1)
+	for _, ratio := range service.SparkCineH3AspectRatios(resolution) {
+		var w, h float64
+		_, _ = fmt.Sscanf(ratio, "%f:%f", &w, &h)
+		current := math.Abs(math.Log(w / h / (float64(width) / float64(height))))
+		if current < distance {
+			best, distance = ratio, current
+		}
+	}
+	return best
+}
+
+func canChangeReplacementAspect(job *replacementJob) bool {
+	if job.Archived || job.Result != "" || job.Assembled != "" || job.PreviewResult != "" {
+		return false
+	}
+	for _, part := range job.Parts {
+		if part.Submitted || part.TaskID != "" || part.Generated != "" || part.Result != "" || part.Validated || len(part.PreviousTasks) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func replacementCloudInput(job *replacementJob, part *replacementPart) map[string]any {
@@ -337,6 +375,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		Model               string  `json:"model"`
 		Resolution          string  `json:"resolution"`
 		Seconds             string  `json:"seconds"`
+		AspectRatio         string  `json:"aspectRatio"`
 		Prompt              string  `json:"prompt"`
 		Subtitles           bool    `json:"subtitles"`
 		RegenerateSubtitles bool    `json:"regenerateSubtitles"`
@@ -371,7 +410,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job := replacementJob{ID: request.ID, UserID: user.ID, Source: request.Source, Image: request.Image, Model: request.Model,
-		Resolution: request.Resolution, Seconds: request.Seconds, Prompt: request.Prompt, Subtitles: request.Subtitles, RegenerateSubtitles: request.Subtitles && request.RegenerateSubtitles,
+		Resolution: request.Resolution, Seconds: request.Seconds, RequestedAspectRatio: request.AspectRatio, Prompt: request.Prompt, Subtitles: request.Subtitles, RegenerateSubtitles: request.Subtitles && request.RegenerateSubtitles,
 		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, PreviewRequired: request.PreviewRequired, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if job.Subtitles {
 		job.SubtitleMethod = "cloud-joint"
@@ -442,6 +481,50 @@ func ReplacementJobAction(w http.ResponseWriter, r *http.Request, id, action str
 	if action == "pause" {
 		c.pause.Store(true)
 		OK(w, map[string]any{"message": "将在当前步骤结束并保存结果后暂停"})
+		return
+	}
+	if action == "set-aspect-ratio" {
+		var input struct {
+			AspectRatio string `json:"aspectRatio"`
+		}
+		if json.NewDecoder(r.Body).Decode(&input) != nil || input.AspectRatio == "" {
+			Fail(w, "请选择生成画幅")
+			return
+		}
+		if !c.running.CompareAndSwap(false, true) {
+			Fail(w, "任务正在运行，请等待分析完成或暂停")
+			return
+		}
+		job, err = loadReplacement(id, user.ID)
+		if err != nil || !canChangeReplacementAspect(&job) {
+			c.running.Store(false)
+			Fail(w, "已有片段提交生成，不能修改此任务画幅；请新建任务")
+			return
+		}
+		channel, err := replacementModelChannel(context.WithValue(r.Context(), replacementChannelKey{}, job.ChannelID), job.Model, user.Group, false)
+		if err != nil || !service.IsSparkCineH3(channel, job.Model) {
+			c.running.Store(false)
+			Fail(w, "当前任务不支持调整生成画幅")
+			return
+		}
+		if err := service.SparkCineH3SpecError(job.Resolution, input.AspectRatio, 4); err != nil {
+			c.running.Store(false)
+			Fail(w, err.Error())
+			return
+		}
+		job.RequestedAspectRatio, job.AspectRatio, job.FittedSource = input.AspectRatio, "", ""
+		job.Parts, job.SelectedParts = nil, nil
+		job.Planned, job.SelectionMode, job.Credits = false, false, 0
+		job.WorkerStep, job.WorkerID, job.Error = "", "", ""
+		job.Status, job.Step = "planning", "按新画幅重新分析与报价"
+		c.pause.Store(false)
+		if err := saveReplacement(&job); err != nil {
+			c.running.Store(false)
+			Fail(w, "保存画幅失败")
+			return
+		}
+		OK(w, job)
+		go runReplacement(service.WithUser(context.Background(), user), job, true)
 		return
 	}
 	if action == "review" {
@@ -890,6 +973,11 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 			return fmt.Errorf("当前渠道参考视频最多 %g 秒，请缩短分段", profile.ReferenceVideoMaxSeconds)
 		}
 		if service.IsSparkCineH3(channel, job.Model) {
+			if job.RequestedAspectRatio != "" {
+				if err := service.SparkCineH3SpecError(job.Resolution, job.RequestedAspectRatio, 4); err != nil {
+					return err
+				}
+			}
 			if err := validateSparkCineReference("image", job.Image, job.UserID); err != nil {
 				return err
 			}
@@ -912,6 +1000,15 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		return err
 	}
 	needed := []string{"replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment", "replacement-finish"}
+	if replacementCloudOperation(job.Model) == "" {
+		channel, err := replacementModelChannel(ctx, job.Model, user.Group, false)
+		if err != nil {
+			return err
+		}
+		if service.IsSparkCineH3(channel, job.Model) {
+			needed = append(needed, "replacement-fit")
+		}
+	}
 	if job.Subtitles {
 		if job.RegenerateSubtitles {
 			needed = append(needed, "replacement-transcribe", "replacement-render-captions")
@@ -960,6 +1057,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		}
 		divisor := gcd(width, height)
 		job.AspectRatio = fmt.Sprintf("%d:%d", width/divisor, height/divisor)
+		job.SourceSize = result.Metadata.Size
 		if len(job.Parts) == 0 {
 			return fmt.Errorf("没有可处理的片段")
 		}
@@ -972,6 +1070,12 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				return err
 			}
 			profile := service.VideoProfile(channel, job.Model)
+			if service.IsSparkCineH3(channel, job.Model) {
+				job.AspectRatio = firstReplacementText(job.RequestedAspectRatio, nearestReplacementAspect(job.Resolution, width, height))
+				if err := service.SparkCineH3SpecError(job.Resolution, job.AspectRatio, 4); err != nil {
+					return err
+				}
+			}
 			choices := profile.Seconds
 			for i := range job.Parts {
 				part := &job.Parts[i]
@@ -992,6 +1096,20 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 						return err
 					}
 				}
+			}
+			if service.IsSparkCineH3(channel, job.Model) && !replacementAspectMatches(job.AspectRatio, width, height) && job.FittedSource == "" {
+				fitted, err := replacementWorkerStep(ctx, job, "fit:"+job.AspectRatio, "replacement-fit", map[string]any{"video": job.Source}, map[string]any{"aspectRatio": job.AspectRatio})
+				if err != nil {
+					return err
+				}
+				fw, fh := fitted.Metadata.Size[0], fitted.Metadata.Size[1]
+				if fitted.File == "" || !replacementAspectMatches(job.AspectRatio, fw, fh) {
+					return fmt.Errorf("处理服务未返回所选画幅的视频，请更新视频处理服务后重新分析")
+				}
+				if err := saveWorkerOwner(job.UserID, "media", fitted.File); err != nil {
+					return err
+				}
+				job.FittedSource = fitted.File
 			}
 		}
 		for i := range job.Parts {
@@ -1035,7 +1153,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			}
 		}
 		if job.SelectionMode && part.Result == "" {
-			result, err := replacementWorkerStep(ctx, job, strconv.Itoa(index)+":export", "replacement-segment", map[string]any{"source": job.Source, "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
+			result, err := replacementWorkerStep(ctx, job, strconv.Itoa(index)+":export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
 			if err != nil {
 				return err
 			}
@@ -1069,7 +1187,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		if err := saveReplacement(job); err != nil {
 			return err
 		}
-		result, err := replacementWorkerStep(ctx, job, "assemble", "replacement-assemble", map[string]any{"video": job.Source, "parts": files}, map[string]any{"parts": job.Parts})
+		result, err := replacementWorkerStep(ctx, job, "assemble", "replacement-assemble", map[string]any{"video": replacementSource(job), "parts": files}, map[string]any{"parts": job.Parts})
 		if err != nil {
 			return err
 		}
@@ -1102,7 +1220,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		options["subtitleOutput"] = "editable"
 		options["subtitleBottom"] = job.SubtitleBottom
 	}
-	result, err := replacementWorkerStep(ctx, job, "finish", "replacement-finish", map[string]any{"source": job.Source, "video": job.Assembled}, options)
+	result, err := replacementWorkerStep(ctx, job, "finish", "replacement-finish", map[string]any{"source": replacementSource(job), "video": job.Assembled}, options)
 	if err != nil {
 		return err
 	}
@@ -1246,7 +1364,7 @@ func runReplacementCaptionRender(ctx context.Context, job replacementJob) {
 		return
 	}
 	options := map[string]any{"subtitles": job.CaptionSegments, "subtitleSize": job.SubtitleSize, "subtitleColor": job.SubtitleColor, "subtitleBottom": job.SubtitleBottom, "subtitleFont": job.SubtitleFont}
-	result, err := replacementWorkerStep(ctx, &job, "caption-render", "replacement-render-captions", map[string]any{"video": job.Result, "source": job.Source}, options)
+	result, err := replacementWorkerStep(ctx, &job, "caption-render", "replacement-render-captions", map[string]any{"video": job.Result, "source": replacementSource(&job)}, options)
 	if err == nil && result.Metadata.SubtitleOutput != "burned-in" {
 		job.WorkerStep, job.WorkerID = "", ""
 		err = fmt.Errorf("字幕处理服务未返回带字幕成片")
@@ -1335,7 +1453,7 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 	part := &job.Parts[index]
 	prefix := strconv.Itoa(index) + ":"
 	if part.Input == "" {
-		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": job.Source}, part)
+		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": replacementSource(job)}, part)
 		if err != nil {
 			return err
 		}

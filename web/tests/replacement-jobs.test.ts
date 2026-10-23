@@ -7,7 +7,7 @@ Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
     removeItem: (key: string) => memory.delete(key),
 } });
 const { useUserStore } = await import("../src/stores/use-user-store");
-const { createReplacementJob, startReplacementJob, retryReplacementPart, listReplacementJobs } = await import("../src/services/api/replacement-jobs");
+const { createReplacementJob, setReplacementAspectRatio, startReplacementJob, retryReplacementPart, listReplacementJobs } = await import("../src/services/api/replacement-jobs");
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; useUserStore.setState({ token: "" }); });
 
@@ -55,5 +55,20 @@ test("continuation explicitly approves the preview that was displayed", async ()
     expect(requests).toEqual([
         ["/api/v1/replacement-jobs/preview-job/start", { expectedCredits: 1200 }],
         ["/api/v1/replacement-jobs/preview-job/start", { expectedCredits: 1200, approvePreview: true, previewResult: "first-preview.mp4" }],
+    ]);
+});
+
+test("selected aspect is included in planning and an existing job is replanned without paid start", async () => {
+    useUserStore.setState({ token: "test" });
+    const requests: unknown[] = [];
+    globalThis.fetch = async (url, options) => {
+        requests.push([String(url), JSON.parse(String(options?.body))]);
+        return new Response(JSON.stringify({ code: 0, data: {} }));
+    };
+    await createReplacementJob({ id: "new", source: "video", image: "image", model: "h3-video", resolution: "768", seconds: "15", aspectRatio: "9:16", prompt: "", subtitles: false, subtitleSize: 42, subtitleColor: "#ffffff" });
+    await setReplacementAspectRatio("old", "3:4");
+    expect(requests).toEqual([
+        ["/api/v1/replacement-jobs", { id: "new", source: "video", image: "image", model: "h3-video", resolution: "768", seconds: "15", aspectRatio: "9:16", prompt: "", subtitles: false, subtitleSize: 42, subtitleColor: "#ffffff" }],
+        ["/api/v1/replacement-jobs/old/set-aspect-ratio", { aspectRatio: "3:4" }],
     ]);
 });

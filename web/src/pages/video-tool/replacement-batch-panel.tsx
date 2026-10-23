@@ -9,9 +9,10 @@ import { contentReplacementModels, isWan30, videoProfile } from "@/lib/video-cap
 import { publicServiceText, uploadReplicateReference } from "@/services/api/replicate";
 import { storeWorkerResult, uploadWorkerMedia } from "@/services/api/video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "@/services/api/video";
-import { archiveReplacementJob, createReplacementJob, generateReplacementParts, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
+import { archiveReplacementJob, createReplacementJob, generateReplacementParts, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, setReplacementAspectRatio, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
 import { contentReplacementPrompt } from "./content-replace-prompt";
 import { replacementDurationSummary } from "./replacement-summary";
+import { nearestReplacementAspect, replacementAspectRatios } from "./replacement-aspect";
 import { ReplacementCaptionEditor } from "./replacement-caption-editor";
 import { ReplacementSegmentPlayer } from "./replacement-segment-player";
 import { useVideoWorkbench } from "./use-video-workbench";
@@ -37,8 +38,13 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const config = resolveEffectiveConfig({ ...savedConfig, channelMode: "remote" }, publicSettings);
     const { token: colors } = theme.useToken();
     const { modal, message } = App.useApp();
-    const checkSubmission = () => {
+    const checkSubmission = (job?: ReplacementJob) => {
         const state = useVideoWorkbenchStore.getState();
+        const currentDraft = state.drafts["content-replace"];
+        if (job?.model === "h3-video" && currentDraft?.replacementJobId === job.id && currentDraft.replacementAspectRatio && currentDraft.replacementAspectRatio !== job.aspectRatio) {
+            message.warning("画幅已修改，请先应用画幅并重新分析费用");
+            return false;
+        }
         if (!state.busyTools["content-replace"]) return true;
         message.warning("当前替换操作尚未结束，请稍候或停止等待后再试");
         return false;
@@ -70,16 +76,32 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const previewRevision = useRef(0);
     const pendingRequest = useRef<{ key: string; id: string; source?: string; image?: string } | undefined>(undefined);
     const candidates = contentReplacementModels(config);
+    const currentJob = jobs.find((job) => job.id === d.replacementJobId && !job.archived);
     const label = (name: string) => name === wanReplace || name === headSwapModel ? modelLabel(name) : videoProfile(config, name).displayName || modelLabel(name);
-    const selected = headSwap ? headSwapModel : candidates.includes(model) || model === wanReplace ? model : candidates[0] || wanReplace;
+    const selectedModel = currentJob ? candidates.find((name) => modelOptionName(name) === currentJob.model) || currentJob.model : model;
+    const selected = headSwap ? headSwapModel : currentJob || candidates.includes(selectedModel) || selectedModel === wanReplace ? selectedModel : candidates[0] || wanReplace;
     const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? headSwap ? "当前换脸模型不能同时去除原字幕，请关闭「去除原字幕」后继续。" : "当前模型不能同时换人和去除原字幕。请在「高级设置」中选择 Wan 3.0（wan30-720p），或关闭「去除原字幕」后继续。" : "");
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
     const durations = selected === headSwapModel ? ["15"] : selected === wanReplace ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
     const sizes = selected === wanReplace || headSwap ? ["720", "480"] : profile.resolutions;
     const duration = durations[0];
-    const size = sizes.includes(resolution) ? resolution : sizes[0];
+    const size = currentJob?.resolution || (sizes.includes(resolution) ? resolution : sizes[0]);
     const source = d.media.find((m) => m.role === "reference" && m.kind === "video");
     const image = d.media.find((m) => m.role === "model" && m.kind === "image");
+    const h3 = profile.interface === "sparkcine_h3";
+    const ratios = replacementAspectRatios(size || "");
+    const aspectSource = currentJob ? d.replacementSource : source;
+    const sourceWidth = currentJob?.sourceSize?.[0] || source?.width;
+    const sourceHeight = currentJob?.sourceSize?.[1] || source?.height;
+    const recommendedRatio = nearestReplacementAspect(ratios, sourceWidth, sourceHeight);
+    const canAdjustAspect = Boolean(currentJob && !currentJob.result && !currentJob.previewResult && !currentJob.parts?.some((part) => part.submitted || part.taskId || part.generated || part.validated));
+    const requestedRatio = !canAdjustAspect && currentJob ? currentJob.aspectRatio : d.replacementAspectRatio || currentJob?.requestedAspectRatio || currentJob?.aspectRatio;
+    const ratio = ratios.includes(requestedRatio || "") ? requestedRatio! : recommendedRatio;
+    const targetAspect = ratio ? ratio.split(":").map(Number).reduce((w, h) => w / h) : 0;
+    const sourceAspect = sourceWidth && sourceHeight ? sourceWidth / sourceHeight : 0;
+    const aspectChanged = Boolean(h3 && currentJob && ratio && ratio !== currentJob.aspectRatio);
+    const needsReplan = Boolean(h3 && ratio && canAdjustAspect && (aspectChanged || !currentJob?.planned));
+    const canPrepare = needsReplan || Boolean(source && image && duration && size);
     const segmentLimit = Math.min(15, Number(duration));
     const requiresPreview = Boolean(source?.durationMs && source.durationMs > segmentLimit * 1000);
     const refresh = async () => setJobs((await listReplacementJobs()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
@@ -101,7 +123,6 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         void poll();
         return () => { disposed = true; controller.abort(); clearTimeout(timer); };
     }, [token]);
-    const currentJob = jobs.find((job) => job.id === d.replacementJobId && !job.archived);
     const currentArchived = jobs.some((job) => job.id === d.replacementJobId && job.archived);
     useEffect(() => { if (currentArchived) selectJob(); }, [currentArchived]);
     const historyJobs = jobs.filter((job) => Boolean(job.archived) === (historyTab === "archived"));
@@ -169,7 +190,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         setBusy(false);
         setCaptionEditorJobId("");
         useVideoWorkbenchStore.getState().patchDraft("content-replace", {
-            replacementJobId: job?.id, replacementResultKey: undefined, replacementSource: undefined, final: null, edited: null, video: null, activeRecord: undefined,
+            replacementJobId: job?.id, replacementResultKey: undefined, replacementSource: undefined, replacementAspectRatio: undefined, final: null, edited: null, video: null, activeRecord: undefined,
         });
     };
     const openJob = async (job: ReplacementJob) => {
@@ -192,16 +213,25 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     };
     const canArchive = (job: ReplacementJob) => !["planning", "running"].includes(job.status) && !["recognizing", "rendering"].includes(job.captionStatus || "");
     const prepare = async () => {
-        if (submitting.current || subtitleError || !source || !image || !duration || !size || !checkSubmission()) return;
+        if (submitting.current || subtitleError || !canPrepare || !checkSubmission()) return;
         submitting.current = true; setBusy(true); setError("");
         try {
-            const key = JSON.stringify([source, image, selected, size, duration, d.instructions, d.replaceSubtitles, d.regenerateSubtitles, d.subtitleSize, d.subtitleColor]);
+            if (needsReplan && currentJob) {
+                const updated = await setReplacementAspectRatio(currentJob.id, ratio);
+                selectionLoaded.current = "";
+                setSelectedParts([]);
+                setJobs((items) => items.map((item) => item.id === updated.id ? updated : item));
+                onOpenWorkspace();
+                return;
+            }
+            if (!source || !image || !duration || !size) return;
+            const key = JSON.stringify([source, image, selected, size, duration, h3 ? ratio : "", d.instructions, d.replaceSubtitles, d.regenerateSubtitles, d.subtitleSize, d.subtitleColor]);
             if (pendingRequest.current?.key !== key) pendingRequest.current = { key, id: crypto.randomUUID() };
             const pending = pendingRequest.current;
             pending.source ||= await uploadWorkerMedia(worker, source);
             pending.image ||= await uploadReplicateReference(image);
             const created = await createReplacementJob({ id: pending.id, source: pending.source, image: pending.image,
-                model: modelOptionName(selected), resolution: size.replace(/p$/i, ""), seconds: duration,
+                model: modelOptionName(selected), resolution: size.replace(/p$/i, ""), seconds: duration, ...(h3 && ratio ? { aspectRatio: ratio } : {}),
                 prompt: contentReplacementPrompt("person", d.instructions, d.replaceSubtitles), subtitles: d.replaceSubtitles, regenerateSubtitles: d.replaceSubtitles && d.regenerateSubtitles === true,
                 subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor, previewRequired: requiresPreview });
             useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: created.id, replacementResultKey: undefined, replacementSource: source, final: null });
@@ -213,7 +243,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         finally { submitting.current = false; setBusy(false); }
     };
     const start = (job: ReplacementJob) => {
-        if (!checkSubmission()) return;
+        if (!checkSubmission(job)) return;
         const approvePreview = job.previewRequired && job.previewReady && !job.previewApproved;
         const previewCredits = job.parts?.[0]?.credits || 0;
         const remainingCredits = job.parts?.filter((part) => !part.validated).reduce((sum, part) => sum + part.credits, 0) || 0;
@@ -226,7 +256,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             title: approvePreview ? "预览效果满意，继续吗？" : job.previewRequired && !job.previewReady ? "先生成一段预览" : job.planned ? "确认本次处理费用" : "恢复视频分析",
             content: `${content} 字幕识别、存储等外部服务费用另计。`,
             okText: approvePreview ? "确认并处理剩余片段" : job.previewRequired && !job.previewReady ? "生成预览" : job.status === "ready" ? "开始处理" : "恢复处理",
-            onOk: async () => { if (!checkSubmission()) throw new Error("当前替换操作尚未结束"); try { await startReplacementJob(job, approvePreview); setPreviewChoice(null); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
+            onOk: async () => { if (!checkSubmission(job)) throw new Error("当前任务参数已变化或操作尚未结束"); try { await startReplacementJob(job, approvePreview); setPreviewChoice(null); useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementJobId: job.id }); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "启动失败"); throw e; } },
         });
     };
     const retryPart = async (job: ReplacementJob, part: number) => {
@@ -242,12 +272,12 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         } catch (e) { message.error(e instanceof Error ? e.message : "报价失败"); }
     };
     const generateSelected = async (job: ReplacementJob) => {
-        if (!selectedParts.length || (selectedCredits <= 0 && !selectedPending) || !checkSubmission()) return;
+        if (!selectedParts.length || (selectedCredits <= 0 && !selectedPending) || !checkSubmission(job)) return;
         modal.confirm({
             title: `生成所选 ${selectedParts.length} 段`,
             content: `本次预计扣除 ${selectedCredits} 点。只处理勾选的片段，其他片段保持不变；已生成的片段不会重复收费。`,
             okText: "确认生成",
-            onOk: async () => { if (!checkSubmission()) throw new Error("当前替换操作尚未结束"); try { await generateReplacementParts(job, selectedParts, selectedCredits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "生成失败"); throw e; } },
+            onOk: async () => { if (!checkSubmission(job)) throw new Error("当前任务参数已变化或操作尚未结束"); try { await generateReplacementParts(job, selectedParts, selectedCredits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "生成失败"); throw e; } },
         });
     };
     const showResult = async (job: ReplacementJob, automatic = false, result = job.result) => {
@@ -273,6 +303,21 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <span>清晰度</span>
             <Select className="w-full" aria-label="清晰度" value={size} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"} options={sizes.map((v) => ({ value: v, label: /^\d+p?$/.test(v) ? `${v.replace(/p$/i, "")}p` : v }))} onChange={(value) => { setResolution(value); selectJob(); }} />
         </label>
+        {h3 && <div className="space-y-2 text-sm">
+            <label className="block space-y-1">
+                <span>生成画幅</span>
+                <Select className="w-full" aria-label="生成画幅" value={ratio || undefined} placeholder="选择画幅" disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning" || Boolean(currentJob && !canAdjustAspect)}
+                    options={ratios.map((value) => ({ value, label: `${value}${value === recommendedRatio ? " · 推荐" : ""}` }))}
+                    onChange={(value) => useVideoWorkbenchStore.getState().patchDraft("content-replace", { replacementAspectRatio: value })} />
+            </label>
+            <div className="text-xs" style={{ color: colors.colorTextSecondary }}>
+                {sourceWidth && sourceHeight ? `原视频 ${sourceWidth}×${sourceHeight} · ` : ""}等比例居中补边，保留完整画面与原音轨。
+            </div>
+            {ratio && sourceAspect > 0 && aspectSource?.url && <div className="mx-auto flex items-center justify-center overflow-hidden" style={{ aspectRatio: ratio.replace(":", "/"), width: ratio === "9:16" || ratio === "3:4" ? 108 : 192, maxHeight: 192, maxWidth: "100%", background: "#000" }}>
+                <video key={aspectSource.url} src={aspectSource.url} muted controls playsInline preload="metadata" aria-label="画幅适配预览"
+                    className="max-w-none max-h-none flex-none" style={{ width: sourceAspect >= targetAspect ? "100%" : "auto", height: sourceAspect >= targetAspect ? "auto" : "100%" }} />
+            </div>}
+        </div>}
         {!headSwap && <Collapse size="small" items={[{ key: "model", label: `高级设置 · ${label(selected)}`, children: <label className="block space-y-2 text-sm">
             <span>生成模型</span>
             <Select showSearch optionFilterProp="label" className="w-full" aria-label="生成模型" value={selected} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"}
@@ -281,8 +326,8 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>只调用所选模型，系统根据其支持的时长自动分段。</span>
         </label> }]} />}
         {subtitleError && <Alert type="warning" showIcon title={subtitleError} />}
-        {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={wb.busy || !hydrated || !source || !image || !duration || !size || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
-        {!source || !image ? <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{!source ? "请先上传原视频" : "请上传人物参考图"}</p> : (!duration || !size) && <Alert type="warning" title="当前模型尚未配置可用的时长或清晰度，请在高级设置中切换模型。" />}
+        {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={wb.busy || !hydrated || !canPrepare || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{needsReplan ? "应用画幅并重新分析" : requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
+        {!needsReplan && (!source || !image ? <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{!source ? "请先上传原视频" : "请上传人物参考图"}</p> : (!duration || !size) && <Alert type="warning" title="当前模型尚未配置可用的时长或清晰度，请在高级设置中切换模型。" />)}
         {error && <Alert type="warning" showIcon title={publicServiceText(error)} closable onClose={() => setError("")} />}
         {workspace && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
             <div className="min-w-0">
@@ -295,7 +340,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         {workspace && createPortal((currentJob ? [currentJob] : []).map((job) => <div key={job.id} className="flex flex-col gap-4" aria-label="分段与效果预览">
             <div className="order-1"><Dropdown menu={{ items: [{ key: "archive", label: "归档任务", disabled: !canArchive(job), onClick: () => void setArchived(job, true) }, { key: "close", label: "收起当前任务", onClick: () => selectJob() }] }} placement="bottomRight"><Button size="small" type="text">任务操作⌄</Button></Dropdown></div>
             {job.planned && <>
-                <div className="order-1 text-sm">整片模型预算 {job.credits} 点 · {job.resolution.replace(/p$/i, "")}p</div>
+                <div className="order-1 text-sm">整片模型预算 {job.credits} 点 · {job.resolution.replace(/p$/i, "")}p{job.aspectRatio ? ` · ${job.aspectRatio}` : ""}</div>
                 <p className="order-1 m-0 text-xs" style={{ color: colors.colorTextSecondary }}>点片段名称试看原片；勾选框决定生成范围。可只生成一段，也可一次勾选多段。生成时才按需切出文件，不会自动处理未勾选片段。</p>
                 <Collapse className="order-1" size="small" items={[{ key: "duration", label: "时长与费用说明", children: <div className="space-y-2 text-xs"><div>{replacementDurationSummary(job)}</div><div>原片片段时长与模型输入时长可能不同：不足输入档位的片段会补齐，最终合并时移除补齐部分。请按每段报价确认费用。</div></div> }]} />
             </>}
@@ -309,7 +354,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
                         <div style={{ color: colors.colorTextSecondary }}>{part.validated && !part.result ? "已生成，待导出" : part.validated ? "已生成" : part.submitted ? "已提交生成" : part.input ? "已切出，待生成" : "已规划，待生成"} · {part.credits} 点</div>
                         </button></div></div>)}
                 </div>
-                <div className="order-3 flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}><div className="text-sm">已选 {selectedParts.length} 段 · 预计 {selectedCredits} 点</div><Button type="primary" disabled={!selectedParts.length || (selectedCredits <= 0 && !selectedPending) || job.status === "running" || job.status === "planning"} onClick={() => void generateSelected(job)}>{selectedPending && selectedCredits === 0 ? "继续处理所选片段" : "生成所选片段"}</Button></div>
+                <div className="order-3 flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}><div className="text-sm">已选 {selectedParts.length} 段 · 预计 {selectedCredits} 点</div><Button type="primary" disabled={!job.planned || aspectChanged || !selectedParts.length || (selectedCredits <= 0 && !selectedPending) || job.status === "running" || job.status === "planning"} onClick={() => void generateSelected(job)}>{selectedPending && selectedCredits === 0 ? "继续处理所选片段" : "生成所选片段"}</Button></div>
                 {fullResult && <div className="order-2"><Segmented value={view} onChange={setView} options={[{ value: "segments", label: "分段对照" }, { value: "full", label: "完整视频" }]} /></div>}
                 <div className="order-2 grid gap-4 xl:grid-cols-2">
                     <div className="min-w-0 space-y-3 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}>

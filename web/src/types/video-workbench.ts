@@ -158,6 +158,7 @@ export type VideoDraft = {
     replaceSubtitles: boolean;
     regenerateSubtitles: boolean;
     replacementJobId?: string;
+    replacementAspectRatio?: string;
     replacementResultKey?: string;
     replacementSource?: UploadedFile;
     activeRecord?: string;

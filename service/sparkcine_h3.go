@@ -100,3 +100,10 @@ func SparkCineH3SpecError(resolution, ratio string, seconds float64) error {
 	}
 	return nil
 }
+
+func SparkCineH3AspectRatios(resolution string) []string {
+	if strings.TrimRight(strings.ToUpper(resolution), "P") == "720" {
+		return []string{"16:9", "9:16"}
+	}
+	return []string{"16:9", "9:16", "21:9", "4:3", "1:1", "3:4"}
+}
