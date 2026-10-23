@@ -10,6 +10,7 @@ import shutil
 import sys
 import uuid
 import wave
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -313,7 +314,7 @@ def validate_options(request: JobRequest):
                     raise ValueError("局部替换合成需要原画面、生成画面和人物掩膜")
         if request.operation == "trim":
             start, end = float(request.options["start"]), float(request.options["end"])
-            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or not 1 <= end - start <= 30:
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or not 1 <= Decimal(str(end)) - Decimal(str(start)) <= 30:
                 raise ValueError("参考视频裁剪片段须为 1–30 秒，开始时间不能为负数")
             if not isinstance(request.inputs.get("video"), str):
                 raise ValueError("请提供需要裁剪的视频")
@@ -1091,8 +1092,9 @@ async def run_job(identifier: str, request: JobRequest):
             if end > info["duration"]:
                 raise ValueError("裁剪结束时间超过原视频时长")
             output = work / "trim.mp4"
-            await ffmpeg(identifier, "-ss", start, "-i", source, "-t", end - start,
-                         "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            await ffmpeg(identifier, "-ss", start, "-i", source, "-t", Decimal(str(end)) - Decimal(str(start)),
+                         "-map", "0:v:0", "-map", "0:a?", "-vf", f"fps={info['fps']}:start_time=0",
+                         "-c:v", "libx264", "-pix_fmt", "yuv420p",
                          "-c:a", "aac", "-movflags", "+faststart", output)
             result = {"file": publish(output)}
         elif operation == "cut":

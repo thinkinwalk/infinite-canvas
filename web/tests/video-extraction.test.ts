@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { extractionDraft, extractionTargetError, extractionTargets, hasExtractionTargetDraft } from "../src/lib/video-extraction";
+import { clipExtraction, extractionClipError, extractionDraft, extractionTargetError, extractionTargets, hasExtractionTargetDraft } from "../src/lib/video-extraction";
 import { emptyVideoDraft, type VideoRecord, type WorkbenchMedia } from "../src/types/video-workbench";
 
 const media: WorkbenchMedia = {
@@ -46,5 +46,30 @@ test("existing materials, settings, analysis and outputs require confirmation", 
     expect(hasExtractionTargetDraft("upscale", emptyVideoDraft("upscale"))).toBe(false);
     for (const patch of [{ media: [media] }, { scale: 4 }, { analysis: "已分析" }, { final: media }, { replacementJobId: "job" }]) {
         expect(hasExtractionTargetDraft("upscale", { ...emptyVideoDraft("upscale"), ...patch })).toBe(true);
+    }
+});
+
+test("manual selections respect video bounds and the existing one-to-thirty second worker range", () => {
+    expect(extractionClipError(0, 1, 40_000)).toBe("");
+    expect(extractionClipError(10, 40, 40_000)).toBe("");
+    expect(extractionClipError(0.14, 1.14, 40_000)).toBe("");
+    for (const [start, end] of [[-1, 3], [0, 41], [5, 5], [5, 4], [NaN, 10], [0, Infinity]]) {
+        expect(extractionClipError(start, end, 40_000)).not.toBe("");
+    }
+    expect(extractionClipError(0, 0.99, 40_000)).toContain("1–30");
+    expect(extractionClipError(0, 30.01, 40_000)).toContain("1–30");
+    expect(extractionClipError(0, 10)).toContain("尚未识别");
+});
+
+test("a selected clip enters every destination with its own file and original time range", () => {
+    const clipped = { ...media, id: "clip", name: "开场.mp4", storageKey: "video:clip", durationMs: 5000,
+        source: { ...media.source!, clip: { extractionId: "parent", start: 12, end: 17 } } };
+    const record = clipExtraction({ id: "clip", createdAt: 1, start: 12, end: 17, media: clipped });
+    expect(record.originalBytes).toBe(clipped.bytes);
+    for (const { key } of extractionTargets) {
+        const draft = extractionDraft(key, record.media);
+        expect(draft.media[0].storageKey).toBe("video:clip");
+        expect(draft.media[0].durationMs).toBe(5000);
+        expect(draft.media[0].source?.clip).toEqual({ extractionId: "parent", start: 12, end: 17 });
     }
 });

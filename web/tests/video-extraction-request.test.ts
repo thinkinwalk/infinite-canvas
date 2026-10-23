@@ -31,7 +31,9 @@ afterEach(() => {
 });
 
 test("successful extraction saves original size, playable copy and provenance together", async () => {
-    const result = await extractVideoToHistory("share", controller.signal);
+    const stages: string[] = [];
+    const result = await extractVideoToHistory("share", controller.signal, (stage) => stages.push(stage));
+    expect(stages).toEqual(["extract", "prepare", "save"]);
     expect(result.originalBytes).toBe(14);
     expect(result.media.storageKey).toBe("video:compatible");
     expect(result.media.referenceId).toBe("ref");
@@ -60,7 +62,9 @@ test("session changes during parsing or preparation never commit into another ac
 
 test("parser or persistence failures do not report successful extraction", async () => {
     failImport = true;
-    await expect(extractVideoToHistory("share", controller.signal)).rejects.toThrow("解析失败");
+    const stages: string[] = [];
+    await expect(extractVideoToHistory("share", controller.signal, (stage) => stages.push(stage))).rejects.toThrow("解析失败");
+    expect(stages).toEqual(["extract"]);
     expect(added).toHaveLength(0);
     failImport = false; failSave = true;
     await expect(extractVideoToHistory("share", controller.signal)).rejects.toThrow("quota");

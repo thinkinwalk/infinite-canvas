@@ -150,7 +150,8 @@ export async function createWorkerJob(config: WorkerConfig, operation: string, i
 }
 
 export async function trimWorkbenchVideo(config: WorkerConfig, media: UploadedFile & { name?: string }, start: number, end: number, signal: AbortSignal): Promise<UploadedFile> {
-    if (![start, end].every(Number.isFinite) || start < 0 || end - start < 1 || end - start > 30) throw new Error("请选择 1–30 秒的参考片段");
+    const spanMs = Math.round(end * 1000) - Math.round(start * 1000);
+    if (![start, end].every(Number.isFinite) || start < 0 || spanMs < 1000 || spanMs > 30000) throw new Error("请选择 1–30 秒的参考片段");
     const capabilities = await getWorkerCapabilities(config, signal);
     signal.throwIfAborted();
     if (!capabilities.some((item) => item.name === "trim" && item.available)) throw new Error("当前剪辑服务暂不支持裁剪，请更新或连接处理服务后重试");

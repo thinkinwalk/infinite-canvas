@@ -5,12 +5,13 @@ export function extractionClipError(start: number, end: number, durationMs?: num
     const duration = (durationMs || 0) / 1000;
     if (!Number.isFinite(duration) || duration <= 0) return "视频时长尚未识别，请等待视频载入";
     if (![start, end].every(Number.isFinite) || start < 0 || end > duration || end <= start) return "片段起止时间必须在原视频范围内";
-    if (end - start < 1 || end - start > 30) return "请选择 1–30 秒的片段";
+    const spanMs = Math.round(end * 1000) - Math.round(start * 1000);
+    if (spanMs < 1000 || spanMs > 30000) return "请选择 1–30 秒的片段";
     return "";
 }
 
 export function clipExtraction(clip: VideoExtractionClip): VideoExtraction {
-    return { id: clip.id, createdAt: clip.createdAt, originalBytes: clip.media.bytes, media: clip.media };
+    return { id: clip.id, createdAt: clip.createdAt, originalBytes: clip.media.bytes, originalStorageKey: clip.media.storageKey, media: clip.media };
 }
 
 export const extractionTargets = [

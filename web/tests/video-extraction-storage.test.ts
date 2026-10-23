@@ -16,6 +16,7 @@ const record = {
         source: { platform: "xiaohongshu", title: "片段", author: "作者", sourceUrl: "https://xhslink.com/test" },
     },
 };
+const clip = { id: "clip", createdAt: 200, start: 2, end: 5, media: { ...record.media, id: "clip", storageKey: "video:clip", name: "开场.mp4", durationMs: 3000 } };
 afterEach(async () => { failRead = false; failWrite = false; delayRead = undefined; memory.clear(); await store.getState().load(""); });
 
 test("extraction history reloads metadata and file handles without duplicating the video", async () => {
@@ -70,4 +71,45 @@ test("removing an extraction record preserves metadata of other entries", async 
     await store.getState().load("alice");
     expect(store.getState().records.map((row) => row.id)).toEqual(["two"]);
     expect(store.getState().records[0].media.source).toEqual(record.media.source);
+});
+
+test("multiple clips survive reload without duplicating or changing the parent file", async () => {
+    await store.getState().load("alice");
+    await store.getState().add("alice", record);
+    await store.getState().saveClip("alice", record.id, clip);
+    await store.getState().saveClip("alice", record.id, { ...clip, id: "second" });
+    await store.getState().load("alice");
+    expect(store.getState().records[0].media).toEqual(record.media);
+    expect(store.getState().records[0].clips?.map((item) => item.id)).toEqual(["clip", "second"]);
+    expect(store.getState().records[0].clips?.[0].media.storageKey).toBe("video:clip");
+});
+
+test("edits and removals preserve sibling clips, while stale edits are rejected", async () => {
+    await store.getState().load("alice");
+    await store.getState().add("alice", record);
+    await store.getState().saveClip("alice", record.id, clip);
+    await store.getState().saveClip("alice", record.id, { ...clip, id: "second" });
+    const renamed = { ...clip, media: { ...clip.media, name: "改名.mp4" } };
+    await store.getState().saveClip("alice", record.id, renamed, clip);
+    await expect(store.getState().saveClip("alice", record.id, clip, clip)).rejects.toThrow("其他页面修改");
+    await expect(store.getState().removeClip("alice", record.id, clip)).rejects.toThrow("已变化");
+    await store.getState().removeClip("alice", record.id, renamed);
+    expect(store.getState().records[0].clips?.map((item) => item.id)).toEqual(["second"]);
+    expect(store.getState().records[0].media).toEqual(record.media);
+});
+
+test("removed parents, changed accounts, cancelled commits and quota failures never claim a clip was saved", async () => {
+    await store.getState().load("alice");
+    await expect(store.getState().saveClip("alice", record.id, clip)).rejects.toThrow("记录已移除");
+    await store.getState().add("alice", record);
+    failWrite = true;
+    await expect(store.getState().saveClip("alice", record.id, clip)).rejects.toThrow("quota");
+    expect(store.getState().records[0].clips).toBeUndefined();
+    failWrite = false;
+    const controller = new AbortController();
+    controller.abort();
+    await expect(store.getState().saveClip("alice", record.id, clip, undefined, () => controller.signal.throwIfAborted())).rejects.toHaveProperty("name", "AbortError");
+    await store.getState().load("bob");
+    await expect(store.getState().saveClip("alice", record.id, clip)).rejects.toThrow("账号已变化");
+    expect((memory.get("alice") as typeof record[])[0]).toEqual(record);
 });

@@ -3,7 +3,7 @@ import { create } from "zustand";
 import type { WorkbenchMedia } from "@/types/video-workbench";
 
 export type VideoExtractionClip = { id: string; createdAt: number; start: number; end: number; media: WorkbenchMedia };
-export type VideoExtraction = { id: string; createdAt: number; originalBytes: number; media: WorkbenchMedia; clips?: VideoExtractionClip[] };
+export type VideoExtraction = { id: string; createdAt: number; originalBytes: number; originalStorageKey?: string; media: WorkbenchMedia; clips?: VideoExtractionClip[] };
 const storage = localforage.createInstance({ name: "infinite-canvas", storeName: "video_extractions" });
 let loadVersion = 0;
 async function withOwnerLock(owner: string, action: () => Promise<void>): Promise<void> {

@@ -45,6 +45,15 @@ test("download reads the original while creation reads the playable copy", async
     expect(await readExtractedVideo(record, signal())).toBe(compatible);
 });
 
+test("downloading or handing off a clip uses the clip file rather than its parent's original", async () => {
+    const clip = { ...record, id: "clip", originalStorageKey: record.media.storageKey, media: { ...record.media,
+        source: { ...record.media.source!, clip: { extractionId: record.id, start: 5, end: 10 } } } };
+    expect(await readExtractedVideo(clip, signal(), true)).toBe(compatible);
+    await sendExtractionToWorkbench(clip, "upscale", undefined, signal());
+    expect(written?.media[0].source?.clip).toEqual({ extractionId: record.id, start: 5, end: 10 });
+    expect(written?.media[0].storageKey).toBe(clip.media.storageKey);
+});
+
 test("expired or missing files cannot be downloaded or handed off", async () => {
     reference = { storageKey: "video:original", cleanedAt: 1 };
     await expect(sendExtractionToWorkbench(record, "upscale", undefined, signal())).rejects.toThrow("已清理");
