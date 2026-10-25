@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.94
-- Current production source: tag v0.19.94, commit 72882e01afd7f363bdd839ebb74bdabfee090f51
+- Current production image: infinite-canvas:v0.19.95
+- Current production source: tag v0.19.95, commit fb957d607baed915bcb6dd5087665378ff8f10da
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.95 deployment
+
+- Tag `v0.19.95`, commit `fb957d607baed915bcb6dd5087665378ff8f10da`, is pushed on `release/v0.19.60`; GitHub Release is published at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.95. Server-built app image `infinite-canvas:v0.19.95`, ID `sha256:c16b9f6988e2a7c75e02f5c0c00aa0ec42ac6a7a0572534787dda983f993080a`, matches the exact tag.
+- Model deletion requires a previously saved disabled record, previews removed bindings and checks historical video/cloud tasks, credit logs and replacement-job files transactionally. Referenced records remain protected. Gemini native video/audio analysis is registered as `viral-recreate.video-analyze` with adapter `text.gemini-video`; no production route, price or binding was created and no paid inference ran.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.95-20261025-103404/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.95-prebuild-20261025-103101/`. SQLite quick_check, all 13 table counts, settings, balances/roles/groups/status, existing default/VIP catalog entries and six noncharging quote comparisons passed. Hashes of 8,919 existing files matched. Management remains revision 9 with 37 models, 64 routes and 655 bindings; the only public registry addition is the new video-analysis feature.
+- Only app was recreated after checking database/Worker work and resolving a historical stored planning record as effectively paused with a completed Worker step. Worker ID/image/start time and `v0.19.87-worker` mounts remain unchanged. Internal/external health, ten public pages, ordinary-user Worker capabilities including segment-plan, management permissions and new endpoint authentication passed.
+- Published `/assets/index-CE0WvWcS.js` contains v0.19.95, deletion controls and Gemini API/adapter markers. Independent workstation HTTPS checks confirmed the same resource and healthy production site. These asset/API checks do not replace real browser edit/save or paid inference acceptance; pre-release focused Go/Bun and isolated browser results are recorded in the feature handoffs. No local build/test was repeated during release.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.95-deployment.json`; workstation copy: `.codex_tmp/release-v0.19.95/deployment.json`. Rollback restores the saved Compose and recreates only app using `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database. The prior v0.19.94 image remains available.
 
 ## v0.19.94 deployment
 
@@ -41,7 +50,8 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 ## Active model configuration
 
-- Management revision 1 is saved and enabled through the authorized BitBrowser 464 admin session. Duplicate channel entries were consolidated into 35 platform models (26 enabled, 9 disabled), retaining all 62 routes and prior channel enablement. There are 653 bindings, 475 enabled, with unique available defaults for 140 feature steps. The remaining 22 generic case audio placeholders have no compatible adapter.
+- Current management is revision 9, enabled, with 37 platform models, 64 routes and 655 bindings. The dedicated free prompt-enhancement default is `deepseek-v4.1-flash` on channel 22; details and revision history are in `docs/model-management-handoff.md`. v0.19.95 deployment preserved the complete saved configuration and channel credentials; Gemini native video analysis remains unconfigured.
+- Historical initial activation: management revision 1 was saved and enabled through the authorized BitBrowser 464 admin session. Duplicate channel entries were consolidated into 35 platform models (26 enabled, 9 disabled), retaining all 62 routes and prior channel enablement. There were 653 bindings, 475 enabled, with unique available defaults for 140 feature steps. The remaining 22 generic case audio placeholders had no compatible adapter.
 - `h3-video` is excluded from person replacement and retained for other compatible video uses. Person replacement defaults to `wan30-720p` with the dedicated cloud person model also available. Invalid legacy person bindings without both image/video reference support were removed. Text/image/video defaults remain `gpt-6.1-sol`, `gpt-image-2`, and `seedance-2.0-mini`.
 - Existing price schedules were retained. Old live quotes for `gpt-6.1-sol`, `minimax-h3`, and `minimax-h3-fl2v` were zero; these are now explicitly free to preserve behavior. Unpriced `tejiasd-mini-720p` remains disabled. Display policy counts: 22 real IDs, 12 existing aliases, one combined name (`MiniMax H3 Video · h3-video`).
 - Configuration backup: `/opt/infinite-canvas/backups/model-management-enable-20261023-160742/`; post-save verification: `after-verification.json` in that directory. SQLite integrity, user balances/permissions, credit logs and task/table counts passed; only settings gained the transactional original-config backup row. Legacy public settings are unchanged. Saving persisted existing runtime-normalized video fields, matched against the pre-save preview; channel credentials and other private settings are unchanged.

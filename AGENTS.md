@@ -87,7 +87,7 @@
 - 当前生产项目目录是 `/opt/infinite-canvas`（部署目录，只含配置和数据），完整源码仓库在 `/opt/infinite-canvas-repo`。
 - 当前生产 Compose 文件是 `/opt/infinite-canvas/docker-compose.deploy.yml`，容器名是 `infinite-canvas`，数据目录是 `/opt/infinite-canvas/data`。
 - 新服务器使用 `docker compose`，不是旧命令 `docker-compose`。
-- 当前生产版本为 `infinite-canvas:v0.19.94`（源码 tag `v0.19.94`，提交 `72882e0`），使用服务器本地构建的镜像，已上线模型分类、联合筛选、列表摘要及功能/渠道抽屉，保留管理员客户端 Key 管理与视频/云任务的稳定模型身份快照字段；统一模型配置管理沿用第 1 版，35 个平台模型、62 个接入，人物替换默认 Wan30 且不绑定 `h3-video`，详见 `docs/model-management-handoff.md`。Worker 使用 `infinite-canvas-video-worker:v0.19.87` 依赖镜像与 `v0.19.87-worker` 源码挂载，包含自动分段依赖，维持单 Uvicorn 进程，本次未重启。发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
+- 当前生产版本为 `infinite-canvas:v0.19.95`（源码 tag `v0.19.95`，提交 `fb957d6`），使用服务器本地构建的镜像，已上线模型按引用删除及 Gemini 原生视频分析接口；模型分类、筛选、抽屉、管理员客户端 Key 与历史任务身份快照均保留。统一模型配置管理维持第 9 版，37 个平台模型、64 个接入、655 个绑定，现有价格、渠道与绑定未变；Gemini 原生视频分析尚未定价或绑定，详见 `docs/model-management-handoff.md` 和 `docs/gemini-video-analysis-handoff.md`。Worker 使用 `infinite-canvas-video-worker:v0.19.87` 依赖镜像与 `v0.19.87-worker` 源码挂载，包含自动分段依赖，维持单 Uvicorn 进程，本次未重启。发布新版本时同步更新此记录和 `server-customizations/MOVOFLOW_PRODUCTION_NOTES.md`。
 - 部署采用服务器本地构建方式，源码仓库位于 `/opt/infinite-canvas-repo`，不依赖 GitHub Actions 和 GHCR。
 - 生产部署不依赖 GitHub Actions：服务器检出发布 tag 并构建版本化镜像，按下述核对与备份要求更新 Compose，分别更新 app 与 video-worker，再验证内外健康、普通用户处理服务网关及静态资源版本。
 - 使用 `scripts/release-and-deploy.sh` 或 `scripts/deploy.sh` 前先审查脚本：不得在发布分支上误推 main，也不能漏部署 Worker 源码。本轮按实际配置执行受控部署，备份位置见生产交接记录。

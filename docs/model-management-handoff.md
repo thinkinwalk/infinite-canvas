@@ -2,6 +2,8 @@
 
 ## 交付状态
 
+模型按引用删除已随 v0.19.95（`fb957d6`）上线。生产第 9 版配置、37 个平台模型、64 个接入及 655 个绑定保持一致；内外健康、权限、既有目录/报价、余额与历史文件核对通过。本次没有实际删除生产记录，真实停用保存与删除交互仍需管理员验收。
+
 已随 v0.19.92（`de6dfd3`）发布生产，管理入口为 `https://studio.lingzhouai.com/admin/models`。已按用户授权通过比特浏览器 464 的登录会话保存并启用第 1 版配置，真实读取、持久化、目录和非收费报价检查通过。付费生成、扣费退款和上游质量仍由用户手动验收。
 
 本地代码及定向回归完成，比特浏览器 464 配合隔离模拟接口完成 39 项前端检查和桌面/手机深浅主题截图。原有渠道与密钥入口继续位于 `/admin/settings`。本机 3000 连接的旧 8080 后端仍未完成新接口联调；线上当前版本已可进行真实管理测试。
@@ -144,7 +146,10 @@ bun test tests/replicate-video.test.ts -t 'automatic routing uses enabled compat
 
 ### 生产发布核对
 
-- 当前界面版本为 v0.19.94，发布提交 `72882e01afd7f363bdd839ebb74bdabfee090f51`。只更新 App，Worker 容器/镜像/启动时间/源码挂载不变；内外健康、9 个页面、普通账号 Worker 网关及静态资源 `/assets/index-d9FecF_0.js` 通过。13 张表记录数、设置、余额权限、default/VIP 目录及六项现有报价、8,830 个既有文件哈希一致，第 1 版模型管理配置未变。
+- v0.19.95 发布提交 `fb957d607baed915bcb6dd5087665378ff8f10da` 已从精确 tag 在服务器构建，仅更新 App。Worker 容器、启动时间、镜像及挂载不变；10 个页面、内外健康、普通账号 Worker 网关和新接口权限通过。公开资源为 `/assets/index-CE0WvWcS.js`，工作站独立 HTTPS 核验一致。
+- 模型管理维持第 9 版，37 个平台模型、64 个接入、655 个绑定和全部渠道配置不变；default/VIP 既有目录及六项非收费报价一致。仅功能注册表新增 `viral-recreate.video-analyze`，尚未创建其接入、定价或绑定。13 张表记录数、设置、用户余额权限及 8,919 个既有文件哈希一致，SQLite quick_check 通过。
+- v0.19.95 最终备份为 `/opt/infinite-canvas/backups/v0.19.95-20261025-103404/`，构建前备份为 `/opt/infinite-canvas/backups/v0.19.95-prebuild-20261025-103101/`；生产证据为 `/opt/infinite-canvas/releases/v0.19.95-deployment.json`，本机副本为 `.codex_tmp/release-v0.19.95/deployment.json`。保留 v0.19.94 镜像，回滚只恢复 Compose 并重建 App，不覆盖数据库。未实际删除生产模型、写入配置或发起付费生成，真实编辑保存与历史引用提示保留人工验收。
+- 历史 v0.19.94 发布提交 `72882e01afd7f363bdd839ebb74bdabfee090f51`。只更新 App，Worker 容器/镜像/启动时间/源码挂载不变；内外健康、9 个页面、普通账号 Worker 网关及静态资源 `/assets/index-d9FecF_0.js` 通过。13 张表记录数、设置、余额权限、default/VIP 目录及六项现有报价、8,830 个既有文件哈希一致，第 1 版模型管理配置未变。
 - 发布后真实浏览器只读验证 5 组通过：全部/文字/图片/视频/音频分别 35/2/9/22/2 个平台模型及对应身份、跨视图保留分类与模块/功能步骤联合筛选、紧凑摘要及功能/渠道抽屉、桌面与 390px/320px 布局、管理配置不变及无写请求/页面运行错误。通过独立临时上下文使用既有登录，只关闭临时上下文；浏览器 90% 缩放在测试视口内校正，按实际 CSS 宽度核对。抽样行高约 87px，图片模型 10 个接入详情符合配置。证据为 `.codex_tmp/release-v0.19.94/browser-report.json` 和同目录截图；真实编辑保存、并发与收费生成仍待人工验收。
 - 本次在线 SQLite/Compose/私有环境备份为 `/opt/infinite-canvas/backups/v0.19.94-20261023-171818/`，构建前备份为 `/opt/infinite-canvas/backups/v0.19.94-prebuild-20261023-171602/`。生产证据为 `/opt/infinite-canvas/releases/v0.19.94-deployment.json`，工作站副本位于 `.codex_tmp/release-v0.19.94/`。保留旧 v0.19.93 镜像，回滚只恢复已备份 Compose 并重建 App，不覆盖现有数据库。
 - v0.19.92 已从精确 tag 在服务器构建并仅更新 App；Worker 镜像、源码挂载、容器及启动时间保持原样。新增视频与云任务共 8 个模型身份快照列，13 张表记录数和数据库完整性通过。
