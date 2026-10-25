@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.95
-- Current production source: tag v0.19.95, commit fb957d607baed915bcb6dd5087665378ff8f10da
+- Current production image: infinite-canvas:v0.19.96
+- Current production source: tag v0.19.96, commit 7d3345255bd85b1aa3911bce20774f4a4729e05b
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.96 deployment
+
+- Tag `v0.19.96`, commit `7d3345255bd85b1aa3911bce20774f4a4729e05b`, is published on `release/v0.19.60` with a GitHub Release. Server-built app image `infinite-canvas:v0.19.96`, ID `sha256:97abc429780cde65bdc7dcd6da40a020b0a655f4917b295f489584a19e284a5a`, matches the tag.
+- Free prompt enhancement skips the zero-credit confirmation after login, model and server quote validation. Paid quotes still require confirmation; existing loading, preview/edit, apply/cancel, stop and undo controls remain. Management revision 9, the dedicated `deepseek-v4.1-flash` default, channels and credentials are unchanged.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.96-20261025-105810/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.96-prebuild-20261025-105308/`. SQLite quick_check, all 13 table counts, saved settings, balances/roles/groups/status, default/VIP catalogs and eight noncharging quote comparisons passed. Hashes of 8,921 existing files matched.
+- Only app was recreated; Worker ID/image/start time and source mounts are unchanged. Internal/external health, ten public pages and both ordinary-user Worker gateways passed. Server and independent workstation checks confirmed `/assets/index-BdA2Hwvv.js`, v0.19.96, the zero-credit short circuit and retained paid confirmation. Browser clicks and already-open-tab refresh remain pending; no paid generation or repeated local builds/tests ran.
+- The initial deployment verifier expected a literal early return, but the bundler emitted an equivalent short-circuit expression. The verifier restored v0.19.95 automatically; after inspecting the actual artifact, the corrected verifier passed on redeployment. Initial backup: `/opt/infinite-canvas/backups/v0.19.96-20261025-105446/`.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.96-deployment.json`; workstation copy: `.codex_tmp/release-v0.19.96/deployment.json`. Rollback restores the final backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database. The v0.19.95 image remains available.
 
 ## v0.19.95 deployment
 

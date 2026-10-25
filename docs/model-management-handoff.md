@@ -16,6 +16,7 @@
 
 ## 当前线上配置
 
+- 免费增强跳过 0 点费用确认已随 v0.19.96（`7d33452`）部署，收费报价仍须确认。生产静态资源分支与版本、default/VIP 普通账号的免费增强报价、完整管理配置与渠道凭据保持通过，第 9 版默认模型不变；余额、13 张表及 8,921 个既有文件一致，Worker 未重启。备份 `/opt/infinite-canvas/backups/v0.19.96-20261025-105810/`，报告 `.codex_tmp/release-v0.19.96/deployment.json`；浏览器增强/应用/撤销及旧标签刷新仍待验收。以下为模型配置变更时的历史记录。
 - 当前为第 9 版：用户在 #22「国模」渠道追加 `deepseek-v4.1-flash` 后，新增独立 `text.openai` 接入 `route_prompt_deepseek_v41_flash_ch22` 与免费平台模型 `model_prompt_deepseek_v41_flash`，展示名「DeepSeek 提示词增强」，仅绑定 `prompt.enhance` 并设为唯一启用默认项。旧 V4 Flash 接入身份保留、增强绑定保持停用，未原地更换真实模型。
 - 新型号的后台同步测试曾在 30 秒超时；随后使用相同渠道凭据，`/responses` 和 `/chat/completions` 流式实测均成功，首次正文分别约 19.93/22.14 秒。保存第 9 版后，普通账号经站内 `/api/v1/responses` 的完整签名报价/调用通过，首次正文 1.58 秒、总计 2.03 秒，返回两只小狗玩耍的增强正文；这是单次耗时，不保证每次响应相同。管理员与普通账号报价均为 0 点，签名渠道为 #22，普通测试账号余额及计费日志数未变，公开 HTTPS 目录已读回第 9 版及正确默认项。
 - 本轮在线 SQLite/Compose 备份为 `/opt/infinite-canvas/backups/prompt-deepseek-20261025-102114/`，`save-report.json` 与 `verification.json` 记录保存及真实调用。保存前后其他功能绑定、既有模型/接入、渠道凭据、公共设置和用户余额保持一致；数据库 quick_check 正常。仅保存线上配置，未部署或重启服务，未修改 0 点确认弹窗，也未执行浏览器预览/应用或已打开标签页刷新验收。
