@@ -5,6 +5,7 @@ import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Checkbox, Col, Collapse, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminReplicatePricing, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
@@ -43,7 +44,8 @@ const emptySettings: AdminSettings = {
         adminContact: { qq: "", note: "" },
         auth: { allowRegister: true, linuxDo: { enabled: false } },
     },
-    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { channelsInitialized: true, pricing: {} } },
+    private: { channels: [], groups: { default: { name: "普通用户", creditRatio: 1, enabled: true } }, promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, replicate: { channelsInitialized: true, pricing: {} },
+    },
 };
 const emptyChannel: AdminModelChannel = { id: 0, protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "", allowedGroups: [] };
 
@@ -54,6 +56,7 @@ type ModelSelectTabKey = "new" | "current";
 export default function AdminSettingsPage() {
     const token = useUserStore((state) => state.token);
     const { message } = App.useApp();
+    const navigate = useNavigate();
     const [form] = Form.useForm<AdminSettings>();
     const [activeTab, setActiveTab] = useState<SettingsTabKey>("public");
     const [editorMode, setEditorMode] = useState<Record<SettingsTabKey, EditorMode>>({ public: "visual", private: "visual" });
@@ -213,12 +216,21 @@ export default function AdminSettingsPage() {
             await channelForm.validateFields();
             const draft = channelForm.getFieldsValue(true);
             const channel = normalizeChannel(draft);
+            const isNewChannel = editingChannelIndex === null;
             rememberModels(channel.models);
             const nextChannels = [...channels];
             if (editingChannelIndex === null) nextChannels.push(channel);
             else nextChannels[editingChannelIndex] = channel;
-            await persistChannels(nextChannels, cloudProtocol || channel.protocol === "replicate" ? draft.replicatePricing : undefined);
+            const saved = await persistChannels(nextChannels, cloudProtocol || channel.protocol === "replicate" ? draft.replicatePricing : undefined);
             closeChannelDrawer();
+            if (isNewChannel && saved) {
+                const savedChannel = saved.private.channels.find((item) => !channels.some((existing) => existing.id === item.id)) || saved.private.channels[saved.private.channels.length - 1];
+                const model = savedChannel?.models?.[0] || channel.models[0] || "";
+                const params = new URLSearchParams();
+                if (savedChannel?.id) params.set("channelId", String(savedChannel.id));
+                if (model) params.set("model", model);
+                navigate(`/admin/models${params.toString() ? `?${params.toString()}` : ""}`);
+            }
         } catch (error) {
             if (error instanceof Error) message.error(error.message);
         }
@@ -261,7 +273,13 @@ export default function AdminSettingsPage() {
 
     const openChannelModelSelector = (sourceModels?: string[]) => {
         const current = uniqueModels(channelForm.getFieldValue("models") || []);
-        const source = uniqueModels(sourceModels !== undefined ? sourceModels : cloudProtocol ? REPLICATE_SUPPORTED_MODELS.filter((item) => channelProtocol === "wavespeed" ? item.model.startsWith("wavespeed-ai/") : !item.model.startsWith("wavespeed-ai/")).map((item) => item.model) : [...knownModels, ...current]);
+        const source = uniqueModels(
+            sourceModels !== undefined
+                ? sourceModels
+                : cloudProtocol
+                  ? REPLICATE_SUPPORTED_MODELS.filter((item) => (channelProtocol === "wavespeed" ? item.model.startsWith("wavespeed-ai/") : !item.model.startsWith("wavespeed-ai/"))).map((item) => item.model)
+                  : [...knownModels, ...current],
+        );
         setModelSelectExisting(current);
         setModelSelectSource(source);
         setModelSelectSelected(sourceModels ? uniqueModels([...current, ...source]) : current);
@@ -366,7 +384,7 @@ export default function AdminSettingsPage() {
     }
 
     async function persistChannels(nextChannels: AdminModelChannel[], pricing?: Record<string, AdminReplicatePricing>) {
-        if (!token) return;
+        if (!token) return undefined;
         const values = normalizeSettings(form.getFieldsValue(true) as AdminSettings);
         const nextChannelModels = collectChannelModels(nextChannels);
         const nextSettings = normalizeSettings({
@@ -386,6 +404,7 @@ export default function AdminSettingsPage() {
             private: JSON.stringify(merged.private, null, 2),
         });
         message.success("已保存");
+        return merged;
     }
 
     const groups = (form.getFieldValue(["private", "groups"]) || {}) as AdminSettings["private"]["groups"];
@@ -528,15 +547,7 @@ export default function AdminSettingsPage() {
                                                     dataIndex: "credits",
                                                     width: 220,
                                                     render: (_, item) => (
-                                                        <InputNumber
-                                                            min={0}
-                                                            step={1}
-                                                            precision={0}
-                                                            className="!w-full"
-                                                            value={item.credits}
-                                                            addonAfter="点"
-                                                            onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)}
-                                                        />
+                                                        <InputNumber min={0} step={1} precision={0} className="!w-full" value={item.credits} addonAfter="点" onChange={(value) => setModelCost(form, setModelCosts, item.model, Number(value) || 0)} />
                                                     ),
                                                 },
                                             ]}
@@ -569,7 +580,7 @@ export default function AdminSettingsPage() {
                                         </Space>
                                     }
                                 >
-                            <Flex vertical gap={14}>
+                                    <Flex vertical gap={14}>
                                         <Typography.Text type="secondary">
                                             本项目接口回调地址是 /api/auth/linux-do/callback，请在 Linux.do 应用后台自行拼接站点前缀。
                                             <Typography.Link href="https://connect.linux.do" target="_blank" rel="noreferrer">
@@ -598,7 +609,11 @@ export default function AdminSettingsPage() {
                                 <Card
                                     size="small"
                                     title="用户分组"
-                                    extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setGroupEditor({ key: "", name: "", creditRatio: 1, enabled: true })}>新增分组</Button>}
+                                    extra={
+                                        <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setGroupEditor({ key: "", name: "", creditRatio: 1, enabled: true })}>
+                                            新增分组
+                                        </Button>
+                                    }
                                 >
                                     <Table
                                         size="small"
@@ -618,13 +633,21 @@ export default function AdminSettingsPage() {
                                                 align: "right",
                                                 render: (_, item) => (
                                                     <Space size={4}>
-                                                        <Button size="small" icon={<EditOutlined />} onClick={() => setGroupEditor({ originalKey: item.key, ...item })}>编辑</Button>
-                                                        <Button size="small" danger disabled={item.key === "default"} icon={<DeleteOutlined />} onClick={() => {
-                                                            const nextGroups = { ...groups };
-                                                            delete nextGroups[item.key];
-                                                            form.setFieldsValue({ private: { ...form.getFieldValue("private"), groups: nextGroups } });
-                                                            setJsonText((current) => ({ ...current, private: JSON.stringify({ ...form.getFieldsValue(true).private, groups: nextGroups }, null, 2) }));
-                                                        }} />
+                                                        <Button size="small" icon={<EditOutlined />} onClick={() => setGroupEditor({ originalKey: item.key, ...item })}>
+                                                            编辑
+                                                        </Button>
+                                                        <Button
+                                                            size="small"
+                                                            danger
+                                                            disabled={item.key === "default"}
+                                                            icon={<DeleteOutlined />}
+                                                            onClick={() => {
+                                                                const nextGroups = { ...groups };
+                                                                delete nextGroups[item.key];
+                                                                form.setFieldsValue({ private: { ...form.getFieldValue("private"), groups: nextGroups } });
+                                                                setJsonText((current) => ({ ...current, private: JSON.stringify({ ...form.getFieldsValue(true).private, groups: nextGroups }, null, 2) }));
+                                                            }}
+                                                        />
                                                     </Space>
                                                 ),
                                             },
@@ -650,11 +673,11 @@ export default function AdminSettingsPage() {
                                     新增渠道
                                 </Button>
                                 <Table
-                                    rowKey={(item) => item.id > 0 ? item.id : `unsaved-${item._index}`}
+                                    rowKey={(item) => (item.id > 0 ? item.id : `unsaved-${item._index}`)}
                                     pagination={false}
                                     dataSource={channelTableData}
                                     columns={[
-                                        { title: "ID", dataIndex: "id", width: 80, render: (value: number) => value > 0 ? value : "未分配" },
+                                        { title: "ID", dataIndex: "id", width: 80, render: (value: number) => (value > 0 ? value : "未分配") },
                                         { title: "名称", dataIndex: "name", render: (value) => value || "未命名渠道" },
                                         { title: "协议", dataIndex: "protocol", width: 96, render: (value) => <Tag>{value || "openai"}</Tag> },
                                         { title: "状态", dataIndex: "enabled", width: 96, render: (value) => <Tag color={value ? "success" : "default"}>{value ? "已启用" : "已停用"}</Tag> },
@@ -671,10 +694,13 @@ export default function AdminSettingsPage() {
                                         {
                                             title: "操作",
                                             key: "actions",
-                                            width: 220,
+                                            width: 280,
                                             align: "right",
                                             render: (_, item) => (
-                                                <Space size={4}>
+                                                <Space size={4} wrap>
+                                                    <Button size="small" type="link" disabled={!item.id} onClick={() => navigate(`/admin/models?channelId=${item.id}${item.models?.[0] ? `&model=${encodeURIComponent(item.models[0])}` : ""}`)}>
+                                                        接入模型
+                                                    </Button>
                                                     <Button size="small" onClick={() => openTestDialog(item._index)}>
                                                         测试
                                                     </Button>
@@ -740,7 +766,24 @@ export default function AdminSettingsPage() {
                             </Col>
                             <Col span={12}>
                                 <Form.Item name="protocol" label="协议" extra="按渠道接口协议选择，具体模型在下方配置。">
-                                    <Select options={[{ label: "OpenAI 兼容", value: "openai" }, { label: "Replicate", value: "replicate" }, { label: "WaveSpeed", value: "wavespeed" }]} onChange={(protocol) => channelForm.setFieldsValue({ baseUrl: protocol === "replicate" ? "https://api.replicate.com/v1" : protocol === "wavespeed" ? "https://api.wavespeed.ai/api/v3" : "", apiKey: "", apiKeyConfigured: false, clearApiKey: false, useEnvironmentKey: false, models: [], videoModels: {} })} />
+                                    <Select
+                                        options={[
+                                            { label: "OpenAI 兼容", value: "openai" },
+                                            { label: "Replicate", value: "replicate" },
+                                            { label: "WaveSpeed", value: "wavespeed" },
+                                        ]}
+                                        onChange={(protocol) =>
+                                            channelForm.setFieldsValue({
+                                                baseUrl: protocol === "replicate" ? "https://api.replicate.com/v1" : protocol === "wavespeed" ? "https://api.wavespeed.ai/api/v3" : "",
+                                                apiKey: "",
+                                                apiKeyConfigured: false,
+                                                clearApiKey: false,
+                                                useEnvironmentKey: false,
+                                                models: [],
+                                                videoModels: {},
+                                            })
+                                        }
+                                    />
                                 </Form.Item>
                             </Col>
                             <Col span={12}>
@@ -764,17 +807,46 @@ export default function AdminSettingsPage() {
                                 </Form.Item>
                             </Col>
                             <Col span={24}>
-                                <Form.Item name="apiKey" label={channelProtocol === "replicate" ? "API Token" : "API Key"} extra={editingChannelIndex !== null ? (channels[editingChannelIndex].apiKeyConfigured ? "密钥已配置" : "未配置密钥") : undefined} rules={editingChannelIndex === null && !channelUsesEnvironment ? [{ required: true, message: "请输入 API Key" }] : []}>
+                                <Form.Item
+                                    name="apiKey"
+                                    label={channelProtocol === "replicate" ? "API Token" : "API Key"}
+                                    extra={editingChannelIndex !== null ? (channels[editingChannelIndex].apiKeyConfigured ? "密钥已配置" : "未配置密钥") : undefined}
+                                    rules={editingChannelIndex === null && !channelUsesEnvironment ? [{ required: true, message: "请输入 API Key" }] : []}
+                                >
                                     <Input.Password autoComplete="new-password" placeholder={editingChannelIndex === null ? "输入渠道密钥" : "留空则沿用该渠道已保存的密钥"} />
                                 </Form.Item>
                             </Col>
-                            {editingChannelIndex !== null && <Col span={24}><Form.Item name="clearApiKey" valuePropName="checked"><Checkbox>保存时移除该渠道密钥</Checkbox></Form.Item></Col>}
-                            {cloudProtocol && <Col span={24}><Form.Item name="useEnvironmentKey" valuePropName="checked" extra="仅此渠道使用服务器环境令牌；停用渠道后不会用于新任务。"><Checkbox>{channelProtocol === "wavespeed" ? "无渠道密钥时使用服务器 WAVESPEED_API_KEY" : "无渠道密钥时使用服务器 REPLICATE_API_TOKEN"}</Checkbox></Form.Item></Col>}
+                            {editingChannelIndex !== null && (
+                                <Col span={24}>
+                                    <Form.Item name="clearApiKey" valuePropName="checked">
+                                        <Checkbox>保存时移除该渠道密钥</Checkbox>
+                                    </Form.Item>
+                                </Col>
+                            )}
+                            {cloudProtocol && (
+                                <Col span={24}>
+                                    <Form.Item name="useEnvironmentKey" valuePropName="checked" extra="仅此渠道使用服务器环境令牌；停用渠道后不会用于新任务。">
+                                        <Checkbox>{channelProtocol === "wavespeed" ? "无渠道密钥时使用服务器 WAVESPEED_API_KEY" : "无渠道密钥时使用服务器 REPLICATE_API_TOKEN"}</Checkbox>
+                                    </Form.Item>
+                                </Col>
+                            )}
                             <Col span={24}>
                                 <Form.Item label="渠道可用模型">
                                     <Space.Compact style={{ width: "100%" }}>
                                         <Form.Item name="models" noStyle>
-                                            <Select mode={cloudProtocol ? "multiple" : "tags"} maxTagCount="responsive" tokenSeparators={[",", "\n"]} options={cloudProtocol ? REPLICATE_SUPPORTED_MODELS.filter((item) => channelProtocol === "wavespeed" ? item.model.startsWith("wavespeed-ai/") : !item.model.startsWith("wavespeed-ai/")).map((item) => ({ label: `${item.label} · ${item.model}`, value: item.model })) : knownModels.map((model) => ({ label: model, value: model }))} />
+                                            <Select
+                                                mode={cloudProtocol ? "multiple" : "tags"}
+                                                maxTagCount="responsive"
+                                                tokenSeparators={[",", "\n"]}
+                                                options={
+                                                    cloudProtocol
+                                                        ? REPLICATE_SUPPORTED_MODELS.filter((item) => (channelProtocol === "wavespeed" ? item.model.startsWith("wavespeed-ai/") : !item.model.startsWith("wavespeed-ai/"))).map((item) => ({
+                                                              label: `${item.label} · ${item.model}`,
+                                                              value: item.model,
+                                                          }))
+                                                        : knownModels.map((model) => ({ label: model, value: model }))
+                                                }
+                                            />
                                         </Form.Item>
                                         <Button onClick={() => openChannelModelSelector()}>选择模型</Button>
                                     </Space.Compact>
@@ -789,79 +861,218 @@ export default function AdminSettingsPage() {
                                 const sparkCine = name === "h3-video" && (sparkCineChannel || channelForm.getFieldValue(["videoModels", name, "interface"]) === "sparkcine_h3");
                                 const preset = sparkCine ? sparkCineH3Preset() : isMiniMaxH3Name(name) ? miniMaxH3Profile(name) : undefined;
                                 return (
-                                <Col span={24} key={name}>
-                                    <Card size="small" title={`视频能力 · ${name}`}>
-                                        <Typography.Paragraph type="secondary">只开启该渠道已确认支持的素材。接口名称相同也可能能力不同；数量设为0表示不支持。价格仍在公共配置的模型算力点中调整。</Typography.Paragraph>
-                                        <Form.Item name={["videoModels", name, "displayName"]} label="前台展示名称" initialValue={preset?.displayName || name}><Input /></Form.Item>
-                                        <Form.Item name={["videoModels", name, "description"]} label="一句话用途" initialValue={preset?.description}><Input.TextArea rows={2} /></Form.Item>
-                                        <Form.Item name={["videoModels", name, "interface"]} label="视频调用方式" initialValue={preset?.interface || (/seedance|seedace/i.test(name) ? "relay" : "openai")}>
-                                            <Select options={[{ value: "openai", label: "普通视频接口（图片参考）" }, { value: "relay", label: "JSON视频中转（reference_videos / audio_urls）" }, { value: "ark", label: "火山多素材接口（content）" }, ...(name === "h3-video" ? [{ value: "sparkcine_h3", label: "SparkCine H3 v2（图片 / 视频 / 音频参考）" }] : [])]} />
-                                        </Form.Item>
-                                        <Form.Item name={["videoModels", name, "inputModes"]} label="支持的输入模式" initialValue={preset?.inputModes || ["reference"]} extra="只开启上游文档和实测已确认的模式；首尾帧与普通参考图片独立。">
-                                            <Select mode="multiple" options={[{ value: "reference", label: "参考模式" }, { value: "first_last", label: "首尾帧模式" }, { value: "first_frame_only", label: "文生 / 单首帧模式" }]} />
-                                        </Form.Item>
-                                        <Row gutter={12}>
-                                            <Col span={12}><Form.Item name={["videoModels", name, "firstFrameField"]} label="首帧字段" initialValue={preset?.firstFrameField} extra="JSON / 表单参数名；Ark 使用 content.role=first_frame。"><Input placeholder="例如 first_frame 或 image_url" /></Form.Item></Col>
-                                            <Col span={12}><Form.Item name={["videoModels", name, "lastFrameField"]} label="尾帧字段" initialValue={preset?.lastFrameField} extra="未填写则不开放首尾帧；Ark 使用 content.role=last_frame。"><Input placeholder="例如 last_frame 或 last_image" /></Form.Item></Col>
-                                            <Col span={12}><Form.Item name={["videoModels", name, "firstFrameRequired"]} label="首帧必填" valuePropName="checked" initialValue={preset?.firstFrameRequired ?? true}><Switch /></Form.Item></Col>
-                                            <Col span={12}><Form.Item name={["videoModels", name, "lastFrameOptional"]} label="尾帧可选" valuePropName="checked" initialValue={true}><Switch /></Form.Item></Col>
-                                        </Row>
-                                        <Row gutter={12}>
-                                            {([['maxImages', '最多参考图片（张）', undefined], ['maxVideos', '视频数量', 3], ['maxAudios', '音频数量', 3]] as const).map(([field, label, maximum]) => <Col span={8} key={field}><Form.Item name={["videoModels", name, field]} label={label} initialValue={preset?.[field] ?? (field === 'maxImages' ? 7 : 0)}><InputNumber min={0} max={name.trim().toLowerCase() === 'wan30-720p' ? field === 'maxImages' ? 10 : 5 : preset?.[field] ?? maximum} precision={0} className="!w-full" /></Form.Item></Col>)}
-                                        </Row>
-                                        <Form.Item name={["videoModels", name, "contentReplacement"]} label="可用于内容替换" valuePropName="checked" initialValue={preset?.contentReplacement ?? false}><Switch /></Form.Item>
-                                        <Form.Item name={["videoModels", name, "resolutions"]} label="支持分辨率" initialValue={preset?.resolutions || (/seedance|seedace/i.test(name) ? ["480", "720"] : ["480", "720", "1080"])}><Select mode="multiple" options={(preset?.resolutions || ["480", "720", "1080"]).map((value) => ({ value, label: /K$/.test(value) ? value : `${value}p` }))} /></Form.Item>
-                                        <Form.Item name={["videoModels", name, "seconds"]} label="支持输出秒数" extra="填写上游支持的档位；留空沿用现有4至30秒设置。" initialValue={preset?.seconds || (/seedance|seedace/i.test(name) ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [])}><Select mode="tags" tokenSeparators={[",", " "]} /></Form.Item>
-                                        <Form.Item name={["videoModels", name, "generateAudio"]} label="支持生成声音开关" valuePropName="checked" initialValue={false}><Switch disabled={sparkCine} /></Form.Item>
-                                    </Card>
-                                </Col>
-                            ); })}
+                                    <Col span={24} key={name}>
+                                        <Card size="small" title={`视频能力 · ${name}`}>
+                                            <Typography.Paragraph type="secondary">只开启该渠道已确认支持的素材。接口名称相同也可能能力不同；数量设为0表示不支持。价格仍在公共配置的模型算力点中调整。</Typography.Paragraph>
+                                            <Form.Item name={["videoModels", name, "displayName"]} label="前台展示名称" initialValue={preset?.displayName || name}>
+                                                <Input />
+                                            </Form.Item>
+                                            <Form.Item name={["videoModels", name, "description"]} label="一句话用途" initialValue={preset?.description}>
+                                                <Input.TextArea rows={2} />
+                                            </Form.Item>
+                                            <Form.Item name={["videoModels", name, "interface"]} label="视频调用方式" initialValue={preset?.interface || (/seedance|seedace/i.test(name) ? "relay" : "openai")}>
+                                                <Select
+                                                    options={[
+                                                        { value: "openai", label: "普通视频接口（图片参考）" },
+                                                        { value: "relay", label: "JSON视频中转（reference_videos / audio_urls）" },
+                                                        { value: "ark", label: "火山多素材接口（content）" },
+                                                        ...(name === "h3-video" ? [{ value: "sparkcine_h3", label: "SparkCine H3 v2（图片 / 视频 / 音频参考）" }] : []),
+                                                    ]}
+                                                />
+                                            </Form.Item>
+                                            <Form.Item name={["videoModels", name, "inputModes"]} label="支持的输入模式" initialValue={preset?.inputModes || ["reference"]} extra="只开启上游文档和实测已确认的模式；首尾帧与普通参考图片独立。">
+                                                <Select
+                                                    mode="multiple"
+                                                    options={[
+                                                        { value: "reference", label: "参考模式" },
+                                                        { value: "first_last", label: "首尾帧模式" },
+                                                        { value: "first_frame_only", label: "文生 / 单首帧模式" },
+                                                    ]}
+                                                />
+                                            </Form.Item>
+                                            <Row gutter={12}>
+                                                <Col span={12}>
+                                                    <Form.Item name={["videoModels", name, "firstFrameField"]} label="首帧字段" initialValue={preset?.firstFrameField} extra="JSON / 表单参数名；Ark 使用 content.role=first_frame。">
+                                                        <Input placeholder="例如 first_frame 或 image_url" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col span={12}>
+                                                    <Form.Item name={["videoModels", name, "lastFrameField"]} label="尾帧字段" initialValue={preset?.lastFrameField} extra="未填写则不开放首尾帧；Ark 使用 content.role=last_frame。">
+                                                        <Input placeholder="例如 last_frame 或 last_image" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col span={12}>
+                                                    <Form.Item name={["videoModels", name, "firstFrameRequired"]} label="首帧必填" valuePropName="checked" initialValue={preset?.firstFrameRequired ?? true}>
+                                                        <Switch />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col span={12}>
+                                                    <Form.Item name={["videoModels", name, "lastFrameOptional"]} label="尾帧可选" valuePropName="checked" initialValue={true}>
+                                                        <Switch />
+                                                    </Form.Item>
+                                                </Col>
+                                            </Row>
+                                            <Row gutter={12}>
+                                                {(
+                                                    [
+                                                        ["maxImages", "最多参考图片（张）", undefined],
+                                                        ["maxVideos", "视频数量", 3],
+                                                        ["maxAudios", "音频数量", 3],
+                                                    ] as const
+                                                ).map(([field, label, maximum]) => (
+                                                    <Col span={8} key={field}>
+                                                        <Form.Item name={["videoModels", name, field]} label={label} initialValue={preset?.[field] ?? (field === "maxImages" ? 7 : 0)}>
+                                                            <InputNumber min={0} max={name.trim().toLowerCase() === "wan30-720p" ? (field === "maxImages" ? 10 : 5) : (preset?.[field] ?? maximum)} precision={0} className="!w-full" />
+                                                        </Form.Item>
+                                                    </Col>
+                                                ))}
+                                            </Row>
+                                            <Form.Item name={["videoModels", name, "contentReplacement"]} label="可用于内容替换" valuePropName="checked" initialValue={preset?.contentReplacement ?? false}>
+                                                <Switch />
+                                            </Form.Item>
+                                            <Form.Item name={["videoModels", name, "resolutions"]} label="支持分辨率" initialValue={preset?.resolutions || (/seedance|seedace/i.test(name) ? ["480", "720"] : ["480", "720", "1080"])}>
+                                                <Select mode="multiple" options={(preset?.resolutions || ["480", "720", "1080"]).map((value) => ({ value, label: /K$/.test(value) ? value : `${value}p` }))} />
+                                            </Form.Item>
+                                            <Form.Item
+                                                name={["videoModels", name, "seconds"]}
+                                                label="支持输出秒数"
+                                                extra="填写上游支持的档位；留空沿用现有4至30秒设置。"
+                                                initialValue={preset?.seconds || (/seedance|seedace/i.test(name) ? Array.from({ length: 12 }, (_, i) => String(i + 4)) : [])}
+                                            >
+                                                <Select mode="tags" tokenSeparators={[",", " "]} />
+                                            </Form.Item>
+                                            <Form.Item name={["videoModels", name, "generateAudio"]} label="支持生成声音开关" valuePropName="checked" initialValue={false}>
+                                                <Switch disabled={sparkCine} />
+                                            </Form.Item>
+                                        </Card>
+                                    </Col>
+                                );
+                            })}
                         </Row>
 
-                        {cloudProtocol && <>
-                            <Typography.Paragraph type="secondary">下列报价为平台向用户收取的算力点，同一模型在多个 Replicate 渠道和工具中共享。模型版本使用已适配的固定版本；停用渠道仍可恢复原任务。</Typography.Paragraph>
-                            <Collapse items={REPLICATE_FEATURES.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => {
-                                const billingMode = replicatePrices[feature.model]?.billingMode || feature.billingMode;
-                                const tierKeys = billingMode === "fixed" ? [] : feature.tierKeys;
-                                const version = (form.getFieldValue(["public", "modelChannel", "models"]) || []).find((item: { model: string; version?: string }) => item.model === feature.model)?.version;
-                                return {
-                                key: feature.model,
-                                label: <Space wrap><span>{feature.label}</span><Typography.Text type="secondary" code>{feature.model}</Typography.Text><Tag>{replicatePrices[feature.model]?.enabled ? "已启用" : "已停用"}</Tag></Space>,
-                                children: <>
-                                    <Typography.Paragraph><Typography.Text code>{feature.model}</Typography.Text></Typography.Paragraph>
-                                    <Typography.Paragraph type="secondary">{feature.description}{feature.operation === "video-edit" ? " 此模型同时用于视频编辑与字幕去除，共享报价。" : ""}</Typography.Paragraph>
-                                    <Typography.Paragraph type="secondary">固定版本：{replicatePrices[feature.model]?.version || "保存后由服务器补全"}</Typography.Paragraph>
-                                    {version && replicatePrices[feature.model]?.version !== version && <Button size="small" onClick={() => channelForm.setFieldValue(["replicatePricing", feature.model, "version"], version)}>采用当前适配版本（保存后生效）</Button>}
-                                    <Button size="small" href={replicateFeatureUrl(feature.operation)} target="_blank" rel="noopener noreferrer">打开对应功能</Button>
-                                    <Row gutter={12}>
-                                        <Col span={8}><Form.Item name={["replicatePricing", feature.model, "enabled"]} label="启用" valuePropName="checked"><Switch /></Form.Item></Col>
-                                        <Col span={16}><Form.Item label="收费单位"><Space wrap><Tag color="blue">{replicateBillingModeLabel(billingMode)}</Tag><Typography.Text type="secondary">{replicateBillingUnitHelp(billingMode)}</Typography.Text></Space></Form.Item></Col>
-                                        {!tierKeys?.length && <Col span={12}><Form.Item name={["replicatePricing", feature.model, "unitCredits"]} label="计费单价（算力点）" extra={replicateBillingUnitHelp(billingMode)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
-                                        <Col span={12}><Form.Item name={["replicatePricing", feature.model, "minimumCredits"]} label="一次任务最低消耗" extra="任务计算结果低于此数值时，按这个数值收取。"><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
-                                        {(billingMode === "output_seconds" || billingMode === "runtime_seconds" || billingMode === "duration_resolution") && <Col span={12}><Form.Item name={["replicatePricing", feature.model, "defaultUnits"]} label="无法读取时的安全时长" extra="只有系统无法读取素材时使用，不代表每次固定扣除。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
-                                        {billingMode === "duration_resolution" && <Col span={12}><Form.Item name={["replicatePricing", feature.model, "blockSeconds"]} label="每个计费档包含秒数" extra="例如填 5，表示按每 5 秒视频计算一个档位。"><InputNumber min={1} precision={0} style={{ width: "100%" }} /></Form.Item></Col>}
-                                    </Row>
-                                    {tierKeys?.length ? <><Typography.Text strong>不同规格的单价</Typography.Text><Typography.Paragraph type="secondary" style={{ margin: "4px 0 8px" }}>用户选择不同清晰度、帧率或模型版本时，系统会使用对应档位。</Typography.Paragraph><Row gutter={12}>{tierKeys.map((tier) => <Col span={12} key={tier}><Form.Item name={["replicatePricing", feature.model, "tiers", tier]} label={replicateTierLabel(tier)}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item></Col>)}</Row></> : null}
-                                </>,
-                                };
-                            })} />
-                            {REPLICATE_IMAGE_MODELS.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => <Card key={feature.model} size="small" title={feature.label} style={{ marginTop: 12 }}><Typography.Text code>{feature.model}</Typography.Text><Typography.Paragraph type="secondary">{feature.description}模型版本沿用现有案例接口的上游版本读取方式。</Typography.Paragraph></Card>)}
-                        </>}
+                        {cloudProtocol && (
+                            <>
+                                <Typography.Paragraph type="secondary">下列报价为平台向用户收取的算力点，同一模型在多个 Replicate 渠道和工具中共享。模型版本使用已适配的固定版本；停用渠道仍可恢复原任务。</Typography.Paragraph>
+                                <Collapse
+                                    items={REPLICATE_FEATURES.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => {
+                                        const billingMode = replicatePrices[feature.model]?.billingMode || feature.billingMode;
+                                        const tierKeys = billingMode === "fixed" ? [] : feature.tierKeys;
+                                        const version = (form.getFieldValue(["public", "modelChannel", "models"]) || []).find((item: { model: string; version?: string }) => item.model === feature.model)?.version;
+                                        return {
+                                            key: feature.model,
+                                            label: (
+                                                <Space wrap>
+                                                    <span>{feature.label}</span>
+                                                    <Typography.Text type="secondary" code>
+                                                        {feature.model}
+                                                    </Typography.Text>
+                                                    <Tag>{replicatePrices[feature.model]?.enabled ? "已启用" : "已停用"}</Tag>
+                                                </Space>
+                                            ),
+                                            children: (
+                                                <>
+                                                    <Typography.Paragraph>
+                                                        <Typography.Text code>{feature.model}</Typography.Text>
+                                                    </Typography.Paragraph>
+                                                    <Typography.Paragraph type="secondary">
+                                                        {feature.description}
+                                                        {feature.operation === "video-edit" ? " 此模型同时用于视频编辑与字幕去除，共享报价。" : ""}
+                                                    </Typography.Paragraph>
+                                                    <Typography.Paragraph type="secondary">固定版本：{replicatePrices[feature.model]?.version || "保存后由服务器补全"}</Typography.Paragraph>
+                                                    {version && replicatePrices[feature.model]?.version !== version && (
+                                                        <Button size="small" onClick={() => channelForm.setFieldValue(["replicatePricing", feature.model, "version"], version)}>
+                                                            采用当前适配版本（保存后生效）
+                                                        </Button>
+                                                    )}
+                                                    <Button size="small" href={replicateFeatureUrl(feature.operation)} target="_blank" rel="noopener noreferrer">
+                                                        打开对应功能
+                                                    </Button>
+                                                    <Row gutter={12}>
+                                                        <Col span={8}>
+                                                            <Form.Item name={["replicatePricing", feature.model, "enabled"]} label="启用" valuePropName="checked">
+                                                                <Switch />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        <Col span={16}>
+                                                            <Form.Item label="收费单位">
+                                                                <Space wrap>
+                                                                    <Tag color="blue">{replicateBillingModeLabel(billingMode)}</Tag>
+                                                                    <Typography.Text type="secondary">{replicateBillingUnitHelp(billingMode)}</Typography.Text>
+                                                                </Space>
+                                                            </Form.Item>
+                                                        </Col>
+                                                        {!tierKeys?.length && (
+                                                            <Col span={12}>
+                                                                <Form.Item name={["replicatePricing", feature.model, "unitCredits"]} label="计费单价（算力点）" extra={replicateBillingUnitHelp(billingMode)}>
+                                                                    <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+                                                                </Form.Item>
+                                                            </Col>
+                                                        )}
+                                                        <Col span={12}>
+                                                            <Form.Item name={["replicatePricing", feature.model, "minimumCredits"]} label="一次任务最低消耗" extra="任务计算结果低于此数值时，按这个数值收取。">
+                                                                <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+                                                            </Form.Item>
+                                                        </Col>
+                                                        {(billingMode === "output_seconds" || billingMode === "runtime_seconds" || billingMode === "duration_resolution") && (
+                                                            <Col span={12}>
+                                                                <Form.Item name={["replicatePricing", feature.model, "defaultUnits"]} label="无法读取时的安全时长" extra="只有系统无法读取素材时使用，不代表每次固定扣除。">
+                                                                    <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+                                                                </Form.Item>
+                                                            </Col>
+                                                        )}
+                                                        {billingMode === "duration_resolution" && (
+                                                            <Col span={12}>
+                                                                <Form.Item name={["replicatePricing", feature.model, "blockSeconds"]} label="每个计费档包含秒数" extra="例如填 5，表示按每 5 秒视频计算一个档位。">
+                                                                    <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+                                                                </Form.Item>
+                                                            </Col>
+                                                        )}
+                                                    </Row>
+                                                    {tierKeys?.length ? (
+                                                        <>
+                                                            <Typography.Text strong>不同规格的单价</Typography.Text>
+                                                            <Typography.Paragraph type="secondary" style={{ margin: "4px 0 8px" }}>
+                                                                用户选择不同清晰度、帧率或模型版本时，系统会使用对应档位。
+                                                            </Typography.Paragraph>
+                                                            <Row gutter={12}>
+                                                                {tierKeys.map((tier) => (
+                                                                    <Col span={12} key={tier}>
+                                                                        <Form.Item name={["replicatePricing", feature.model, "tiers", tier]} label={replicateTierLabel(tier)}>
+                                                                            <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+                                                                        </Form.Item>
+                                                                    </Col>
+                                                                ))}
+                                                            </Row>
+                                                        </>
+                                                    ) : null}
+                                                </>
+                                            ),
+                                        };
+                                    })}
+                                />
+                                {REPLICATE_IMAGE_MODELS.filter((feature) => channelSelectedModels.includes(feature.model)).map((feature) => (
+                                    <Card key={feature.model} size="small" title={feature.label} style={{ marginTop: 12 }}>
+                                        <Typography.Text code>{feature.model}</Typography.Text>
+                                        <Typography.Paragraph type="secondary">{feature.description}模型版本沿用现有案例接口的上游版本读取方式。</Typography.Paragraph>
+                                    </Card>
+                                ))}
+                            </>
+                        )}
                     </Form>
                 </Drawer>
                 <Modal title={groupEditor?.originalKey ? "编辑分组" : "新增分组"} open={Boolean(groupEditor)} onCancel={() => setGroupEditor(null)} onOk={saveGroup} okText="保存" cancelText="取消">
                     <Form layout="vertical">
                         <Form.Item label="分组标识" required extra="用于用户和渠道匹配，建议使用英文、数字或下划线">
-                            <Input value={groupEditor?.key || ""} disabled={Boolean(groupEditor?.originalKey === "default")} onChange={(event) => setGroupEditor((current) => current ? { ...current, key: event.target.value } : current)} />
+                            <Input value={groupEditor?.key || ""} disabled={Boolean(groupEditor?.originalKey === "default")} onChange={(event) => setGroupEditor((current) => (current ? { ...current, key: event.target.value } : current))} />
                         </Form.Item>
                         <Form.Item label="显示名称" required>
-                            <Input value={groupEditor?.name || ""} onChange={(event) => setGroupEditor((current) => current ? { ...current, name: event.target.value } : current)} />
+                            <Input value={groupEditor?.name || ""} onChange={(event) => setGroupEditor((current) => (current ? { ...current, name: event.target.value } : current))} />
                         </Form.Item>
                         <Form.Item label="算力点扣除比例" extra="1 为原价，0.5 为五折">
-                            <InputNumber min={0} step={0.1} value={groupEditor?.creditRatio} onChange={(value) => setGroupEditor((current) => current ? { ...current, creditRatio: Number(value) || 0 } : current)} />
+                            <InputNumber min={0} step={0.1} value={groupEditor?.creditRatio} onChange={(value) => setGroupEditor((current) => (current ? { ...current, creditRatio: Number(value) || 0 } : current))} />
                         </Form.Item>
                         <Form.Item label="状态">
-                            <Switch checked={groupEditor?.enabled} onChange={(enabled) => setGroupEditor((current) => current ? { ...current, enabled } : current)} />
+                            <Switch checked={groupEditor?.enabled} onChange={(enabled) => setGroupEditor((current) => (current ? { ...current, enabled } : current))} />
                         </Form.Item>
                     </Form>
                 </Modal>
@@ -891,7 +1102,12 @@ export default function AdminSettingsPage() {
                         <Flex gap={12} wrap>
                             <Input.Search placeholder="搜索模型" allowClear value={modelSelectKeyword} onChange={(event) => setModelSelectKeyword(event.target.value)} style={{ flex: "1 1 260px" }} />
                             <Space.Compact style={{ flex: "1 1 320px" }}>
-                                {channelProtocol !== "replicate" && <><Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} /><Button onClick={addModelInSelector}>增加模型</Button></>}
+                                {channelProtocol !== "replicate" && (
+                                    <>
+                                        <Input value={modelSelectNewModel} placeholder="输入模型名称" onChange={(event) => setModelSelectNewModel(event.target.value)} onPressEnter={addModelInSelector} />
+                                        <Button onClick={addModelInSelector}>增加模型</Button>
+                                    </>
+                                )}
                                 <Button icon={<ReloadOutlined />} loading={isFetchingChannelModels} onClick={() => void fetchChannelModelList()}>
                                     {cloudProtocol ? "查看已适配模型" : "拉取模型列表"}
                                 </Button>
@@ -1069,53 +1285,85 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
 }
 
 function normalizeReplicatePricing(items: NonNullable<AdminSettings["private"]["replicate"]["pricing"]>) {
-    return Object.fromEntries(REPLICATE_FEATURES.map((feature) => {
-        const item = items[feature.model] || {};
-        const tiers = { ...item.tiers, ...Object.fromEntries((feature.tierKeys || []).map((key) => [key, Math.max(0, Number(item.tiers?.[key]) || 0)])) };
-        return [feature.model, {
-            model: item.model || feature.model,
-            version: item.version || "",
-            billingMode: item.billingMode || feature.billingMode,
-            unitCredits: Math.max(0, Number(item.unitCredits) || 0),
-            minimumCredits: Math.max(0, Number(item.minimumCredits) || 0),
-            defaultUnits: Math.max(1, Number(item.defaultUnits) || 1),
-            blockSeconds: Math.max(1, Number(item.blockSeconds) || (feature.billingMode === "duration_resolution" ? 1 : 0)),
-            tiers,
-            enabled: item.enabled ?? false,
-        }];
-    }));
+    return Object.fromEntries(
+        REPLICATE_FEATURES.map((feature) => {
+            const item = items[feature.model] || {};
+            const tiers = { ...item.tiers, ...Object.fromEntries((feature.tierKeys || []).map((key) => [key, Math.max(0, Number(item.tiers?.[key]) || 0)])) };
+            return [
+                feature.model,
+                {
+                    model: item.model || feature.model,
+                    version: item.version || "",
+                    billingMode: item.billingMode || feature.billingMode,
+                    unitCredits: Math.max(0, Number(item.unitCredits) || 0),
+                    minimumCredits: Math.max(0, Number(item.minimumCredits) || 0),
+                    defaultUnits: Math.max(1, Number(item.defaultUnits) || 1),
+                    blockSeconds: Math.max(1, Number(item.blockSeconds) || (feature.billingMode === "duration_resolution" ? 1 : 0)),
+                    tiers,
+                    enabled: item.enabled ?? false,
+                },
+            ];
+        }),
+    );
 }
 
 function replicateBillingModeLabel(mode: string) {
     switch (mode) {
-        case "input_seconds": return "按输入音频时长收费";
-        case "input_characters": return "按文字量收费";
-        case "output_seconds": return "按输出视频时长收费";
-        case "output_count": return "按生成条数收费";
-        case "duration_resolution": return "按时长和视频规格收费";
-        case "runtime_seconds": return "按模型运行时长收费";
-        default: return "按任务收费";
+        case "input_seconds":
+            return "按输入音频时长收费";
+        case "input_characters":
+            return "按文字量收费";
+        case "output_seconds":
+            return "按输出视频时长收费";
+        case "output_count":
+            return "按生成条数收费";
+        case "duration_resolution":
+            return "按时长和视频规格收费";
+        case "runtime_seconds":
+            return "按模型运行时长收费";
+        default:
+            return "按任务收费";
     }
 }
 
 function replicateBillingUnitHelp(mode: string) {
     switch (mode) {
-        case "input_seconds": return "每 1 秒输入音频；与上游运行时间费用分别核算";
-        case "input_characters": return "每 1000 个字符";
-        case "output_seconds": return "每 1 秒成片";
-        case "output_count": return "每 1 条成片";
-        case "duration_resolution": return "每个时长/清晰度档位";
-        case "runtime_seconds": return "每 1 秒后台运行时间";
-        default: return "每 1 次任务";
+        case "input_seconds":
+            return "每 1 秒输入音频；与上游运行时间费用分别核算";
+        case "input_characters":
+            return "每 1000 个字符";
+        case "output_seconds":
+            return "每 1 秒成片";
+        case "output_count":
+            return "每 1 条成片";
+        case "duration_resolution":
+            return "每个时长/清晰度档位";
+        case "runtime_seconds":
+            return "每 1 秒后台运行时间";
+        default:
+            return "每 1 次任务";
     }
 }
 
 function replicateTierLabel(tier: string) {
     const labels: Record<string, string> = {
-        "base:480p": "基础版 · 480p", "base:720p": "基础版 · 720p", "interpolate:480p": "补帧版 · 480p", "interpolate:720p": "补帧版 · 720p",
-        "720p:30": "720p · 30 FPS", "720p:60": "720p · 60 FPS", "1080p:30": "1080p · 30 FPS", "1080p:60": "1080p · 60 FPS", "4k:30": "4K · 30 FPS", "4k:60": "4K · 60 FPS",
-        "480": "480p", "720": "720p", "480p": "480p · 每秒", "720p": "720p · 每秒",
-        "768p:6": "768p · 6秒 / 条", "768p:10": "768p · 10秒 / 条", "1080p:6": "1080p · 6秒 / 条",
+        "base:480p": "基础版 · 480p",
+        "base:720p": "基础版 · 720p",
+        "interpolate:480p": "补帧版 · 480p",
+        "interpolate:720p": "补帧版 · 720p",
+        "720p:30": "720p · 30 FPS",
+        "720p:60": "720p · 60 FPS",
+        "1080p:30": "1080p · 30 FPS",
+        "1080p:60": "1080p · 60 FPS",
+        "4k:30": "4K · 30 FPS",
+        "4k:60": "4K · 60 FPS",
+        "480": "480p",
+        "720": "720p",
+        "480p": "480p · 每秒",
+        "720p": "720p · 每秒",
+        "768p:6": "768p · 6秒 / 条",
+        "768p:10": "768p · 10秒 / 条",
+        "1080p:6": "1080p · 6秒 / 条",
     };
     return labels[tier] || tier;
 }
@@ -1156,11 +1404,7 @@ function collectChannelModels(channels: AdminModelChannel[]) {
 }
 
 function collectKnownModels(settings: AdminSettings) {
-    return uniqueModels([
-        ...(settings.public.modelChannel.availableModels || []),
-        ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model),
-        ...settings.private.channels.flatMap((channel) => channel.models || []),
-    ]);
+    return uniqueModels([...(settings.public.modelChannel.availableModels || []), ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model), ...settings.private.channels.flatMap((channel) => channel.models || [])]);
 }
 
 function buildModelSelectGroups(sourceModels: string[], existingModels: string[]): Record<ModelSelectTabKey, string[]> {

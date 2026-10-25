@@ -2,9 +2,7 @@ import { useState } from "react";
 import { Button, Input, Tooltip, Typography } from "antd";
 import { Check, LoaderCircle, Maximize2, Minimize2, RefreshCw, Sparkles, Square, Undo2, X } from "lucide-react";
 
-import { ModelPicker } from "@/components/model-picker";
 import type { PromptEnhancementState } from "@/hooks/use-prompt-enhancement";
-import { useConfigStore } from "@/stores/use-config-store";
 
 export function PromptEnhancementButton({ state, disabled, undoOnly }: { state: PromptEnhancementState; disabled?: boolean; undoOnly?: boolean }) {
     return (
@@ -21,7 +19,6 @@ export function PromptEnhancementButton({ state, disabled, undoOnly }: { state: 
 
 export function PromptEnhancementPreview({ state }: { state: PromptEnhancementState }) {
     const [expanded, setExpanded] = useState(false);
-    const openConfigDialog = useConfigStore((store) => store.openConfigDialog);
     if (!state.preview) return null;
     return (
         <div data-canvas-no-zoom className="mt-2 min-w-0 space-y-2 border-t border-border pt-2" onKeyDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
@@ -31,7 +28,6 @@ export function PromptEnhancementPreview({ state }: { state: PromptEnhancementSt
                     {state.running ? "正在增强…" : "增强预览"}
                 </span>
                 <div className="flex min-w-0 items-center gap-1">
-                    <Tooltip title="增强用文字模型" styles={{ root: { pointerEvents: "none" } }}><div className="min-w-0"><ModelPicker config={state.config} value={state.model} onChange={state.setModel} capability="text" className="!min-w-0 max-w-[190px]" onMissingConfig={() => openConfigDialog(true, "channels")} /></div></Tooltip>
                     <Tooltip title={expanded ? "收起预览" : "展开预览"} styles={{ root: { pointerEvents: "none" } }}><Button type="text" size="small" aria-label={expanded ? "收起预览" : "展开预览"} icon={expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />} onClick={() => setExpanded(!expanded)} /></Tooltip>
                 </div>
             </div>

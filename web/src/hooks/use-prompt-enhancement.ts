@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 import { promptEnhancementConfigKey, requestPromptEnhancement, validatePromptEnhancement, type PromptEnhancementInput } from "@/services/api/prompt-enhancement";
 import { publicServiceText } from "@/services/api/replicate";
-import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useTextModelConfirmation } from "./use-text-model-confirmation";
 
@@ -25,10 +25,7 @@ export function usePromptEnhancement(options: Options) {
     const effectiveConfig = useEffectiveConfig("prompt.enhance");
     const token = useUserStore((state) => state.token);
     const confirmTextModel = useTextModelConfirmation();
-    const [selectedModel, setSelectedModel] = useState("");
-    const models = selectableModelsByCapability(effectiveConfig, "text");
-    const model = models.includes(selectedModel) ? selectedModel : effectiveConfig.textModel;
-    const config = { ...effectiveConfig, textModel: model };
+    const config = effectiveConfig;
     const [preview, setPreview] = useState<Preview | null>(null);
     const [running, setRunning] = useState(false);
     const [undo, setUndo] = useState<{ original: string; applied: string; scope: string } | null>(null);
@@ -86,7 +83,7 @@ export function usePromptEnhancement(options: Options) {
     const canEdit = Boolean(preview?.complete && !preview.stale && preview.key === key && !running && !options.disabled);
     const canApply = canEdit && !preview?.error;
     return {
-        preview, running, config, model, setModel: setSelectedModel,
+        preview, running,
         stale: Boolean(preview && (preview.stale || preview.key !== key)),
         canApply, canEdit,
         canUndo: Boolean(undo && undo.applied === options.prompt && undo.scope === scope && !options.disabled && !running),
