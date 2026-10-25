@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.96
-- Current production source: tag v0.19.96, commit 7d3345255bd85b1aa3911bce20774f4a4729e05b
+- Current production image: infinite-canvas:v0.19.97
+- Current production source: tag v0.19.97, commit c48a0f0b710c0473d3dda45b13ea32eae406a31c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.97 deployment
+
+- Tag `v0.19.97`, commit `c48a0f0b710c0473d3dda45b13ea32eae406a31c`, is published on `release/v0.19.60`. Server-built app image `infinite-canvas:v0.19.97`, ID `sha256:ee2737b262fad2b7612d38e32a70140b6f7e6cab8fea401e3f96eef6a3547b76`, is deployed; app container ID is `b095905659659ce943cd47b6365ea61343837112f05f602ce7c316c05cd421ff`.
+- This release adds the channel model connection wizard and improves the prompt enhancement model selector. No production channel, model price, binding, credential or user data was modified as part of deployment.
+- Prebuild backup with SQLite and Compose: `/opt/infinite-canvas/backups/v0.19.97-prebuild-20261025-164718/`. Pre-deploy and post-deploy SQLite `quick_check` both returned `ok`; post-deploy table counts include 36 users, 51 video tasks, 34 Replicate tasks and 3 settings records.
+- Only the app service was recreated. Worker remains container `46383101ada6c0c66ba885e16cd3860691ab1487d039cc2b040842c9a45ca9ac`, image `infinite-canvas-video-worker:v0.19.87`, with its original start time and mounts. No video or Replicate tasks were active before deployment.
+- Internal and external `/api/health` both returned `ok`; `/app/VERSION` reports `v0.19.97`; public HTML loads `/assets/index-B15wYS_P.js`, which includes the release version marker. No paid generation was submitted. Human browser workflow acceptance of adding a channel/model and selecting the prompt enhancement model remains pending.
+- Rollback: restore `/opt/infinite-canvas/backups/v0.19.97-prebuild-20261025-164718/docker-compose.deploy.yml` to the active Compose path and run `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`. Keep the current database; the `infinite-canvas:v0.19.96` image remains available.
 
 ## v0.19.96 deployment
 
