@@ -17,7 +17,7 @@ import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
-import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
+import { PromptEnhancementButton } from "@/components/prompts/prompt-enhancement";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -98,7 +98,6 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 style={{ background: "transparent", color: theme.node.text }}
                 placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
             />
-            {!expanded && mode !== "audio" && <PromptEnhancementPreview state={enhancement} />}
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -168,7 +167,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         style={{ background: "transparent", borderColor: theme.toolbar.border, color: theme.node.text }}
                         placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
                     />
-                    {mode !== "audio" && <><div className="mt-2 flex justify-end"><PromptEnhancementButton state={enhancement} disabled={isRunning || !prompt.trim()} /></div><PromptEnhancementPreview state={enhancement} /></>}
+                    {mode !== "audio" && <div className="mt-2 flex justify-end"><PromptEnhancementButton state={enhancement} disabled={isRunning || !prompt.trim()} /></div>}
                 </div>
             </Modal>
         </div>

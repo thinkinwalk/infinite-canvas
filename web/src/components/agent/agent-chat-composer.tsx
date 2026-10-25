@@ -8,7 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useAgentStore, type AgentModel, type AgentPermissionMode, type AgentReasoningEffort } from "@/stores/use-agent-store";
 import { useAgentSkillStore } from "@/stores/use-agent-skill-store";
 import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
-import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
+import { PromptEnhancementButton } from "@/components/prompts/prompt-enhancement";
 import type { PromptEnhancementReference } from "@/services/api/prompt-enhancement";
 import { agentReferenceMarker, agentSkillMarker, parseAgentInlineTokens } from "./agent-chat-inline-tokens";
 import type { AgentChatAttachment } from "./agent-chat-message";
@@ -95,7 +95,6 @@ export function AgentChatComposer({
                     </div>
                 ) : null}
                 <AgentChatPromptInput value={prompt} disabled={disabled || sending} placeholder={placeholder} theme={theme} onChange={onPromptChange} onSubmit={() => { if (canSubmit) void onSubmit(); }} onAddFiles={onAddFiles} />
-                <PromptEnhancementPreview state={enhancement} />
                 <div className="@container mt-2 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1">
                         {onAddFiles ? (

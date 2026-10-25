@@ -12,23 +12,14 @@ type Options = PromptEnhancementInput & {
     onChange: (value: string) => void;
     validate?: (value: string) => string;
 };
-type Preview = { key: string; text: string; error: string; complete: boolean; stale: boolean };
-
-function previewError(options: Options, value: string) {
-    try {
-        validatePromptEnhancement(options, value);
-        return options.validate?.(value) || "";
-    } catch (error) { return error instanceof Error ? error.message : "请检查增强预览。"; }
-}
 
 export function usePromptEnhancement(options: Options) {
-    const effectiveConfig = useEffectiveConfig("prompt.enhance");
+    const config = useEffectiveConfig("prompt.enhance");
     const token = useUserStore((state) => state.token);
     const confirmTextModel = useTextModelConfirmation();
-    const config = effectiveConfig;
-    const [preview, setPreview] = useState<Preview | null>(null);
     const [running, setRunning] = useState(false);
-    const [undo, setUndo] = useState<{ original: string; applied: string; scope: string } | null>(null);
+    const [error, setError] = useState("");
+    const [undo, setUndo] = useState<{ original: string; scope: string } | null>(null);
     const controllerRef = useRef<AbortController | null>(null);
     const scope = JSON.stringify([options.contextKey, options.scenario, options.references, promptEnhancementConfigKey(config), token, Boolean(options.disabled)]);
     const key = JSON.stringify([scope, options.prompt]);
@@ -39,14 +30,14 @@ export function usePromptEnhancement(options: Options) {
         controllerRef.current?.abort();
         controllerRef.current = null;
         setRunning(false);
-        setPreview((value) => value && !value.complete ? { ...value, error: "已停止增强，可重新增强。", complete: false } : value);
+        setError("已停止增强，可重新增强。");
     };
     useLayoutEffect(() => {
         controllerRef.current?.abort();
         controllerRef.current = null;
         setRunning(false);
-        setPreview((value) => value && value.key !== key ? { ...value, stale: true } : value);
-        setUndo((value) => value && (value.scope !== scope || value.applied !== options.prompt) ? null : value);
+        setError("");
+        setUndo((value) => value && value.scope !== scope ? null : value);
     }, [key]);
     useLayoutEffect(() => () => { controllerRef.current?.abort(); }, []);
 
@@ -56,23 +47,21 @@ export function usePromptEnhancement(options: Options) {
         const controller = new AbortController();
         controllerRef.current = controller;
         setRunning(true);
-        setPreview({ key: snapshot.key, text: "", error: "", complete: false, stale: false });
+        setError("");
         const current = () => controllerRef.current === controller && !controller.signal.aborted && latest.current.key === snapshot.key;
         try {
             const inputError = snapshot.options.validate?.(snapshot.options.prompt);
             if (inputError) throw new Error(inputError);
             await confirmTextModel(snapshot.config, controller.signal);
             if (!current()) return;
-            const answer = await requestPromptEnhancement(snapshot.config, snapshot.options, (text) => {
-                if (current()) setPreview({ key: snapshot.key, text, error: "", complete: false, stale: false });
-            }, { signal: controller.signal });
+            const answer = await requestPromptEnhancement(snapshot.config, snapshot.options, () => {}, { signal: controller.signal });
             if (!current()) return;
-            setPreview({ key: snapshot.key, text: answer, error: previewError(snapshot.options, answer), complete: true, stale: false });
-        } catch (error) {
-            if (current()) setPreview((value) => value && {
-                ...value, complete: false,
-                error: error instanceof Error && error.name === "AbortError" ? "已取消增强。" : publicServiceText(error instanceof Error ? error.message : "增强失败，请重试。"),
-            });
+            const validationError = validatePromptEnhancement(snapshot.options, answer) || snapshot.options.validate?.(answer) || "";
+            if (validationError) throw new Error(validationError);
+            setUndo({ original: snapshot.options.prompt, scope: snapshot.scope });
+            snapshot.options.onChange(answer);
+        } catch (cause) {
+            if (current()) setError(cause instanceof Error && cause.name === "AbortError" ? "已取消增强。" : publicServiceText(cause instanceof Error ? cause.message : "增强失败，请重试。"));
         } finally {
             if (controllerRef.current === controller) {
                 controllerRef.current = null;
@@ -80,33 +69,15 @@ export function usePromptEnhancement(options: Options) {
             }
         }
     };
-    const canEdit = Boolean(preview?.complete && !preview.stale && preview.key === key && !running && !options.disabled);
-    const canApply = canEdit && !preview?.error;
     return {
-        preview, running,
-        stale: Boolean(preview && (preview.stale || preview.key !== key)),
-        canApply, canEdit,
-        canUndo: Boolean(undo && undo.applied === options.prompt && undo.scope === scope && !options.disabled && !running),
+        running, error,
+        canUndo: Boolean(undo && undo.scope === scope && !options.disabled && !running),
         start, stop,
-        cancel: () => { stop(); setPreview(null); },
-        editPreview: (text: string) => {
-            if (!canEdit || !preview || preview.key !== latest.current.key || latest.current.options.disabled) return;
-            setPreview({ ...preview, text, error: previewError(latest.current.options, text) });
-        },
-        apply: () => {
-            if (!canApply || !preview || preview.key !== latest.current.key || latest.current.options.disabled) return;
-            const snapshot = latest.current;
-            const error = previewError(snapshot.options, preview.text);
-            if (error) { setPreview({ ...preview, error }); return; }
-            setUndo({ original: snapshot.options.prompt, applied: preview.text, scope: snapshot.scope });
-            setPreview(null);
-            snapshot.options.onChange(preview.text);
-        },
         undo: () => {
-            if (!undo || controllerRef.current || undo.scope !== latest.current.scope || undo.applied !== latest.current.options.prompt || latest.current.options.disabled) return;
+            if (!undo || controllerRef.current || undo.scope !== latest.current.scope || latest.current.options.disabled) return;
             latest.current.options.onChange(undo.original);
             setUndo(null);
-            setPreview(null);
+            setError("");
         },
     };
 }

@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
-import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
+import { PromptEnhancementButton } from "@/components/prompts/prompt-enhancement";
 import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -429,7 +429,6 @@ export default function ImagePage() {
                                     </div>
                                 </div>
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("imageWorkbench.promptPlaceholder")} />
-                                <PromptEnhancementPreview state={enhancement} />
                                 {templateInput ? <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400"><span className="font-medium">{templateInput.title}</span> · 请准备：{templateInput.inputHint}。{templateInput.minReferenceImages ? `参考图 ${references.length}/${templateInput.minReferenceImages} 张（至少），按资料说明排列。` : "可直接文字生图。"}<Button type="link" size="small" onClick={() => setTemplateInput(undefined)}>取消模板要求</Button></div> : null}
                             </div>
 

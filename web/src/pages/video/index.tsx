@@ -22,7 +22,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { ModelPicker } from "@/components/model-picker";
 import { VideoModelOption } from "@/components/video-model-option";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
-import { PromptEnhancementButton, PromptEnhancementPreview } from "@/components/prompts/prompt-enhancement";
+import { PromptEnhancementButton } from "@/components/prompts/prompt-enhancement";
 import { usePromptEnhancement } from "@/hooks/use-prompt-enhancement";
 import { useTextModelConfirmation } from "@/hooks/use-text-model-confirmation";
 import { normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel, videoResolutionLabel } from "@/components/video-settings-panel";
@@ -848,7 +848,6 @@ export default function VideoPage() {
                     {writingMode === "enhance" ? <>
                         <Input.TextArea aria-label="待增强视频脚本" rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={running} />
                         <div className="flex flex-wrap items-center justify-between gap-2"><Typography.Text type="secondary">文字增强单独计费</Typography.Text><PromptEnhancementButton state={enhancement} disabled={running || !prompt.trim()} /></div>
-                        <PromptEnhancementPreview state={enhancement} />
                     </> : <>
                         <ModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(value) => { if (!writing) updateConfig("textModel", value); }} capability="text" fullWidth onMissingConfig={() => openConfigDialog(false, "channels")} />
                         <Input.TextArea aria-label="代写要求" rows={3} disabled={writing} value={writingBrief} onChange={(event) => { setWritingBrief(event.target.value); setWritingComplete(false); }} placeholder="例如：做一段香水广告，镜头缓慢环绕，突出瓶身质感。" />
