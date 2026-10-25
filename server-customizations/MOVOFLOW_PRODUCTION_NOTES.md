@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.97
-- Current production source: tag v0.19.97, commit c48a0f0b710c0473d3dda45b13ea32eae406a31c
+- Current production image: infinite-canvas:v0.19.98
+- Current production source: tag v0.19.98, commit ae1304315ebb3697e617951d0079c2b7243a8f95
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.98 deployment
+
+- Tag `v0.19.98`, commit `ae1304315ebb3697e617951d0079c2b7243a8f95`, is published on `release/v0.19.60` with a GitHub Release. Server-built app image `infinite-canvas:v0.19.98`, ID `sha256:c59e0509d1009da4888b23a222b93da169f8ece4e32ed1f030395d9fe2807770`, matches the exact tag.
+- Prompt enhancement now writes the validated result directly into the original prompt field, supports undo to the previous text after further edits, and removes the separate preview/apply/cancel area and model selector. Image, video, Agent and canvas use the shared interaction. Failed or stopped requests do not replace the prompt; zero-credit enhancement skips confirmation, while positive quotes retain confirmation.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.98-20261025-170131/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.98-prebuild-20261025-165823/`. SQLite quick_check, all 13 table counts, settings, balances/roles/groups/status, management revision 9, default/VIP catalogs and quotes passed; hashes of 8,933 existing files matched.
+- Only App was recreated. Worker ID/image/start time/source mounts are unchanged. Internal/external health, ten public pages and both ordinary-user Worker gateways passed. The server and independent workstation confirmed `/assets/index-MX1mxqX7.js`, v0.19.98, undo and direct-replacement controls, removed preview/model picker and the free quote branch. No paid generation ran; browser editing/undo/stop interactions remain pending acceptance.
+- The first deploy-helper bootstrap stopped before changing production because its helper-tail uniqueness assertion was too strict. After reading the template, the assertion was relaxed; final backup and full deployment verification passed. The existing prebuild backup was reused; final configuration/data backup is listed above.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.98-deployment.json`; workstation copy `.codex_tmp/release-v0.19.98/deployment.json`. Rollback restores the final backup Compose and recreates only App using `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; keep the current database. The v0.19.97 image remains available.
 
 ## v0.19.97 deployment
 
