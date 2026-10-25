@@ -157,37 +157,24 @@ func validateManagedReferences(saved, next model.Settings) error {
 	if saved.Private.ModelManagement == nil {
 		return nil
 	}
-	// Retaining stable records is inexpensive and keeps local/remote jobs restorable.
+	// History references are checked again inside the settings transaction.
 	for _, old := range saved.Private.ModelManagement.Routes {
-		found := false
 		if next.Private.ModelManagement != nil {
 			for _, route := range next.Private.ModelManagement.Routes {
 				if route.ID == old.ID {
-					found = true
 					if old.Model != route.Model || old.ChannelID != route.ChannelID || old.Adapter != route.Adapter || old.Version != route.Version {
 						return fmt.Errorf("渠道模型的真实身份不可原地更换，请新增接入并停用原记录")
 					}
 				}
 			}
 		}
-		if !found {
-			return fmt.Errorf("已有渠道模型请停用，不要删除，以保留任务恢复所需身份")
-		}
-	}
-	for _, old := range saved.Private.ModelManagement.Models {
-		found := false
-		if next.Private.ModelManagement != nil {
-			for _, entry := range next.Private.ModelManagement.Models {
-				found = found || entry.ID == old.ID
-			}
-		}
-		if !found {
-			return fmt.Errorf("已有平台模型请停用，不要删除，以保留历史记录身份")
-		}
 	}
 	// Credentials remain on channels; replacing a URL/key can invalidate existing jobs.
 	for _, old := range saved.Private.Channels {
-		for _, route := range saved.Private.ModelManagement.Routes {
+		if next.Private.ModelManagement == nil {
+			continue
+		}
+		for _, route := range next.Private.ModelManagement.Routes {
 			if route.ChannelID != old.ID {
 				continue
 			}
@@ -202,7 +189,7 @@ func validateManagedReferences(saved, next model.Settings) error {
 				}
 			}
 			if !found {
-				return fmt.Errorf("渠道仍被模型目录引用，请停用并保留原渠道")
+				return fmt.Errorf("渠道 %s 仍被接入 %s 引用，请先删除不再使用的渠道模型并保存", old.Name, route.Model)
 			}
 		}
 	}

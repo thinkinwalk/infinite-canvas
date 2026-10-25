@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Input, InputNumber, Mentions, Modal, Select, Space, Spin, Switch, Tabs, Upload, theme } from "antd";
+import { Alert, App, Button, Collapse, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Space, Spin, Switch, Tabs, Upload, theme } from "antd";
 import { ArrowLeft, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, Sparkles, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
@@ -15,6 +15,7 @@ import { VideoModelOption } from "@/components/video-model-option";
 import { publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel, reconcileReplicateTask } from "@/services/api/replicate";
 import { getWorkerCapabilities, workbenchMediaBlob } from "@/services/api/video-worker";
 import type { VideoPrice } from "@/services/api/video";
+import { VIDEO_ANALYSIS_FEATURE, videoAnalysisAvailable } from "@/services/api/video-understanding";
 import { imageToDataUrl } from "@/services/image-storage";
 import { selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -22,7 +23,7 @@ import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { StoreVideoSettings, VideoRecord } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
-import { viralFrameMaterials, viralImageCandidates, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
+import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 
 type Role = "reference" | "product" | "model" | "first-frame";
@@ -85,6 +86,9 @@ export default function ViralRecreateWorkspace() {
     const active = wb.records.find((r) => r.id === d.activeRecord),
         blocked = viralVideoError(d, cfg) || (pending ? "已有任务可恢复，请先查询或确认原任务状态" : "");
     const textBlocked = config.channelMode === "remote" && !session ? "登录后使用平台文案模型" : !config.textModel || !useConfigStore.getState().isAiConfigReady(config, config.textModel) ? "请配置分析 / 文案模型" : "";
+    const analysisMode = viralAnalysisMode(d, config),
+        nativeAnalysis = videoAnalysisAvailable(config),
+        analysisBlocked = analysisMode === "video" ? !session ? "登录后分析参考视频" : !nativeAnalysis ? "请在模型管理中配置并定价视频分析模型，然后刷新模型" : "" : textBlocked;
     const invalidMentions = materialMentionError(`${d.instructions}\n${d.script}`, labels);
     const priceKey = JSON.stringify([
         d.media.map((m) => [m.id, m.storageKey]),
@@ -251,7 +255,7 @@ export default function ViralRecreateWorkspace() {
         </section>
     );
     const textAction = (stage: string, label: string, missing: boolean) => (
-        <Button size="small" disabled={locked || Boolean(textBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
+        <Button size="small" disabled={locked || Boolean(stage === "analyze" ? analysisBlocked : textBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
             {label}
         </Button>
     );
@@ -556,13 +560,22 @@ export default function ViralRecreateWorkspace() {
                             {materialField("reference", "参考视频", "借鉴结构与表达；上传不会自动收费分析")}
                             <section className="space-y-2">
                                 {heading("analysis", textAction("analyze", "分析参考视频", !reference))}
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-xs">抽样数量</span>
-                                    <InputNumber aria-label="抽样数量" min={1} precision={0} disabled={locked} value={d.frameCount} onChange={(value) => wb.edit({ frameCount: value || 1 }, "materials")} />
-                                    <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("frames")}>
-                                        抽取画面
-                                    </Button>
-                                </div>
+                                <Segmented
+                                    block aria-label="参考视频分析方式" disabled={locked} value={analysisMode}
+                                    options={[{ value: "video", label: "视频与音轨", disabled: !nativeAnalysis && analysisMode !== "video" }, { value: "frames", label: "抽样画面" }]}
+                                    onChange={(value) => wb.edit({ viralAnalysisMode: value as "video" | "frames" }, "materials")}
+                                />
+                                {analysisMode === "video" && <FeatureModelPicker capability="text" featureId={VIDEO_ANALYSIS_FEATURE} />}
+                                {analysisBlocked && <div role="alert" className="text-xs" style={{ color: token.colorWarning }}>{analysisBlocked}</div>}
+                                {analysisMode === "frames" && (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-xs">抽样数量</span>
+                                        <InputNumber aria-label="抽样数量" min={1} precision={0} disabled={locked} value={d.frameCount} onChange={(value) => wb.edit({ frameCount: value || 1 }, "materials")} />
+                                        <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("frames")}>
+                                            抽取画面
+                                        </Button>
+                                    </div>
+                                )}
                                 {frames.length > 0 && (
                                     <div className="grid grid-cols-3 gap-2">
                                         {frames.map((f, i) => (
@@ -601,7 +614,7 @@ export default function ViralRecreateWorkspace() {
                                                     )}
                                                     {textPreview("transcript", "服务不可用时可手动粘贴，或跳过")}
                                                     <p className="text-xs" style={muted}>
-                                                        未提供文字时只分析画面，不推测声音或音乐节拍。
+                                                        {analysisMode === "video" ? "可单独转写并校对口播原文。" : "未提供文字时只分析画面，不推测声音或音乐节拍。"}
                                                     </p>
                                                 </div>
                                             ),
@@ -705,7 +718,7 @@ export default function ViralRecreateWorkspace() {
                                         label: "分析模型与处理服务",
                                         children: (
                                             <div className="space-y-3">
-                                                <FeatureModelPicker capability="text" featureId="viral-recreate.analyze" />
+                                                <label className="block space-y-2 text-sm">商品与抽样分析模型<FeatureModelPicker capability="text" featureId="viral-recreate.analyze" /></label>
                                                 <ModelPicker
                                                     config={config}
                                                     capability="text"
@@ -927,7 +940,7 @@ export default function ViralRecreateWorkspace() {
                             )}
                             {tab === "guide" && (
                                 <div className="space-y-4 text-sm">
-                                    <p>参考视频用于拆解开场与表达结构；均匀抽样不是镜头检测，未转写时仅依据画面分析。</p>
+                                    <p>视频与音轨分析将参考视频发送到所选模型渠道；抽样画面分析只发送图片和已提供的转写文字。两种分析的时间与镜头边界都需核对。</p>
                                     <p>新商品资料与人物外观单独提供。平台视频服务只接收你选定的一张首帧；若希望换成新商品/人物，请上传包含目标主体的画面。多图和视频参考按后台确认的能力发送。</p>
                                     <p>AI新分析、新脚本先提供建议，有原稿时明确采用再替换。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
                                     <p>视频与文案分别确认真实费用；停止等待不等于取消平台任务。恢复查询只查原任务，不再次提交收费任务。</p>

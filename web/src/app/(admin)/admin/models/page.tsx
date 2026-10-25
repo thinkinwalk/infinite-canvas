@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type Key } from "react";
 import { Alert, App, Button, Checkbox, Drawer, Flex, Form, Input, InputNumber, Segmented, Select, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from "antd";
-import { CopyOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, UndoOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, UndoOutlined } from "@ant-design/icons";
 import { nanoid } from "nanoid";
 import { fetchModelManagement, previewModelManagement, saveModelManagement, type FeatureBinding, type ManagedModel, type ManagedRoute, type ModelFeature, type ModelManagement } from "@/services/api/model-management";
 import type { AdminModelChannel } from "@/services/api/admin";
@@ -15,7 +15,7 @@ const empty: ModelManagement = { enabled: false, revision: 0, routes: [], models
 const capabilityOptions = [{ value: "all", label: "全部" }, { value: "text", label: "文字" }, { value: "image", label: "图片" }, { value: "video", label: "视频" }, { value: "audio", label: "音频" }];
 const featureModule = (feature: ModelFeature) => feature.module.split(" · ")[0];
 const adapterOptions = [
-    ["text.openai", "文字 · OpenAI"], ["image.openai", "图片 · OpenAI"], ["image.responses", "图片 · Responses"], ["audio.openai", "音频 · OpenAI"],
+    ["text.openai", "文字 · OpenAI"], ["text.gemini-video", "视频理解 · Gemini 原生"], ["image.openai", "图片 · OpenAI"], ["image.responses", "图片 · Responses"], ["audio.openai", "音频 · OpenAI"],
     ["video.openai", "视频 · OpenAI"], ["video.relay", "视频 · JSON 中转"], ["video.ark", "视频 · 火山多素材"], ["video.sparkcine_h3", "视频 · SparkCine H3"],
     ["video.wan30", "视频 · Wan30"], ["video.h3-2k", "视频 · H3 2K"], ["video.minimax-h3", "视频 · MiniMax H3"], ["video.minimax-h3-frames", "视频 · MiniMax H3 首尾帧"],
     ...["text-to-video", "image-to-video", "hailuo-video", "speech", "transcribe", "digital-human", "lipsync", "replace-person", "head-swap", "upscale", "video-edit", "subtitle-remove", "masked-edit", "cutout-replicate", "upscale-replicate"].map((operation) => [`cloud:${operation}`, `专用接口 · ${operation}`]),
@@ -81,6 +81,39 @@ export default function ModelManagementPage() {
         setPriceMode(entry.pricing.replicate ? "cloud" : entry.pricing.video ? "duration_resolution" : "fixed");
     };
     const editRoute = (route: ManagedRoute) => { routeForm.resetFields(); setEditingRoute(structuredClone(route)); routeForm.setFieldsValue(structuredClone(route)); };
+    const modelDeleteReason = (entry: ManagedModel) => entry.enabled || baseline.models.some((old) => old.id === entry.id && old.enabled) ? "请先停用模型并保存配置" : "";
+    const routeDeleteReason = (route: ManagedRoute) => {
+        if (route.enabled || baseline.routes.some((old) => old.id === route.id && old.enabled)) return "请先停用接入并保存配置";
+        const entry = value.models.find((entry) => entry.routeIds.includes(route.id));
+        if (entry) return `仍被平台模型 ${entry.displayName} 引用，请先解除接入关系或删除该平台模型`;
+        if (value.bindings.some((binding) => binding.routeIds.includes(route.id))) return "仍有功能绑定引用，请先解除绑定";
+        return "";
+    };
+    const deleteModel = (entry: ManagedModel) => {
+        if (modelDeleteReason(entry)) return;
+        modal.confirm({
+            title: `删除平台模型 ${entry.displayName}`,
+            content: `将从草稿移除模型及其 ${value.bindings.filter((binding) => binding.modelId === entry.id).length} 项功能绑定，保留渠道接入。保存配置时会检查历史任务和计费引用，有引用则拒绝删除。`,
+            okText: "从草稿删除", cancelText: "取消", okButtonProps: { danger: true },
+            onOk: () => {
+                setValue((current) => ({ ...current, models: current.models.filter((model) => model.id !== entry.id), bindings: current.bindings.filter((binding) => binding.modelId !== entry.id) }));
+                setSelectedModels((current) => current.filter((id) => id !== entry.id));
+                setPage(1);
+            },
+        });
+    };
+    const deleteRoute = (route: ManagedRoute) => {
+        if (routeDeleteReason(route)) return;
+        modal.confirm({
+            title: `删除渠道模型 ${route.model}`,
+            content: "将从草稿移除此接入，保留所属渠道及密钥。保存配置时会检查历史任务和计费引用，有引用则拒绝删除。",
+            okText: "从草稿删除", cancelText: "取消", okButtonProps: { danger: true },
+            onOk: () => {
+                setValue((current) => ({ ...current, routes: current.routes.filter((entry) => entry.id !== route.id) }));
+                setPage(1);
+            },
+        });
+    };
     const bulkBind = (enabled: boolean) => setValue((current) => {
         const bindings = [...current.bindings];
         for (const entry of current.models.filter((m) => selectedModels.includes(m.id))) for (const id of bulkFeatures) {
@@ -108,14 +141,17 @@ export default function ModelManagementPage() {
         if (!loaded || loading) return;
         const changedModels = value.models.filter((entry) => JSON.stringify(entry) !== JSON.stringify(baseline.models.find((old) => old.id === entry.id)));
         const changedRoutes = value.routes.filter((route) => JSON.stringify(route) !== JSON.stringify(baseline.routes.find((old) => old.id === route.id)));
+        const deletedModels = baseline.models.filter((entry) => !value.models.some((model) => model.id === entry.id));
+        const deletedRoutes = baseline.routes.filter((route) => !value.routes.some((entry) => entry.id === route.id));
         const affected = new Set(value.bindings.filter((b) => JSON.stringify(b) !== JSON.stringify(baseline.bindings.find((old) => old.featureId === b.featureId && old.modelId === b.modelId)) || changedModels.some((m) => m.id === b.modelId) || changedRoutes.some((r) => b.routeIds.includes(r.id))).map((b) => b.featureId));
+        for (const binding of baseline.bindings) if (!value.bindings.some((entry) => entry.featureId === binding.featureId && entry.modelId === binding.modelId)) affected.add(binding.featureId);
         const priceChanges = changedModels.filter((entry) => JSON.stringify(entry.pricing) !== JSON.stringify(baseline.models.find((old) => old.id === entry.id)?.pricing));
         const defaults = [...affected].filter((id) => value.bindings.find((b) => b.featureId === id && b.default)?.modelId !== baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId);
-        const modelName = (id?: string) => value.models.find((m) => m.id === id)?.displayName || "无";
+        const modelName = (id?: string) => value.models.find((m) => m.id === id)?.displayName || baseline.models.find((m) => m.id === id)?.displayName || "无";
         modal.confirm({
             title: "保存模型配置",
             width: 640,
-            content: <Space direction="vertical" className="max-h-[65vh] w-full overflow-auto break-words"><span>平台模型变更 {changedModels.length} 项，渠道模型变更 {changedRoutes.length} 项，涉及功能步骤 {affected.size} 项。</span><span>{value.enabled ? "保存后新报价与新生成使用此配置；未提交报价需重新确认。" : "统一模型目录尚未启用，现有入口继续使用原配置。"}</span><Typography.Text type="secondary">{[...affected].map((id) => {const f = features.find((f) => f.id === id);return f ? `${f.module} · ${f.label}` : id;}).join("、")}</Typography.Text>{defaults.map((id) => <div key={id}>默认模型：{features.find((f) => f.id === id)?.label}，{modelName(baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId)} → {modelName(value.bindings.find((b) => b.featureId === id && b.default)?.modelId)}</div>)}{changedModels.filter((entry) => JSON.stringify(entry.routeIds) !== JSON.stringify(baseline.models.find((m) => m.id === entry.id)?.routeIds)).map((entry) => <div key={`routes-${entry.id}`}>{entry.displayName} · 允许接入：{entry.routeIds.map((id) => value.routes.find((r) => r.id === id)).filter((r): r is ManagedRoute => !!r).map(routeLabel).join("；") || "无"}</div>)}{priceChanges.map((entry) => <div key={entry.id}>{entry.displayName} · 报价变化<pre className="whitespace-pre-wrap text-xs">{JSON.stringify(baseline.models.find((old) => old.id === entry.id)?.pricing || {},null,2)}{"\n→\n"}{JSON.stringify(entry.pricing,null,2)}</pre></div>)}</Space>,
+            content: <Space direction="vertical" className="max-h-[65vh] w-full overflow-auto break-words"><span>平台模型变更 {changedModels.length} 项，删除 {deletedModels.length} 项；渠道模型变更 {changedRoutes.length} 项，删除 {deletedRoutes.length} 项；涉及功能步骤 {affected.size} 项。</span>{deletedModels.map((entry) => <div key={`delete-${entry.id}`}>删除平台模型：{entry.displayName}</div>)}{deletedRoutes.map((route) => <div key={`delete-${route.id}`}>删除渠道模型：{routeLabel(route)}</div>)}<span>{value.enabled ? "保存后新报价与新生成使用此配置；未提交报价需重新确认。" : "统一模型目录尚未启用，现有入口继续使用原配置。"}</span><Typography.Text type="secondary">{[...affected].map((id) => {const f = features.find((f) => f.id === id);return f ? `${f.module} · ${f.label}` : id;}).join("、")}</Typography.Text>{defaults.map((id) => <div key={id}>默认模型：{features.find((f) => f.id === id)?.label}，{modelName(baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId)} → {modelName(value.bindings.find((b) => b.featureId === id && b.default)?.modelId)}</div>)}{changedModels.filter((entry) => JSON.stringify(entry.routeIds) !== JSON.stringify(baseline.models.find((m) => m.id === entry.id)?.routeIds)).map((entry) => <div key={`routes-${entry.id}`}>{entry.displayName} · 允许接入：{entry.routeIds.map((id) => value.routes.find((r) => r.id === id)).filter((r): r is ManagedRoute => !!r).map(routeLabel).join("；") || "无"}</div>)}{priceChanges.map((entry) => <div key={entry.id}>{entry.displayName} · 报价变化<pre className="whitespace-pre-wrap text-xs">{JSON.stringify(baseline.models.find((old) => old.id === entry.id)?.pricing || {},null,2)}{"\n→\n"}{JSON.stringify(entry.pricing,null,2)}</pre></div>)}</Space>,
             onOk: async () => {
                 try {
                     const saved = await saveModelManagement(token, value);
@@ -125,7 +161,6 @@ export default function ModelManagementPage() {
                     void useConfigStore.getState().loadPublicSettings();
                 } catch (e) {
                     message.error(e instanceof Error ? e.message : "保存失败");
-                    throw e;
                 }
             },
         });
@@ -209,7 +244,7 @@ export default function ModelManagementPage() {
         <Tabs activeKey={activeView} onChange={setActiveView} items={[
             { key: "models", label: `平台模型 (${platformModels.length})`, children: <>
                 <Space wrap className="mb-3"><Button icon={<PlusOutlined />} onClick={() => editModel({ id: `model_${nanoid().replaceAll("-", "_")}`, internalName: "", displayName: "", displayMode: "alias", description: "", enabled: false, routeIds: [], pricing: { configured: false, free: false, credits: 0 } })}>新增平台模型</Button><Button disabled={!selectedModels.length} onClick={() => setValue({ ...value, models: value.models.map((m) => selectedModels.includes(m.id) ? { ...m, enabled: false } : m), bindings: value.bindings.map((b) => selectedModels.includes(b.modelId) ? { ...b, default: false } : b) })}>批量停用</Button></Space>
-                <Table rowKey="id" dataSource={platformModels} pagination={{ current: page, onChange: setPage }} scroll={{ x: 1130 }} rowSelection={{ columnWidth: 48, selectedRowKeys: selectedModels, onChange: setSelectedModels }} columns={[
+                <Table rowKey="id" dataSource={platformModels} pagination={{ current: page, onChange: setPage }} scroll={{ x: 1170 }} rowSelection={{ columnWidth: 48, selectedRowKeys: selectedModels, onChange: setSelectedModels }} columns={[
                     { title: "前台名称", width: 150, dataIndex: "displayName", render: (name, entry) => <div className="min-w-0"><div className="truncate" title={name}>{name}</div><Typography.Text type="secondary" ellipsis title={entry.internalName} style={{ display: "block" }}>{entry.internalName}</Typography.Text></div> },
                     { title: "展示方式", width: 130, dataIndex: "displayMode", render: (mode) => ({ alias: "仅别名", real: "真实 ID", both: "别名与真实 ID" }[mode as "alias"]) },
                     { title: "接入渠道", width: 160, render: (_, entry) => {
@@ -221,7 +256,7 @@ export default function ModelManagementPage() {
                     { title: "可用状态", width: 180, render: (_,entry) => availability(entry) },
                     { title: "适用功能", width: 160, render: (_, entry) => <Button type="link" className="!px-0" icon={<EditOutlined />} aria-label={`${entry.displayName} · 管理适用功能`} onClick={() => setBindingModelId(entry.id)}>已绑定 {value.bindings.filter((binding) => binding.modelId === entry.id && binding.enabled).length} 项</Button> },
                     { title: "启用", width: 80, render: (_, entry) => <Switch checked={entry.enabled} onChange={(enabled) => setValue({ ...value, models: value.models.map((m) => m.id === entry.id ? { ...m, enabled } : m), bindings: value.bindings.map((b) => b.modelId === entry.id && !enabled ? { ...b, default: false } : b) })} /> },
-                    { title: "操作", width: 112, fixed: "right", render: (_, entry) => <Space><Button icon={<EditOutlined />} aria-label="编辑模型" onClick={() => editModel(entry)} /><Button icon={<CopyOutlined />} aria-label="复制模型" onClick={() => editModel({ ...structuredClone(entry), id: `model_${nanoid().replaceAll("-", "_")}`, displayName: `${entry.displayName} 副本`, enabled: false })} /></Space> },
+                    { title: "操作", width: 152, fixed: "right", render: (_, entry) => <Space><Tooltip title="编辑模型"><Button icon={<EditOutlined />} aria-label="编辑模型" onClick={() => editModel(entry)} /></Tooltip><Tooltip title="复制模型"><Button icon={<CopyOutlined />} aria-label="复制模型" onClick={() => editModel({ ...structuredClone(entry), id: `model_${nanoid().replaceAll("-", "_")}`, displayName: `${entry.displayName} 副本`, enabled: false })} /></Tooltip><Tooltip title={modelDeleteReason(entry) || "删除模型"}><span><Button danger icon={<DeleteOutlined />} aria-label={`删除模型 ${entry.displayName}`} disabled={!!modelDeleteReason(entry)} onClick={() => deleteModel(entry)} /></span></Tooltip></Space> },
                 ]} />
             </> },
             { key: "features", label: "功能绑定", children: <>
@@ -235,7 +270,7 @@ export default function ModelManagementPage() {
                     { title: "输出规格子集", render: (_, entry) => { const binding = value.bindings.find((b) => b.featureId === selectedFeature && b.modelId === entry.id); const route = value.routes.find((r) => entry.routeIds.includes(r.id)); return route?.video ? <Space direction="vertical"><Select mode="multiple" placeholder="全部清晰度" style={{ minWidth: 150 }} value={binding?.resolutions} options={route.video.resolutions.map((v) => ({ value: v, label: v }))} onChange={(resolutions) => patchBinding(entry, { resolutions })} /><Select mode="multiple" placeholder="全部时长" style={{ minWidth: 150 }} value={binding?.seconds} options={route.video.seconds.map((v) => ({ value: v, label: `${v}秒` }))} onChange={(seconds) => patchBinding(entry, { seconds })} /></Space> : null; } },
                 ]} />}
             </> },
-            { key: "routes", label: `渠道模型 (${matchingRoutes.length})`, children: <><Space wrap className="mb-3"><Button href="/admin/settings">渠道与密钥设置</Button><Button icon={<PlusOutlined />} onClick={() => { const capability = capabilityFilter || "text"; editRoute({ id: `route_${nanoid().replaceAll("-", "_")}`, channelId: channels[0]?.id || 0, model: "", adapter: `${capability}.openai`, capability, operations: [capability], enabled: false }); }}>新增渠道模型</Button></Space><Table rowKey="id" pagination={{ current: page, onChange: setPage }} scroll={{ x: 800 }} dataSource={matchingRoutes} columns={[{ title: "渠道 / 真实模型", render: (_, route) => routeLabel(route) }, { title: "适配器", dataIndex: "adapter" }, { title: "类型", dataIndex: "capability", render: (capability) => capabilityOptions.find((option) => option.value === capability)?.label || capability }, { title: "状态", render: (_, route) => route.enabled ? <Tag color="success">启用</Tag> : <Tag>停用</Tag> }, { title: "操作", render: (_, route) => <Button icon={<EditOutlined />} onClick={() => editRoute(route)}>编辑</Button> }]} /></> },
+            { key: "routes", label: `渠道模型 (${matchingRoutes.length})`, children: <><Space wrap className="mb-3"><Button href="/admin/settings">渠道与密钥设置</Button><Button icon={<PlusOutlined />} onClick={() => { const capability = capabilityFilter || "text"; editRoute({ id: `route_${nanoid().replaceAll("-", "_")}`, channelId: channels[0]?.id || 0, model: "", adapter: `${capability}.openai`, capability, operations: [capability], enabled: false }); }}>新增渠道模型</Button></Space><Table rowKey="id" pagination={{ current: page, onChange: setPage }} scroll={{ x: 800 }} dataSource={matchingRoutes} columns={[{ title: "渠道 / 真实模型", render: (_, route) => routeLabel(route) }, { title: "适配器", dataIndex: "adapter" }, { title: "类型", dataIndex: "capability", render: (capability) => capabilityOptions.find((option) => option.value === capability)?.label || capability }, { title: "状态", render: (_, route) => route.enabled ? <Tag color="success">启用</Tag> : <Tag>停用</Tag> }, { title: "操作", width: 140, render: (_, route) => <Space><Button icon={<EditOutlined />} onClick={() => editRoute(route)}>编辑</Button><Tooltip title={routeDeleteReason(route) || "删除接入"}><span><Button danger icon={<DeleteOutlined />} aria-label={`删除接入 ${route.model}`} disabled={!!routeDeleteReason(route)} onClick={() => deleteRoute(route)} /></span></Tooltip></Space> }]} /></> },
         ]} />
         {bindingModel && <FeatureBindingsDrawer key={bindingModel.id} name={bindingModel.displayName}
             features={features.filter((feature) => value.routes.some((route) => bindingModel.routeIds.includes(route.id) && route.capability === feature.capability && route.operations.some((operation) => feature.operations.includes(operation))))}
@@ -275,7 +310,7 @@ export default function ModelManagementPage() {
             <Form name="managed-route" form={routeForm} layout="vertical">
                 <Form.Item name="id" hidden><Input /></Form.Item><Form.Item name="channelId" label="渠道" rules={[{ required: true }]}><Select disabled={value.routes.some((r) => r.id === editingRoute?.id)} options={channels.map((c) => ({ value: c.id, label: c.name }))} onChange={() => routeForm.setFieldValue("model", "")} /></Form.Item>
                 <Form.Item noStyle shouldUpdate={(p, n) => p.channelId !== n.channelId}>{() => <Form.Item name="model" label="上游真实模型 ID" rules={[{ required: true }]}><Select showSearch disabled={value.routes.some((r) => r.id === editingRoute?.id)} options={(channels.find((c) => c.id === routeForm.getFieldValue("channelId"))?.models || []).map((m) => ({ value: m, label: m }))} /></Form.Item>}</Form.Item>
-                <Form.Item name="adapter" label="调用适配器"><Select disabled={value.routes.some((r) => r.id === editingRoute?.id)} options={adapterOptions} onChange={(adapter) => { const capability = adapter.startsWith("cloud:") ? ["speech", "transcribe"].includes(adapter.slice(6)) ? "audio" : adapter.endsWith("-replicate") ? "image" : "video" : adapter.split(".")[0]; routeForm.setFieldsValue({ capability, operations: [adapter.startsWith("cloud:") ? adapter.slice(6) : capability] }); }} /></Form.Item>
+                <Form.Item name="adapter" label="调用适配器"><Select disabled={value.routes.some((r) => r.id === editingRoute?.id)} options={adapterOptions} onChange={(adapter) => { const capability = adapter.startsWith("cloud:") ? ["speech", "transcribe"].includes(adapter.slice(6)) ? "audio" : adapter.endsWith("-replicate") ? "image" : "video" : adapter.split(".")[0]; routeForm.setFieldsValue({ capability, operations: [adapter === "text.gemini-video" ? "video-understand" : adapter.startsWith("cloud:") ? adapter.slice(6) : capability] }); }} /></Form.Item>
                 <Form.Item name="capability" label="能力类型"><Select options={capabilityOptions.filter((option) => option.value !== "all")} /></Form.Item>
                 <Form.Item name="operations" label="已适配操作"><Select mode="tags" /></Form.Item><Form.Item name="version" label="上游固定版本"><Input disabled={value.routes.some((r) => r.id === editingRoute?.id)} /></Form.Item>
                 <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>

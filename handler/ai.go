@@ -36,6 +36,10 @@ func AIResponses(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/responses")
 }
 
+func AIVideoUnderstanding(w http.ResponseWriter, r *http.Request) {
+	proxyAIRequest(w, r, "/video-understanding")
+}
+
 func AIAudioSpeech(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/audio/speech")
 }
@@ -177,6 +181,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		FailError(w, err)
+		return
+	}
+	if path == "/video-understanding" {
+		proxyVideoUnderstanding(w, r, channel, body, user.ID, modelName, credits)
 		return
 	}
 	if videoCreate {

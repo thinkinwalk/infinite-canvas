@@ -14,7 +14,8 @@ import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVide
 import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
 import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
-import { viralInput, viralMaterialLabels, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
+import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
+import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
 import { contentReplacementPrompt } from "./content-replace-prompt";
@@ -189,7 +190,8 @@ export function useVideoWorkbench(tool: VideoTool) {
             const current = read(tool),
                 next = { ...current, ...value };
             const sourceChanged = viralSource(current) !== viralSource(next),
-                countChanged = value.frameCount !== undefined && value.frameCount !== current.frameCount;
+                countChanged = value.frameCount !== undefined && value.frameCount !== current.frameCount,
+                modeChanged = value.viralAnalysisMode !== undefined && value.viralAnalysisMode !== viralAnalysisMode(current, config);
             const productChanged = value.viralFacts !== undefined || (value.media && JSON.stringify(current.media.filter((m) => m.role === "product").map((m) => m.id)) !== JSON.stringify(value.media.filter((m) => m.role === "product").map((m) => m.id)));
             const mentions =
                 value.media || sourceChanged || countChanged
@@ -201,6 +203,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             patch({
                 ...(invalidate ? { viralRevision: (current.viralRevision || 0) + 1, viralOutputStale: true, viralScriptStale: true, viralScriptSuggestion: "" } : {}),
                 ...(sourceChanged || countChanged ? { frames: [], viralFrameSource: "", viralFrameTimes: [], viralAnalysisStale: true, viralAnalysisSuggestion: "" } : {}),
+                ...(modeChanged ? { viralAnalysisStale: true, viralAnalysisSuggestion: "" } : {}),
                 ...(sourceChanged ? { transcript: "", viralTranscriptSource: "" } : {}),
                 ...(productChanged ? { viralProductStale: true, viralProductSuggestion: "" } : {}),
                 ...mentions,
@@ -714,6 +717,17 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (d.regenerateSubtitles) return replacementPipeline(ctx, d);
         }
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
+            if (stage === "analyze" && viralAnalysisMode(d, config) === "video") {
+                const scoped = videoAnalysisConfig(config);
+                const quote = await quoteTextModel(scoped, scoped.textModel, ctx.signal);
+                await confirmStorePrice(quote, "参考视频分析", ctx.signal, "将参考视频及其音轨发送到所选模型渠道，按当前分析模型单独计费");
+                ctx.signal.throwIfAborted();
+                store().patchRecord(ctx.recordId, { step: "正在分析视频与音轨" });
+                const value = await requestVideoUnderstanding(config, required(viralReference(d), "上传参考视频"),
+                    "分析参考视频，输出中文复刻参考：1.开场钩子；2.按时间顺序记录画面、动作、构图与运镜；3.可辨识的口播、字幕与音效及其画面对应；4.卖点承接与结尾转化；5.可借鉴的结构及不确定之处。时间使用 MM:SS，均为估计，不能声称逐帧检测、精确镜头边界或音乐节拍。区分画面可见事实、实际听辨内容和推断；没有声音或听不清时明确说明。只分析原视频，不混入新商品、人物或改编要求。",
+                    ctx.signal, () => store().patchRecord(ctx.recordId, { nativeAnalysisSubmitted: true }));
+                return { ...(d.analysis ? { viralAnalysisSuggestion: value } : { analysis: value, viralAnalysisStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
+            }
             const cfg = viralVideoConfig(d, config),
                 labels = viralMaterialLabels(d);
             const images = stage === "analyze" ? d.frames : d.media.filter((m) => m.kind === "image" && (stage === "product-analyze" ? m.role === "product" : ["product", "model", "first-frame"].includes(m.role)));
@@ -1194,9 +1208,9 @@ export function useVideoWorkbench(tool: VideoTool) {
             });
         } catch (error) {
             const stopped = signal.aborted;
-            const detail = stopped ? "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
             const submitted = store().records.find((r) => r.id === id);
-            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
+            const detail = stopped ? submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
+            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
@@ -1261,7 +1275,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (read(tool).route === "replicate") replacementRequest(read(tool));
             }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
-            if (stage === "analyze" && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
+            if (stage === "analyze" && !(tool === "viral-recreate" && viralAnalysisMode(read(tool), config) === "video") && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
                 await perform("frames", signal);
             await perform(stage, signal);
         });

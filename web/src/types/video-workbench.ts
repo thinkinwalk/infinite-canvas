@@ -19,6 +19,7 @@ export type ViralRecreateInput = Pick<
     | "viralFirstFrameId"
     | "viralLastFrameId"
     | "viralUseVideo"
+    | "viralAnalysisMode"
     | "viralFrameSource"
     | "viralFrameTimes"
     | "viralTranscriptSource"
@@ -180,6 +181,7 @@ export type VideoDraft = {
     viralFirstFrameId?: string;
     viralLastFrameId?: string;
     viralUseVideo?: boolean;
+    viralAnalysisMode?: "video" | "frames";
     viralFrameSource?: string;
     viralFrameTimes?: number[];
     viralTranscriptSource?: string;
@@ -201,6 +203,7 @@ export type VideoRecord = {
     error?: string;
     modelTask?: VideoGenerationTask;
     workerJob?: { id: string; url: string };
+    nativeAnalysisSubmitted?: boolean;
     replicateTask?: { id: string; operation: string };
     replicateBilling?: { credits: number; refunded: boolean };
     replacementMask?: UploadedFile;

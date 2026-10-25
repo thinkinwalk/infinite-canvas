@@ -16,6 +16,8 @@ import (
 
 func managedOperation(path string, body []byte) string {
 	switch path {
+	case "/video-understanding":
+		return "video-understand"
 	case "/videos":
 		return "video"
 	case "/audio/speech":

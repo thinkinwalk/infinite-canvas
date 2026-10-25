@@ -3,8 +3,10 @@ import { isReplicateVideoModel, REPLICATE_VIDEO_MODEL } from "@/services/api/rep
 import { resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
-import { storeVideoConfig } from "./store-explore-request";
+import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
+import { videoAnalysisAvailable } from "@/services/api/video-understanding";
 
+export const viralAnalysisMode = (d: VideoDraft, config: AiConfig) => d.viralAnalysisMode || (videoAnalysisAvailable(config) ? "video" : "frames");
 export const viralReference = (d: VideoDraft) => d.media.find((m) => m.role === "reference" && m.kind === "video");
 export const viralSource = (d: VideoDraft) => {
     const video = viralReference(d);
@@ -73,6 +75,7 @@ export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
         viralFirstFrameId,
         viralLastFrameId,
         viralUseVideo,
+        viralAnalysisMode: analysisMode,
         viralFrameSource,
         viralFrameTimes,
         viralTranscriptSource,
@@ -93,6 +96,7 @@ export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
         viralFirstFrameId,
         viralLastFrameId,
         viralUseVideo,
+        viralAnalysisMode: analysisMode || viralAnalysisMode(d, cfg),
         viralFrameSource,
         viralFrameTimes,
         viralTranscriptSource,

@@ -52,6 +52,22 @@ func Load() error {
 	return nil
 }
 
+// DataDir is shared by durable media jobs and their configuration reference checks.
+func DataDir() string {
+	driver := strings.ToLower(strings.TrimSpace(Cfg.StorageDriver))
+	dsn := strings.TrimSpace(Cfg.DatabaseDSN)
+	if (driver == "" || driver == "sqlite") && dsn != "" && dsn != ":memory:" && !strings.HasPrefix(dsn, "file:") {
+		pathPart, _, _ := strings.Cut(dsn, "?")
+		if filepath.IsAbs(pathPart) {
+			return filepath.Dir(pathPart)
+		}
+	}
+	if _, err := os.Stat("/app/data"); err == nil {
+		return "/app/data"
+	}
+	return "data"
+}
+
 func normalizeDockerSQLiteDSN(appDataDir string) {
 	driver := strings.ToLower(strings.TrimSpace(Cfg.StorageDriver))
 	if driver != "" && driver != "sqlite" {

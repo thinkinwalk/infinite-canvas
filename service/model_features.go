@@ -34,6 +34,7 @@ func ModelFeatures() ([]model.ModelFeature, error) {
 		add(entry.id+".video", entry.label, "视频生成", "video", "video", "text-to-video", "image-to-video", "hailuo-video")
 		add(entry.id+".audio", entry.label, "配音", "audio", "audio", "speech")
 	}
+	add("viral-recreate.video-analyze", "爆款复刻", "视频与音轨分析", "text", "video-understand")
 	for _, entry := range []struct{ id, label string }{{"digital-human", "数字人"}, {"photo-talk", "照片说话"}, {"lipsync", "视频对口型"}} {
 		add(entry.id+".script", entry.label, "口播脚本", "text", "text")
 		add(entry.id+".cover", entry.label, "封面生成", "image", "image")
@@ -92,6 +93,8 @@ func ManagedAdapterOperations(adapter, name string) ([]string, string, error) {
 	switch adapter {
 	case "text.openai":
 		return []string{"text"}, "text", nil
+	case "text.gemini-video":
+		return []string{"video-understand"}, "text", nil
 	case "image.openai", "image.responses":
 		return []string{"image"}, "image", nil
 	case "audio.openai":

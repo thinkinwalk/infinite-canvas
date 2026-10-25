@@ -66,6 +66,9 @@ func SaveSettingsChecked(settings model.Settings, previous *model.ModelManagemen
 		if stored.ModelManagement != nil && settings.Private.ModelManagement == nil {
 			return errors.New("已有模型目录不能清除，请在模型管理中停用")
 		}
+		if err := validateCatalogDeletions(tx, stored, settings.Private); err != nil {
+			return err
+		}
 		if settings.Private.ModelManagement != nil && stored.ModelManagement == nil {
 			var publicRow model.Setting
 			if err := tx.Where("key = ?", model.SettingKeyPublic).First(&publicRow).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {

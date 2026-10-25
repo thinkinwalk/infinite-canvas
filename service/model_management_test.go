@@ -159,3 +159,39 @@ func TestManagedCloudVersionRejectsUnsupportedPinnedVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestManagedUnusedDeletionThroughSettingsService(t *testing.T) {
+	saved, err := repository.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := config.Cfg
+	config.Cfg.DatabaseDSN = t.TempDir() + "/test.db"
+	t.Cleanup(func() {
+		config.Cfg = previous
+		_, _ = repository.SaveSettings(saved, "restore")
+	})
+	disabled := false
+	settings := model.Settings{Private: model.PrivateSetting{
+		PromptSync: model.PromptSyncSetting{Enabled: &disabled},
+		Channels:   []model.ModelChannel{{ID: 761, Name: "unused", Protocol: "openai", APIKey: "fake", BaseURL: "https://example.invalid", Models: []string{"unused-text"}}},
+		ModelManagement: &model.ModelManagement{Enabled: true, Revision: 4,
+			Routes: []model.ManagedRoute{{ID: "route_unused", ChannelID: 761, Model: "unused-text", Adapter: "text.openai", Capability: "text", Operations: []string{"text"}}},
+			Models: []model.ManagedModel{{ID: "model_unused", DisplayName: "unused", DisplayMode: "real", RouteIDs: []string{"route_unused"}}},
+		},
+	}}
+	if _, err := repository.SaveSettings(settings, "before"); err != nil {
+		t.Fatal(err)
+	}
+	settings.Private.ModelManagement.Routes[0].Model = "changed-identity"
+	settings.Private.Channels[0].Models = []string{"changed-identity"}
+	if _, err := SaveSettings(settings); err == nil || !strings.Contains(err.Error(), "真实身份不可") {
+		t.Fatalf("identity protection changed: %v", err)
+	}
+	settings.Private.ModelManagement = &model.ModelManagement{Enabled: true, Revision: 4}
+	settings.Private.Channels = nil
+	result, err := SaveSettings(settings)
+	if err != nil || result.Private.ModelManagement.Revision != 5 || len(result.Private.Channels) != 0 {
+		t.Fatalf("unused model/route/channel could not be deleted through service: %+v %v", result, err)
+	}
+}
