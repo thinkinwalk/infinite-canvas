@@ -17,6 +17,7 @@ export function useTextModelConfirmation() {
         if (!useUserStore.getState().token) throw new Error("请先登录，再使用文字模型。");
         const quote = await quoteTextModel(config, config.textModel, signal);
         signal.throwIfAborted();
+        if (quote.credits === 0) return quote.credits;
         await new Promise<void>((resolve, reject) => {
             const finish = (accepted: boolean) => {
                 signal.removeEventListener("abort", abort);
