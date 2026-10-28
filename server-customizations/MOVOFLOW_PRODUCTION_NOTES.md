@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.109
-- Current production source: tag v0.19.109, commit e4eb73e2930ba26253196d10f8cb67fbc9d4f112
+- Current production image: infinite-canvas:v0.19.110
+- Current production source: tag v0.19.110, commit fa957c3ec528fc46528a13a3e810b09bae3731fa
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.110 deployment
+
+- Source tag `v0.19.110`, commit `fa957c3ec528fc46528a13a3e810b09bae3731fa`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.110`, ID `sha256:6633b2daca09eb59a73465057b5027d32872073f0b62db938a76178ec91daa95`, matches the source tag.
+- Adapted scripts explicitly carry forward adopted analysis of core motion, object transformation, climax, end state and physical text. The prompt uses selected duration/aspect ratio and requests a timed coverage review. Existing scripts remain intact; new writing is a suggestion. Video prompts share continuity rules and honor explicit user edits/deletions.
+- Development passed four isolated mocked CDP groups for request content, selected settings, old-script protection, video-prompt continuity and price-confirmation cancellation. Release repeated no local tests/builds or browser interaction; the server Docker build completed. Independent workstation HTTPS checks verified health, the actual page, `/assets/index-CPaOP3KA.js` and published script/video continuity markers. No paid inference; actual model output and fan-unfolding/text quality remain pending.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.110-20261029-004801/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.110-prebuild-20261029-004612/`. Quick checks, 13 table counts, settings, user balances/roles/groups/status and 10,594 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts are unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Management revision 12, 38 models / 65 routes / 656 bindings, model pricing/defaults and try-on settings remain unchanged.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.110-deployment.json`, `/opt/infinite-canvas/releases/v0.19.110-public-verification.json` and workstation `.codex_tmp/v0.19.110-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.109 image. Users must refresh, rewrite/review/adopt the script and reconfirm the opening frame after changes; no automatic script overwrite.
 
 ## v0.19.109 deployment
 
