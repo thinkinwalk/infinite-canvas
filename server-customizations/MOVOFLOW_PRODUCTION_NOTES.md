@@ -15,16 +15,33 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.99
-- Current production source: tag v0.19.99, commit 458140c9af9350466a3b3db35462bfb3aaf02fc4
+- Current production image: infinite-canvas:v0.19.100
+- Current production source: tag v0.19.100, commit de308f484c24abb84bd841e80cc3a6b8e013b2b0
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.100 deployment
+
+- Tag `v0.19.100`, commit `de308f484c24abb84bd841e80cc3a6b8e013b2b0`, is published on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.100`, ID `sha256:288d5e5213c636567ec6b7b794e4f8f05269525255afe8e0ca32ceb9e7519907`, matches the tag. Concurrent try-on changes and local sample artifacts remain uncommitted and were excluded.
+- Viral analysis is reviewed and edited on the right; the left keeps compact status. New results auto-adopt when no manual edits require protection. Edits to the current reference update the actual script input. Replacing manual edits asks for confirmation and saves the prior draft to local history. History supports read-only review and direct reuse without restoring media/settings or submitting inference.
+- Online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.100-20261028-054743/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.100-prebuild-20261028-054602/`. Database quick checks, all 13 table counts, saved settings, balances/roles/groups and 10,429 existing task/media file hashes matched. A historical stored planning task was confirmed effectively paused with its linked Worker step completed and its file preserved.
+- Only app was recreated; Worker ID, image, start time and `v0.19.87-worker` mounts are unchanged. Internal/external health, 10 page routes, default/VIP Worker gateways, permissions and unchanged catalogs/quotes passed. Model management remains revision 10 (38 models / 65 routes / 656 bindings); both ordinary groups retain Gemini analysis at 20 credits per request.
+- Public asset `/assets/index-BJP8s9jD.js` contains the release and new history/current-reference controls; duplicate old confirmation controls are absent. Independent workstation HTTPS checks passed. Development verification was 16 focused tests / 97 assertions and 12 isolated mocked browser groups; release repeated no local tests/builds and submitted no paid inference. Production browser interaction, actual model quality and billing/refunds remain manual acceptance items.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.100-deployment.json`; workstation copies: `.codex_tmp/release-v0.19.100/deployment.json` and `public-verification.json`. Rollback restores the saved Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; the prior v0.19.99 image remains available. Do not restore an old database over subsequent activity.
+
+## Gemini video-analysis configuration
+
+- Current model-management revision is 10: 38 models, 65 routes and 656 bindings. User authorized a fixed price of 20 credits per analysis for channel #23 `gemini-3.8-flash`.
+- Route `route_gemini_video_flash_ch23` uses `text.gemini-video` with the `video-understand` operation. Platform model `model_gemini_video_flash` is enabled, paid and the default for `viral-recreate.video-analyze` only. Existing sampled-analysis, product-analysis, script and generation bindings are unchanged.
+- Online SQLite/Compose backup and configuration evidence: `/opt/infinite-canvas/backups/gemini-video-20261028-044144/`, including `management-before.json`, `management-draft.json` and `save-report.json`. Save-time balances and table counts matched; other settings, channels and credentials were preserved. No app or Worker deployment/restart was required.
+- Internal/public catalog and signed 20-credit quote checks cover admin, default and VIP users. No paid analysis was submitted. Production browser controls, existing-tab refresh, actual upstream video acceptance, quality and billing/refunds remain pending. Existing drafts retain their previous analysis mode; users should refresh the page and choose video/audio manually.
+- The first verification's global data-equality assertion detected three concurrent `gpt-image-2.5-flare` consumptions totaling 36 credits. These were separate image requests, not Gemini analysis; the follow-up verification reconciles any balance changes against their credit logs.
 
 ## v0.19.99 deployment
 
 - Tag `v0.19.99`, commit `458140c9af9350466a3b3db35462bfb3aaf02fc4`, is published on `release/v0.19.60` with a GitHub Release. Server-built app image `infinite-canvas:v0.19.99`, ID `sha256:ceab6f252cb597e5ab1f70da6f63564d41c4c39ae3719a5e820952faba9caf5f`, matches the exact tag.
 - Viral recreation keeps native video/audio and sampled-frame analysis results, editable drafts and suggestions separately. Explicit adoption selects the script input; changed reference inputs invalidate that adoption unless the user confirms reuse. Sampling prepares frames and optional transcription in one action. Source/model details, manual failure switching and narrow-screen layout are published.
-- Native analysis is preferred only when a valid binding is available. Production management remains revision 9 with 37 models, 64 routes and 655 bindings; Gemini pricing and native-analysis binding remain unconfigured, so new production drafts still default to sampled frames. No paid generation or configuration changes were submitted.
+- At deployment, management was revision 9 with 37 models, 64 routes and 655 bindings, and Gemini was not configured. The subsequent authorized 20-credit configuration is documented above; the deployment itself submitted no paid generation or configuration changes.
 - Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.99-20261028-043002/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.99-prebuild-20261028-042752/`. SQLite quick_check, all 13 table counts, settings, balances/roles/groups/status, default/VIP catalogs and quotes matched; hashes of 10,417 existing files matched.
 - Only App was recreated. Worker ID/image/start time/source mounts remain unchanged. Internal/external health, ten public pages, default/VIP Worker gateways and permission checks passed. Server and independent workstation confirmed `/assets/index-CbEJWmof.js`, release version and analysis adoption/switching markers.
 - Development verification previously passed 23 focused tests with 126 assertions and 13 groups of mocked browser checks. No local tests/builds were repeated during release; server Docker build completed. Production browser interaction, real Gemini input/quality/billing/refunds, Worker extraction/transcription and historical draft acceptance remain pending.
