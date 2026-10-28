@@ -12,7 +12,8 @@ if (!globalThis.localStorage) {
 const { configForFeature, defaultConfig, managedEffectiveConfig, useConfigStore } = await import("../src/stores/use-config-store");
 const { useUserStore } = await import("../src/stores/use-user-store");
 const { requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
-const { viralAnalysisMode, viralInput } = await import("../src/pages/video-tool/viral-recreate-request");
+const { viralAnalysisMode, viralInput, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
+const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText } = await import("../src/pages/video-tool/viral-analysis");
 const { emptyVideoDraft } = await import("../src/types/video-workbench");
 
 const catalog: PublicManagedCatalog = {
@@ -85,4 +86,129 @@ test("retired video analysis cannot silently fall back or send data", async () =
     globalThis.fetch = async () => { calls++; throw new Error("unexpected"); };
     await expect(requestVideoUnderstanding(missing, { url: "data:video/mp4;base64,dmlkZW8=", storageKey: "", mimeType: "video/mp4", bytes: 5, width: 100, height: 100 }, "分析", new AbortController().signal)).rejects.toThrow("没有可用");
     expect(calls).toBe(0);
+});
+
+const referenceDraft = () => {
+    const draft = emptyVideoDraft("viral-recreate");
+    draft.media = [{ id: "reference-a", name: "原视频.mp4", kind: "video", role: "reference", url: "blob:video-a", storageKey: "video-a", mimeType: "video/mp4", bytes: 5, width: 100, height: 100 }];
+    draft.frames = [{ url: "blob:frame-a", storageKey: "frame-a", mimeType: "image/jpeg", bytes: 5, width: 100, height: 100 }];
+    draft.viralFrameSource = viralSource(draft);
+    draft.viralFrameTimes = [0];
+    draft.viralTranscriptSource = viralSource(draft);
+    draft.transcript = "商品介绍";
+    return draft;
+};
+
+test("native analysis depends only on its source, not sampling, transcription, product or generation settings", () => {
+    const draft = referenceDraft(), key = viralAnalysisInputKey(draft, "video");
+    const changed = { ...draft, frameCount: 12, frames: [], viralFrameTimes: [], viralUseTranscript: true, transcript: "修改转写", viralFacts: "新商品", script: "改编稿", viralAnalysisMode: "frames" as const, viralFirstFrameId: "frame:a" };
+    expect(viralAnalysisInputKey(changed, "video")).toBe(key);
+    expect(viralAnalysisInputKey({ ...changed, media: [] }, "video")).not.toBe(key);
+    expect(viralAnalysisInputKey({ ...draft, media: draft.media.map((m) => ({ ...m, url: "blob:restored" })) }, "video")).toBe(key);
+});
+
+test("sample analysis tracks frames and only the transcript explicitly selected for its source", () => {
+    const draft = referenceDraft(), key = viralAnalysisInputKey(draft, "frames");
+    expect(viralAnalysisInputKey({ ...draft, transcript: "未采用的编辑" }, "frames")).toBe(key);
+    expect(viralAnalysisInputKey({ ...draft, frameCount: 8 }, "frames")).not.toBe(key);
+    expect(viralAnalysisInputKey({ ...draft, frames: [] }, "frames")).not.toBe(key);
+    expect(viralAnalysisInputKey({ ...draft, viralFrameTimes: [1] }, "frames")).not.toBe(key);
+    const enabled = { ...draft, viralUseTranscript: true };
+    expect(viralAnalysisInputKey(enabled, "frames")).not.toBe(key);
+    expect(viralAnalysisInputKey({ ...enabled, transcript: "已采用的编辑" }, "frames")).not.toBe(viralAnalysisInputKey(enabled, "frames"));
+    expect(viralAnalysisInputKey({ ...enabled, viralTranscriptSource: "another-video" }, "frames")).toBe(viralAnalysisInputKey({ ...enabled, transcript: "" }, "frames"));
+});
+
+test("analysis results remain separate and do not replace the adopted body or the other mode", () => {
+    const draft = referenceDraft();
+    const video = { text: "视频动作和声音", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const withVideo = { ...draft, ...viralAnalysisResultPatch(draft, video) };
+    const frames = { text: "离散画面结构", provenance: viralAnalysisProvenance(draft, "frames", config) };
+    const withBoth = { ...withVideo, ...viralAnalysisResultPatch(withVideo, frames) };
+    expect(withBoth.viralAnalyses?.video).toEqual(video);
+    expect(withBoth.viralAnalyses?.frames).toEqual(frames);
+    expect(withBoth.analysis).toBe("");
+    expect(withBoth.viralAdoptedAnalysis).toBeUndefined();
+    expect(draft.viralAnalyses).toBeUndefined();
+    expect(video.provenance.model).toBe("remote::model_native");
+    expect(frames.provenance.model).toBe("remote::model_script");
+    expect(video.provenance.sourceName).toBe("原视频.mp4");
+});
+
+test("reanalyzing protects the editable draft and adopted version while storing a suggestion with its own provenance", () => {
+    const draft = referenceDraft();
+    const original = { text: "手动校对后的原稿", provenance: { ...viralAnalysisProvenance(draft, "video", config), edited: true } };
+    const saved = { ...draft, viralAnalyses: { video: original }, ...viralAdoptAnalysis(draft, original) };
+    const next = { text: "模型新分析", provenance: { ...viralAnalysisProvenance(draft, "video", config), createdAt: original.provenance.createdAt + 1 } };
+    const updated = { ...saved, ...viralAnalysisResultPatch(saved, next) };
+    expect(updated.viralAnalyses?.video?.text).toBe(original.text);
+    expect(updated.viralAnalyses?.video?.suggestion).toEqual(next);
+    expect(updated.analysis).toBe(original.text);
+    expect(updated.viralAdoptedAnalysis).toEqual(saved.viralAdoptedAnalysis);
+    expect(viralAdoptedAnalysisText(updated)).toContain(original.text);
+    expect(viralAdoptedAnalysisText(updated)).not.toContain(next.text);
+});
+
+test("changing the viewed mode never switches the adopted analysis used by prompts", () => {
+    const draft = referenceDraft();
+    const video = { text: "采用的视频分析", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const frames = { text: "未采用的抽样分析", provenance: viralAnalysisProvenance(draft, "frames", config) };
+    const adopted = { ...draft, viralAnalyses: { video, frames }, ...viralAdoptAnalysis(draft, video), viralAnalysisMode: "frames" as const };
+    expect(viralAdoptedAnalysisError(adopted)).toBe("");
+    const prompt = viralVideoPrompt(adopted, defaultConfig);
+    expect(prompt).toContain(video.text);
+    expect(prompt).not.toContain(frames.text);
+    expect(prompt).toContain("视频与音轨");
+});
+
+test("new source blocks adopted analysis until explicit reuse, without rewriting its original source", () => {
+    const draft = referenceDraft();
+    const version = { text: "原视频分析稿", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const adopted = { ...draft, ...viralAdoptAnalysis(draft, version) };
+    const replaced = { ...adopted, media: adopted.media.map((m) => ({ ...m, id: "reference-b", storageKey: "video-b", name: "新视频.mp4" })) };
+    expect(viralAdoptedAnalysisError(replaced)).toContain("输入已变化");
+    expect(() => viralAdoptedAnalysisText(replaced)).toThrow("输入已变化");
+    expect(() => viralVideoPrompt(replaced, defaultConfig)).toThrow("输入已变化");
+    const confirmed = { ...replaced, ...viralAdoptAnalysis(replaced, version) };
+    expect(viralAdoptedAnalysisError(confirmed)).toBe("");
+    expect(confirmed.viralAdoptedAnalysis?.provenance).toEqual(version.provenance);
+    expect(viralAdoptedAnalysisText(confirmed)).toContain("用户确认沿用原稿");
+    expect(viralAdoptedAnalysisText(confirmed)).toContain("原视频.mp4");
+});
+
+test("sampling and transcription invalidate only an adopted sample result and preserve native adoption", () => {
+    const draft = { ...referenceDraft(), viralUseTranscript: true };
+    for (const mode of ["video", "frames"] as const) {
+        const version = { text: "已采用的分析", provenance: viralAnalysisProvenance(draft, mode, config) };
+        const adopted = { ...draft, ...viralAdoptAnalysis(draft, version) };
+        const countChanged = { ...adopted, frameCount: 12 };
+        const textChanged = { ...adopted, transcript: "新转写文字" };
+        expect(Boolean(viralAdoptedAnalysisError(countChanged))).toBe(mode === "frames");
+        expect(Boolean(viralAdoptedAnalysisError(textChanged))).toBe(mode === "frames");
+        expect(viralAdoptedAnalysisError({ ...adopted, viralFacts: "新商品资料", script: "新脚本" })).toBe("");
+    }
+});
+
+test("input snapshots persist both results, pending suggestions, adoption and transcript choice", () => {
+    const draft = { ...referenceDraft(), viralUseTranscript: true };
+    const video = { text: "视频原稿", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const frames = { text: "抽样原稿", provenance: viralAnalysisProvenance(draft, "frames", config), suggestion: { text: "抽样新建议", provenance: viralAnalysisProvenance(draft, "frames", config) } };
+    const adopted = { ...draft, viralAnalyses: { video, frames }, ...viralAdoptAnalysis(draft, video), viralAnalysisMode: "frames" as const };
+    const restored = { ...emptyVideoDraft("viral-recreate"), ...JSON.parse(JSON.stringify(viralInput(adopted, config))) };
+    expect(restored.viralAnalyses).toEqual(adopted.viralAnalyses);
+    expect(restored.viralAdoptedAnalysis).toEqual(adopted.viralAdoptedAnalysis);
+    expect(restored.viralUseTranscript).toBe(true);
+    expect(restored.viralAnalysisMode).toBe("frames");
+    expect(viralAdoptedAnalysisError(restored)).toBe("");
+    expect(viralAdoptedAnalysisText(restored)).not.toContain(frames.text);
+});
+
+test("unattributed body requires explicit adoption, while a script without reference analysis stays usable", () => {
+    const draft = { ...referenceDraft(), analysis: "保留的参考原稿" };
+    expect(viralAdoptedAnalysisError(draft)).toContain("确认采用");
+    const manual = { text: draft.analysis, provenance: viralAnalysisProvenance(draft, "frames") };
+    const adopted = { ...draft, ...viralAdoptAnalysis(draft, manual) };
+    expect(viralAdoptedAnalysisError(adopted)).toBe("");
+    expect(viralAdoptedAnalysisText(adopted)).toContain("手写");
+    expect(viralVideoPrompt({ ...emptyVideoDraft("viral-recreate"), script: "直接手写脚本" }, defaultConfig)).toContain("直接手写脚本");
 });

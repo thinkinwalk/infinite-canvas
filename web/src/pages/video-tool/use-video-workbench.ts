@@ -15,6 +15,7 @@ import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, R
 import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
+import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
@@ -145,7 +146,14 @@ export function useVideoWorkbench(tool: VideoTool) {
     const digital = isTalkingVideoTool(tool);
     const draft = { ...emptyVideoDraft(tool), ...state.drafts[tool] };
     const busy = Boolean(state.busyTools[tool]);
-    const patch = (value: Partial<VideoDraft>) => store().patchDraft(tool, value);
+    const patch = (value: Partial<VideoDraft>) => {
+        if (tool === "viral-recreate") {
+            const current = read(tool), next = { ...current, ...value };
+            if (!viralAdoptedAnalysisError(current) && viralAdoptedAnalysisError(next))
+                value = { viralScriptStale: Boolean(current.script), viralScriptSuggestion: "", viralOutputStale: true, ...value };
+        }
+        store().patchDraft(tool, value);
+    };
 
     useEffect(() => {
         if (!state.hydrated) return;
@@ -190,8 +198,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             const current = read(tool),
                 next = { ...current, ...value };
             const sourceChanged = viralSource(current) !== viralSource(next),
-                countChanged = value.frameCount !== undefined && value.frameCount !== current.frameCount,
-                modeChanged = value.viralAnalysisMode !== undefined && value.viralAnalysisMode !== viralAnalysisMode(current, config);
+                countChanged = value.frameCount !== undefined && value.frameCount !== current.frameCount;
             const productChanged = value.viralFacts !== undefined || (value.media && JSON.stringify(current.media.filter((m) => m.role === "product").map((m) => m.id)) !== JSON.stringify(value.media.filter((m) => m.role === "product").map((m) => m.id)));
             const mentions =
                 value.media || sourceChanged || countChanged
@@ -200,10 +207,12 @@ export function useVideoWorkbench(tool: VideoTool) {
                           script: remapMaterialMentions(current.script, viralMaterialLabels(current), viralMaterialLabels({ ...next, ...(sourceChanged || countChanged ? { frames: [] } : {}) })),
                       }
                     : {};
+            const analysisOnly = Object.keys(value).every((key) => ["viralAnalysisMode", "viralAnalyses", "frameCount", "transcript", "viralTranscriptSource", "viralUseTranscript"].includes(key));
+            const selectedFrameChanged = countChanged && [current.viralFirstFrameId, current.viralLastFrameId].some((id) => id?.startsWith("frame:"));
             patch({
-                ...(invalidate ? { viralRevision: (current.viralRevision || 0) + 1, viralOutputStale: true, viralScriptStale: true, viralScriptSuggestion: "" } : {}),
-                ...(sourceChanged || countChanged ? { frames: [], viralFrameSource: "", viralFrameTimes: [], viralAnalysisStale: true, viralAnalysisSuggestion: "" } : {}),
-                ...(modeChanged ? { viralAnalysisStale: true, viralAnalysisSuggestion: "" } : {}),
+                viralRevision: (current.viralRevision || 0) + 1,
+                ...(invalidate && (!analysisOnly || selectedFrameChanged) ? { viralOutputStale: true, viralScriptStale: true, viralScriptSuggestion: "" } : {}),
+                ...(sourceChanged || countChanged ? { frames: [], viralFrameSource: "", viralFrameTimes: [] } : {}),
                 ...(sourceChanged ? { transcript: "", viralTranscriptSource: "" } : {}),
                 ...(productChanged ? { viralProductStale: true, viralProductSuggestion: "" } : {}),
                 ...mentions,
@@ -411,11 +420,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     ? {
                           viralFrameSource: viralSource(source),
                           viralFrameTimes: Number(job.result!.metadata?.duration) > 0 ? frames.map((_, i) => (Number(job.result!.metadata?.duration) * i) / source.frameCount) : [],
-                          viralAnalysisStale: true,
-                          viralAnalysisSuggestion: "",
-                          viralScriptStale: Boolean(source.script),
-                          viralScriptSuggestion: "",
-                          viralOutputStale: true,
+                          ...([source.viralFirstFrameId, source.viralLastFrameId].some((id) => id?.startsWith("frame:")) ? { viralScriptStale: Boolean(source.script), viralOutputStale: true } : {}),
                       }
                     : {}),
             };
@@ -425,7 +430,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             return {
                 transcript: job.result.text || "",
                 ...(digital ? { digitalTranscriptSource: digitalLearningSource(source) } : {}),
-                ...(tool === "viral-recreate" ? { viralTranscriptSource: viralSource(source), viralAnalysisStale: true, viralAnalysisSuggestion: "", viralScriptStale: Boolean(source.script), viralScriptSuggestion: "", viralOutputStale: true } : {}),
+                ...(tool === "viral-recreate" ? { viralTranscriptSource: viralSource(source) } : {}),
             };
         }
         if (stage === "subtitles") return { subtitles: job.result.segments || [] };
@@ -719,30 +724,32 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
             if (stage === "analyze" && viralAnalysisMode(d, config) === "video") {
                 const scoped = videoAnalysisConfig(config);
+                const provenance = viralAnalysisProvenance(d, "video", config);
                 const quote = await quoteTextModel(scoped, scoped.textModel, ctx.signal);
                 await confirmStorePrice(quote, "参考视频分析", ctx.signal, "将参考视频及其音轨发送到所选模型渠道，按当前分析模型单独计费");
                 ctx.signal.throwIfAborted();
                 store().patchRecord(ctx.recordId, { step: "正在分析视频与音轨" });
                 const value = await requestVideoUnderstanding(config, required(viralReference(d), "上传参考视频"),
-                    "分析参考视频，输出中文复刻参考：1.开场钩子；2.按时间顺序记录画面、动作、构图与运镜；3.可辨识的口播、字幕与音效及其画面对应；4.卖点承接与结尾转化；5.可借鉴的结构及不确定之处。时间使用 MM:SS，均为估计，不能声称逐帧检测、精确镜头边界或音乐节拍。区分画面可见事实、实际听辨内容和推断；没有声音或听不清时明确说明。只分析原视频，不混入新商品、人物或改编要求。",
+                    `分析参考视频，输出中文复刻参考。${viralAnalysisSections} 时间使用 MM:SS，均为估计，不能声称逐帧检测、精确镜头边界或音乐节拍。区分画面可见事实、实际听辨内容和推断；没有声音或听不清时明确说明。`,
                     ctx.signal, () => store().patchRecord(ctx.recordId, { nativeAnalysisSubmitted: true }));
-                return { ...(d.analysis ? { viralAnalysisSuggestion: value } : { analysis: value, viralAnalysisStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
+                return viralAnalysisResultPatch(d, { text: value, provenance });
             }
             const cfg = viralVideoConfig(d, config),
                 labels = viralMaterialLabels(d);
             const images = stage === "analyze" ? d.frames : d.media.filter((m) => m.kind === "image" && (stage === "product-analyze" ? m.role === "product" : ["product", "model", "first-frame"].includes(m.role)));
             const instruction =
                 stage === "analyze"
-                    ? `分析原视频的均匀抽样画面，按开场、可见镜头顺序、卖点承接、结尾整理。采样秒数：${(d.viralFrameTimes || []).join("、")}。这不是镜头边界，不推测精确转场或音乐节拍。${d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨：${d.transcript}` : "没有音轨转写，只能按画面分析，不声称听到了口播或音乐。"} 只描述可见事实，不混入新商品或人物。`
+                    ? `分析原视频的均匀抽样画面。${viralAnalysisSections} 采样秒数：${(d.viralFrameTimes || []).join("、")}。这不是镜头边界，不推测精确转场或音乐节拍。${d.viralUseTranscript && d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨文字（只作文字依据，不代表实际听到声音）：${d.transcript}` : "没有采用音轨转写，只能按画面分析，不声称听到了口播或音乐。"} 只描述可见事实。`
                     : stage === "product-analyze"
                       ? `分析新商品图片，只写可见外观和可用展示方式。用户真实资料：${d.viralFacts || "未提供"}。不得编造价格、优惠、功效或承诺；未知标待确认。`
-                      : `为参考视频改编新商品中文脚本，只返回可编辑脚本，适配实际${cfg.videoSeconds}秒单片段。不能承诺多镜头后期、配音字幕已完成。真实商品资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}。参考结构：${d.viralAnalysisStale ? "旧分析输入已变，需核对：" : ""}${d.analysis}。新商品分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供"}。改编要求：${d.instructions}。原稿：${d.script}。编号：${labels.map((l) => `${l.label}=${l.name}`).join("；")}。保留用户@编号，不编造编号。当前视频实际输入为${
+                      : `为参考视频改编新商品中文脚本，只返回可编辑脚本，适配实际${cfg.videoSeconds}秒单片段。不能承诺多镜头后期、配音字幕已完成。真实商品资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}。参考结构：${viralAdoptedAnalysisText(d)}。新商品分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供"}。改编要求：${d.instructions}。原稿：${d.script}。编号：${labels.map((l) => `${l.label}=${l.name}`).join("；")}。保留用户@编号，不编造编号。当前视频实际输入为${
                             viralVideoMaterials(d, cfg)
                                 .map((m) => m.name)
                                 .join("、") || "尚未选择"
                         }；未发送的新人物/商品须准备相应首帧，不承诺凭文字即可精准替换。`;
+            const provenance = stage === "analyze" ? viralAnalysisProvenance(d, "frames", config) : undefined;
             const value = await text(ctx, instruction, images, stage !== "script");
-            if (stage === "analyze") return { ...(d.analysis ? { viralAnalysisSuggestion: value } : { analysis: value, viralAnalysisStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
+            if (stage === "analyze") return viralAnalysisResultPatch(d, { text: value, provenance: provenance! });
             if (stage === "product-analyze") return { ...(d.viralProductAnalysis ? { viralProductSuggestion: value } : { viralProductAnalysis: value, viralProductStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
             return d.script ? { viralScriptSuggestion: value } : { script: value, viralScriptStale: false, viralOutputStale: true };
         }
@@ -1200,6 +1207,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     value.storeAnalysisSuggestion ||
                     value.storeScriptSuggestion ||
                     value.viralAnalysisSuggestion ||
+                    (value.viralAnalysisMode && (value.viralAnalyses?.[value.viralAnalysisMode]?.suggestion?.text || value.viralAnalyses?.[value.viralAnalysisMode]?.text)) ||
                     value.viralProductAnalysis ||
                     value.viralProductSuggestion ||
                     value.viralScriptSuggestion ||
@@ -1275,6 +1283,21 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (read(tool).route === "replicate") replacementRequest(read(tool));
             }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
+            if (tool === "viral-recreate" && stage === "script") {
+                const error = viralAdoptedAnalysisError(read(tool));
+                if (error) throw new Error(error);
+                if (!read(tool).analysis.trim() && Object.values(read(tool).viralAnalyses || {}).some((result) => result?.text.trim()))
+                    throw new Error("请先采用一份参考分析，再撰写改编脚本");
+            }
+            if (tool === "viral-recreate" && stage === "analyze" && viralAnalysisMode(read(tool), config) === "frames") {
+                const scoped = viralAnalysisConfig(config, "frames");
+                if (!scoped.textModel) throw new Error("请先配置抽样画面分析模型");
+                const current = read(tool);
+                if (current.viralUseTranscript && (!current.transcript.trim() || current.viralTranscriptSource !== viralSource(current))) {
+                    await perform("transcribe", signal);
+                    if (!read(tool).transcript.trim()) throw new Error("没有识别到音轨文字，请手动填写或关闭使用音轨文字");
+                }
+            }
             if (stage === "analyze" && !(tool === "viral-recreate" && viralAnalysisMode(read(tool), config) === "video") && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
                 await perform("frames", signal);
             await perform(stage, signal);
@@ -1336,7 +1359,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     const frames = await Promise.all(input.frames.map(restoreWorkbenchFile));
                     signal.throwIfAborted();
-                    patch({ ...input, media, frames, activeRecord: record.id, video: null, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "" });
+                    patch({ ...input, viralAnalyses: input.viralAnalyses, viralAdoptedAnalysis: input.viralAdoptedAnalysis, viralUseTranscript: input.viralUseTranscript, media, frames, activeRecord: record.id, video: null, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "" });
                 } else if (tool === "store-explore" && record.storeExploreInput) {
                     if (record.storeExploreInput.channelMode !== config.channelMode) throw new Error("请切换回该任务原来的平台 / 自定义渠道后恢复查询");
                     if (config.channelMode === "local" && record.storeExploreInput.baseUrl !== resolveModelRequestConfig(config, record.storeExploreInput.storeSettings?.videoModel || record.modelTask?.model || "").baseUrl)

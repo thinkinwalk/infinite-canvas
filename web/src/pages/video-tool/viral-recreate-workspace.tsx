@@ -17,24 +17,24 @@ import { getWorkerCapabilities, workbenchMediaBlob } from "@/services/api/video-
 import type { VideoPrice } from "@/services/api/video";
 import { VIDEO_ANALYSIS_FEATURE, videoAnalysisAvailable } from "@/services/api/video-understanding";
 import { imageToDataUrl } from "@/services/image-storage";
-import { selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
+import { configForFeature, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
-import type { StoreVideoSettings, VideoRecord } from "@/types/video-workbench";
+import type { StoreVideoSettings, VideoRecord, ViralAnalysisMode, ViralAnalysisVersion } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
+import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisNames, viralAnalysisProvenance } from "./viral-analysis";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 
 type Role = "reference" | "product" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralFacts" | "viralProductAnalysis" | "instructions" | "script";
 const editorNames: Record<Editor, string> = { analysis: "参考结构分析", transcript: "参考音轨文字", viralFacts: "新商品真实资料", viralProductAnalysis: "商品分析", instructions: "改编要求", script: "视频脚本" };
 const suggestionFields = {
-    analysis: { key: "viralAnalysisSuggestion", stale: "viralAnalysisStale" },
     viralProductAnalysis: { key: "viralProductSuggestion", stale: "viralProductStale" },
     script: { key: "viralScriptSuggestion", stale: "viralScriptStale" },
 } as const;
-const suggestionInfo = (field: Editor) => (field === "analysis" || field === "viralProductAnalysis" || field === "script" ? suggestionFields[field] : undefined);
+const suggestionInfo = (field: Editor) => (field === "viralProductAnalysis" || field === "script" ? suggestionFields[field] : undefined);
 const states = { running: "处理中", completed: "已完成", interrupted: "查询暂停", failed: "失败" };
 
 export default function ViralRecreateWorkspace() {
@@ -47,6 +47,7 @@ export default function ViralRecreateWorkspace() {
     const session = useUserStore((s) => s.token),
         admin = useUserStore((s) => s.user?.role === "admin");
     const modelCosts = useConfigStore((s) => s.publicSettings?.modelChannel.modelCosts);
+    const settingsLoaded = useConfigStore((s) => Boolean(s.publicSettings));
     const openConfig = useConfigStore((s) => s.openConfigDialog),
         updateConfig = useConfigStore((s) => s.updateConfig),
         loadSettings = useConfigStore((s) => s.loadPublicSettings);
@@ -85,10 +86,22 @@ export default function ViralRecreateWorkspace() {
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
     const active = wb.records.find((r) => r.id === d.activeRecord),
         blocked = viralVideoError(d, cfg) || (pending ? "已有任务可恢复，请先查询或确认原任务状态" : "");
-    const textBlocked = config.channelMode === "remote" && !session ? "登录后使用平台文案模型" : !config.textModel || !useConfigStore.getState().isAiConfigReady(config, config.textModel) ? "请配置分析 / 文案模型" : "";
+    const modelBlocked = (featureId: string, name: string) => {
+        const scoped = configForFeature(config, featureId, "text");
+        return config.channelMode === "remote" && !session ? `登录后使用${name}` : !scoped.textModel || !useConfigStore.getState().isAiConfigReady(scoped, scoped.textModel) ? `请配置${name}` : "";
+    };
+    const textBlocked = modelBlocked("viral-recreate.script", "脚本模型"),
+        productBlocked = modelBlocked("viral-recreate.analyze", "商品分析模型");
     const analysisMode = viralAnalysisMode(d, config),
         nativeAnalysis = videoAnalysisAvailable(config),
-        analysisBlocked = analysisMode === "video" ? !session ? "登录后分析参考视频" : !nativeAnalysis ? "请在模型管理中配置并定价视频分析模型，然后刷新模型" : "" : textBlocked;
+        analysisBlocked = analysisMode === "video" ? !session ? "登录后分析参考视频" : !nativeAnalysis ? "视频与音轨分析暂不可用，请重新选择模型或改用抽样分析" : "" : modelBlocked("viral-recreate.analyze", "抽样分析模型");
+    const analysisResult = d.viralAnalyses?.[analysisMode],
+        analysisStale = Boolean(analysisResult && analysisResult.provenance.inputKey !== viralAnalysisInputKey(d, analysisMode)),
+        adoptedError = viralAdoptedAnalysisError(d),
+        scriptBlocked = adoptedError || (!d.analysis.trim() && Object.values(d.viralAnalyses || {}).some((result) => result?.text.trim()) ? "请先采用一份参考分析" : "");
+    const failedAnalysis = active?.stage === "analyze" && active.viralInput?.viralAnalysisMode === "video" && viralSource({ ...d, media: active.viralInput.media }) === viralSource(d) && ["failed", "interrupted"].includes(active.status) && analysisMode === "video" && !busy;
+    const fieldValue = (field: Editor) => field === "analysis" ? analysisResult?.text || "" : d[field] || "";
+    const suggestedValue = (field: Editor) => field === "analysis" ? analysisResult?.suggestion?.text || "" : suggestionInfo(field) ? d[suggestionInfo(field)!.key] || "" : "";
     const invalidMentions = materialMentionError(`${d.instructions}\n${d.script}`, labels);
     const priceKey = JSON.stringify([
         d.media.map((m) => [m.id, m.storageKey]),
@@ -103,6 +116,7 @@ export default function ViralRecreateWorkspace() {
         d.viralFacts,
         d.viralProductAnalysis,
         d.viralAnalysisStale,
+        d.viralAdoptedAnalysis,
         d.viralProductStale,
         config.channelMode,
         config.baseUrl,
@@ -121,6 +135,10 @@ export default function ViralRecreateWorkspace() {
         if (wb.hydrated && !d.viralSettings) wb.patch({ viralSettings: normalizeStoreSettings(storeVideoSettings(config), config) });
     }, [wb.hydrated, d.viralSettings, config]);
     useEffect(() => {
+        if (wb.hydrated && !busy && reference && !d.viralAnalysisMode && (config.channelMode === "local" || settingsLoaded))
+            wb.patch({ viralAnalysisMode: analysisMode });
+    }, [wb.hydrated, busy, reference?.id, d.viralAnalysisMode, analysisMode, config.channelMode, settingsLoaded]);
+    useEffect(() => {
         quoteController.current?.abort();
         setQuoting(false);
         setPriceError("");
@@ -128,22 +146,70 @@ export default function ViralRecreateWorkspace() {
     }, [priceKey]);
     useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => wb.edit({ viralSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "video");
-    const edit = (field: Editor, value: string) =>
+    const edit = (field: Editor, value: string) => {
+        if (field === "analysis") {
+            wb.edit({ viralAnalyses: { ...d.viralAnalyses, [analysisMode]: {
+                ...analysisResult, text: value,
+                provenance: { ...(analysisResult?.provenance || viralAnalysisProvenance(d, analysisMode)), edited: true },
+            } } });
+            return;
+        }
         wb.edit(
             {
                 [field]: value,
-                ...(field === "analysis"
-                    ? { viralAnalysisStale: false }
-                    : field === "viralProductAnalysis"
+                ...(field === "viralProductAnalysis"
                       ? { viralProductStale: false }
                       : field === "script"
                         ? { viralScriptStale: false, viralScriptSuggestion: d.viralScriptSuggestion }
                         : field === "transcript"
-                          ? { viralTranscriptSource: viralSource(d), viralAnalysisStale: true, viralAnalysisSuggestion: "" }
+                          ? { viralTranscriptSource: viralSource(d) }
                           : {}),
             },
             field === "viralFacts" ? "materials" : field === "script" ? "video" : "script",
         );
+    };
+    const changeAnalysisMode = (value: ViralAnalysisMode) => {
+        wb.edit({ viralAnalysisMode: value });
+        setSuggestionView(false);
+    };
+    const adoptAnalysis = (version: ViralAnalysisVersion) => wb.edit(viralAdoptAnalysis(d, version), "script");
+    const confirmAdopted = () => adoptAnalysis({
+        text: d.analysis,
+        provenance: d.viralAdoptedAnalysis?.provenance || viralAnalysisProvenance(d, analysisMode),
+    });
+    const modelPicker = (featureId: string, label: string) => {
+        const scoped = configForFeature(config, featureId, "text");
+        return (
+            <div className="space-y-1" aria-label={label}>
+                <span className="text-xs" style={muted}>{label}</span>
+                <div className={locked ? "pointer-events-none opacity-60" : ""} inert={locked}>
+                    {config.managed?.enabled && config.channelMode === "remote"
+                        ? <FeatureModelPicker capability="text" featureId={featureId} />
+                        : <ModelPicker config={scoped} capability="text" value={scoped.textModel} fullWidth onChange={(value) => updateConfig("textModel", value)} onMissingConfig={() => openConfig(true)} />}
+                </div>
+            </div>
+        );
+    };
+    const analysisSource = (version: ViralAnalysisVersion) => {
+        const p = version.provenance;
+        return `${viralAnalysisNames[p.mode]} · ${p.modelLabel}${p.edited ? "（已编辑）" : ""} · ${p.sourceName}${p.mode === "frames" && p.model ? ` · ${p.frameCount || 0} 张画面 · ${p.usesTranscript ? "采用音轨文字" : "未采用音轨文字"}` : ""} · ${new Date(p.createdAt).toLocaleString()}`;
+    };
+    const frameGallery = (
+        <div className="grid grid-cols-3 gap-2">
+            {frames.map((f, i) => (
+                <button key={f.id} type="button" aria-label={`预览抽样画面${i + 1}`} onClick={() => {
+                    if (referencePlayer.current && Number.isFinite(d.viralFrameTimes?.[i])) referencePlayer.current.currentTime = d.viralFrameTimes![i];
+                    modal.info({
+                        title: `抽样画面${i + 1} · ${Number.isFinite(d.viralFrameTimes?.[i]) ? `${d.viralFrameTimes![i].toFixed(2)}秒` : "未返回采样时间"}`,
+                        content: <img src={f.url} alt={f.name} className="w-full object-contain" />,
+                    });
+                }}>
+                    <img src={f.url} alt={f.name} className="h-20 w-full rounded object-contain" />
+                    <span className="text-xs">{Number.isFinite(d.viralFrameTimes?.[i]) ? `${d.viralFrameTimes![i].toFixed(2)}秒` : "时间未返回"}</span>
+                </button>
+            ))}
+        </div>
+    );
     const prepareQuote = async () => {
         const controller = new AbortController();
         quoteController.current?.abort();
@@ -255,7 +321,7 @@ export default function ViralRecreateWorkspace() {
         </section>
     );
     const textAction = (stage: string, label: string, missing: boolean) => (
-        <Button size="small" disabled={locked || Boolean(stage === "analyze" ? analysisBlocked : textBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
+        <Button size="small" disabled={locked || Boolean(stage === "analyze" ? analysisBlocked : stage === "product-analyze" ? productBlocked : textBlocked || scriptBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
             {label}
         </Button>
     );
@@ -267,11 +333,11 @@ export default function ViralRecreateWorkspace() {
     };
     const textPreview = (field: Editor, placeholder: string) => (
         <button type="button" aria-label={`查看 / 编辑全文：${editorNames[field]}`} className="block w-full rounded-lg border p-3 text-left" style={surface} onClick={() => openEditor(field)}>
-            <span className="line-clamp-6 whitespace-pre-wrap break-words text-sm leading-6" style={d[field] ? undefined : muted}>
-                {d[field] || placeholder}
+            <span className="line-clamp-6 whitespace-pre-wrap break-words text-sm leading-6" style={fieldValue(field) ? undefined : muted}>
+                {fieldValue(field) || placeholder}
             </span>
             <span className="mt-2 block text-xs" style={muted}>
-                {Array.from(d[field] || "").length.toLocaleString()} 字 · 点击编辑全文
+                {Array.from(fieldValue(field)).length.toLocaleString()} 字 · 点击编辑全文
             </span>
         </button>
     );
@@ -287,6 +353,25 @@ export default function ViralRecreateWorkspace() {
         </div>
     );
     const suggestionActions = (field: Editor) => {
+        if (field === "analysis") {
+            const suggested = analysisResult?.suggestion;
+            if (!suggested) return null;
+            return (
+                <Space wrap>
+                    <Button disabled={locked} onClick={() => {
+                        wb.edit({
+                            ...viralAdoptAnalysis(d, suggested),
+                            viralAnalyses: { ...d.viralAnalyses, [analysisMode]: { text: suggested.text, provenance: suggested.provenance } },
+                        }, "script");
+                        setSuggestionView(false);
+                    }}>采用新分析</Button>
+                    <Button disabled={locked} onClick={() => {
+                        wb.edit({ viralAnalyses: { ...d.viralAnalyses, [analysisMode]: { ...analysisResult, suggestion: undefined } } });
+                        setSuggestionView(false);
+                    }}>保留原稿</Button>
+                </Space>
+            );
+        }
         const info = suggestionInfo(field);
         if (!info || !d[info.key]) return null;
         return (
@@ -313,6 +398,26 @@ export default function ViralRecreateWorkspace() {
         );
     };
     const suggestion = (field: "analysis" | "viralProductAnalysis" | "script") => {
+        if (field === "analysis") {
+            const adopted = analysisResult && d.analysis === analysisResult.text && d.viralAdoptedAnalysis?.provenance.createdAt === analysisResult.provenance.createdAt && d.viralAdoptedAnalysis?.provenance.mode === analysisMode && !adoptedError;
+            return (
+                <div className="space-y-2">
+                    {analysisResult && <p className="break-words text-xs" style={muted}>{analysisSource(analysisResult)}</p>}
+                    {analysisStale && <div role="alert" className="text-xs" style={{ color: token.colorWarning }}>分析依据已变化，原稿已保留</div>}
+                    {analysisResult?.text.trim() && (
+                        <Button disabled={locked || Boolean(adopted)} onClick={() => adoptAnalysis(analysisResult)}>
+                            {adopted ? "已采用此分析" : analysisStale ? "确认沿用并采用此分析" : "采用此分析"}
+                        </Button>
+                    )}
+                    {analysisResult?.suggestion && (
+                        <>
+                            <Button block onClick={() => openEditor("analysis", true)}>查看新分析建议</Button>
+                            {suggestionActions("analysis")}
+                        </>
+                    )}
+                </div>
+            );
+        }
         const { key, stale } = suggestionFields[field];
         return (
             <>
@@ -334,9 +439,9 @@ export default function ViralRecreateWorkspace() {
     };
     const editorBody = (field: Editor, fullscreen = false) => {
         const info = suggestionInfo(field),
-            suggested = info ? d[info.key] : "",
+            suggested = suggestedValue(field),
             viewingSuggestion = suggestionView && Boolean(suggested),
-            value = (viewingSuggestion ? suggested : d[field]) || "",
+            value = viewingSuggestion ? suggested : fieldValue(field),
             inputStyle = { height: "100%", fontSize: 16, lineHeight: 1.8, padding: 16, resize: "none" as const },
             disabled = locked || (field === "transcript" && !reference);
         return (
@@ -364,7 +469,14 @@ export default function ViralRecreateWorkspace() {
                         )}
                     </Space>
                 </div>
-                {info && d[info.stale] && d[field] && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" />}
+                {field === "analysis" && (
+                    <div className="space-y-2">
+                        <Segmented block aria-label="编辑器分析方式" disabled={locked} value={analysisMode} options={[{ value: "video", label: "视频与音轨" }, { value: "frames", label: "抽样画面" }]} onChange={(value) => changeAnalysisMode(value as ViralAnalysisMode)} />
+                        {(viewingSuggestion ? analysisResult?.suggestion : analysisResult) && <p className="break-words text-xs" style={muted}>{analysisSource((viewingSuggestion ? analysisResult?.suggestion : analysisResult)!)}</p>}
+                        {analysisStale && !viewingSuggestion && <Alert type="warning" title="分析依据已变化，原稿已保留" />}
+                    </div>
+                )}
+                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" />}
                 {suggested && (
                     <Tabs
                         className="shrink-0"
@@ -401,6 +513,7 @@ export default function ViralRecreateWorkspace() {
                     )}
                 </div>
                 {viewingSuggestion && <div className="shrink-0">{suggestionActions(field)}</div>}
+                {field === "analysis" && !viewingSuggestion && analysisResult?.text.trim() && <Button disabled={locked} onClick={() => adoptAnalysis(analysisResult)}>{analysisStale ? "确认沿用并采用此分析" : "采用此分析"}</Button>}
                 {!viewingSuggestion && (field === "script" || field === "instructions") && invalidMentions && (
                     <div role="alert" className="text-xs" style={{ color: token.colorError }}>
                         {invalidMentions}
@@ -459,7 +572,7 @@ export default function ViralRecreateWorkspace() {
                 const { channelMode: _mode, baseUrl: _url, ...input } = r.viralInput!;
                 const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) }))),
                     frames = await Promise.all(input.frames.map(restoreWorkbenchFile));
-                wb.patch({ ...input, media, frames, viralOutputStale: true, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "", viralRevision: (d.viralRevision || 0) + 1 });
+                wb.patch({ ...input, viralAnalyses: input.viralAnalyses, viralAdoptedAnalysis: input.viralAdoptedAnalysis, viralUseTranscript: input.viralUseTranscript, media, frames, viralOutputStale: true, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "", viralRevision: (d.viralRevision || 0) + 1 });
                 setViewed(null);
                 setTab("current");
             },
@@ -468,6 +581,7 @@ export default function ViralRecreateWorkspace() {
     const spec = `${cloud ? "跟随首帧 / 平台默认" : inferVideoRatio(cfg.size)} · ${wan ? "约 " : ""}${cfg.videoSeconds}秒 · ${cfg.vquality}p`;
     const controls = (
         <div className="space-y-2">
+            <span className="text-xs" style={muted}>视频生成模型</span>
             <div className="flex items-center gap-2">
                 <Select
                     aria-label="视频模型"
@@ -554,73 +668,61 @@ export default function ViralRecreateWorkspace() {
                 </span>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="viral-scroll">
-                <div className="mx-auto grid min-h-full max-w-[1800px] gap-5 lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]">
-                    <section className="flex min-h-0 flex-col rounded-xl border" style={surface} aria-label="复刻素材与设置">
+                <div className="mx-auto grid min-h-full max-w-[1800px] grid-cols-1 gap-5 lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]">
+                    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border" style={surface} aria-label="复刻素材与设置">
                         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 [&>*]:shrink-0" data-testid="viral-input-scroll">
                             {materialField("reference", "参考视频", "借鉴结构与表达；上传不会自动收费分析")}
                             <section className="space-y-2">
-                                {heading("analysis", textAction("analyze", "分析参考视频", !reference))}
+                                {heading("analysis")}
+                                <span className="text-xs" style={muted}>分析方式</span>
                                 <Segmented
                                     block aria-label="参考视频分析方式" disabled={locked} value={analysisMode}
-                                    options={[{ value: "video", label: "视频与音轨", disabled: !nativeAnalysis && analysisMode !== "video" }, { value: "frames", label: "抽样画面" }]}
-                                    onChange={(value) => wb.edit({ viralAnalysisMode: value as "video" | "frames" }, "materials")}
+                                    options={[{ value: "video", label: "视频与音轨" }, { value: "frames", label: "抽样画面" }]}
+                                    onChange={(value) => changeAnalysisMode(value as ViralAnalysisMode)}
                                 />
-                                {analysisMode === "video" && <FeatureModelPicker capability="text" featureId={VIDEO_ANALYSIS_FEATURE} />}
+                                {modelPicker(analysisMode === "video" ? VIDEO_ANALYSIS_FEATURE : "viral-recreate.analyze", "分析模型")}
+                                {!nativeAnalysis && analysisMode === "frames" && <p className="text-xs" style={muted}>视频与音轨分析暂不可用，当前采用抽样方式</p>}
                                 {analysisBlocked && <div role="alert" className="text-xs" style={{ color: token.colorWarning }}>{analysisBlocked}</div>}
                                 {analysisMode === "frames" && (
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-xs">抽样数量</span>
-                                        <InputNumber aria-label="抽样数量" min={1} precision={0} disabled={locked} value={d.frameCount} onChange={(value) => wb.edit({ frameCount: value || 1 }, "materials")} />
-                                        <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("frames")}>
-                                            抽取画面
-                                        </Button>
+                                    <div className="space-y-2">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-xs">抽样数量</span>
+                                            <InputNumber aria-label="抽样数量" min={1} precision={0} disabled={locked} value={d.frameCount} onChange={(value) => wb.edit({ frameCount: value || 1 }, "materials")} />
+                                        </div>
+                                        <label className="flex items-center gap-2 text-xs" aria-label="抽样音轨文字">
+                                            <Switch aria-label="使用音轨文字" disabled={locked} checked={Boolean(d.viralUseTranscript)} onChange={(viralUseTranscript) => wb.edit({ viralUseTranscript })} />
+                                            使用音轨文字
+                                        </label>
+                                        {d.viralUseTranscript && <Collapse items={[{
+                                            key: "transcript", label: d.transcript && d.viralTranscriptSource === viralSource(d) ? "音轨文字 · 已准备" : "音轨文字 · 待转写",
+                                            children: <div className="space-y-2">
+                                                {heading("transcript", <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("transcribe")}>重新转写</Button>)}
+                                                {textPreview("transcript", "可手动填写；未准备时开始分析会先转写")}
+                                            </div>,
+                                        }]} />}
+                                        <Collapse items={[{
+                                            key: "frames", label: `抽样预览${frames.length ? ` · ${frames.length} 张` : ""}`,
+                                            children: <div className="space-y-2">
+                                                <Button size="small" disabled={locked || !reference} icon={<Images size={13} />} onClick={() => void wb.run("frames")}>{frames.length ? "重新抽取画面" : "预览抽样画面"}</Button>
+                                                {frameGallery}
+                                            </div>,
+                                        }]} />
                                     </div>
                                 )}
-                                {frames.length > 0 && (
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {frames.map((f, i) => (
-                                            <button
-                                                key={f.id}
-                                                type="button"
-                                                aria-label={`预览抽样画面${i + 1}`}
-                                                onClick={() => {
-                                                    if (referencePlayer.current && Number.isFinite(d.viralFrameTimes?.[i])) referencePlayer.current.currentTime = d.viralFrameTimes![i];
-                                                    modal.info({
-                                                        title: `抽样画面${i + 1} · ${Number.isFinite(d.viralFrameTimes?.[i]) ? `${d.viralFrameTimes![i].toFixed(2)}秒` : "未返回采样时间"}`,
-                                                        content: <img src={f.url} alt={f.name} className="w-full object-contain" />,
-                                                    });
-                                                }}
-                                            >
-                                                <img src={f.url} alt={f.name} className="h-20 w-full rounded object-contain" />
-                                                <span className="text-xs">{Number.isFinite(d.viralFrameTimes?.[i]) ? `${d.viralFrameTimes![i].toFixed(2)}秒` : "时间未返回"}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                                {textPreview("analysis", "可手写开场、镜头顺序与结尾；抽样不代表镜头边界")}
+                                {textAction("analyze", "开始分析", !reference)}
+                                <p className="text-xs" style={muted}>{analysisMode === "video" ? "分析费用提交前确认" : `含画面抽样${d.viralUseTranscript ? "、缺失音轨文字转写" : ""}及模型分析；处理服务按其账单计费，模型分析单独确认费用`}</p>
+                                {failedAnalysis && <Alert
+                                    type="warning" title={active.status === "interrupted" ? "视频分析已停止等待" : "视频分析失败"}
+                                    description={<div className="space-y-2">
+                                        <p className="break-words">{active.error}</p>
+                                        <Space wrap>
+                                            <Button size="small" disabled={locked || Boolean(analysisBlocked)} onClick={() => void wb.run("analyze")}>重试视频分析</Button>
+                                            <Button size="small" disabled={locked} onClick={() => changeAnalysisMode("frames")}>改用抽样分析</Button>
+                                        </Space>
+                                    </div>}
+                                />}
+                                {textPreview("analysis", `${viralAnalysisNames[analysisMode]}尚无分析，可手写参考结构`)}
                                 {suggestion("analysis")}
-                                <Collapse
-                                    items={[
-                                        {
-                                            key: "transcript",
-                                            label: "音轨文字（可选）",
-                                            children: (
-                                                <div className="space-y-2">
-                                                    {heading(
-                                                        "transcript",
-                                                        <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("transcribe")}>
-                                                            转写参考音轨
-                                                        </Button>,
-                                                    )}
-                                                    {textPreview("transcript", "服务不可用时可手动粘贴，或跳过")}
-                                                    <p className="text-xs" style={muted}>
-                                                        {analysisMode === "video" ? "可单独转写并校对口播原文。" : "未提供文字时只分析画面，不推测声音或音乐节拍。"}
-                                                    </p>
-                                                </div>
-                                            ),
-                                        },
-                                    ]}
-                                />
                             </section>
                             {materialField("product", "新商品图片", referenceMode ? "按模型能力作为视频参考图" : "用于商品分析；商品进入画面需准备相应首帧")}
                             <section>
@@ -629,6 +731,8 @@ export default function ViralRecreateWorkspace() {
                             </section>
                             <section>
                                 {heading("viralProductAnalysis", textAction("product-analyze", "分析新商品", !d.media.some((m) => m.role === "product")))}
+                                {modelPicker("viral-recreate.analyze", "商品分析模型")}
+                                {productBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{productBlocked}</p>}
                                 {textPreview("viralProductAnalysis", "仅描述新商品，独立于参考视频结构")}
                                 {suggestion("viralProductAnalysis")}
                             </section>
@@ -639,6 +743,17 @@ export default function ViralRecreateWorkspace() {
                             </section>
                             <section>
                                 {heading("script", textAction("script", "AI 撰写脚本", !d.viralFacts?.trim() && !d.instructions.trim() && !d.analysis.trim() && !d.media.some((m) => m.role === "product")))}
+                                {modelPicker("viral-recreate.script", "脚本模型")}
+                                {d.analysis.trim() && <Collapse className="my-2" items={[{
+                                    key: "adopted", label: adoptedError ? "参考分析 · 待确认" : `已采用分析 · ${d.viralAdoptedAnalysis ? viralAnalysisNames[d.viralAdoptedAnalysis.provenance.mode] : "原稿"}`,
+                                    children: <div className="space-y-2">
+                                        {d.viralAdoptedAnalysis && <p className="break-words text-xs" style={muted}>{analysisSource({ text: d.analysis, provenance: d.viralAdoptedAnalysis.provenance })}</p>}
+                                        {d.viralAdoptedAnalysis && d.viralAdoptedAnalysis.inputKey !== d.viralAdoptedAnalysis.provenance.inputKey && !adoptedError && <p className="text-xs" style={muted}>已确认沿用原稿 · {new Date(d.viralAdoptedAnalysis.adoptedAt).toLocaleString()}</p>}
+                                        <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words text-sm">{d.analysis}</p>
+                                        {adoptedError && <Button disabled={locked} onClick={confirmAdopted}>{d.viralAdoptedAnalysis ? "确认沿用当前稿" : "作为手写稿确认采用"}</Button>}
+                                    </div>,
+                                }]} />}
+                                {(textBlocked || scriptBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptBlocked}</p>}
                                 {textPreview("script", `可直接手写；实际制作${cfg.videoSeconds}秒片段`)}
                                 <div className="mt-2 flex items-center justify-between gap-2">
                                     <span className="text-xs" style={muted}>
@@ -669,6 +784,13 @@ export default function ViralRecreateWorkspace() {
                                         options={viralImageCandidates(d).map((m) => ({ value: m.id, label: `${labels.find((l) => l.id === m.id)?.label} · ${m.name}` }))}
                                     />
                                     {materialField("first-frame", "或上传生成首帧", "上传已包含目标商品或人物的画面")}
+                                    {reference && <Collapse items={[{
+                                        key: "generation-frames", label: "从参考视频选取画面",
+                                        children: <div className="space-y-2">
+                                            <Button size="small" disabled={locked} icon={<Images size={13} />} onClick={() => void wb.run("frames")}>{frames.length ? "重新抽取候选画面" : "抽取候选画面"}</Button>
+                                            {frameGallery}
+                                        </div>,
+                                    }]} />}
                                     {mode === "first_last" && !wan && (
                                         <Select
                                             aria-label="生成尾帧"
@@ -715,26 +837,22 @@ export default function ViralRecreateWorkspace() {
                                 items={[
                                     {
                                         key: "advanced",
-                                        label: "分析模型与处理服务",
+                                        label: "渠道与处理服务",
                                         children: (
                                             <div className="space-y-3">
-                                                <label className="block space-y-2 text-sm">商品与抽样分析模型<FeatureModelPicker capability="text" featureId="viral-recreate.analyze" /></label>
-                                                <ModelPicker
-                                                    config={config}
-                                                    capability="text"
-                                                    value={config.textModel}
-                                                    fullWidth
-                                                    onChange={(value) => {
-                                                        if (!locked) updateConfig("textModel", value);
-                                                    }}
-                                                    onMissingConfig={() => openConfig(true)}
-                                                />
                                                 <Button disabled={locked} onClick={() => openConfig(true)}>
                                                     配置模型渠道
                                                 </Button>
                                                 <Button disabled={locked} onClick={() => setServiceOpen(true)}>
                                                     抽样 / 转写服务
                                                 </Button>
+                                                {analysisMode === "video" && <Collapse items={[{
+                                                    key: "proofread", label: "口播文字校对",
+                                                    children: <div className="space-y-2">
+                                                        {heading("transcript", <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("transcribe")}>转写参考音轨</Button>)}
+                                                        {textPreview("transcript", "可单独转写并校对口播原文")}
+                                                    </div>,
+                                                }]} />}
                                                 <p className="text-xs" style={muted}>
                                                     {textBlocked || (config.channelMode === "remote" ? "文案与视频分开报价确认；抽样/转写使用所配置服务。" : "文案费用按自定义渠道账单计费。")}
                                                 </p>
@@ -879,6 +997,13 @@ export default function ViralRecreateWorkspace() {
                                                     {r.viralInput.viralSettings.videoModel} · {r.viralInput.viralSettings.videoSeconds}秒 · {r.viralInput.viralSettings.vquality}p
                                                 </p>
                                             )}
+                                            {r.stage === "analyze" && r.viralInput?.viralAnalysisMode && (
+                                                <p className="break-words text-xs" style={muted}>
+                                                    {r.draftPatch?.viralAnalyses?.[r.viralInput.viralAnalysisMode]
+                                                        ? analysisSource(r.draftPatch.viralAnalyses[r.viralInput.viralAnalysisMode]!.suggestion || r.draftPatch.viralAnalyses[r.viralInput.viralAnalysisMode]!)
+                                                        : viralAnalysisNames[r.viralInput.viralAnalysisMode]}
+                                                </p>
+                                            )}
                                             {r.error && (
                                                 <p className="text-xs" style={{ color: token.colorError }}>
                                                     {r.error}
@@ -942,7 +1067,7 @@ export default function ViralRecreateWorkspace() {
                                 <div className="space-y-4 text-sm">
                                     <p>视频与音轨分析将参考视频发送到所选模型渠道；抽样画面分析只发送图片和已提供的转写文字。两种分析的时间与镜头边界都需核对。</p>
                                     <p>新商品资料与人物外观单独提供。平台视频服务只接收你选定的一张首帧；若希望换成新商品/人物，请上传包含目标主体的画面。多图和视频参考按后台确认的能力发送。</p>
-                                    <p>AI新分析、新脚本先提供建议，有原稿时明确采用再替换。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
+                                    <p>两种分析分别保存，采用的分析用于后续改编；输入变化后需重新分析或确认沿用。已有原稿时，新分析与脚本先保存为建议。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
                                     <p>视频与文案分别确认真实费用；停止等待不等于取消平台任务。恢复查询只查原任务，不再次提交收费任务。</p>
                                     <p>
                                         素材、草稿与作品保存在本浏览器。精准替换原视频主体可使用<Link to="/video/content-replace">内容替换</Link>；多片段剪辑、独立字幕与配音需后续处理。

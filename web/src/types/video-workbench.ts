@@ -20,6 +20,9 @@ export type ViralRecreateInput = Pick<
     | "viralLastFrameId"
     | "viralUseVideo"
     | "viralAnalysisMode"
+    | "viralAnalyses"
+    | "viralAdoptedAnalysis"
+    | "viralUseTranscript"
     | "viralFrameSource"
     | "viralFrameTimes"
     | "viralTranscriptSource"
@@ -75,6 +78,21 @@ export type UpscaleInput = Pick<VideoDraft, "media" | "route" | "replicateTarget
 export type SubtitleSegment = { start: number; end: number; text: string };
 export type SubtitleRegion = { x: number; y: number; width: number; height: number };
 export type SubtitleMarkMode = "auto" | "manual";
+export type ViralAnalysisMode = "video" | "frames";
+export type ViralAnalysisProvenance = {
+    mode: ViralAnalysisMode;
+    source: string;
+    sourceName: string;
+    inputKey: string;
+    model: string;
+    modelLabel: string;
+    createdAt: number;
+    frameCount?: number;
+    usesTranscript?: boolean;
+    edited?: boolean;
+};
+export type ViralAnalysisVersion = { text: string; provenance: ViralAnalysisProvenance };
+export type ViralAnalysisResult = ViralAnalysisVersion & { suggestion?: ViralAnalysisVersion };
 export type DigitalHumanBrief = {
     type: "persona" | "selling" | "knowledge" | "story";
     industry: string;
@@ -181,7 +199,10 @@ export type VideoDraft = {
     viralFirstFrameId?: string;
     viralLastFrameId?: string;
     viralUseVideo?: boolean;
-    viralAnalysisMode?: "video" | "frames";
+    viralAnalysisMode?: ViralAnalysisMode;
+    viralAnalyses?: Partial<Record<ViralAnalysisMode, ViralAnalysisResult>>;
+    viralAdoptedAnalysis?: { provenance: ViralAnalysisProvenance; inputKey: string; adoptedAt: number };
+    viralUseTranscript?: boolean;
     viralFrameSource?: string;
     viralFrameTimes?: number[];
     viralTranscriptSource?: string;

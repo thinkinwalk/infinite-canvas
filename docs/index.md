@@ -44,6 +44,7 @@
 - [数字人工作台优化方案](/docs/progress/digital-human-reference)
 - [硬字幕去除优化方案](/docs/progress/subtitle-remove-reference)
 - [视频高清优化方案](/docs/progress/upscale-reference)
+- [服装上身优化方案](/docs/progress/tryon-reference)
 
 ## Notes
 
