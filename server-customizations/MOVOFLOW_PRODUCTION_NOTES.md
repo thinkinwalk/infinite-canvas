@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.102
-- Current production source: tag v0.19.102, commit 59c15feb82a75f95e2ec65c4304ac7ac8fd30fb5
+- Current production image: infinite-canvas:v0.19.103
+- Current production source: tag v0.19.103, commit f790819d1e419d871f1fc36d94ccd25abd4ce6f9
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.103 deployment
+
+- Tag `v0.19.103`, commit `f790819d1e419d871f1fc36d94ccd25abd4ce6f9`, is pushed on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.103`, ID `sha256:75d510d9249b502e29923030f0fb1b35d27f766b9272d984b05c6539fabd5595`, matches the tag.
+- Try-on selects the garment photo type before garment uploads and labels the original pose as the target model's pose. Viral recreation archives unattributed legacy analysis, recovers the latest matching generated reference, protects attributed manual edits and avoids duplicate archives after reload. Later concurrent reference-import tab changes and local evaluation media/account responses remain local.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.103-20261028-074615/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.103-prebuild-20261028-074401/`. Database quick checks, all 13 table counts, settings, balances/roles/groups/status and 10,503 existing file hashes matched. Historical paused work and its completed linked Worker step were preserved.
+- Only app was recreated. Worker ID, image, start time and source mounts are unchanged. Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full model catalogs and sampled signed quotes passed. Try-on schema remains version 3, with 10 credits per image for both groups. Model management remains revision 10 (38 models / 65 routes / 656 bindings); Gemini analysis remains 20 credits per request.
+- Public `/assets/index-BG_WssRY.js` contains the release, reordered photo-type control, explicit model-pose labels and legacy-recovery controls. The server and independent workstation checked control order in the published bundle and all eight pose photos plus both example files against release hashes. These resource checks do not establish browser interaction or real generation quality. No local tests/builds were repeated; the server Docker build completed and no paid inference was submitted.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.103-deployment.json` and workstation `.codex_tmp/release-v0.19.103/`. Production browser interactions, existing local drafts and actual quality/billing/refunds remain for acceptance. Rollback restores the final backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database and the available v0.19.102 image.
 
 ## v0.19.102 deployment
 
