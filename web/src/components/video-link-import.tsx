@@ -7,12 +7,13 @@ import type { VideoImportSource } from "@/types/video-workbench";
 import type { UploadedFile } from "@/services/file-storage";
 import { VideoReferenceRetention } from "./video-reference-retention";
 
-export function VideoLinkImport({ disabled, onImport, source, media, completed }: {
+export function VideoLinkImport({ disabled, onImport, source, media, completed, showRetention = true }: {
     disabled?: boolean;
     onImport: (text: string, signal: AbortSignal) => Promise<boolean>;
     source?: VideoImportSource;
     media?: UploadedFile;
     completed?: boolean;
+    showRetention?: boolean;
 }) {
     const { token } = theme.useToken();
     const session = useUserStore((state) => state.token);
@@ -70,7 +71,7 @@ export function VideoLinkImport({ disabled, onImport, source, media, completed }
             <div className="text-xs" style={{ color: token.colorTextSecondary }}>原视频上限 300MB；生成时按模型要求准备参考片段。</div>
             <div className="text-xs" style={{ color: token.colorTextSecondary }}>链接将发送至第三方解析服务；仅提取公开可访问的视频。</div>
             {source && <div className="break-words text-xs" title={source.sourceUrl} style={{ color: token.colorTextSecondary }}>{videoImportPlatformName(source.platform)}{source.author ? ` · ${source.author}` : ""}{source.title ? ` · ${source.title}` : ""}</div>}
-            <VideoReferenceRetention media={media} completed={completed} disabled={disabled || busy} onReimport={onImport} />
+            {showRetention && <VideoReferenceRetention media={media} completed={completed} disabled={disabled || busy} onReimport={onImport} />}
         </div>
     );
 }

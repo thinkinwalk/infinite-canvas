@@ -6,6 +6,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { ModelPicker } from "@/components/model-picker";
 import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoLinkImport } from "@/components/video-link-import";
+import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
@@ -322,8 +323,35 @@ export default function ViralRecreateWorkspace() {
             setErrors((e) => ({ ...e, [assetRole]: error instanceof Error ? error.message : "素材读取失败" }));
         }
     };
-    const materialField = (role: Role, title: string, hint: string) => (
-        <section className="space-y-2" data-material-role={role}>
+    const materialField = (role: Role, title: string, hint: string) => {
+        const upload = (
+            <div className="space-y-2">
+                <Upload.Dragger
+                    height={96}
+                    accept={role === "reference" ? "video/*" : "image/*"}
+                    multiple={role === "product" || role === "model"}
+                    showUploadList={false}
+                    disabled={locked}
+                    beforeUpload={(file, list) => {
+                        if (file === list[0]) void addFiles(role === "reference" || role === "first-frame" ? [file] : list, role);
+                        return Upload.LIST_IGNORE;
+                    }}
+                >
+                    <div className="flex items-center justify-center gap-2">
+                        {uploading ? <Spin size="small" /> : <Images size={18} />}点击或拖放上传{role === "reference" ? "视频" : "图片"}
+                    </div>
+                    <div className="mt-1 px-2 text-xs" style={muted}>
+                        {hint}
+                    </div>
+                </Upload.Dragger>
+                <Button type="text" size="small" disabled={locked} onClick={() => setAssetRole(role)}>
+                    从我的素材选择
+                </Button>
+                {role === "reference" && <div className="text-xs" style={muted}>原视频上限 300MB；生成时按模型要求准备参考片段。</div>}
+                {errors[role] && <div role="alert" className="text-xs" style={{ color: token.colorError }}>{errors[role]}</div>}
+            </div>
+        );
+        return <section className="space-y-2" data-material-role={role}>
             <div className="flex items-center justify-between gap-2">
                 <strong className="font-medium">{title}</strong>
                 <span className="text-xs" style={muted}>
@@ -355,35 +383,20 @@ export default function ViralRecreateWorkspace() {
                         </div>
                     ))}
             </div>
-            <Upload.Dragger
-                height={96}
-                accept={role === "reference" ? "video/*" : "image/*"}
-                multiple={role === "product" || role === "model"}
-                showUploadList={false}
-                disabled={locked}
-                beforeUpload={(file, list) => {
-                    if (file === list[0]) void addFiles(role === "reference" || role === "first-frame" ? [file] : list, role);
-                    return Upload.LIST_IGNORE;
-                }}
-            >
-                <div className="flex items-center justify-center gap-2">
-                    {uploading ? <Spin size="small" /> : <Images size={18} />}点击或拖放上传{role === "reference" ? "视频" : "图片"}
-                </div>
-                <div className="mt-1 px-2 text-xs" style={muted}>
-                    {hint}
-                </div>
-            </Upload.Dragger>
-            <Button type="text" size="small" disabled={locked} onClick={() => setAssetRole(role)}>
-                从我的素材选择
-            </Button>
-            {role === "reference" && <VideoLinkImport disabled={locked} media={reference} completed={Boolean(d.video)} source={reference?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
-            {errors[role] && (
-                <div role="alert" className="text-xs" style={{ color: token.colorError }}>
-                    {errors[role]}
-                </div>
-            )}
-        </section>
-    );
+            {role === "reference" ? <>
+                <Tabs
+                    size="small"
+                    defaultActiveKey="upload"
+                    aria-label="参考视频导入方式"
+                    items={[
+                        { key: "upload", label: "上传视频", disabled: locked, children: upload },
+                        { key: "link", label: "链接提取", disabled: locked, children: <VideoLinkImport disabled={locked} source={reference?.source} showRetention={false} onImport={(text, signal) => wb.importLink(text, role, signal)} /> },
+                    ]}
+                />
+                <VideoReferenceRetention media={reference} completed={Boolean(d.video)} disabled={locked} onReimport={(text, signal) => wb.importLink(text, role, signal)} />
+            </> : upload}
+        </section>;
+    };
     const textAction = (stage: string, label: string, missing: boolean) => (
         <Button size="small" disabled={locked || Boolean(stage === "analyze" ? analysisBlocked : stage === "product-analyze" ? productBlocked : textBlocked || scriptBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
             {label}
