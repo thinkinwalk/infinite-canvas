@@ -204,7 +204,7 @@ export type VideoDraft = {
     viralUseVideo?: boolean;
     viralAnalysisMode?: ViralAnalysisMode;
     viralAnalyses?: Partial<Record<ViralAnalysisMode, ViralAnalysisResult>>;
-    viralAdoptedAnalysis?: { provenance: ViralAnalysisProvenance; inputKey: string; adoptedAt: number };
+    viralAdoptedAnalysis?: { provenance: ViralAnalysisProvenance; inputKey: string; adoptedAt: number; borrowedFromHistory?: boolean };
     viralUseTranscript?: boolean;
     viralFrameSource?: string;
     viralFrameTimes?: number[];

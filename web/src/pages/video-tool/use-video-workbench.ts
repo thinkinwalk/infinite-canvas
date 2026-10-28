@@ -1322,8 +1322,10 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (tool === "viral-recreate" && stage === "script") {
                 const error = viralAdoptedAnalysisError(read(tool));
                 if (error) throw new Error(error);
-                if (!read(tool).analysis.trim() && Object.values(read(tool).viralAnalyses || {}).some((result) => result?.text.trim()))
-                    throw new Error("请先采用一份参考分析，再撰写改编脚本");
+                if (viralReference(read(tool)) && !read(tool).analysis.trim())
+                    throw new Error("请先分析当前视频，再由 AI 撰写改编脚本；也可直接手写脚本");
+                if (!read(tool).analysis.trim() && Object.values(read(tool).viralAnalyses || {}).some((result) => result?.text.trim() && result.provenance.source === viralSource(read(tool))))
+                    throw new Error("请先采用一份当前视频的分析，再撰写改编脚本");
             }
             if (tool === "viral-recreate" && stage === "analyze" && viralAnalysisMode(read(tool), config) === "frames") {
                 const scoped = viralAnalysisConfig(config, "frames");

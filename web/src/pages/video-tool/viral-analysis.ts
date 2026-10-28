@@ -91,6 +91,47 @@ export function viralRecordAnalysis(record: VideoRecord): ViralAnalysisVersion |
     return result ? result.suggestion || { text: result.text, provenance: result.provenance } : undefined;
 }
 
+export function viralForeignAnalysisRecovery(d: VideoDraft) {
+    const source = viralSource(d), adopted = d.viralAdoptedAnalysis;
+    const deliberatelyReused = (version: ViralAnalysisVersion) => adopted?.borrowedFromHistory && viralAnalysisIsCurrent(d, version)
+        && adopted?.inputKey === viralAnalysisInputKey(d, version.provenance.mode);
+    const belongsHere = (version: ViralAnalysisVersion) => version.provenance.source === source || deliberatelyReused(version);
+    const archived: ViralAnalysisVersion[] = [];
+    const analyses: VideoDraft["viralAnalyses"] = {};
+    let changed = false;
+    for (const mode of ["video", "frames"] as const) {
+        const result = d.viralAnalyses?.[mode];
+        if (!result) continue;
+        const version = { text: result.text, provenance: result.provenance };
+        if (belongsHere(version)) {
+            analyses[mode] = result.suggestion && !belongsHere(result.suggestion) ? version : result;
+        } else {
+            if (version.text.trim()) archived.push(version);
+            analyses[mode] = result.suggestion && belongsHere(result.suggestion) ? result.suggestion : undefined;
+            changed = true;
+        }
+        if (result.suggestion && !belongsHere(result.suggestion)) {
+            archived.push(result.suggestion);
+            changed = true;
+        }
+    }
+    const current = viralCurrentAnalysis(d);
+    const foreignCurrent = Boolean(d.analysis.trim() && adopted && !belongsHere(current));
+    if (foreignCurrent) archived.push(current);
+    if (!changed && !foreignCurrent) return;
+    const latest = foreignCurrent && Object.values(analyses).filter((version) => version
+        && version.provenance.inputKey === viralAnalysisInputKey(d, version.provenance.mode))
+        .sort((a, b) => b!.provenance.createdAt - a!.provenance.createdAt)[0];
+    const patch: Partial<VideoDraft> = {
+        viralAnalyses: analyses,
+        ...(foreignCurrent ? latest ? viralAdoptAnalysis(d, latest) : {
+            analysis: "", viralAdoptedAnalysis: undefined, viralAnalysisStale: false,
+            viralScriptStale: Boolean(d.script), viralScriptSuggestion: "", viralOutputStale: true,
+        } : {}),
+    };
+    return { patch, archived };
+}
+
 export function viralLegacyAnalysisRecovery(d: VideoDraft, records: VideoRecord[]) {
     if (!d.analysis.trim() || d.viralAdoptedAnalysis) return;
     const versions = [
@@ -127,7 +168,7 @@ export function viralLegacyAnalysisRecovery(d: VideoDraft, records: VideoRecord[
 export function viralAdoptAnalysis(d: VideoDraft, version: ViralAnalysisVersion): Partial<VideoDraft> {
     return {
         analysis: version.text,
-        viralAdoptedAnalysis: { provenance: version.provenance, inputKey: viralAnalysisInputKey(d, version.provenance.mode), adoptedAt: Date.now() },
+        viralAdoptedAnalysis: { provenance: version.provenance, inputKey: viralAnalysisInputKey(d, version.provenance.mode), adoptedAt: Date.now(), borrowedFromHistory: version.provenance.source !== viralSource(d) || undefined },
         viralAnalysisStale: false, viralScriptStale: Boolean(d.script), viralScriptSuggestion: "", viralOutputStale: true,
     };
 }
@@ -135,6 +176,9 @@ export function viralAdoptAnalysis(d: VideoDraft, version: ViralAnalysisVersion)
 export function viralAdoptedAnalysisError(d: VideoDraft) {
     if (!d.analysis.trim()) return "";
     if (!d.viralAdoptedAnalysis) return "请确认采用参考分析后继续";
+    if (d.viralAdoptedAnalysis.provenance.source !== viralSource(d)
+        && (!d.viralAdoptedAnalysis.borrowedFromHistory || d.viralAdoptedAnalysis.inputKey !== viralAnalysisInputKey(d, d.viralAdoptedAnalysis.provenance.mode)))
+        return "参考分析输入已变化：参考视频已更换，请分析当前视频；旧分析可在本浏览器作品中查看";
     if (d.viralAnalysisStale || d.viralAdoptedAnalysis.inputKey !== viralAnalysisInputKey(d, d.viralAdoptedAnalysis.provenance.mode))
         return "参考分析输入已变化，请重新分析或确认沿用当前稿";
     return "";

@@ -25,13 +25,13 @@ import type { StoreVideoSettings, VideoRecord, ViralAnalysisMode, ViralAnalysisV
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
-import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
+import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
 
 type Role = "reference" | "product" | "background" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralFacts" | "viralProductAnalysis" | "instructions" | "script";
-const editorNames: Record<Editor, string> = { analysis: "参考结构分析", transcript: "参考音轨文字", viralFacts: "主体与场景资料", viralProductAnalysis: "商品分析", instructions: "复刻要求", script: "视频脚本" };
+const editorNames: Record<Editor, string> = { analysis: "原视频结构分析", transcript: "参考音轨文字", viralFacts: "主体与场景资料", viralProductAnalysis: "商品分析", instructions: "复刻要求", script: "改编视频脚本" };
 const suggestionFields = {
     viralProductAnalysis: { key: "viralProductSuggestion", stale: "viralProductStale" },
     script: { key: "viralScriptSuggestion", stale: "viralScriptStale" },
@@ -83,7 +83,7 @@ export default function ViralRecreateWorkspace() {
         wb.patch({ viralStep: value });
         setViewed(null);
         setTab(value === 1 ? "editor" : "current");
-        if (value === 1) { setEditingField("script"); setSuggestionView(false); }
+        if (value === 1) { setEditingField(d.script.trim() || d.analysis.trim() ? "script" : "analysis"); setShowCurrentAnalysis(Boolean(d.analysis.trim())); setSuggestionView(false); }
     };
     const keyframe = viralImageCandidates(d).find((m) => m.id === d.viralFirstFrameId),
         keyframeError = viralKeyframeError(d),
@@ -115,16 +115,18 @@ export default function ViralRecreateWorkspace() {
     const analysisResult = d.viralAnalyses?.[analysisMode],
         analysisStale = Boolean(analysisResult && analysisResult.provenance.inputKey !== viralAnalysisInputKey(d, analysisMode)),
         adoptedError = viralAdoptedAnalysisError(d),
-        scriptBlocked = adoptedError || (!d.analysis.trim() && Object.values(d.viralAnalyses || {}).some((result) => result?.text.trim()) ? "请先采用一份参考分析" : "");
+        scriptBlocked = adoptedError || (!d.analysis.trim() && Object.values(d.viralAnalyses || {}).some((result) => result?.text.trim() && result.provenance.source === viralSource(d)) ? "请先采用一份当前视频的分析" : ""),
+        scriptWritingBlocked = scriptBlocked || (reference && !d.analysis.trim() ? "请先分析当前视频，再由 AI 撰写改编脚本；也可直接手写脚本" : "");
     const failedAnalysis = active?.stage === "analyze" && active.viralInput?.viralAnalysisMode === "video" && viralSource({ ...d, media: active.viralInput.media }) === viralSource(d) && ["failed", "interrupted"].includes(active.status) && analysisMode === "video" && !busy;
     const currentAnalysis = viralCurrentAnalysis(d),
         editorAnalysis = showCurrentAnalysis ? currentAnalysis : analysisResult,
         viewedAnalysis = viewed && viralRecordAnalysis(viewed);
     const fieldValue = (field: Editor) => field === "analysis" ? editorAnalysis?.text || "" : d[field] || "";
     const suggestedValue = (field: Editor) => field === "analysis" ? !showCurrentAnalysis ? analysisResult?.suggestion?.text || "" : "" : suggestionInfo(field) ? d[suggestionInfo(field)!.key] || "" : "";
+    const historicalReference = Boolean(d.analysis.trim() && d.viralAdoptedAnalysis && d.viralAdoptedAnalysis.provenance.source !== viralSource(d));
     const referenceStatus = d.analysis.trim()
-        ? adoptedError ? "当前参考 · 待确认" : `当前参考 · ${d.viralAdoptedAnalysis?.provenance.modelLabel || "来源未确认"}${d.viralAdoptedAnalysis?.provenance.edited ? "（已编辑）" : ""}`
-        : "当前参考 · 未采用";
+        ? adoptedError ? "分析依据已变化" : historicalReference ? `历史借鉴 · ${d.viralAdoptedAnalysis!.provenance.sourceName}` : `已采用当前视频分析 · ${d.viralAdoptedAnalysis?.provenance.modelLabel || "来源未确认"}${d.viralAdoptedAnalysis?.provenance.edited ? "（已编辑）" : ""}`
+        : "当前视频分析 · 未采用";
     const invalidMentions = materialMentionError(`${d.instructions}\n${d.script}`, labels);
     const priceKey = JSON.stringify([
         d.media.map((m) => [m.id, m.storageKey]),
@@ -166,24 +168,33 @@ export default function ViralRecreateWorkspace() {
     }, [wb.hydrated, busy, reference?.id, d.viralAnalysisMode, analysisMode, config.channelMode, settingsLoaded]);
     useEffect(() => {
         const store = useVideoWorkbenchStore.getState(), draft = store.drafts["viral-recreate"];
-        if (legacyAnalysisRecovered.current || !store.hydrated || store.storageError || locked || store.busyTools["viral-recreate"] || !draft) return;
-        legacyAnalysisRecovered.current = true;
-        const recovery = viralLegacyAnalysisRecovery(draft, store.records);
+        if (!store.hydrated || store.storageError || locked || store.busyTools["viral-recreate"] || !draft) return;
+        const foreign = viralForeignAnalysisRecovery(draft);
+        const legacy = !foreign && !legacyAnalysisRecovered.current ? viralLegacyAnalysisRecovery(draft, store.records) : undefined;
+        if (!foreign) legacyAnalysisRecovered.current = true;
+        const recovery = foreign || legacy;
         if (!recovery) return;
-        const archived = recovery.archived;
-        const exists = archived && store.records.some((r) => r.tool === "viral-recreate" && r.step === "旧稿归档" && r.text === archived.text);
-        const record: VideoRecord | undefined = archived && !exists ? {
-            id: crypto.randomUUID(), tool: "viral-recreate", stage: "analyze", status: "completed", createdAt: Date.now(),
-            step: "旧稿归档", text: archived.text,
-            draftPatch: { viralAnalysisMode: archived.provenance.mode, viralAnalyses: { [archived.provenance.mode]: archived } },
-        } : undefined;
+        const versions = foreign?.archived || (legacy?.archived ? [legacy.archived] : []);
+        const records = [...store.records];
+        for (const archived of versions) {
+            if (records.some((r) => {
+                const saved = viralRecordAnalysis(r);
+                return saved?.text === archived.text && JSON.stringify(saved.provenance) === JSON.stringify(archived.provenance);
+            })) continue;
+            records.unshift({
+                id: crypto.randomUUID(), tool: "viral-recreate", stage: "analyze", status: "completed", createdAt: Date.now(),
+                step: foreign ? "其他视频分析归档" : "旧稿归档", text: archived.text,
+                draftPatch: { viralAnalysisMode: archived.provenance.mode, viralAnalyses: { [archived.provenance.mode]: archived } },
+            });
+        }
         useVideoWorkbenchStore.setState({
             drafts: { ...store.drafts, "viral-recreate": { ...draft, ...recovery.patch, viralRevision: (draft.viralRevision || 0) + 1 } },
-            ...(record ? { records: [record, ...store.records] } : {}),
+            records,
         });
         setShowCurrentAnalysis(Boolean(recovery.patch.analysis?.trim() || recovery.patch.viralAdoptedAnalysis));
-        if (archived) message.info("旧参考分析已归入本浏览器作品");
-    }, [wb.hydrated, wb.storageError, locked, d.analysis, d.viralAdoptedAnalysis]);
+        if (foreign && recovery.patch.analysis === "" && step === 1) { setEditingField("analysis"); setTab("editor"); }
+        if (versions.length) message.info(foreign ? "其他视频的分析已归入本浏览器作品，请分析当前视频" : "旧参考分析已归入本浏览器作品");
+    }, [wb.hydrated, wb.storageError, locked, d.analysis, d.viralAdoptedAnalysis, d.viralAnalyses, reference?.id, reference?.storageKey]);
     useEffect(() => {
         quoteController.current?.abort();
         setQuoting(false);
@@ -196,7 +207,7 @@ export default function ViralRecreateWorkspace() {
         workspaceScroll.current?.scrollTo(0, 0);
     }, [step]);
     useEffect(() => {
-        if (wb.hydrated && step === 1) { setTab("editor"); setEditingField("script"); }
+        if (wb.hydrated && step === 1) { setTab("editor"); setEditingField(d.script.trim() ? "script" : "analysis"); setShowCurrentAnalysis(Boolean(d.analysis.trim())); }
     }, [wb.hydrated]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => wb.edit({ viralSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "video");
     const edit = (field: Editor, value: string) => {
@@ -257,11 +268,12 @@ export default function ViralRecreateWorkspace() {
             message.success("已用于当前脚本，已有脚本正文保留");
         };
         const differentInput = version.provenance.inputKey !== viralAnalysisInputKey(d, version.provenance.mode);
-        if (replaceCurrent || replaceEdited || (fromHistory && differentInput)) {
+        const differentVideo = version.provenance.source !== viralSource(d);
+        if (replaceCurrent || replaceEdited || differentInput || (fromHistory && differentVideo)) {
             modal.confirm({
-                title: "将这份分析用于当前脚本",
-                content: `${replaceCurrent || replaceEdited ? "当前有人工编辑的分析，替换前会保存到本浏览器历史。" : ""}${differentInput ? `这份分析来自「${version.provenance.sourceName}」，与当前分析输入不同；采用后沿用其原始来源。` : ""}已有脚本将标记为待更新，素材、商品资料及生成参数保持不变，不会发起收费请求。`,
-                okText: "确认采用", cancelText: "取消", onOk: apply,
+                title: differentVideo ? "借鉴其他视频的历史分析？" : "将这份分析用于改编脚本",
+                content: `${replaceCurrent || replaceEdited ? "当前有人工编辑的分析，替换前会保存到本浏览器历史。" : ""}${differentVideo ? `原分析视频：「${version.provenance.sourceName}」。当前视频：「${reference?.name || "未上传"}」。采用后仅借鉴历史结构，不代表已分析当前视频。` : differentInput ? "当前分析参数已变化；采用后沿用原分析，不会重新分析。" : ""}已有脚本将标记为待更新，素材和生成参数保留，不会发起收费请求。`,
+                okText: differentVideo ? "仅借鉴历史分析" : "确认采用", cancelText: "取消", onOk: apply,
             });
         } else apply();
     };
@@ -281,7 +293,7 @@ export default function ViralRecreateWorkspace() {
     const analysisSource = (version: ViralAnalysisVersion) => {
         const p = version.provenance;
         if (!p.inputKey) return `历史参考分析 · 来源未确认${p.edited ? "（已编辑）" : ""}`;
-        return `${viralAnalysisNames[p.mode]} · ${p.modelLabel}${p.edited ? "（已编辑）" : ""} · ${p.sourceName}${p.mode === "frames" && p.model ? ` · ${p.frameCount || 0} 张画面 · ${p.usesTranscript ? "采用音轨文字" : "未采用音轨文字"}` : ""}${p.createdAt ? ` · ${new Date(p.createdAt).toLocaleString()}` : ""}`;
+        return `${p.source !== viralSource(d) ? "其他视频 · " : ""}${viralAnalysisNames[p.mode]} · ${p.modelLabel}${p.edited ? "（已编辑）" : ""} · ${p.sourceName}${p.mode === "frames" && p.model ? ` · ${p.frameCount || 0} 张画面 · ${p.usesTranscript ? "采用音轨文字" : "未采用音轨文字"}` : ""}${p.createdAt ? ` · ${new Date(p.createdAt).toLocaleString()}` : ""}`;
     };
     const frameGallery = (
         <div className="grid grid-cols-3 gap-2">
@@ -426,7 +438,7 @@ export default function ViralRecreateWorkspace() {
         </section>;
     };
     const textAction = (stage: string, label: string, missing: boolean) => (
-        <Button size="small" disabled={locked || Boolean(stage === "analyze" ? analysisBlocked : stage === "product-analyze" ? productBlocked : textBlocked || scriptBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
+        <Button size="small" disabled={locked || Boolean(stage === "analyze" ? analysisBlocked : stage === "product-analyze" ? productBlocked : textBlocked || scriptWritingBlocked) || missing} icon={<Sparkles size={13} />} onClick={() => void wb.run(stage)}>
             {label}
         </Button>
     );
@@ -532,7 +544,7 @@ export default function ViralRecreateWorkspace() {
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                     <strong className="text-sm font-medium">历史参考分析</strong>
                     <Space wrap>
-                        <Button disabled={locked} onClick={() => adoptAnalysis(viewedAnalysis, true)}>用于当前脚本</Button>
+                        <Button disabled={locked} onClick={() => adoptAnalysis(viewedAnalysis, true)}>{viewedAnalysis.provenance.source !== viralSource(d) ? "借鉴历史分析" : "用于当前脚本"}</Button>
                         <Button onClick={() => openEditor("analysis")}>返回当前分析</Button>
                     </Space>
                 </div>
@@ -571,22 +583,29 @@ export default function ViralRecreateWorkspace() {
                         )}
                     </Space>
                 </div>
+                {reference && (field === "analysis" || field === "script") && (
+                    <p className="shrink-0 break-words text-xs" style={muted} data-testid="viral-current-video">
+                        当前参考视频：{reference.name}{reference.durationMs ? ` · ${(reference.durationMs / 1000).toFixed(1)}秒` : ""}
+                    </p>
+                )}
                 {field === "analysis" && (
                     <div className="shrink-0 space-y-2">
-                        <Segmented block aria-label="编辑器分析方式" disabled={locked} value={showCurrentAnalysis ? "current" : analysisMode} options={[...(d.analysis.trim() || showCurrentAnalysis ? [{ value: "current", label: "当前参考" }] : []), { value: "video", label: "视频音轨" }, { value: "frames", label: "抽样画面" }]} onChange={(value) => {
+                        <Segmented block aria-label="编辑器分析方式" disabled={locked} value={showCurrentAnalysis ? "current" : analysisMode} options={[...(d.analysis.trim() || showCurrentAnalysis ? [{ value: "current", label: historicalReference ? "历史借鉴" : "已采用分析" }] : []), { value: "video", label: "视频音轨" }, { value: "frames", label: "抽样画面" }]} onChange={(value) => {
                             setViewed(null);
                             if (value === "current") { setShowCurrentAnalysis(true); setSuggestionView(false); }
                             else changeAnalysisMode(value as ViralAnalysisMode);
                         }} />
                         {(viewingSuggestion ? analysisResult?.suggestion : editorAnalysis) && <p className="break-words text-xs" style={muted}>{analysisSource((viewingSuggestion ? analysisResult?.suggestion : editorAnalysis)!)}</p>}
                         {showCurrentAnalysis && adoptedError && <Alert type="warning" title={adoptedError} />}
+                        {showCurrentAnalysis && historicalReference && !adoptedError && <Alert type="warning" title="正在借鉴其他视频的历史分析" description={`原视频：${d.viralAdoptedAnalysis!.provenance.sourceName}。这份内容不是当前视频的分析结果。`} />}
                         {showCurrentAnalysis && d.viralAdoptedAnalysis && !adoptedError && d.viralAdoptedAnalysis.inputKey !== d.viralAdoptedAnalysis.provenance.inputKey && <p className="text-xs" style={muted}>已确认沿用原分析，未重新分析当前输入</p>}
                         {showCurrentAnalysis && analysisResult?.suggestion && <Button onClick={() => { setShowCurrentAnalysis(false); setSuggestionView(true); }}>查看新分析建议</Button>}
                         {!showCurrentAnalysis && analysisStale && !viewingSuggestion && <Alert type="warning" title="分析依据已变化，原稿已保留" />}
+                        {!value.trim() && !busy && <Alert type="info" title={reference ? "当前视频尚未分析" : "请先添加参考视频"} action={<Button size="small" disabled={locked || !reference || Boolean(analysisBlocked)} onClick={() => void wb.run("analyze")}>分析当前视频</Button>} />}
                         {viewingSuggestion ? suggestionActions("analysis") : editorAnalysis?.text.trim() && (
                             <div className="flex flex-wrap items-center gap-2">
                                 <Button disabled={locked || (viralAnalysisIsCurrent(d, editorAnalysis) && !adoptedError)} onClick={() => adoptAnalysis(editorAnalysis)}>
-                                    {viralAnalysisIsCurrent(d, editorAnalysis) && !adoptedError ? "已用于当前脚本" : showCurrentAnalysis && adoptedError ? "确认沿用当前稿" : analysisStale ? "确认沿用并采用此分析" : "用于当前脚本"}
+                                    {viralAnalysisIsCurrent(d, editorAnalysis) && !adoptedError ? "已用于当前脚本" : editorAnalysis.provenance.source !== viralSource(d) ? "借鉴这份历史分析" : showCurrentAnalysis && adoptedError ? "确认沿用当前稿" : analysisStale ? "确认沿用并采用此分析" : "用于当前脚本"}
                                 </Button>
                                 {!viralAnalysisIsCurrent(d, editorAnalysis) && <span className="text-xs" style={muted}>尚未用于当前脚本</span>}
                             </div>
@@ -883,6 +902,7 @@ export default function ViralRecreateWorkspace() {
                             <div hidden={step !== 1} className="space-y-5">
                             <section className="space-y-2">
                                 {heading("analysis")}
+                                <p className="break-words text-xs" style={muted}>当前参考视频：{reference?.name || "未添加"}{reference?.durationMs ? ` · ${(reference.durationMs / 1000).toFixed(1)}秒` : ""}</p>
                                 <span className="text-xs" style={muted}>分析方式</span>
                                 <Segmented
                                     block aria-label="参考视频分析方式" disabled={locked} value={analysisMode}
@@ -931,7 +951,7 @@ export default function ViralRecreateWorkspace() {
                                     </div>}
                                 />}
                                 <p className="break-words text-xs" style={muted}>
-                                    {analysisResult?.suggestion ? "新分析待采用，人工编辑稿已保留" : analysisResult?.text.trim() ? viralAnalysisIsCurrent(d, analysisResult) && !adoptedError ? "分析完成 · 已用于当前脚本" : "已有分析 · 可在右侧查看并采用" : `${viralAnalysisNames[analysisMode]}尚无分析`}
+                                    {analysisResult?.suggestion ? "新分析待采用，人工编辑稿已保留" : analysisResult?.text.trim() ? viralAnalysisIsCurrent(d, analysisResult) && !adoptedError ? historicalReference ? "已借鉴历史分析 · 当前视频尚未分析" : "分析完成 · 已用于当前脚本" : "已有分析 · 可在右侧查看并采用" : "当前视频尚未分析"}
                                 </p>
                             </section>
                             <section>
@@ -941,7 +961,7 @@ export default function ViralRecreateWorkspace() {
                                     <span className="min-w-0 truncate text-xs" style={adoptedError ? { color: token.colorWarning } : muted} title={referenceStatus}>{referenceStatus}</span>
                                     <Button type="link" size="small" onClick={() => { setShowCurrentAnalysis(Boolean(d.analysis.trim())); openEditor("analysis"); }}>查看</Button>
                                 </div>
-                                {(textBlocked || scriptBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptBlocked}</p>}
+                                {(textBlocked || scriptWritingBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptWritingBlocked}</p>}
                                 <p className="text-sm" style={muted}>{d.script.trim() ? `已有 ${Array.from(d.script).length} 字脚本` : "脚本待填写"}</p>
                                 <Button className="mt-2" disabled={locked} onClick={() => { setEditingField("script"); setSuggestionView(false); setTab("editor"); }}>编辑视频脚本</Button>
                                 <div className="mt-2 flex items-center justify-between gap-2">
@@ -1171,7 +1191,7 @@ export default function ViralRecreateWorkspace() {
                                         <div key={r.id} className="space-y-2 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }}>
                                             <div className="flex justify-between gap-2">
                                                 <strong className="font-medium">
-                                                    {r.stage === "analyze" ? r.step === "旧稿归档" ? "历史参考分析 · 旧稿" : r.step === "编辑稿备份" ? "参考分析编辑稿" : "参考视频分析" : r.stage === "frames" ? "抽取参考画面" : stageLabels[r.stage]} · {states[r.status]}
+                                                    {r.stage === "analyze" ? r.step === "旧稿归档" ? "历史参考分析 · 旧稿" : r.step === "其他视频分析归档" ? "历史参考分析 · 其他视频" : r.step === "编辑稿备份" ? "参考分析编辑稿" : "参考视频分析" : r.stage === "frames" ? "抽取参考画面" : stageLabels[r.stage]} · {states[r.status]}
                                                 </strong>
                                                 <span className="text-xs" style={muted}>
                                                     {new Date(r.createdAt).toLocaleString()}
@@ -1197,7 +1217,7 @@ export default function ViralRecreateWorkspace() {
                                                     查看结果
                                                 </Button>
                                                 {viralRecordAnalysis(r)?.text.trim() && (
-                                                    <Button size="small" disabled={locked} onClick={() => adoptAnalysis(viralRecordAnalysis(r)!, true)}>用于当前脚本</Button>
+                                                    <Button size="small" disabled={locked} onClick={() => adoptAnalysis(viralRecordAnalysis(r)!, true)}>{viralRecordAnalysis(r)!.provenance.source !== viralSource(d) ? "借鉴历史分析" : "用于当前脚本"}</Button>
                                                 )}
                                                 {r.stage === "keyframe" && r.result && <Button size="small" disabled={locked} onClick={async () => {
                                                     try {
@@ -1265,7 +1285,7 @@ export default function ViralRecreateWorkspace() {
                                     <p>视频与音轨分析将参考视频发送到所选模型渠道；抽样画面分析只发送图片和已提供的转写文字。两种分析的时间与镜头边界都需核对。</p>
                                     <p>第 1 步分别添加参考视频、场景、人物及可选商品，填写真实资料与复刻要求。第 2 步分析原视频，编辑脚本；在「首帧画面」合成或上传目标画面，并明确确认后使用。</p>
                                     <p>第 3 步核对实际输入与费用。首帧驱动只接收已选画面，多素材与原视频参考按当前模型已配置的能力发送；没有发送原视频时，动作依照文字重建，不能保证逐帧复现。</p>
-                                    <p>两种分析分别保存，未人工编辑的新结果自动用于后续改编；人工编辑稿在替换前保留到历史。输入变化后需重新分析或确认沿用，历史分析可直接用于当前脚本。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
+                                    <p>两种分析分别保存，未人工编辑的新结果自动用于后续改编；人工编辑稿在替换前保留到历史。更换视频后，其他视频的分析归入本浏览器作品；主动借鉴时须核对原视频与当前视频，不代表已分析当前视频。同一视频改变抽样参数后可确认沿用。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
                                     <p>分析、脚本、首帧与视频分别确认费用；停止等待不等于取消平台任务。恢复查询只查原任务，不再次提交收费任务。</p>
                                     <p>
                                         素材、草稿与作品保存在本浏览器。精准替换原视频主体可使用<Link to="/video/content-replace">内容替换</Link>；多片段剪辑、独立字幕与配音需后续处理。

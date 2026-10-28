@@ -13,7 +13,7 @@ const { configForFeature, defaultConfig, managedEffectiveConfig, useConfigStore 
 const { useUserStore } = await import("../src/stores/use-user-store");
 const { requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
 const { viralAnalysisMode, viralInput, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
-const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralLegacyAnalysisRecovery, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
+const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
 const { emptyVideoDraft } = await import("../src/types/video-workbench");
 
 const catalog: PublicManagedCatalog = {
@@ -360,4 +360,85 @@ test("legacy recovery protects a manual draft stored in a completed history reco
     expect(recovery?.patch.analysis).toBeUndefined();
     expect(recovery?.patch.viralAdoptedAnalysis?.provenance).toEqual(edited.provenance);
     expect(viralLegacyAnalysisRecovery(d, [{ ...record, status: "failed" }])?.patch.analysis).toBe("");
+});
+
+test("replacing a video detaches its adopted analysis and both modes without losing editable material", () => {
+    const d = { ...referenceDraft(), script: "人工改编稿", instructions: "替换楼宇", viralFacts: "辉科胜邦" };
+    const video = { text: "旧门头视频分析", provenance: viralAnalysisProvenance(d, "video", config) };
+    const frames = { text: "旧人工抽样稿", provenance: { ...viralAnalysisProvenance(d, "frames", config), edited: true } };
+    const suggestion = { text: "旧抽样新建议", provenance: { ...frames.provenance, createdAt: frames.provenance.createdAt + 1 } };
+    const adopted = { ...d, ...viralAdoptAnalysis(d, video), viralAnalyses: { video, frames: { ...frames, suggestion } } };
+    const replaced = { ...adopted, media: d.media.map((m) => ({ ...m, id: "new", storageKey: "new-video", name: "转身开屏.mp4" })) };
+    const recovery = viralForeignAnalysisRecovery(replaced)!;
+    const restored = { ...replaced, ...recovery.patch };
+    expect(restored.analysis).toBe("");
+    expect(restored.viralAdoptedAnalysis).toBeUndefined();
+    expect(Object.values(restored.viralAnalyses || {}).filter(Boolean)).toEqual([]);
+    expect(recovery.archived.map((v) => v.text)).toContain(video.text);
+    expect(recovery.archived.map((v) => v.text)).toContain(frames.text);
+    expect(recovery.archived.map((v) => v.text)).toContain(suggestion.text);
+    expect(restored.script).toBe(d.script);
+    expect(restored.instructions).toBe(d.instructions);
+    expect(restored.viralFacts).toBe(d.viralFacts);
+    expect(restored.viralScriptStale).toBe(true);
+    expect(viralAdoptedAnalysisError(restored)).toBe("");
+    expect(viralAdoptedAnalysisText(restored)).not.toContain("门头");
+    expect(viralForeignAnalysisRecovery(restored)).toBeUndefined();
+});
+
+test("source recovery retains current generated suggestions when an old manual version occupies the mode", () => {
+    const old = referenceDraft();
+    const previous = { text: "旧手工门头分析", provenance: { ...viralAnalysisProvenance(old, "video", config), edited: true } };
+    const current = { ...old, media: old.media.map((m) => ({ ...m, id: "new", storageKey: "new-video" })) };
+    const next = { text: "当前视频转身开屏", provenance: viralAnalysisProvenance(current, "video", config) };
+    const draft = { ...current, ...viralAdoptAnalysis(old, previous), viralAnalyses: { video: { ...previous, suggestion: next } } };
+    const recovery = viralForeignAnalysisRecovery(draft)!;
+    const restored = { ...draft, ...recovery.patch };
+    expect(restored.analysis).toBe(next.text);
+    expect(restored.viralAnalyses?.video).toEqual(next);
+    expect(restored.viralAdoptedAnalysis?.provenance).toEqual(next.provenance);
+    expect(recovery.archived.map((v) => v.text)).toContain(previous.text);
+    expect(recovery.archived.map((v) => v.text)).not.toContain(next.text);
+    expect(viralAdoptedAnalysisError(restored)).toBe("");
+});
+
+test("source recovery removes only foreign suggestions and retains current manual analysis", () => {
+    const d = referenceDraft();
+    const current = { text: "本视频人工校对", provenance: { ...viralAnalysisProvenance(d, "video", config), edited: true } };
+    const foreign = { text: "其他视频迟到建议", provenance: { ...current.provenance, source: "other", inputKey: "other" } };
+    const draft = { ...d, ...viralAdoptAnalysis(d, current), viralAnalyses: { video: { ...current, suggestion: foreign } } };
+    const recovery = viralForeignAnalysisRecovery(draft)!;
+    expect(recovery.patch.analysis).toBeUndefined();
+    expect(recovery.patch.viralAnalyses?.video).toEqual(current);
+    expect(recovery.archived).toEqual([foreign]);
+    expect(viralAdoptedAnalysisText({ ...draft, ...recovery.patch })).toContain(current.text);
+});
+
+test("explicit history reuse remains deliberate until the reference video changes again", () => {
+    const old = referenceDraft(), version = { text: "主动借鉴的门头结构", provenance: viralAnalysisProvenance(old, "video", config) };
+    const current = { ...old, media: old.media.map((m) => ({ ...m, id: "new", storageKey: "new-video" })) };
+    const reused = { ...current, ...viralAdoptAnalysis(current, version), viralAnalyses: { video: version } };
+    expect(viralForeignAnalysisRecovery(reused)).toBeUndefined();
+    expect(viralAdoptedAnalysisError(reused)).toBe("");
+    const again = { ...reused, media: current.media.map((m) => ({ ...m, id: "third", storageKey: "third-video" })) };
+    expect(viralForeignAnalysisRecovery(again)?.patch.analysis).toBe("");
+});
+
+test("old cross-video acknowledgement without explicit history borrowing is detached", () => {
+    const old = referenceDraft(), version = { text: "旧门头分析", provenance: viralAnalysisProvenance(old, "video", config) };
+    const current = { ...old, media: old.media.map((m) => ({ ...m, id: "new", storageKey: "new-video" })) };
+    const acknowledged = { ...current, ...viralAdoptAnalysis(current, version), viralAnalyses: { video: version } };
+    const legacy = { ...acknowledged, viralAdoptedAnalysis: { ...acknowledged.viralAdoptedAnalysis!, borrowedFromHistory: undefined } };
+    expect(viralAdoptedAnalysisError(legacy)).toContain("参考视频已更换");
+    expect(viralForeignAnalysisRecovery(legacy)?.patch.analysis).toBe("");
+    expect(viralForeignAnalysisRecovery(acknowledged)).toBeUndefined();
+});
+
+test("same-video sampling changes and target edits preserve analysis for explicit parameter review", () => {
+    const d = referenceDraft(), version = { text: "本视频抽样分析", provenance: viralAnalysisProvenance(d, "frames", config) };
+    const adopted = { ...d, ...viralAdoptAnalysis(d, version), viralAnalyses: { frames: version } };
+    const changed = { ...adopted, frameCount: d.frameCount + 1, viralFacts: "新目标楼宇", instructions: "换人物", script: "手写稿" };
+    expect(viralForeignAnalysisRecovery(changed)).toBeUndefined();
+    expect(viralAdoptedAnalysisError(changed)).toContain("输入已变化");
+    expect(viralForeignAnalysisRecovery({ ...adopted, media: d.media.map((m) => ({ ...m, url: "blob:restored" })) })).toBeUndefined();
 });
