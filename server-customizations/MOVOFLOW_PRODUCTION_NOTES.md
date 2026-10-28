@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.103
-- Current production source: tag v0.19.103, commit f790819d1e419d871f1fc36d94ccd25abd4ce6f9
+- Current production image: infinite-canvas:v0.19.104
+- Current production source: tag v0.19.104, commit 38cc4a9d2e2c9f411c67d8197b5891122ce45043
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.104 deployment
+
+- Tag `v0.19.104`, commit `38cc4a9d2e2c9f411c67d8197b5891122ce45043`, is pushed on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.104`, ID `sha256:90c16fbc60c75a5b91b6427dbe668f071d9ae8d07a28cf8b675acb1dec33b9d0`, matches the tag. Local evaluation media and account response artifacts remain excluded.
+- Viral recreation imports reference video through mutually exclusive upload/link tabs, defaulting to upload. Switching retains the selected video, pending link text and draft; shared retention controls stay outside the tabs. Other link-import consumers keep their prior behavior. Model pricing, binding, import limits, retention rules and paid inference are unchanged.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.104-20261028-075448/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.104-prebuild-20261028-075244/`. Database quick checks, all 13 table counts, settings, balances/roles/groups/status and 10,503 existing file hashes matched. Only app was recreated; Worker ID, image, start time and source mounts remain unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full model catalogs and sampled signed quotes passed. Management remains revision 10 (38 models / 65 routes / 656 bindings); Gemini is 20 credits per analysis and try-on remains 10 credits per image for both groups.
+- Public asset `/assets/index-C-vsw8ld.js` contains the new release and controls. An isolated unauthenticated browser on the real production URL verified mutually exclusive upload/link panes at 1440px, 390px and 320px, with no overflow or page errors. This does not establish authenticated uploads, real link extraction, existing user drafts or paid model quality/billing acceptance. Eight mocked browser groups passed during development; no local build or test was repeated during release. Server Docker build completed.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.104-deployment.json` and workstation `.codex_tmp/release-v0.19.104/`, including `public-verification.json` and six production screenshots. Rollback restores the final backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database and available v0.19.103 image.
 
 ## v0.19.103 deployment
 
