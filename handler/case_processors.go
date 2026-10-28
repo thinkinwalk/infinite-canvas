@@ -114,19 +114,11 @@ func saveCasePNG(data []byte) (string, error) {
 }
 
 func executeCaseEdit(r *http.Request, user model.AuthUser, runtime caseRuntimeConfig, prompt string, inputs map[string]any) (map[string]any, error) {
-	tryonSources := []struct {
-		key  string
-		role string
-	}{
-		{"topImageUrl", "上装"},
-		{"bottomImageUrl", "下装"},
-		{"modelImageUrl", "模特"},
-		{"sceneImageUrl", "场景"},
-	}
+	isTryon := hasTryonImages(inputs)
 	var original []byte
 	var err error
-	if strings.TrimSpace(stringInput(inputs, "topImageUrl")) != "" || strings.TrimSpace(stringInput(inputs, "bottomImageUrl")) != "" || strings.TrimSpace(stringInput(inputs, "modelImageUrl")) != "" || strings.TrimSpace(stringInput(inputs, "sceneImageUrl")) != "" {
-		first := firstNonEmptyInput(inputs, "topImageUrl", "bottomImageUrl")
+	if isTryon {
+		first := firstNonEmptyInput(inputs, "topImageUrl", "bottomImageUrl", "onePieceImageUrl")
 		if strings.HasPrefix(first, "http") {
 			return nil, errors.New("请上传本地服装图片")
 		}
@@ -181,9 +173,9 @@ func executeCaseEdit(r *http.Request, user model.AuthUser, runtime caseRuntimeCo
 		_ = writer.WriteField("output_format", "png")
 	}
 	imageField := "image"
-	if len(tryonSources) > 0 && (strings.TrimSpace(stringInput(inputs, "topImageUrl")) != "" || strings.TrimSpace(stringInput(inputs, "bottomImageUrl")) != "" || strings.TrimSpace(stringInput(inputs, "modelImageUrl")) != "" || strings.TrimSpace(stringInput(inputs, "sceneImageUrl")) != "") {
+	if isTryon {
 		imageField = "image[]"
-		for _, source := range tryonSources {
+		for _, source := range tryonImageSources {
 			value := strings.TrimSpace(stringInput(inputs, source.key))
 			if value == "" {
 				continue

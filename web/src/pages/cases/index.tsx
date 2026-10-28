@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { App, Button, Card, Empty, Input, InputNumber, Modal, Popover, Segmented, Select, Spin, Tag } from "antd";
-import { ArrowLeft, ArrowRight, Brush, CircleHelp, ClipboardPaste, Copy, Download, Eraser, ExternalLink, ImagePlus, Layers3, Play, Printer, RefreshCw, Scissors, Shirt, ShieldCheck, Stamp, Store, Upload, Wand2, Wind, X } from "lucide-react";
+import { App, Button, Card, Empty, Input, InputNumber, Popover, Segmented, Select, Spin, Tag } from "antd";
+import { ArrowLeft, ArrowRight, Brush, CircleHelp, ClipboardPaste, Copy, Download, Eraser, ExternalLink, ImagePlus, Layers3, Play, Printer, RefreshCw, Scissors, ShieldCheck, Stamp, Store, Upload, Wand2, Wind, X } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { useCopyText } from "@/hooks/use-copy-text";
 import { officialCaseItems } from "@/constant/create-catalog";
-import { fetchCase, fetchCases, fetchCaseRunPrice, fetchTryonLibrary, runCase, type CaseApp, type CaseRunPrice, type TryonLibrary } from "@/services/api/cases";
+import { fetchCase, fetchCases, fetchCaseRunPrice, runCase, type CaseApp, type CaseRunPrice } from "@/services/api/cases";
 import { fetchImageBlob } from "@/services/image-storage";
 import { useUserStore } from "@/stores/use-user-store";
 import { createProductSetZip } from "./product-set-download";
 import CutoutWorkspace, { type CutoutResult } from "./cutout-workspace";
 import PrintExtractWorkspace, { type PrintExtractResult } from "./print-extract-workspace";
 import PrintFileWorkspace, { type PrintFileResult } from "./print-file-workspace";
+import TryonWorkspace from "./tryon-workspace";
+import { tryonDefaults, tryonInputError, updateTryonValues, type TryonResult } from "./tryon-state";
+import { useTryonDraft } from "./use-tryon-draft";
 
 type CaseValue = string | string[];
 type CaseField = { key: string; label?: string; type?: string; required?: boolean; placeholder?: string; options?: string[]; defaultValue?: string; help?: string; display?: "buttons" | "select" };
@@ -151,54 +154,6 @@ function IpCheckWorkspace({ values, onChange, upload, footer, busy, result, onBa
                 </section>
             </div>
         </div>
-    </main>;
-}
-
-function TryonWorkspace({ values, onChange, footer, busy, result }: { values: Record<string, CaseValue>; onChange: (changes: Record<string, CaseValue>) => void; footer: ReactNode; busy: boolean; result: unknown }) {
-    const [library, setLibrary] = useState<TryonLibrary>({ models: [], scenes: [] });
-    const [picker, setPicker] = useState<"model" | "scene" | null>(null);
-    const [libraryError, setLibraryError] = useState("");
-    const [filter, setFilter] = useState("全部");
-    const [genderFilter, setGenderFilter] = useState("全部");
-    useEffect(() => { void fetchTryonLibrary().then(setLibrary).catch(() => setLibraryError("素材库加载失败，请刷新页面重试")); }, []);
-    const top = typeof values.topImageUrl === "string" ? values.topImageUrl : "";
-    const bottom = typeof values.bottomImageUrl === "string" ? values.bottomImageUrl : "";
-    const model = library.models.find((item) => item.url === values.modelImageUrl);
-    const scene = library.scenes.find((item) => item.url === values.sceneImageUrl);
-    const sourceImages = [top, bottom, model?.url || "", scene?.url || ""].filter(Boolean);
-    const upload = (key: "topImageUrl" | "bottomImageUrl", label: string) => {
-        const isTop = key === "topImageUrl";
-        const filled = Boolean(values[key]);
-        return <div className={`rounded-lg border-2 p-2 transition-colors ${isTop ? "border-pink-400/80 bg-pink-50/50 dark:border-pink-500/70 dark:bg-pink-950/15" : "border-sky-400/80 bg-sky-50/50 dark:border-sky-500/70 dark:bg-sky-950/15"}`}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-                <span className={`rounded px-2 py-0.5 text-xs font-semibold ${isTop ? "bg-pink-500 text-white" : "bg-sky-500 text-white"}`}>{label}</span>
-                <span className={`text-[11px] ${filled ? (isTop ? "text-pink-600 dark:text-pink-300" : "text-sky-600 dark:text-sky-300") : "text-stone-500 dark:text-stone-400"}`}>{filled ? "已上传" : "待上传"}</span>
-            </div>
-            <CaseImageInput compact field={{ key, label, type: "image" }} value={values[key]} disabled={busy} onChange={(value) => onChange({ [key]: value })} />
-        </div>;
-    };
-    const options = picker === "model" ? library.models.filter((item) => (filter === "全部" || item.group === filter) && (genderFilter === "全部" || item.gender === genderFilter)) : library.scenes.filter((item) => filter === "全部" || item.env === filter);
-    const openPicker = (type: "model" | "scene") => { setFilter("全部"); setGenderFilter("全部"); setPicker(type); };
-    return <main className="h-full overflow-auto bg-background text-stone-950 dark:text-stone-100">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-            <div className="mb-6 flex items-center gap-3 border-b border-stone-200 pb-5 dark:border-stone-800"><Shirt className="size-6 text-pink-600" /><div><h1 className="text-xl font-semibold">服装上身</h1><p className="mt-1 text-sm text-stone-500 dark:text-stone-400">上传服装，选择模特和场景，一键生成真实上身电商图</p></div></div>
-            <div className="grid min-w-0 gap-8 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <section className="flex min-w-0 flex-col gap-5 border-b border-stone-200 pb-6 lg:border-b-0 lg:border-r lg:pr-6 dark:border-stone-800" aria-label="服装上身参数">
-                    <div><h2 className="mb-2 text-sm font-medium">服装图 <span className="text-xs font-normal text-stone-500">（上装/下装可只传一个）</span></h2><div className="grid grid-cols-2 gap-3"><div>{upload("topImageUrl", "上装")}</div><div>{upload("bottomImageUrl", "下装")}</div></div></div>
-                    <div className="relative"><button type="button" disabled={busy} onClick={() => openPicker("scene")} className="flex w-full items-center gap-3 rounded-md border border-stone-200 p-2.5 text-left transition hover:border-blue-500 dark:border-stone-700"><div className="size-14 shrink-0 overflow-hidden rounded bg-stone-100 dark:bg-stone-800">{scene ? <img src={scene.thumb || scene.url} alt={scene.name} className="size-full object-cover" /> : <div className="grid size-full place-items-center text-stone-400"><ImagePlus className="size-5" /></div>}</div><span><span className="block text-sm font-medium">场景</span><span className="block text-xs text-stone-500">{scene?.name || "从库中选择"}</span></span></button>{scene ? <button type="button" title="清除场景" aria-label="清除场景" disabled={busy} onClick={() => onChange({ sceneImageUrl: "" })} className="absolute right-2 top-2 grid size-6 place-items-center rounded bg-black/50 text-white"><X className="size-3.5" /></button> : null}</div>
-                    <div className="relative"><button type="button" disabled={busy} onClick={() => openPicker("model")} className="flex w-full items-center gap-3 rounded-md border border-stone-200 p-2.5 text-left transition hover:border-blue-500 dark:border-stone-700"><div className="size-14 shrink-0 overflow-hidden rounded bg-stone-100 dark:bg-stone-800">{model ? <img src={model.thumb || model.url} alt={model.name} className="size-full object-cover" /> : <div className="grid size-full place-items-center text-stone-400"><ImagePlus className="size-5" /></div>}</div><span><span className="block text-sm font-medium">模特</span><span className="block text-xs text-stone-500">{model?.name || "从库中选择"}</span></span></button>{model ? <button type="button" title="清除模特" aria-label="清除模特" disabled={busy} onClick={() => onChange({ modelImageUrl: "" })} className="absolute right-2 top-2 grid size-6 place-items-center rounded bg-black/50 text-white"><X className="size-3.5" /></button> : null}</div>
-                    <div><h2 className="mb-2 text-sm font-medium">描述 <span className="text-xs font-normal text-stone-500">（可留空）</span></h2><Input.TextArea disabled={busy} autoSize={{ minRows: 3, maxRows: 5 }} placeholder="例如：自然站姿，完整展示服装细节" value={typeof values.prompt === "string" ? values.prompt : ""} onChange={(event) => onChange({ prompt: event.target.value })} /></div>
-                    <div className="mt-auto">{footer}</div>
-                </section>
-                <section className="min-w-0" aria-label="试穿结果"><h2 className="mb-4 text-sm font-semibold">试穿效果</h2>{result !== null ? <CaseResult value={result} title="服装上身" sources={sourceImages} /> : <div className="flex min-h-[500px] flex-col items-center justify-center gap-5"><h3 className="text-center text-lg font-semibold text-blue-600">模特 + 服装，一键虚拟试穿上身</h3><div className="grid w-full max-w-2xl items-center gap-4 sm:grid-cols-[minmax(150px,220px)_auto_minmax(150px,220px)]"><figure className="overflow-hidden rounded-md border border-stone-200 dark:border-stone-700"><div className="aspect-[3/4] bg-stone-100 dark:bg-stone-900"><img src="/examples/tryon/source.webp" alt="服装上身示例原图" className="size-full object-contain" /></div><figcaption className="p-2 text-center text-xs text-stone-500">原图</figcaption></figure><ArrowRight className="mx-auto size-8 text-blue-600" /><figure className="overflow-hidden rounded-md border-2 border-blue-500"><div className="aspect-[3/4] bg-stone-100 dark:bg-stone-900"><img src="/examples/tryon/result.webp" alt="服装上身示例效果" className="size-full object-cover" /></div><figcaption className="p-2 text-center text-xs text-blue-600">效果</figcaption></figure></div><p className="text-center text-xs text-stone-400">示例来自同一次服装上身处理；上传服装并生成后，这里会替换为本次结果</p></div>}</section>
-            </div>
-        </div>
-        <Modal open={picker !== null} title={picker === "model" ? "选择模特" : "选择场景"} footer={null} onCancel={() => setPicker(null)} width={760} destroyOnClose>
-            {libraryError ? <p className="mb-3 text-sm text-red-600">{libraryError}</p> : null}
-            <div className="mb-4 flex flex-wrap gap-2">{(picker === "scene" ? ["全部", "室内", "户外", "街景", "影棚", "度假"] : ["全部", "cn", "jp", "kr", "intl"]).map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={`rounded px-3 py-1.5 text-xs ${filter === value ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-200"}`}>{({ cn: "中国", jp: "日本", kr: "韩国", intl: "其他" } as Record<string, string>)[value] || value}</button>)}</div>
-            {picker === "model" ? <div className="mb-4 flex gap-2">{[["全部", "全部"], ["f", "女模"], ["m", "男模"]].map(([value, label]) => <button key={value} type="button" aria-pressed={genderFilter === value} onClick={() => setGenderFilter(value)} className={`rounded px-3 py-1.5 text-xs ${genderFilter === value ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-200"}`}>{label}</button>)}</div> : null}
-            <div className="grid max-h-[55vh] grid-cols-3 gap-3 overflow-auto sm:grid-cols-5">{options.map((item) => { const active = item.url === (picker === "model" ? values.modelImageUrl : values.sceneImageUrl); return <button key={item.id} type="button" className={`overflow-hidden rounded-md border text-left ${active ? "border-blue-500 ring-2 ring-blue-100" : "border-stone-200 dark:border-stone-700"}`} onClick={() => { onChange(picker === "model" ? { modelImageUrl: item.url } : { sceneImageUrl: item.url }); setPicker(null); }}><img src={item.thumb || item.url} alt={item.name} className="aspect-square w-full object-cover" /><span className="block truncate px-2 py-1.5 text-xs">{item.name}</span></button>; })}</div>
-        </Modal>
     </main>;
 }
 
@@ -358,7 +313,7 @@ function CaseImageInput({ field, value, disabled, onChange, compact = false }: {
                     void addFiles(Array.from(event.dataTransfer.files));
                 }}
                 title={compact ? "上传或替换图片" : undefined}
-                aria-label={compact ? "上传或替换图片" : undefined}
+                aria-label={compact ? `上传或替换${field.label || "图片"}` : undefined}
                 className={`relative flex ${compact ? "h-40 w-full overflow-hidden px-4" : "min-h-32 w-full px-4"} flex-col items-center justify-center gap-1 rounded-md border border-dashed text-center text-sm transition disabled:cursor-wait ${dragging ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300" : "border-stone-300 bg-stone-50 text-stone-600 hover:border-blue-400 dark:border-stone-700 dark:bg-stone-900/50 dark:text-stone-300"}`}
             >
                 {compact && urls[0] ? <>
@@ -752,6 +707,8 @@ function Garment3DGuide({ source }: { source?: string }) {
 export default function CasesPage() {
     const { message, modal } = App.useApp();
     const token = useUserStore((state) => state.token);
+    const activeToken = useRef(token);
+    activeToken.current = token;
     const hydrateUser = useUserStore((state) => state.hydrateUser);
     const navigate = useNavigate();
     const location = useLocation();
@@ -769,10 +726,12 @@ export default function CasesPage() {
     const [cutoutResult, setCutoutResult] = useState<CutoutResult | null>(null);
     const [printExtractResult, setPrintExtractResult] = useState<PrintExtractResult | null>(null);
     const [printFileResult, setPrintFileResult] = useState<PrintFileResult | null>(null);
+    const [tryonResult, setTryonResult] = useState<TryonResult | null>(null);
     const [quote, setQuote] = useState<CaseRunPrice | null>(null);
     const [quoteError, setQuoteError] = useState("");
     const [quoting, setQuoting] = useState(false);
     const [checking, setChecking] = useState(false);
+    const tryonDraft = useTryonDraft(selected?.id === "official-tryon" && !loading, values, setValues, tryonResult, setTryonResult);
 
     const load = useCallback(async () => {
         const id = caseId;
@@ -784,6 +743,7 @@ export default function CasesPage() {
         setCutoutResult(null);
         setPrintExtractResult(null);
         setPrintFileResult(null);
+        setTryonResult(null);
         setRunning(false);
         try {
             if (id === "official-product-grid") navigate("/cases/product-listing-set", { replace: true });
@@ -794,7 +754,8 @@ export default function CasesPage() {
                 const item = await fetchCase(id);
                 if (activeCase.current === id) {
                     setSelected(item);
-                    setValues(Object.fromEntries(readFields(item).filter((field) => field.defaultValue).map((field) => [field.key, field.defaultValue!])));
+                    const defaults = Object.fromEntries(readFields(item).filter((field) => field.defaultValue).map((field) => [field.key, field.defaultValue!]));
+                    setValues(item.id === "official-tryon" ? { ...tryonDefaults, ...defaults } : defaults);
                 }
             } else {
                 const data = await fetchCases({ pageSize: 60 });
@@ -850,33 +811,47 @@ export default function CasesPage() {
             message.warning("请先通过右上角登录后使用");
             return;
         }
+        if (selected.id === "official-tryon") {
+            if (!tryonDraft.ready) return;
+            const error = tryonInputError(values);
+            if (error) {
+                message.warning(error);
+                return;
+            }
+        }
         const missing = fields.find((field) => field.required && !(Array.isArray(values[field.key]) ? values[field.key].length : String(values[field.key] || "").trim()));
         if (missing) {
             message.warning(`请填写${missing.label || missing.key}`);
             return;
         }
         setChecking(true);
-        const submittedValues = { ...values };
+        const submittedValues = selected.id === "official-tryon" ? updateTryonValues(values, {}) : { ...values };
         try {
             const price = await fetchCaseRunPrice(token, selected.id, selected.id === "official-fusion" ? Number(submittedValues.count || 1) : undefined);
-            if (activeCase.current !== selected.id) return;
+            if (activeCase.current !== selected.id || selected.id === "official-tryon" && activeToken.current !== token) return;
             setQuote(price);
+            if (selected.id === "official-tryon") {
+                const error = tryonInputError(submittedValues);
+                if (error) { message.warning(error); return; }
+            }
             const confirmed = await modal.confirm({
                 title: `使用${selected.title}`,
                 content: `本次预计消耗 ${price.points} 算力点${price.count > 1 ? `，共生成 ${price.count} 张图片` : ""}。`,
                 okText: "确认生成",
                 cancelText: "取消",
             });
-            if (!confirmed || activeCase.current !== selected.id) return;
+            if (!confirmed || activeCase.current !== selected.id || selected.id === "official-tryon" && activeToken.current !== token) return;
             setRunning(true);
             try {
                 const output = await runCase(token, selected.id, submittedValues);
-                if (activeCase.current === selected.id) {
+                if (activeCase.current === selected.id && (selected.id !== "official-tryon" || activeToken.current === token)) {
                     setResult(output);
                     if (selected.id === "official-cutout" && extractMedia(output)[0]) setCutoutResult({ source: String(submittedValues.imageUrl), url: extractMedia(output)[0], feather: String(submittedValues.feather || "关"), background: String(submittedValues.background || "透明") });
                     if (selected.id === "official-print-extract" && extractMedia(output)[0]) setPrintExtractResult({ source: String(submittedValues.imageUrl), url: extractMedia(output)[0] });
                     if (selected.id === "official-print-file" && extractMedia(output)[0]) setPrintFileResult({ source: String(submittedValues.imageUrl), url: extractMedia(output)[0] });
-                    if (extractMedia(output).length || extractText(output)) message.success("处理完成");
+                    if (selected.id === "official-tryon" && extractMedia(output).length) setTryonResult({ urls: extractMedia(output), inputs: submittedValues });
+                    if (selected.id === "official-tryon" && !extractMedia(output).length) message.error("模型未返回试穿图片，请检查图片编辑模型配置");
+                    else if (extractMedia(output).length || extractText(output)) message.success("处理完成");
                     else message.error("模型未返回可展示的结果，请检查模型配置");
                 }
             } finally {
@@ -951,10 +926,20 @@ export default function CasesPage() {
             footer={<div className="space-y-3"><p className={`text-xs ${quoteError ? "text-red-400" : "text-stone-500"}`}>{quoteError || (quoting ? "正在读取算力点报价…" : quote ? `预计消耗 ${quote.points} 算力点` : "登录后查看算力点报价")}</p><Button block type="primary" size="large" icon={<Printer className="size-4" />} loading={busy} disabled={quoting} onClick={() => void submit()}>{running ? "正在生成" : `开始生成${quote ? ` · ${quote.points} 算力点` : ""}`}</Button></div>} />;
     }
     if (selected?.id === "official-tryon" && !loading && !loadError) {
+        if (!tryonDraft.ready) return <main className="grid h-full place-items-center bg-background p-6"><div className="space-y-4 text-center">
+            {tryonDraft.error ? <><p role="alert" className="text-sm text-red-600">{tryonDraft.error}</p><Button onClick={tryonDraft.retry}>重新读取</Button></> : <><Spin /><p className="text-sm text-stone-500">正在恢复本机草稿…</p></>}
+        </div></main>;
         const busy = running || checking;
-        const hasGarment = Boolean(values.topImageUrl || values.bottomImageUrl);
-        return <TryonWorkspace values={values} onChange={(changes) => { setValues((current) => ({ ...current, ...changes })); setResult(null); }} busy={busy} result={result}
-            footer={<div className="space-y-3"><p className={`text-xs ${quoteError ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"}`}>{quoteError || (quoting ? "正在读取算力点报价…" : quote ? `预计消耗 ${quote.points} 算力点` : "登录后查看算力点报价")}</p><Button block type="primary" size="large" icon={<Play className="size-4" />} loading={busy} disabled={quoting || !hasGarment} onClick={() => void submit()}>{running ? "正在试穿" : `开始试穿${quote ? ` · ${quote.points} 算力点` : ""}`}</Button></div>} />;
+        const inputError = tryonInputError(values);
+        const update = (changes: Record<string, CaseValue>) => setValues((current) => updateTryonValues(current, changes));
+        return <TryonWorkspace values={values} onChange={update} busy={busy} result={tryonResult} poses={tryonDraft.poses} onPosesChange={tryonDraft.setPoses}
+            renderUpload={(key, label) => <CaseImageInput key={key} compact field={{ key, label, type: "image" }} value={values[key]} disabled={busy} onChange={(value) => update({ [key]: value })} />}
+            footer={<div className="space-y-3">
+                {tryonDraft.error ? <div role="alert" className="flex items-center justify-between gap-2 text-xs text-red-600"><span>{tryonDraft.error}</span><Button size="small" icon={<RefreshCw className="size-3" />} onClick={tryonDraft.retry}>重试</Button></div> : null}
+                {inputError ? <p className="text-xs text-stone-500">{inputError}</p> : null}
+                <p className={`text-xs ${quoteError ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"}`}>{quoteError || (quoting ? "正在读取算力点报价…" : quote ? `预计消耗 ${quote.points} 算力点` : "登录后查看算力点报价")}</p>
+                <Button block type="primary" size="large" icon={<Play className="size-4" />} loading={running || checking} disabled={busy || quoting || Boolean(inputError) || Boolean(quoteError)} onClick={() => void submit()}>{running ? "正在试穿" : `开始试穿${quote ? ` · ${quote.points} 算力点` : ""}`}</Button>
+            </div>} />;
     }
 
     return (

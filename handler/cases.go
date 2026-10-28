@@ -268,24 +268,10 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 	if input.Inputs == nil {
 		input.Inputs = map[string]any{}
 	}
-	if item.ID == "official-tryon" && firstNonEmptyInput(input.Inputs, "topImageUrl", "bottomImageUrl") == "" {
-		Fail(w, "请先上传上装或下装")
-		return
-	}
 	if item.ID == "official-tryon" {
-		for _, source := range []struct{ key, role string }{{"topImageUrl", "上装"}, {"bottomImageUrl", "下装"}} {
-			value := strings.TrimSpace(stringInput(input.Inputs, source.key))
-			if value != "" && !strings.HasPrefix(value, "data:image/") {
-				Fail(w, "请上传本地"+source.role+"图片")
-				return
-			}
-		}
-		for _, source := range []struct{ key, role string }{{"modelImageUrl", "模特"}, {"sceneImageUrl", "场景"}} {
-			value := strings.TrimSpace(stringInput(input.Inputs, source.key))
-			if value != "" && !validTryonLibraryURL(value, source.role) {
-				Fail(w, source.role+"素材不在官方素材库中")
-				return
-			}
+		if err := normalizeTryonInputs(input.Inputs); err != nil {
+			Fail(w, err.Error())
+			return
 		}
 	}
 	if item.ID == "official-image-variations" {
@@ -383,18 +369,7 @@ func RunCase(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	prompt := renderCasePrompt(runtime.PromptTemplate, input.Inputs)
 	if item.ID == "official-tryon" {
-		roles := []string{}
-		for _, source := range []struct{ key, description string }{
-			{"topImageUrl", "上装，保留衣服版型、颜色和细节"},
-			{"bottomImageUrl", "下装，保留衣服版型、颜色和细节"},
-			{"modelImageUrl", "模特，保留同一人的面容、体型和肤色"},
-			{"sceneImageUrl", "场景，参考背景和光线"},
-		} {
-			if stringInput(input.Inputs, source.key) != "" {
-				roles = append(roles, fmt.Sprintf("图%d为%s", len(roles)+1, source.description))
-			}
-		}
-		prompt += "。输入图顺序：" + strings.Join(roles, "；") + "。"
+		prompt = tryonPrompt(input.Inputs)
 	}
 	if item.ID == "official-garment-extract" && !strings.Contains(runtime.PromptTemplate, "{{detail}}") {
 		prompt += " 保留细节级别：" + stringInput(input.Inputs, "detail") + "。"

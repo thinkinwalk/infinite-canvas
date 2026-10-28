@@ -5,6 +5,15 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 服装上身交互验收与模型基线核查
+
+- 本轮只做本地交互验收、生产配置和免费报价核查及真实评测准备；未发布生产、改价、改绑定或提交收费生成。交接见仓库 `docs/tryon-baseline-handoff.md`，八张评测清单见 `artifacts/tryon-eval/plan.json`。
+- 独立 Headless Chrome 使用本地 Vite、模拟账户和全量拦截的 API，16 组检查全部通过、页面运行错误为 0，覆盖服装/模特上传、参考必填、姿势保存/选择/删除、刷新恢复、费用确认取消、生成结果快照及下载、失败保留旧结果、连体装/上下装切换、隐藏参考清理、图库失败重试/空筛选、账号隔离和旧账号迟到结果，以及存储读写失败和损坏数据保护。最终结果见本机 `.codex_tmp/tryon-qa/ui-report.json`；模拟提示不代表真实退款。
+- 桌面 1440px、手机 390px 的浅深主题及 320px 浅色分别保存参数和结果截图，已检查实际图片解码和页面边界。色块素材只用于交互测试，不是试衣效果图；系统剪切板权限、系统文件选择器及实际手机浏览器仍待人工验收。
+- 生产模型目录为第 10 版，试衣默认实际模型 ID 为 `gpt-image-2`、适配器 `image.openai`，可用接入为 #2 与 #18。普通用户和 VIP 的真实签名报价均为模型 10 点、案例服务费 0 点、每次一张；当前生产仍使用旧试衣字段，新工作台尚未部署。脱敏证据为本机 `.codex_tmp/tryon-qa/production-audit.json`，不含用户身份、签名令牌或渠道密钥。
+- 生产核查仅用只读 SQLite 和目录/报价 GET 接口，核查前后公共/私有设置、抽样用户余额及计费日志数相同。报价解析通过不代表上游接受多图或试衣质量通过；两次抽样报价选到不同渠道，后续必须记录每张实际渠道，不能混为同一服务表现。
+- 已准备八张真实评测，按现价预计 80 点，先单张验证链路，再按单件、套装、姿势、背景顺序比较。实际素材、允许上传云端的依据、测试账号及预算尚待明确，真实结果和质量评分均为空；不使用未经确认的用户素材或真实用户余额。P0 配置基线已核实，视觉/成本基线与 P2 专门试衣云 API 尚未完成。
+
 ## 爆款复刻分析统一查看与历史复用
 
 - 本节已随 v0.19.100（`de308f4`）发布生产，是对 v0.19.99 分离流程的后续优化。左侧删除两处分析正文和重复确认区，仅保留分析配置、开始操作、简短结果状态及脚本的“当前参考 / 查看”；全文集中在右侧文案编辑区，手机继续使用全屏编辑。
@@ -18,6 +27,28 @@ description: Implemented changes that still need manual verification
 - 生产内外健康、10 个页面、普通/VIP 用户 Worker 网关及权限通过；新资源 `/assets/index-BJP8s9jD.js` 含当前参考及历史复用入口，旧重复确认控件已移除，本机公网独立核对通过。13 张表数量、设置、余额/角色/分组、完整模型目录与报价及 10,429 个既有文件哈希一致，Worker 未重启，Gemini 保留 20 点/次。备份 `/opt/infinite-canvas/backups/v0.19.100-20261028-054743/`，证据 `.codex_tmp/release-v0.19.100/`；仅发布本轮爆款复刻相关改动，服装上身仍在本地。生产浏览器点击与真实收费推理未验收。
 - 待验收：发布后在生产原地址，用真实 Gemini 和抽样分析核对现有草稿、历史编辑稿与脚本引用、费用及失败退款；生产固定 20 点/次配置不属于本次修改。
 
+## 服装上身云端链路与本机恢复
+
+- 当前服务器没有 GPU。已删除本轮误加的自部署试衣服务、后台专用适配器与报价能力字段，恢复既有云端图片编辑协议；不安装权重或新增推理服务，不修改现有模型绑定、价格及生产配置。
+- 移除自部署路径带来的单件、原姿势、原背景、原构图和补充要求限制。上下装、上传姿势参考、白底影棚/场景库及构图继续按现有云端多图编辑请求执行；结构化字段通过图片角色提示词表达，不等于专门试衣或关键点控制已验收。
+- 试衣参数、图片、最近成功结果及原输入快照使用 localforage 存在本浏览器，按用户 ID 与访客分开；刷新和返回页面可恢复。读取失败或损坏暂停编辑，避免写空覆盖；写入失败保留当前内存并可重试保存，重试保存不会读取旧稿覆盖新稿。切换账号等待对应草稿读取，旧账号在途响应不写入新账号页面。它不等于服务器任务恢复或跨设备同步。
+- “参考照片”中可上传参考、保存名称到本机姿势库、选取和删除。库条目保存原照片，构图完整显示，默认保持原姿势。此轮没有预置未经来源和试衣效果验收的姿势照片。删除库条目不删除当前任务已选择的照片或旧结果快照。
+- 工作台增加返回图片创作入口，移除来自外部项目的前后效果空态，仅展示本次素材和实际结果。未删除旧静态素材文件，旧 provenance 记录已标为停用；本站真实样例待实测验收后加入。
+- 已通过模拟回归：Go 端验证云端 `/images/edits` 的模型、鉴权、prompt/size/quality、上下装与姿势参考的四张实际 PNG 顺序，签名报价总价、无报价/无效输入不扣费、配置版本变更拒绝、成功一次消费、上游失败退款且不重试。定向 handler/service 回归通过，前端状态/后台选项共 12 项、59 个断言通过；模拟通过不代表真实上游视觉质量或账单通过。
+- 本地开发测试入口为 `http://127.0.0.1:3000/cases?case=official-tryon`，对应 3000 Vite 与 8080 Go 后端；这不代表 Go 静态包或生产页面已更新。
+- 已以当前源码重启本地 Go 后端，健康接口为 `ok`，开发页与案例接口正常，案例包含姿势和连体装字段；实际 Vite 模块保留个人姿势库与草稿 hook，已移除单件限制及旧报价模式字段。
+- 最新本地交互验证与生产模型报价核查以上方“服装上身交互验收与模型基线核查”为准；此前 Windows 浏览器限制属于旧轮次记录，本轮通过独立 Headless Chrome 验证开发页面，没有操作既有用户浏览器。未执行前端构建或全量类型检查，真实收费生成、生产部署及实际用户浏览器验收仍待完成。P3 姿势仅部分实现，四阶段未全部完成。
+
+## 服装上身基础工作台优化
+
+- 打开 `/cases?case=official-tryon`，按服装、模特、姿势、场景、构图顺序设置。上装/下装可只上传一件；连衣裙/连体装独立上传，与上下装切换时清理隐藏图片。下装和连体装不开放半身构图，已有半身选择在添加下装时改为全身。
+- 模特支持图库选择与本地上传，切换来源清空旧人物；指定模特为必填。上传复用点击、拖拽及剪切板入口。姿势默认原姿势，可上传动作参考；场景默认原背景，可选择白底影棚或原有场景库。切回原姿势/原背景清理隐藏参考；无对应参考时不得提交。
+- 服务端在解析模型、提交生成与扣费前验证品类组合、必需素材、字段类型、图片头可解码与来源；上传人物和姿势采用原有 data URL 图片协议，不开放任意外链。官方模特和场景继续按角色白名单校验，不改上传大小、超时、重试和并发上限。
+- 图片角色与 multipart 附件共用同一来源顺序：模特、上装、下装、连体装、姿势、场景。提示词明确人物身份、服装细节、参考动作与场景来源；单件换衣保留未替换服装，原姿势与原背景进入真实请求。服装图类型、全身/半身构图和补充要求也进入请求。继续使用当前图片编辑渠道，属于生成约束，不能当作已经通过关键点或专门试衣模型验收。
+- 结果区展示生成时的素材快照和姿势/背景/构图；输入图与竖版结果均可放大，结果可下载并恢复参数。调整参数后保留上次结果和它的素材，不使用新输入标注旧结果。空态已由上方续作改为无外部效果示例；生成过程只展示实际等待，不显示假进度。
+- 快照与个人姿势库持久化、云端路线修正以本页“服装上身云端链路与本机恢复”为准；服务端异步任务恢复、账号云同步、批量和高清仍未新增。实际模型、价格和已有报价确认沿用原配置。
+- 已验证：Go 定向回归覆盖输入校验、角色提示词、隐藏素材清理、与普通图片编辑隔离，以及模拟上游接收真实 PNG 附件顺序；前端 3 项状态测试、19 个断言通过。真实本地后端健康、前端页面及新增模块请求均为 200；案例接口返回姿势、连体装及必填模特字段。未执行构建或全量类型检查。
+- 最新开发页面的模拟交互、桌面/手机截图与模型报价核查见上方“服装上身交互验收与模型基线核查”。真实素材的服装/身份/姿势准确性、实际费用及失败退款、系统级上传/剪切板和生产页面仍待验收，尚未部署此工作台。
 
 ## 爆款复刻分析流程分离
 
@@ -32,7 +63,8 @@ description: Implemented changes that still need manual verification
 - 定向回归分进程执行：视频分析 12 项/70 个断言、模型管理 8 项/45 个断言、工作台草稿持久化 3 项/11 个断言通过。合跑时已有全局模拟互相干扰，分进程无失败；按项目约定未执行构建或类型/语法检查。
 - 浏览器使用独立 Headless Chrome 与全量拦截的模拟接口检查默认选择、取消报价、原生不调用 Worker、一键抽样/转写、原稿保护、采用/沿用、脚本请求来源、刷新恢复、失效模型与手动失败切换。截图及报告保存在本地 `.codex_tmp/viral-analysis-qa/`，不代表真实渠道、真实扣费或生产部署通过。
 - 已随 v0.19.99（`458140c`）发布部署，内外健康、10 个页面、普通/VIP 用户 Worker 网关及权限检查通过；服务器与本机公网请求确认新资源 `/assets/index-CbEJWmof.js` 包含版本和采用/切换逻辑。13 张表记录数、设置、余额/角色/分组、模型目录与报价、10,417 个既有文件哈希一致，Worker 未重启。备份为 `/opt/infinite-canvas/backups/v0.19.99-20261028-043002/`，部署证据为 `.codex_tmp/release-v0.19.99/deployment.json`。发布时未重复本地测试或构建；服务器 Docker 镜像构建成功。
-- 待验收：配置真实 Gemini 接入、价格和功能绑定后，用同一参考视频检查音画与动作、真实费用及失败退款；核对真实 Worker 抽样/转写、用户既有草稿与历史恢复，以及生产页面交互。生产仍未配置可用 Gemini 绑定，新草稿默认抽样；未提交收费生成。
+- 用户随后授权 20 算力点/次，已保存第 10 版生产配置：渠道 #23 的 `gemini-3.8-flash`，适配器 `text.gemini-video`，平台模型 `model_gemini_video_flash`，仅绑定视频与音轨分析并设为默认。管理员、default/VIP 普通账号内网和公开 HTTPS 目录、签名渠道及 20 点报价通过。配置保存时余额和表记录数未变，其他功能/价格/渠道凭据保持；后续三笔独立图片消费已核对流水。备份与证据位于 `/opt/infinite-canvas/backups/gemini-video-20261028-044144/`，无需重新部署。
+- 待验收：用同一参考视频检查真实 Gemini 音画与动作、费用及失败退款，核对真实 Worker 抽样/转写、既有草稿与历史恢复，以及生产页面选模和旧标签刷新。当前会话没有可控生产浏览器；已有草稿保留抽样选择，需要刷新后手动切换“视频与音轨”。未提交收费分析。
 
 ## 渠道添加后的模型接入向导
 
@@ -905,8 +937,8 @@ description: Implemented changes that still need manual verification
 - 3D 服装图：打开 `/cases?case=official-garment-3d`，左侧应显示默认 1K 的 1K/2K/4K 分辨率选项；选择后分别向图片编辑接口请求 1024×1536、1360×2048、2336×3520。右侧空态展示现有服装输入图及用户提供的同款效果图，素材来源记录于 `web/public/examples/garment-3d/provenance.json`，不称为本站已验证的运行结果。上传应替换示例并清除旧结果，生成后应展示同次上传原图与结果并可下载。需用实际模型验证示例来源、2K/4K 尺寸支持、输出像素和画面质量。
 
 - Try-on local debug page: after starting the project frontend and opening `/cases?case=official-tryon`, React should mount the complete workspace instead of showing a blank page; the browser console should not report `__APP_VERSION__ is not defined`.
-- Try-on empty state: open `/cases?case=official-tryon` and verify the right pane shows the garment source and model-wearing result from one try-on run, documented in `web/public/examples/tryon/provenance.json`; after uploading and generating, the demo must be replaced by the current result.
-- Try-on workspace: open `/cases?case=official-tryon` and verify separate top/bottom garment uploads, model and scene library pickers, thumbnails, and the role-ordered multi-image edit request. At least one garment is required; missing garments must not charge or submit. Verify the real result, desktop/mobile layouts, and light/dark themes.
+- Try-on empty state: superseded by “服装上身云端链路与本机恢复”; external showcase images are no longer displayed as this tool's output.
+- Try-on workspace: the original top/bottom and library workflow is superseded by “服装上身基础工作台优化” above; use that section for current input, role order, result snapshot and manual validation requirements.
 - Print-extraction workspace: open `/cases?case=official-print-extract`. Before upload, the right pane should show the floral pillow source and output from one real local run, documented in `web/public/examples/print-extract/provenance.json`. Uploading should replace the demo with the current source and a pending result; a completed run should compare its own source and output and offer PNG download. Verify Basic/Advanced mode, category, Auto, 1:1, 3:4, 4:3, 16:9, and 9:16 ratios, edge completion, Standard/High quality, transparent/white background, and optional instructions. Ratio and quality must change real request settings; 16:9 and 9:16 should request landscape and portrait output sizes. Other controls enter the extraction prompt. The demo run requested white background but returned RGBA transparency, so background reliability still needs validation. Replacing the upload clears the old result; check desktop/mobile and both themes.
 - IP screening workspace: open `/ipcheck` or `/cases?case=official-ip-check`; both addresses should use the breadcrumb, original-image card, result card, aligned title, and three risk-dimension empty-state tiles. Click selection, drag/drop upload, clipboard upload, source preview, dynamic compute-point quote, confirmation, loading state, structured risk level/items/advice, and the review disclaimer should work on desktop/mobile in both themes. Replacing or removing the image clears the previous result without charging points. The output remains visual review guidance rather than infringement evidence or legal advice.
 - My Assets entry: opening My Assets should show Materials and Cases views. Materials keeps the existing search, import/export, and add actions; Cases shows the signed-in user's case drafts and supports submission. The account menu only contains sign out, and the case market can still open My Assets → Cases.

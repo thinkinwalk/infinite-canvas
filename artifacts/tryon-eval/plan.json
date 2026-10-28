@@ -1,0 +1,32 @@
+{
+  "feature": "case:official-tryon:image",
+  "status": "awaiting_assets_account_and_budget",
+  "paidRequests": 0,
+  "managementRevision": 10,
+  "platformModelId": "model_0b367a890ede4791af3abb0ed95b5a2b",
+  "upstreamModel": "gpt-image-2",
+  "adapter": "image.openai",
+  "eligibleChannelIds": [2, 18],
+  "requestedOutput": { "size": "1024x1536", "quality": "high", "count": 1 },
+  "estimate": { "pointsPerImage": 10, "imageCount": 8, "totalPoints": 80, "providerCurrencyCost": null },
+  "testAccount": null,
+  "assets": {
+    "model": { "path": null, "sha256": null, "source": null, "cloudUploadAuthorized": false },
+    "topPlain": { "path": null, "sha256": null, "source": null, "cloudUploadAuthorized": false },
+    "topPattern": { "path": null, "sha256": null, "source": null, "cloudUploadAuthorized": false },
+    "bottom": { "path": null, "sha256": null, "source": null, "cloudUploadAuthorized": false },
+    "onePiece": { "path": null, "sha256": null, "source": null, "cloudUploadAuthorized": false },
+    "pose": { "path": null, "sha256": null, "source": null, "cloudUploadAuthorized": false }
+  },
+  "cases": [
+    { "id": "T01", "model": "model", "top": "topPlain", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "original", "sceneMode": "original", "framing": "original", "status": "awaiting_assets" },
+    { "id": "T02", "model": "model", "top": "topPattern", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "original", "sceneMode": "original", "framing": "original", "status": "awaiting_assets" },
+    { "id": "T03", "model": "model", "bottom": "bottom", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "original", "sceneMode": "original", "framing": "original", "status": "awaiting_assets" },
+    { "id": "T04", "model": "model", "onePiece": "onePiece", "garmentMode": "one-piece", "garmentPhotoType": "flat", "poseMode": "original", "sceneMode": "original", "framing": "original", "status": "awaiting_assets" },
+    { "id": "T05", "model": "model", "top": "topPattern", "bottom": "bottom", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "original", "sceneMode": "original", "framing": "original", "status": "awaiting_assets" },
+    { "id": "T06", "model": "model", "top": "topPattern", "pose": "pose", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "reference", "sceneMode": "original", "framing": "original", "comparesTo": "T02", "status": "awaiting_assets" },
+    { "id": "T07", "model": "model", "top": "topPattern", "bottom": "bottom", "pose": "pose", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "reference", "sceneMode": "original", "framing": "original", "comparesTo": "T05", "status": "awaiting_assets" },
+    { "id": "T08", "model": "model", "top": "topPattern", "pose": "pose", "garmentMode": "separates", "garmentPhotoType": "flat", "poseMode": "reference", "sceneMode": "studio", "framing": "original", "comparesTo": "T06", "status": "awaiting_assets" }
+  ],
+  "results": []
+}
