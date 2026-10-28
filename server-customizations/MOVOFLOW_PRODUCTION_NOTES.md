@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.101
-- Current production source: tag v0.19.101, commit e0b3bfa8daa337a7d800715b028714867b04ef13
+- Current production image: infinite-canvas:v0.19.102
+- Current production source: tag v0.19.102, commit 59c15feb82a75f95e2ec65c4304ac7ac8fd30fb5
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.102 deployment
+
+- Tag `v0.19.102`, commit `59c15feb82a75f95e2ec65c4304ac7ac8fd30fb5`, is pushed on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.102`, ID `sha256:a342876a36e7657bf135386cdff7a34381fda317bca500ca39b6cab853152119`, matches the tag. Concurrent viral legacy-analysis recovery changes and local evaluation artifacts are preserved locally and excluded.
+- Try-on adds eight embedded pose photographs with three pose sources, selected states, previews, replacement/removal and draft restoration. Actual photos enter multipart cloud edits with role/ID/path validation. Four half-body references are explicitly named as such. Old case photos are restored under a separate examples/results switch, attributed to the reference project rather than represented as site-generated results. Garment input types have clearer labels. No GPU service, paid generation, model/pricing/binding change or extra extraction call.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.102-20261028-071844/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.102-prebuild-20261028-071557/`. Database quick checks, all 13 table counts, settings, balances/roles/groups/status and 10,461 existing file hashes matched. Historical paused work and linked completed Worker files were preserved.
+- Only app was recreated; Worker ID, image, start time and source mounts remain unchanged. Internal/external health, 11 public routes, ordinary/VIP Worker capabilities, permissions, complete catalogs and sampled quotes passed. Try-on schema remains version 3 with 12 fields and 10 credits per image for both groups; model management remains revision 10 (38 models / 65 routes / 656 bindings).
+- Public `/assets/index-DevswzT_.js` includes v0.19.102 and the new controls. Server and independent workstation HTTPS checks verified all eight pose photographs and both old example files byte-for-byte against the release. Development verification passed focused Go tests, seven frontend tests / 47 assertions and 19 isolated mocked browser groups. No local build/test was repeated during release; production Docker build completed. Production browser interaction, real pose/clothing/identity quality and actual billing/refunds remain pending.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.102-deployment.json` and workstation `.codex_tmp/release-v0.19.102/`. Rollback restores the final backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; the v0.19.101 image remains available. Do not restore the backup database over subsequent activity.
 
 ## v0.19.101 deployment
 
