@@ -109,8 +109,6 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                 <section className="flex min-w-0 flex-col gap-5 border-b border-stone-200 pb-6 lg:border-b-0 lg:border-r lg:pr-6 dark:border-stone-800" aria-label="服装上身参数">
                     <div className="space-y-3">
                         <h2 className="text-sm font-semibold">服装 <span className="text-red-500">*</span></h2>
-                        <h3 className="text-xs text-stone-500">服装照片类型</h3>
-                        <Segmented block disabled={busy} value={String(values.garmentPhotoType || "flat")} options={[{ label: "衣服单独拍摄", value: "flat" }, { label: "衣服穿在人身上", value: "person" }]} onChange={(value) => onChange({ garmentPhotoType: String(value) })} />
                         <Segmented block disabled={busy} value={String(values.garmentMode || "separates")} options={[{ label: "上装 / 下装", value: "separates" }, { label: "连衣裙 / 连体装", value: "one-piece" }]} onChange={(value) => onChange({ garmentMode: String(value) })} />
                         {onePiece ? renderUpload("onePieceImageUrl", "连衣裙 / 连体装") : <div className="grid grid-cols-2 gap-3">
                             <div className="min-w-0"><h3 className="mb-2 text-xs text-stone-500">上装</h3>{renderUpload("topImageUrl", "上装")}</div>
@@ -153,12 +151,12 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                     </div>
                     <div className="space-y-3">
                         <h2 className="text-sm font-semibold">构图</h2>
-                        <Segmented block disabled={busy} value={String(values.framing || "original")} options={[{ label: "原构图", value: "original" }, { label: "全身", value: "full" }, { label: "半身", value: "half", disabled: onePiece || Boolean(values.bottomImageUrl) }]} onChange={(value) => onChange({ framing: String(value) })} />
+                        <Segmented block disabled={busy} value={String(values.framing || "full")} options={[{ label: "全身", value: "full" }, { label: "半身", value: "half", disabled: onePiece || Boolean(values.bottomImageUrl) }]} onChange={(value) => onChange({ framing: String(value) })} />
                     </div>
-                    <details>
-                        <summary className="cursor-pointer text-sm text-stone-500">补充要求（可选）</summary>
-                        <Input.TextArea className="mt-3" disabled={busy} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="例如：上衣下摆自然垂放，不塞进裤腰" value={String(values.prompt || "")} onChange={(event) => onChange({ prompt: event.target.value })} />
-                    </details>
+                    <div className="space-y-3">
+                        <label htmlFor="tryon-prompt" className="block text-sm text-stone-500">补充要求（可选）</label>
+                        <Input.TextArea id="tryon-prompt" disabled={busy} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="例如：上衣下摆自然垂放，不塞进裤腰" value={String(values.prompt || "")} onChange={(event) => onChange({ prompt: event.target.value })} />
+                    </div>
                     <div className="sticky bottom-0 z-10 mt-auto border-t border-stone-200 bg-background pb-3 pt-4 dark:border-stone-800">{footer}</div>
                 </section>
                 <section className="min-w-0" aria-label="试穿结果">
@@ -187,7 +185,7 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                         <p className="mb-3 text-xs text-stone-500">
                             {({ original: "保持模特姿势", library: "常用姿势", reference: "自定义参考" } as Record<string, string>)[String(result.inputs.poseMode || "original")]}
                             {" · "}{({ original: "原背景", studio: "白底影棚", library: "场景库" } as Record<string, string>)[String(result.inputs.sceneMode || "original")]}
-                            {" · "}{({ original: "原构图", full: "全身", half: "半身" } as Record<string, string>)[String(result.inputs.framing || "original")]}
+                            {result.inputs.framing === "full" || result.inputs.framing === "half" ? <>{" · "}{result.inputs.framing === "half" ? "半身" : "全身"}</> : null}
                         </p>
                         <div className={result.urls.length > 1 ? "grid gap-5 xl:grid-cols-2" : "mx-auto w-full max-w-[560px]"}>
                             {result.urls.map((url, index) => <figure key={`${index}-${url}`}>

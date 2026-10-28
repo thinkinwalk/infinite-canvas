@@ -10,13 +10,12 @@ export const tryonDefaults = {
     topImageUrl: "",
     bottomImageUrl: "",
     onePieceImageUrl: "",
-    garmentPhotoType: "flat",
     poseMode: "original",
     poseId: "",
     poseImageUrl: "",
     sceneMode: "original",
     sceneImageUrl: "",
-    framing: "original",
+    framing: "full",
     prompt: "",
 };
 
@@ -32,7 +31,7 @@ export function updateTryonValues(current: TryonValues, changes: TryonValues): T
     if (next.poseMode === "original") next.poseImageUrl = "";
     if (next.poseMode !== "library" || !next.poseImageUrl) next.poseId = "";
     if (next.sceneMode !== "library") next.sceneImageUrl = "";
-    if (next.framing === "half" && (next.garmentMode === "one-piece" || next.bottomImageUrl)) next.framing = "full";
+    if (next.framing !== "half" || next.garmentMode === "one-piece" || next.bottomImageUrl) next.framing = "full";
     return next;
 }
 

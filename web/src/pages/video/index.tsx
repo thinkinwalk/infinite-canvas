@@ -33,7 +33,7 @@ import { createVideoGenerationTask, isVideoTaskFailed, quoteVideoModel, storeGen
 import { ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { boolConfig, modelOptionName, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, modelOptionName, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { isMiniMaxH3NamedSize } from "@/lib/minimax-h3";
 import { resolveAutomaticVideoModel, videoInputMode, videoProfile, videoReferenceError, videoReferenceDurationError, videoInputDescription, remapMaterialMentions, materialMentionError, videoModelsForInputMode, isH3Video2K, isWan30 } from "@/lib/video-capabilities";
 import { inferVideoRatio, computeVideoSize } from "@/lib/media-size";
@@ -108,6 +108,7 @@ export default function VideoPage() {
     const activeLogIdsRef = useRef<Set<string>>(new Set());
     const activeLogControllersRef = useRef<Map<string, AbortController>>(new Map());
     const effectiveConfig = useVideoCreationConfig();
+    const scriptConfig = useEffectiveConfig("video.script");
     const loadingModels = useConfigStore((state) => state.isPublicSettingsLoading);
     const modelsError = useConfigStore((state) => state.publicSettingsError);
     const confirmReplicate = useReplicateConfirmation();
@@ -209,7 +210,7 @@ export default function VideoPage() {
         references: materialLabels.map((item) => ({ marker: `@${item.label}`, title: item.name })),
         validate: (value) => materialMentionError(value, materialLabels),
     });
-    const writingScope = JSON.stringify([prompt, materialLabels, references.map((item) => [item.storageKey, item.dataUrl]), videoReferences.map((item) => [item.url, item.durationMs]), audioReferences.map((item) => [item.url, item.durationMs]), effectiveConfig, model, creationMode, token]);
+    const writingScope = JSON.stringify([prompt, materialLabels, references.map((item) => [item.storageKey, item.dataUrl]), videoReferences.map((item) => [item.url, item.durationMs]), audioReferences.map((item) => [item.url, item.durationMs]), scriptConfig, model, creationMode, token]);
     const writingScopeRef = useRef(writingScope);
     writingScopeRef.current = writingScope;
     const [writingResultScope, setWritingResultScope] = useState("");
@@ -431,7 +432,7 @@ export default function VideoPage() {
             setWritingError("请先输入视频主题或制作要求。");
             return;
         }
-        const textModel = effectiveConfig.textModel;
+        const textModel = scriptConfig.textModel;
         const controller = new AbortController();
         const scope = writingScope;
         writingControllerRef.current = controller;
@@ -439,13 +440,13 @@ export default function VideoPage() {
         setWritingComplete(false);
         setWritingResultScope(scope);
         try {
-            await confirmTextModel(effectiveConfig, controller.signal, "AI代写");
+            await confirmTextModel(scriptConfig, controller.signal, "AI代写");
             const content: Exclude<AiTextMessage["content"], string> = [
                 { type: "text", text: `根据用户的要求与参考图片撰写可直接提交给视频模型的中文分镜提示词。时长 ${effectiveConfig.videoSeconds} 秒。说明主体、镜头、动作、构图、光线和节奏，不虚构素材事实。已上传编号：${materialLabels.map((item) => item.label).join("、") || "无"}。保留用户指定的 @素材编号；不添加不存在的编号。视频和音频仅有编号，未提供内容，不推断其具体内容。只输出提示词。用户要求：${writingBrief}` },
             ];
             for (const image of references) content.push({ type: "image_url", image_url: { url: await imageToDataUrl(image) } });
             controller.signal.throwIfAborted();
-            const answer = await requestImageQuestion({ ...effectiveConfig, model: textModel }, [{ role: "user", content }], (text) => { if (!controller.signal.aborted && writingControllerRef.current === controller && writingScopeRef.current === scope) setWritingPreview(text); }, { signal: controller.signal });
+            const answer = await requestImageQuestion({ ...scriptConfig, model: textModel }, [{ role: "user", content }], (text) => { if (!controller.signal.aborted && writingControllerRef.current === controller && writingScopeRef.current === scope) setWritingPreview(text); }, { signal: controller.signal });
             if (controller.signal.aborted || writingControllerRef.current !== controller || writingScopeRef.current !== scope) return;
             if (!answer.trim() || answer.trim() === "没有返回内容") throw new Error("文字模型没有返回提示词，请重试或切换代写模型。原提示词已保留。");
             setWritingPreview(answer);
@@ -849,7 +850,7 @@ export default function VideoPage() {
                         <Input.TextArea aria-label="待增强视频脚本" rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={running} />
                         <div className="flex flex-wrap items-center justify-between gap-2"><Typography.Text type="secondary">文字增强单独计费</Typography.Text><PromptEnhancementButton state={enhancement} disabled={running || !prompt.trim()} /></div>
                     </> : <>
-                        <ModelPicker config={effectiveConfig} value={effectiveConfig.textModel} onChange={(value) => { if (!writing) updateConfig("textModel", value); }} capability="text" fullWidth onMissingConfig={() => openConfigDialog(false, "channels")} />
+                        <ModelPicker config={scriptConfig} value={scriptConfig.textModel} onChange={(value) => { if (writing) return; if (scriptConfig.managed?.enabled && scriptConfig.channelMode === "remote") useConfigStore.setState((state) => ({ featureModels: { ...state.featureModels, "video.script": value } })); else updateConfig("textModel", value); }} capability="text" fullWidth onMissingConfig={() => openConfigDialog(false, "channels")} />
                         <Input.TextArea aria-label="代写要求" rows={3} disabled={writing} value={writingBrief} onChange={(event) => { setWritingBrief(event.target.value); setWritingComplete(false); }} placeholder="例如：做一段香水广告，镜头缓慢环绕，突出瓶身质感。" />
                         {writing && <Typography.Text role="status" type="secondary">正在撰写…</Typography.Text>}
                         {writingPreview && <Input.TextArea aria-label="代写脚本预览" rows={8} readOnly={writing} value={writingPreview} onChange={(event) => setWritingPreview(event.target.value)} />}

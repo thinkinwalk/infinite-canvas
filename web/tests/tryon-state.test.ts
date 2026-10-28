@@ -7,12 +7,17 @@ test("try-on requires the selected garment, person, pose and scene", () => {
     expect(tryonInputError(garment)).toContain("模特");
     const ready = { ...garment, modelImageUrl: "person" };
     expect(tryonInputError(ready)).toBe("");
+    expect(tryonInputError({ ...ready, topImageUrl: "", bottomImageUrl: "bottom" })).toBe("");
+    expect(tryonInputError({ ...ready, garmentMode: "one-piece", topImageUrl: "", onePieceImageUrl: "dress" })).toBe("");
     expect(tryonInputError({ ...ready, poseMode: "reference" })).toContain("姿势");
     expect(tryonInputError({ ...ready, sceneMode: "library" })).toContain("场景");
     expect(tryonInputError({ ...ready, garmentMode: "one-piece" })).toContain("服装");
 });
 
 test("switching modes removes inactive images and prevents half-body trousers", () => {
+    expect(tryonDefaults.framing).toBe("full");
+    expect(updateTryonValues(tryonDefaults, { topImageUrl: "top", framing: "half" }).framing).toBe("half");
+    expect(updateTryonValues(tryonDefaults, { framing: "original" }).framing).toBe("full");
     const current = { ...tryonDefaults, topImageUrl: "top", bottomImageUrl: "bottom", framing: "half", poseImageUrl: "pose", sceneImageUrl: "scene" };
     const next = updateTryonValues(current, { garmentMode: "one-piece", onePieceImageUrl: "dress" });
     expect(next.topImageUrl).toBe("");
@@ -52,6 +57,7 @@ test("draft restoration retains input snapshot and personal pose images", () => 
     const draft = { values: { ...inputs, topImageUrl: "new garment" }, result: { inputs, urls: ["image"] }, poses: [{ id: "pose-1", name: "侧身", image: "pose image" }] };
     const restored = readTryonDraft(structuredClone(draft));
     expect(restored.values.topImageUrl).toBe("new garment");
+    expect(restored.values.framing).toBe("full");
     expect(restored.result?.inputs.topImageUrl).toBe("original garment");
     expect(restored.poses[0]).toEqual(draft.poses[0]);
     expect(readTryonDraft(null)).toEqual({ values: tryonDefaults, result: null, poses: [] });

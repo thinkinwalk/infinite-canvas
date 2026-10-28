@@ -122,7 +122,7 @@ func TestTryonCloudEditQuotePayloadAndRefund(t *testing.T) {
 	})}
 	run := func(patch map[string]any, token string) map[string]any {
 		inputs := map[string]any{
-			"modelImageUrl": picture, "topImageUrl": picture, "bottomImageUrl": picture, "garmentPhotoType": "person",
+			"modelImageUrl": picture, "topImageUrl": picture, "bottomImageUrl": picture,
 			"poseMode": "reference", "poseImageUrl": picture, "sceneMode": "studio", "framing": "full", "prompt": "衣摆自然垂放",
 		}
 		for key, value := range patch {
@@ -204,7 +204,10 @@ func TestTryonValidatesInputsBeforeGeneration(t *testing.T) {
 		{"unreadable image", map[string]any{"modelImageUrl": "data:" + "image/png;base64,dGVzdA=="}, "无法解码"},
 		{"array model", map[string]any{"modelImageUrl": []any{picture}}, "图片格式"},
 		{"invalid pose mode", map[string]any{"poseMode": map[string]any{"value": "original"}}, "选项无效"},
+		{"removed original framing", map[string]any{"framing": "original"}, "选项无效"},
+		{"half body top", map[string]any{"framing": "half"}, ""},
 		{"half body trousers", map[string]any{"framing": "half", "bottomImageUrl": picture}, "全身"},
+		{"half body one piece", map[string]any{"garmentMode": "one-piece", "topImageUrl": "", "onePieceImageUrl": picture, "framing": "half"}, "全身"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			inputs := map[string]any{"topImageUrl": picture, "modelImageUrl": picture}
@@ -235,13 +238,16 @@ func TestTryonOriginalModesDiscardUnusedReferences(t *testing.T) {
 	if err := normalizeTryonInputs(inputs); err != nil {
 		t.Fatal(err)
 	}
+	if inputs["framing"] != "full" {
+		t.Fatal("default framing must show the full body")
+	}
 	for _, key := range []string{"poseId", "poseImageUrl", "sceneImageUrl", "referenceImageUrls"} {
 		if _, exists := inputs[key]; exists {
 			t.Fatalf("inactive reference %s survived normalization", key)
 		}
 	}
 	prompt := tryonPrompt(inputs)
-	for _, text := range []string{"图1为模特", "图2为上装", "保持模特原图的身体姿势", "保持模特原图背景", "保持模特原有下装"} {
+	for _, text := range []string{"图1为模特", "图2为上装", "保持模特原图的身体姿势", "保持模特原图背景", "保持模特原有下装", "采用全身构图"} {
 		if !strings.Contains(prompt, text) {
 			t.Fatalf("missing preservation instruction: %s", text)
 		}
@@ -253,7 +259,7 @@ func TestTryonReferenceRolesAndModes(t *testing.T) {
 	inputs := map[string]any{
 		"garmentMode": "one-piece", "onePieceImageUrl": picture, "modelImageUrl": picture,
 		"poseMode": "reference", "poseImageUrl": picture, "sceneMode": "studio",
-		"garmentPhotoType": "person", "framing": "full", "prompt": "衣摆自然垂放",
+		"framing": "full", "prompt": "衣摆自然垂放",
 	}
 	if err := normalizeTryonInputs(inputs); err != nil {
 		t.Fatal(err)
@@ -269,6 +275,47 @@ func TestTryonReferenceRolesAndModes(t *testing.T) {
 	}
 	if !hasTryonImages(inputs) || hasTryonImages(map[string]any{"imageUrl": picture}) {
 		t.Fatal("try-on input detection must not change ordinary image edits")
+	}
+}
+
+func TestTryonGarmentReferencesUseOnlyAssignedClothing(t *testing.T) {
+	picture := tryonTestImage(t)
+	for _, test := range []struct {
+		name    string
+		garment map[string]any
+	}{
+		{"top", map[string]any{"topImageUrl": picture}},
+		{"bottom", map[string]any{"bottomImageUrl": picture}},
+		{"separates", map[string]any{"topImageUrl": picture, "bottomImageUrl": picture}},
+		{"one piece", map[string]any{"garmentMode": "one-piece", "onePieceImageUrl": picture}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			inputs := map[string]any{"modelImageUrl": picture}
+			for key, value := range test.garment {
+				inputs[key] = value
+			}
+			if err := normalizeTryonInputs(inputs); err != nil {
+				t.Fatal(err)
+			}
+			prompt := tryonPrompt(inputs)
+			for _, text := range []string{
+				"平铺图、挂拍图或穿着图", "各张图片只提取其指定的目标服装",
+				"不复制参考图中人物的面容、发型、肤色、体型、动作或背景",
+				"保持模特原图的身体姿势", "保持模特原图背景",
+			} {
+				if !strings.Contains(prompt, text) {
+					t.Fatalf("missing reference instruction: %s", text)
+				}
+			}
+			for key, instruction := range map[string]string{
+				"topImageUrl": "保持模特原有上装", "bottomImageUrl": "保持模特原有下装",
+			} {
+				keep := stringInput(inputs, key) == "" && stringInput(inputs, "onePieceImageUrl") == ""
+				if strings.Contains(prompt, instruction) != keep {
+					t.Fatalf("wrong preservation instruction: %s", instruction)
+				}
+			}
+		})
 	}
 }
 

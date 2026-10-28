@@ -826,11 +826,11 @@ export default function ModelManagementPage() {
                                                 columns={[
                                                     { title: "平台模型", dataIndex: "displayName" },
                                                     {
-                                                        title: "允许使用",
+                                                        title: "用户可选",
                                                         render: (_, entry) => <Switch checked={value.bindings.some((b) => b.featureId === selectedFeature && b.modelId === entry.id && b.enabled)} onChange={(enabled) => patchBinding(entry, { enabled })} />,
                                                     },
                                                     {
-                                                        title: "默认",
+                                                        title: "默认模型",
                                                         render: (_, entry) => (
                                                             <Checkbox
                                                                 checked={value.bindings.some((b) => b.featureId === selectedFeature && b.modelId === entry.id && b.default)}
@@ -840,13 +840,13 @@ export default function ModelManagementPage() {
                                                         ),
                                                     },
                                                     {
-                                                        title: "顺序",
+                                                        title: "展示顺序",
                                                         render: (_, entry) => (
                                                             <InputNumber min={0} value={value.bindings.find((b) => b.featureId === selectedFeature && b.modelId === entry.id)?.order || 0} onChange={(order) => patchBinding(entry, { order: order || 0 })} />
                                                         ),
                                                     },
                                                     {
-                                                        title: "允许渠道",
+                                                        title: "允许接入",
                                                         render: (_, entry) => (
                                                             <Select
                                                                 mode="multiple"

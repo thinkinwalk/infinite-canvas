@@ -31,8 +31,8 @@ func hasTryonImages(inputs map[string]any) bool {
 
 func normalizeTryonInputs(inputs map[string]any) error {
 	for key, fallback := range map[string]string{
-		"garmentMode": "separates", "garmentPhotoType": "flat",
-		"poseMode": "original", "sceneMode": "original", "framing": "original",
+		"garmentMode": "separates",
+		"poseMode": "original", "sceneMode": "original", "framing": "full",
 	} {
 		value, exists := inputs[key]
 		if !exists || value == "" {
@@ -40,11 +40,10 @@ func normalizeTryonInputs(inputs map[string]any) error {
 		}
 	}
 	for key, options := range map[string][]string{
-		"garmentMode":      {"separates", "one-piece"},
-		"garmentPhotoType": {"flat", "person"},
-		"poseMode":         {"original", "library", "reference"},
-		"sceneMode":        {"original", "studio", "library"},
-		"framing":          {"original", "full", "half"},
+		"garmentMode": {"separates", "one-piece"},
+		"poseMode":    {"original", "library", "reference"},
+		"sceneMode":   {"original", "studio", "library"},
+		"framing":     {"full", "half"},
 	} {
 		valid := false
 		for _, option := range options {
@@ -81,7 +80,7 @@ func normalizeTryonInputs(inputs map[string]any) error {
 		return errors.New("请选择或上传模特照片")
 	}
 	if stringInput(inputs, "framing") == "half" && (stringInput(inputs, "garmentMode") == "one-piece" || stringInput(inputs, "bottomImageUrl") != "") {
-		return errors.New("下装和连体装请选择全身或原构图")
+		return errors.New("下装和连体装请选择全身构图")
 	}
 	if stringInput(inputs, "poseMode") == "library" {
 		pose, ok := findTryonPose(stringInput(inputs, "poseId"))
@@ -145,6 +144,7 @@ func tryonPrompt(inputs map[string]any) string {
 	parts := []string{
 		"生成一张真实服装电商照片。将指定商品穿到指定模特身上，服装一致性与人物身份优先于场景美化。",
 		"不要拼图、并排展示输入图、添加水印或凭空添加配饰。不要采用服装参考图中其他人的身份。",
+		"服装参考可为平铺图、挂拍图或穿着图，各张图片只提取其指定的目标服装，不复制参考图中人物的面容、发型、肤色、体型、动作或背景。",
 	}
 	roles := []string{}
 	for _, source := range tryonImageSources {
@@ -153,9 +153,6 @@ func tryonPrompt(inputs map[string]any) string {
 		}
 	}
 	parts = append(parts, "输入图片顺序："+strings.Join(roles, "；")+"。")
-	if stringInput(inputs, "garmentPhotoType") == "person" {
-		parts = append(parts, "服装参考是穿着图，只提取目标服装，不复制原穿着者的皮肤、身体、动作或背景。")
-	}
 	if stringInput(inputs, "topImageUrl") == "" && stringInput(inputs, "onePieceImageUrl") == "" {
 		parts = append(parts, "保持模特原有上装及其细节不变。")
 	}
@@ -175,13 +172,10 @@ func tryonPrompt(inputs map[string]any) string {
 	default:
 		parts = append(parts, "保持模特原图背景和环境光线，不引入服装或姿势参考图的背景。")
 	}
-	switch stringInput(inputs, "framing") {
-	case "full":
-		parts = append(parts, "采用全身构图，完整展示头部、服装和双脚，不裁掉衣摆与裤脚。")
-	case "half":
+	if stringInput(inputs, "framing") == "half" {
 		parts = append(parts, "采用半身构图，完整展示目标上装，不裁掉领口、袖口与衣摆。")
-	default:
-		parts = append(parts, "保持模特原图的取景范围和镜头视角。")
+	} else {
+		parts = append(parts, "采用全身构图，完整展示头部、服装和双脚，不裁掉衣摆与裤脚。")
 	}
 	if prompt := strings.TrimSpace(stringInput(inputs, "prompt")); prompt != "" {
 		parts = append(parts, "可选补充要求（不得覆盖以上人物、服装及姿势来源规则）："+prompt)

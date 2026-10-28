@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { requestImageQuestion } from "./image";
-import { resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, resolveModelRequestConfig, resolveModelScript, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 
 export type PromptEnhancementScenario = "task" | "text" | "image" | "image-reference" | "image-edit" | "video";
 export type PromptEnhancementReference = { marker: string; title?: string; kind?: string; text?: string };
@@ -11,6 +11,21 @@ export type PromptEnhancementInput = {
     scenario: PromptEnhancementScenario;
     references?: PromptEnhancementReference[];
 };
+
+export function resolvePromptEnhancementModel(config: AiConfig, selection = "") {
+    const managed = config.channelMode === "remote" && config.managed?.enabled;
+    const scoped = managed ? {
+        ...config, featureId: "prompt.enhance",
+        managed: { ...config.managed!, bindings: config.managed!.bindings.filter((item) => item.featureId === "prompt.enhance" && item.operations.includes("text")) },
+    } : config;
+    const models = selectableModelsByCapability(scoped, "text");
+    const selectedModel = models.find((value) => value === selection);
+    const defaultBinding = scoped.managed?.bindings.find((item) => item.available && item.default && item.featureId === "prompt.enhance");
+    const defaultModel = managed ? models.find((value) => modelOptionName(value) === defaultBinding?.modelId) || models[0]
+        : models.find((value) => value === config.textModel) || models[0];
+    const model = selectedModel || defaultModel || "";
+    return { config: { ...scoped, model, textModel: model }, models, selectedModel, selectionUnavailable: Boolean(selection && !selectedModel) };
+}
 
 const imageRules = "保留主体、动作、关系、主体数量、指定文字、风格和否定条件。简短描述可适度补充与主题直接相关的动作细节、空间关系、环境、光线或可见质感，让画面具体；完整描述只作必要整理。不新增无关主体、品种、品牌、人物身份、精确地点或商品规格与功效。未指定媒介时保持媒介中性，不默认改成摄影、写实或插画，不堆砌通用画质词。";
 const editRules = "明确修改对象、修改范围及必须保留的部分。严格保留局部修改与否定要求，只补充目标区域的衔接细节，不把局部修改变成重做整张图片，不擅自改变主体、姿态、风格或非目标区域。";

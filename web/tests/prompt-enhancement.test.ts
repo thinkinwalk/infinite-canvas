@@ -6,8 +6,9 @@ Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
     setItem: (key: string, value: string) => memory.set(key, value),
     removeItem: (key: string) => memory.delete(key),
 } });
-const { preparePromptEnhancement, requestPromptEnhancement, validatePromptEnhancement, promptEnhancementConfigKey } = await import("../src/services/api/prompt-enhancement");
-const { defaultConfig } = await import("../src/stores/use-config-store");
+const { preparePromptEnhancement, requestPromptEnhancement, resolvePromptEnhancementModel, validatePromptEnhancement, promptEnhancementConfigKey } = await import("../src/services/api/prompt-enhancement");
+const { defaultConfig, managedEffectiveConfig, modelRequestHeaders } = await import("../src/stores/use-config-store");
+import type { PublicManagedCatalog } from "../src/services/api/model-management";
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
@@ -181,4 +182,66 @@ test("provider failure is surfaced without an automatic second paid attempt", as
     globalThis.fetch = async () => { calls++; return new Response("upstream unavailable", { status: 503 }); };
     await expect(requestPromptEnhancement(defaultConfig, { prompt: "整理任务", scenario: "task" }, () => {}, { signal: new AbortController().signal })).rejects.toThrow();
     expect(calls).toBe(1);
+});
+
+const enhancementCatalog: PublicManagedCatalog = {
+    enabled: true, revision: 11, features: [],
+    models: [
+        { id: "deepseek", label: "DeepSeek", capability: "text", description: "" },
+        { id: "gpt", label: "GPT", capability: "text", description: "" },
+        { id: "script", label: "脚本模型", capability: "text", description: "" },
+        { id: "video-analysis", label: "原生视频分析", capability: "text", description: "" },
+    ],
+    bindings: [
+        { featureId: "prompt.enhance", modelId: "deepseek", available: true, default: true, order: 1, operations: ["text"], adapter: "text.openai", credits: 0 },
+        { featureId: "prompt.enhance", modelId: "gpt", available: true, default: false, order: 2, operations: ["text"], adapter: "text.openai", credits: 3 },
+        { featureId: "video.script", modelId: "script", available: true, default: true, order: 0, operations: ["text"], adapter: "text.openai", credits: 5 },
+        { featureId: "prompt.enhance", modelId: "video-analysis", available: true, default: false, order: 0, operations: ["video-understand"], adapter: "text.gemini-video", credits: 20 },
+    ],
+};
+const platformConfig = () => managedEffectiveConfig({ ...defaultConfig, channelMode: "remote" }, enhancementCatalog, { text: "video.script" }, {});
+
+test("enhancement exposes multiple bound text models and isolates script and video-only routes", () => {
+    const result = resolvePromptEnhancementModel(platformConfig());
+    expect(result.models).toEqual(["remote::deepseek", "remote::gpt"]);
+    expect(result.config.textModel).toBe("remote::deepseek");
+    expect(result.selectedModel).toBeUndefined();
+    expect(modelRequestHeaders(result.config, "text")).toEqual({ "X-Model-Feature": "prompt.enhance", "X-Model-Revision": "11" });
+    expect(resolvePromptEnhancementModel(platformConfig(), "remote::gpt").config.textModel).toBe("remote::gpt");
+    expect(platformConfig().textModel).toBe("remote::script");
+});
+
+test("explicit enhancement choice survives default changes while follow-default tracks them", () => {
+    const changed = {
+        ...platformConfig(),
+        managed: { ...enhancementCatalog, bindings: enhancementCatalog.bindings.map((item) => item.featureId === "prompt.enhance" ? { ...item, default: item.modelId === "gpt" } : item) },
+    };
+    expect(resolvePromptEnhancementModel(changed).config.textModel).toBe("remote::gpt");
+    expect(resolvePromptEnhancementModel(changed, "remote::deepseek").config.textModel).toBe("remote::deepseek");
+    expect(resolvePromptEnhancementModel(changed, "remote::deepseek").selectionUnavailable).toBe(false);
+});
+
+test("removed selections fall back explicitly and an empty enhancement binding never borrows script models", () => {
+    const config = platformConfig();
+    const result = resolvePromptEnhancementModel(config, "remote::removed");
+    expect(result.selectionUnavailable).toBe(true);
+    expect(result.config.textModel).toBe("remote::deepseek");
+    const unavailable = resolvePromptEnhancementModel({
+        ...config,
+        managed: { ...enhancementCatalog, bindings: enhancementCatalog.bindings.map((item) => item.featureId === "prompt.enhance" ? { ...item, available: false } : item) },
+    }, "remote::gpt");
+    expect(unavailable.models).toEqual([]);
+    expect(unavailable.config.textModel).toBe("");
+    expect(unavailable.selectionUnavailable).toBe(true);
+});
+
+test("local enhancement choice is independent of the global text and media models", () => {
+    const config = {
+        ...defaultConfig,
+        channels: [{ ...defaultConfig.channels[0], models: [...defaultConfig.channels[0].models, { name: "other-text", capability: "text" as const }] }],
+    };
+    expect(resolvePromptEnhancementModel(config, "default::other-text").config.textModel).toBe("default::other-text");
+    expect(resolvePromptEnhancementModel({ ...config, textModel: "default::other-text" }, "default::gpt-5.5").config.textModel).toBe("default::gpt-5.5");
+    expect(config.textModel).toBe(defaultConfig.textModel);
+    expect(resolvePromptEnhancementModel(config, config.imageModel).selectionUnavailable).toBe(true);
 });
