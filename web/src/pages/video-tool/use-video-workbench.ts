@@ -371,16 +371,24 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (cfg.channelMode !== "remote" && !isReplicateVideoModel(cfg.videoModel)) throw new Error("自定义渠道费用以该服务账单为准");
         return quoteVideoModel(cfg, cfg.videoModel, signal);
     };
-    const text = async (ctx: Context, instruction: string, imageFiles: UploadedFile[] = [], analyze = false) => {
+    const text = async (ctx: Context, instruction: string, imageFiles: (UploadedFile & { name?: string })[] = [], analyze = false) => {
         const cfg = analyze && ["store-explore","viral-recreate"].includes(tool) ? configForFeature(config,`${tool}.analyze`,"text") : modelConfig("text");
+        const content: Exclude<AiTextMessage["content"], string> = [{ type: "text", text: instruction }];
+        for (const [index, image] of imageFiles.entries()) {
+            ctx.signal.throwIfAborted();
+            try {
+                const url = await imageToDataUrl({ url: image.url, storageKey: image.storageKey }, { signal: ctx.signal });
+                if (!url) throw new Error("图片内容为空");
+                content.push({ type: "image_url", image_url: { url } });
+            } catch (error) {
+                ctx.signal.throwIfAborted();
+                throw new Error(`无法读取参考图片「${image.name || `第 ${index + 1} 张图片`}」，请重新添加该图片后重试。已有分析和脚本已保留。`, { cause: error });
+            }
+        }
         if (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && config.channelMode === "remote") {
             const quote = await quoteTextModel(cfg, cfg.textModel, ctx.signal);
             await confirmStorePrice(quote, "文案处理", ctx.signal, "分析 / 撰写按当前文字模型单独计费");
             ctx.signal.throwIfAborted();
-        }
-        const content: Exclude<AiTextMessage["content"], string> = [{ type: "text", text: instruction }];
-        for (const image of imageFiles) {
-            content.push({ type: "image_url", image_url: { url: await imageToDataUrl({ dataUrl: image.url, storageKey: image.storageKey }) } });
         }
         const value = await requestImageQuestion({...cfg,model:cfg.textModel}, [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, { text: value }), { signal: ctx.signal });
         if (!value.trim()) throw new Error("模型没有返回内容");
