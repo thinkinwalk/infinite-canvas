@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Space, Spin, Switch, Tabs, Upload, theme } from "antd";
-import { ArrowLeft, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, Sparkles, X } from "lucide-react";
+import { Alert, App, Button, Collapse, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Space, Spin, Steps, Switch, Tabs, Upload, theme } from "antd";
+import { ArrowLeft, ArrowRight, Check, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { FeatureModelPicker } from "@/components/feature-model-picker";
@@ -27,10 +27,11 @@ import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-requ
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
 import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
+import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
 
-type Role = "reference" | "product" | "model" | "first-frame";
+type Role = "reference" | "product" | "background" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralFacts" | "viralProductAnalysis" | "instructions" | "script";
-const editorNames: Record<Editor, string> = { analysis: "参考结构分析", transcript: "参考音轨文字", viralFacts: "新商品真实资料", viralProductAnalysis: "商品分析", instructions: "改编要求", script: "视频脚本" };
+const editorNames: Record<Editor, string> = { analysis: "参考结构分析", transcript: "参考音轨文字", viralFacts: "主体与场景资料", viralProductAnalysis: "商品分析", instructions: "复刻要求", script: "视频脚本" };
 const suggestionFields = {
     viralProductAnalysis: { key: "viralProductSuggestion", stale: "viralProductStale" },
     script: { key: "viralScriptSuggestion", stale: "viralScriptStale" },
@@ -55,6 +56,7 @@ export default function ViralRecreateWorkspace() {
     const [uploading, setUploading] = useState(false),
         uploadLock = useRef(false),
         [errors, setErrors] = useState<Partial<Record<Role, string>>>({});
+    const [expandedRoles, setExpandedRoles] = useState<Partial<Record<Role, boolean>>>({});
     const [assetRole, setAssetRole] = useState<Role | null>(null),
         [editor, setEditor] = useState<Editor | null>(null),
         [editingField, setEditingField] = useState<Editor>("analysis"),
@@ -74,6 +76,18 @@ export default function ViralRecreateWorkspace() {
         quoteController = useRef<AbortController | null>(null);
     const referencePlayer = useRef<HTMLVideoElement | null>(null),
         legacyAnalysisRecovered = useRef(false);
+    const inputScroll = useRef<HTMLDivElement | null>(null),
+        workspaceScroll = useRef<HTMLDivElement | null>(null);
+    const step = d.viralStep || 0;
+    const goStep = (value: number) => {
+        wb.patch({ viralStep: value });
+        setViewed(null);
+        setTab(value === 1 ? "editor" : "current");
+        if (value === 1) { setEditingField("script"); setSuggestionView(false); }
+    };
+    const keyframe = viralImageCandidates(d).find((m) => m.id === d.viralFirstFrameId),
+        keyframeError = viralKeyframeError(d),
+        keyframeConfig = configForFeature(config, "image.edit", "image");
     const cfg = viralVideoConfig(d, config),
         settings = storeVideoSettings(cfg),
         profile = videoProfile(cfg, cfg.videoModel),
@@ -126,6 +140,9 @@ export default function ViralRecreateWorkspace() {
         d.viralProductAnalysis,
         d.viralAnalysisStale,
         d.viralAdoptedAnalysis,
+        d.viralKeyframe,
+        d.viralKeyframePrompt,
+        d.viralKeyframeReferenceId,
         d.viralProductStale,
         config.channelMode,
         config.baseUrl,
@@ -174,6 +191,13 @@ export default function ViralRecreateWorkspace() {
         return () => quoteController.current?.abort();
     }, [priceKey]);
     useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
+    useEffect(() => {
+        inputScroll.current?.scrollTo(0, 0);
+        workspaceScroll.current?.scrollTo(0, 0);
+    }, [step]);
+    useEffect(() => {
+        if (wb.hydrated && step === 1) { setTab("editor"); setEditingField("script"); }
+    }, [wb.hydrated]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => wb.edit({ viralSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "video");
     const edit = (field: Editor, value: string) => {
         if (field === "analysis") {
@@ -301,7 +325,7 @@ export default function ViralRecreateWorkspace() {
         try {
             const added = await wb.addFiles(files, role, role === "reference" ? "video/*" : "image/*");
             if (typeof added === "string") setErrors((e) => ({ ...e, [role]: added }));
-            if (Array.isArray(added) && role === "first-frame") wb.edit({ viralFirstFrameId: added[0]?.id }, "video");
+            if (Array.isArray(added) && role === "first-frame") wb.edit({ viralFirstFrameId: added[0]?.id, viralKeyframe: undefined }, "video");
             return Array.isArray(added);
         } finally {
             uploadLock.current = false;
@@ -324,6 +348,7 @@ export default function ViralRecreateWorkspace() {
         }
     };
     const materialField = (role: Role, title: string, hint: string) => {
+        const selected = d.media.some((m) => m.role === role);
         const upload = (
             <div className="space-y-2">
                 <Upload.Dragger
@@ -338,7 +363,7 @@ export default function ViralRecreateWorkspace() {
                     }}
                 >
                     <div className="flex items-center justify-center gap-2">
-                        {uploading ? <Spin size="small" /> : <Images size={18} />}点击或拖放上传{role === "reference" ? "视频" : "图片"}
+                        {uploading ? <Spin size="small" /> : <Images size={18} className="shrink-0" />}<span>{role === "reference" ? "点击或拖放上传视频" : "上传图片"}</span>
                     </div>
                     <div className="mt-1 px-2 text-xs" style={muted}>
                         {hint}
@@ -364,7 +389,7 @@ export default function ViralRecreateWorkspace() {
                     .map((m) => (
                         <div key={m.id} className="min-w-0 rounded-lg border p-2" style={{ borderColor: token.colorBorderSecondary }}>
                             {m.kind === "video" ? (
-                                <video ref={referencePlayer} controls src={m.url} className="max-h-44 w-full rounded object-contain" />
+                                <video ref={referencePlayer} controls src={m.url} className="max-h-28 w-full rounded object-contain" />
                             ) : (
                                 <button type="button" className="w-full" aria-label={`预览${m.name}`} onClick={() => modal.info({ title: m.name, width: 800, content: <img src={m.url} alt={m.name} className="max-h-[65vh] w-full object-contain" /> })}>
                                     <img src={m.url} alt={m.name} className="h-24 w-full object-contain" />
@@ -383,7 +408,9 @@ export default function ViralRecreateWorkspace() {
                         </div>
                     ))}
             </div>
-            {role === "reference" ? <>
+            {selected && <Button type="text" size="small" disabled={locked} onClick={() => setExpandedRoles((value) => ({ ...value, [role]: !value[role] }))}>{expandedRoles[role] ? "收起上传入口" : role === "reference" ? "更换参考视频" : "继续添加图片"}</Button>}
+            <div hidden={selected && !expandedRoles[role]}>
+            {role === "reference" ? (
                 <Tabs
                     size="small"
                     defaultActiveKey="upload"
@@ -393,8 +420,9 @@ export default function ViralRecreateWorkspace() {
                         { key: "link", label: "链接提取", disabled: locked, children: <VideoLinkImport disabled={locked} source={reference?.source} showRetention={false} onImport={(text, signal) => wb.importLink(text, role, signal)} /> },
                     ]}
                 />
-                <VideoReferenceRetention media={reference} completed={Boolean(d.video)} disabled={locked} onReimport={(text, signal) => wb.importLink(text, role, signal)} />
-            </> : upload}
+            ) : upload}
+            </div>
+            {role === "reference" && <VideoReferenceRetention media={reference} completed={Boolean(d.video)} disabled={locked} onReimport={(text, signal) => wb.importLink(text, role, signal)} />}
         </section>;
     };
     const textAction = (stage: string, label: string, missing: boolean) => (
@@ -409,7 +437,13 @@ export default function ViralRecreateWorkspace() {
         if (window.matchMedia("(min-width: 1024px)").matches) setTab("editor");
         else setEditor(field);
     };
-    const textPreview = (field: Editor, placeholder: string) => (
+    const textPreview = (field: Editor, placeholder: string) => ["viralFacts", "instructions", "script"].includes(field) ? (
+        <Input.TextArea
+            aria-label={editorNames[field]} value={fieldValue(field)} placeholder={placeholder}
+            autoSize={{ minRows: field === "script" ? 6 : 3, maxRows: 12 }} disabled={locked}
+            onChange={(e) => edit(field, e.target.value)}
+        />
+    ) : (
         <button type="button" aria-label={`查看 / 编辑全文：${editorNames[field]}`} className="block w-full rounded-lg border p-3 text-left" style={surface} onClick={() => openEditor(field)}>
             <span className="line-clamp-6 whitespace-pre-wrap break-words text-sm leading-6" style={fieldValue(field) ? undefined : muted}>
                 {fieldValue(field) || placeholder}
@@ -676,25 +710,32 @@ export default function ViralRecreateWorkspace() {
         });
     };
     const spec = `${cloud ? "跟随首帧 / 平台默认" : inferVideoRatio(cfg.size)} · ${wan ? "约 " : ""}${cfg.videoSeconds}秒 · ${cfg.vquality}p`;
-    const controls = (
-        <div className="space-y-2">
-            <span className="text-xs" style={muted}>视频生成模型</span>
+    const videoSettings = (
+        <div className="space-y-3">
+            <strong className="font-medium">视频生成设置</strong>
             <div className="flex items-center gap-2">
                 <Select
-                    aria-label="视频模型"
-                    className="min-w-0 flex-1"
-                    disabled={locked}
-                    value={cfg.videoModel}
-                    virtual={false}
+                    aria-label="视频模型" className="min-w-0 flex-1" disabled={locked} value={cfg.videoModel} virtual={false}
                     optionRender={(option) => <VideoModelOption config={config} model={String(option.value)} />}
                     onChange={(videoModel) => changeSettings({ videoModel })}
                     options={selectableModelsByCapability(config, "video").map((value) => ({ value, label: videoProfile(config, value).displayName }))}
                 />
                 <Button aria-label="刷新模型" disabled={locked} loading={refreshing} icon={<RefreshCw size={14} />} onClick={() => void refreshModels()} />
+                <Button aria-label="视频设置" disabled={locked} icon={<SlidersHorizontal size={14} />} onClick={() => setSettingsOpen(true)} />
             </div>
-            <Button block disabled={locked} onClick={() => setSettingsOpen(true)}>
-                视频设置 · {spec}
+            <p className="text-xs" style={muted}>{spec}</p>
+            <p className="text-xs" style={muted}>{referenceMode ? "多素材参考：按下列实际输入生成，首帧作为画面参考。" : "首帧驱动：从确认的画面生成，动作依照脚本重建。"} {profile.description}</p>
+        </div>
+    );
+    const controls = step !== 2 ? (
+        <div className="flex items-center gap-2">
+            {step > 0 && <Button aria-label="上一步" icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => goStep(step - 1)} />}
+            <Button type="primary" block disabled={locked || (step === 0 ? !reference && !d.script.trim() && !d.instructions.trim() && !d.viralFacts?.trim() : !d.script.trim() || Boolean(scriptBlocked) || Boolean(keyframeError))} icon={<ArrowRight size={15} />} onClick={() => goStep(step + 1)}>
+                {step === 0 ? "下一步：确认脚本与画面" : "下一步：生成视频"}
             </Button>
+        </div>
+    ) : (
+        <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
                 <span className="text-xs" style={muted}>
                     {quote ? `预计 ${quote.credits.toLocaleString()} 算力点` : config.channelMode === "remote" || cloud ? "制作前确认本次费用" : "自定义渠道按账单计费"}
@@ -723,7 +764,6 @@ export default function ViralRecreateWorkspace() {
             ) : (
                 <Button
                     type="primary"
-                    size="large"
                     block
                     disabled={locked || Boolean(blocked)}
                     loading={busy}
@@ -738,10 +778,56 @@ export default function ViralRecreateWorkspace() {
                 </Button>
             )}
             {blocked && (
-                <div className="text-xs" style={muted}>
-                    {blocked}
+                <div className="flex items-start justify-between gap-1 text-xs" style={muted}>
+                    <span>{blocked}</span>
+                    {(!d.script.trim() || keyframeError || adoptedError) && <Button type="link" size="small" disabled={locked} onClick={() => goStep(1)}>去完善</Button>}
                 </div>
             )}
+        </div>
+    );
+    const keyframePanel = (
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-medium">确认人物、场景与开场姿势</h2>
+                {keyframe && <span className="text-xs" style={keyframeError ? { color: token.colorWarning } : { color: token.colorSuccess }}>{keyframeError ? "待确认" : "已确认"}</span>}
+            </div>
+            <div className="flex flex-wrap gap-3">
+                {viralKeyframeMaterials(d).map((m) => <figure key={m.id} className="w-24">
+                    <img src={m.url} alt={m.name} className="h-24 w-full rounded object-contain" />
+                    <figcaption className="mt-1 truncate text-xs" title={m.name}>{m.id.startsWith("frame:") ? "开场姿势" : viralVisualRole(m.role)} · {m.name}</figcaption>
+                </figure>)}
+            </div>
+            <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm">原视频开场姿势（可选）</span>
+                    <Button size="small" icon={<Images size={14} />} disabled={locked || !reference} onClick={() => void wb.run("frames")}>{frames.length ? "重新抽样" : "抽取参考画面"}</Button>
+                </div>
+                <Select aria-label="首帧姿势参考" className="w-full" allowClear disabled={locked} value={d.viralKeyframeReferenceId} placeholder="仅借鉴姿势、机位与构图" onChange={(viralKeyframeReferenceId) => wb.edit({ viralKeyframeReferenceId }, "video")} options={frames.map((m, i) => ({ value: m.id, label: `${m.name}${Number.isFinite(d.viralFrameTimes?.[i]) ? ` · ${d.viralFrameTimes![i].toFixed(2)}秒` : ""}` }))} />
+                {frames.length > 0 && <Collapse items={[{ key: "pose-gallery", label: "查看动作参考画面", children: frameGallery }]} />}
+            </div>
+            <Input.TextArea aria-label="首帧画面要求" disabled={locked} autoSize={{ minRows: 3, maxRows: 8 }} value={d.viralKeyframePrompt || ""} placeholder="开场姿态、人物位置、全身构图、标识与裙摆等画面要求" onChange={(e) => wb.edit({ viralKeyframePrompt: e.target.value }, "video")} />
+            <label className="flex flex-wrap items-center gap-2 text-sm">
+                首帧画幅
+                <Select aria-label="首帧画幅" disabled={locked} value={inferVideoRatio(cfg.size)} onChange={(ratio) => changeSettings({ size: computeVideoSize(cfg.vquality, ratio) })} options={["9:16", "16:9", "1:1", "3:4", "4:3", "21:9"].map((value) => ({ value, label: value }))} />
+            </label>
+            <div className="space-y-2">
+                <span className="text-xs" style={muted}>首帧合成模型 · 图片编辑独立计费</span>
+                {keyframeConfig.managed?.enabled && config.channelMode === "remote" ? <FeatureModelPicker featureId="image.edit" capability="image" /> : <ModelPicker config={keyframeConfig} capability="image" value={keyframeConfig.imageModel} fullWidth onChange={(value) => updateConfig("imageModel", value)} />}
+                <Button icon={<Sparkles size={15} />} loading={busy && active?.stage === "keyframe"} disabled={locked || !d.script.trim() || !viralKeyframeMaterials(d).some((m) => !m.id.startsWith("frame:"))} onClick={() => void wb.run("keyframe")}>合成首帧</Button>
+            </div>
+            {keyframe ? <div className="space-y-3">
+                <img src={keyframe.url} alt="待确认的生成首帧" className="max-h-[45vh] w-full object-contain" />
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button type="primary" disabled={locked || !keyframeError} icon={<Check size={15} />} onClick={() => wb.edit({ viralKeyframe: { ...d.viralKeyframe, id: keyframe.id, inputKey: viralKeyframeInputKey(d), confirmed: true }, viralOutputStale: true })}>{keyframeError ? "确认使用这张首帧" : "首帧已确认"}</Button>
+                    <Button icon={<Download size={14} />} onClick={() => void wb.download(keyframe)}>下载首帧</Button>
+                </div>
+                {keyframeError && <p className="text-xs" style={{ color: token.colorWarning }}>请核对人物、服饰、建筑标识、开场姿势及画幅。更改素材或脚本后需重新确认。</p>}
+            </div> : <Empty description="合成或上传首帧后，在这里确认画面" />}
+            <p className="text-xs" style={muted}>半身照未展示的全身、裙摆和背面需要生成补全；以确认后的画面为准。</p>
+            <Collapse items={[{ key: "existing-frame", label: "上传或选择已有首帧", children: <div className="space-y-3">
+                <Select aria-label="生成首帧" className="w-full" allowClear disabled={locked} value={d.viralFirstFrameId} placeholder="选择已有画面" onChange={(viralFirstFrameId) => wb.edit({ viralFirstFrameId, viralKeyframe: undefined }, "video")} options={viralImageCandidates(d).map((m) => ({ value: m.id, label: `${labels.find((l) => l.id === m.id)?.label} · ${m.name}` }))} />
+                {materialField("first-frame", "上传首帧", "上传已包含目标人物与场景的完整画面")}
+            </div> }]} />
         </div>
     );
     if (!wb.hydrated)
@@ -761,14 +847,40 @@ export default function ViralRecreateWorkspace() {
                     <h1 className="text-lg font-semibold">爆款复刻</h1>
                 </div>
                 <span className="hidden text-sm sm:block" style={muted}>
-                    参考结构 → 新商品脚本 → 视频片段
+                    {["准备参考视频与目标素材", "确认脚本、人物与开场画面", "核对输入与费用，生成视频"][step]}
                 </span>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="viral-scroll">
+            <nav aria-label="复刻步骤" className="mx-auto w-full max-w-[1800px] shrink-0 px-4 pb-3 sm:px-6">
+                <Steps size="small" current={step} responsive={false} onChange={goStep} items={["准备素材", "确认脚本与画面", "生成视频"].map((title) => ({ title, disabled: locked }))} />
+            </nav>
+            <div ref={workspaceScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="viral-scroll">
                 <div className="mx-auto grid min-h-full max-w-[1800px] grid-cols-1 gap-5 lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]">
-                    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border" style={surface} aria-label="复刻素材与设置">
-                        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 [&>*]:shrink-0" data-testid="viral-input-scroll">
-                            {materialField("reference", "参考视频", "借鉴结构与表达；上传不会自动收费分析")}
+                    <section className="flex min-h-0 min-w-0 flex-col rounded-lg border" style={surface} aria-label="复刻素材与设置">
+                        <div ref={inputScroll} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 [&>*]:shrink-0" data-testid="viral-input-scroll">
+                            <div hidden={step !== 0} className="space-y-4">
+                            {materialField("reference", "参考视频", "借鉴动作、节奏与表达；上传后不会自动收费")}
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                                {materialField("background", "场景图片", "目标楼宇、门店或环境")}
+                                {materialField("model", "人物图片", "目标人物身份与服饰")}
+                            </div>
+                            <section>
+                                <strong className="mb-2 block font-medium">主体与场景资料</strong>
+                                {textPreview("viralFacts", "楼宇或门店名称、人物身份、服饰及必须保留的标识")}
+                            </section>
+                            <section>
+                                <strong className="mb-2 block font-medium">复刻要求</strong>
+                                {textPreview("instructions", "保留哪些动作、替换什么场景或人物；@引用素材")}
+                            </section>
+                            <Collapse items={[{ key: "product", label: `商品图片与分析（可选）${d.media.some((m) => m.role === "product") ? " · 已添加" : ""}`, children: <div className="space-y-3">
+                                {materialField("product", "商品图片", "需要展示具体商品时添加")}
+                                {heading("viralProductAnalysis", textAction("product-analyze", "分析新商品", !d.media.some((m) => m.role === "product")))}
+                                {modelPicker("viral-recreate.analyze", "商品分析模型")}
+                                {productBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{productBlocked}</p>}
+                                {textPreview("viralProductAnalysis", "只分析商品可见信息")}
+                                {suggestion("viralProductAnalysis")}
+                            </div> }]} />
+                            </div>
+                            <div hidden={step !== 1} className="space-y-5">
                             <section className="space-y-2">
                                 {heading("analysis")}
                                 <span className="text-xs" style={muted}>分析方式</span>
@@ -822,23 +934,6 @@ export default function ViralRecreateWorkspace() {
                                     {analysisResult?.suggestion ? "新分析待采用，人工编辑稿已保留" : analysisResult?.text.trim() ? viralAnalysisIsCurrent(d, analysisResult) && !adoptedError ? "分析完成 · 已用于当前脚本" : "已有分析 · 可在右侧查看并采用" : `${viralAnalysisNames[analysisMode]}尚无分析`}
                                 </p>
                             </section>
-                            {materialField("product", "新商品图片", referenceMode ? "按模型能力作为视频参考图" : "用于商品分析；商品进入画面需准备相应首帧")}
-                            <section>
-                                {heading("viralFacts")}
-                                {textPreview("viralFacts", "名称、真实卖点与适用人群；不编造价格、优惠和功效")}
-                            </section>
-                            <section>
-                                {heading("viralProductAnalysis", textAction("product-analyze", "分析新商品", !d.media.some((m) => m.role === "product")))}
-                                {modelPicker("viral-recreate.analyze", "商品分析模型")}
-                                {productBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{productBlocked}</p>}
-                                {textPreview("viralProductAnalysis", "仅描述新商品，独立于参考视频结构")}
-                                {suggestion("viralProductAnalysis")}
-                            </section>
-                            {materialField("model", "出镜人物（可选）", referenceMode ? "视频参考用途以当前能力为准，真实外观需要验收" : "分析辅助；要出镜需准备包含该人物的首帧")}
-                            <section>
-                                {heading("instructions")}
-                                {textPreview("instructions", "保留哪些表达、改写哪些卖点；@引用素材")}
-                            </section>
                             <section>
                                 {heading("script", textAction("script", "AI 撰写脚本", !d.viralFacts?.trim() && !d.instructions.trim() && !d.analysis.trim() && !d.media.some((m) => m.role === "product")))}
                                 {modelPicker("viral-recreate.script", "脚本模型")}
@@ -847,7 +942,8 @@ export default function ViralRecreateWorkspace() {
                                     <Button type="link" size="small" onClick={() => { setShowCurrentAnalysis(Boolean(d.analysis.trim())); openEditor("analysis"); }}>查看</Button>
                                 </div>
                                 {(textBlocked || scriptBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptBlocked}</p>}
-                                {textPreview("script", `可直接手写；实际制作${cfg.videoSeconds}秒片段`)}
+                                <p className="text-sm" style={muted}>{d.script.trim() ? `已有 ${Array.from(d.script).length} 字脚本` : "脚本待填写"}</p>
+                                <Button className="mt-2" disabled={locked} onClick={() => { setEditingField("script"); setSuggestionView(false); setTab("editor"); }}>编辑视频脚本</Button>
                                 <div className="mt-2 flex items-center justify-between gap-2">
                                     <span className="text-xs" style={muted}>
                                         脚本与费用按 {cfg.videoSeconds} 秒规格
@@ -863,27 +959,18 @@ export default function ViralRecreateWorkspace() {
                                     </div>
                                 )}
                             </section>
-                            {!referenceMode && (
-                                <section className="space-y-2">
-                                    <strong className="font-medium">生成首帧{profile.firstFrameRequired ? "（必填）" : "（可选）"}</strong>
-                                    <Select
-                                        aria-label="生成首帧"
-                                        className="w-full"
-                                        allowClear
-                                        disabled={locked}
-                                        value={d.viralFirstFrameId}
-                                        placeholder="明确选择本次生成首帧"
-                                        onChange={(value) => wb.edit({ viralFirstFrameId: value }, "video")}
-                                        options={viralImageCandidates(d).map((m) => ({ value: m.id, label: `${labels.find((l) => l.id === m.id)?.label} · ${m.name}` }))}
-                                    />
-                                    {materialField("first-frame", "或上传生成首帧", "上传已包含目标商品或人物的画面")}
-                                    {reference && <Collapse items={[{
-                                        key: "generation-frames", label: "从参考视频选取画面",
-                                        children: <div className="space-y-2">
-                                            <Button size="small" disabled={locked} icon={<Images size={13} />} onClick={() => void wb.run("frames")}>{frames.length ? "重新抽取候选画面" : "抽取候选画面"}</Button>
-                                            {frameGallery}
-                                        </div>,
-                                    }]} />}
+                            <section className="space-y-2">
+                                <strong className="font-medium">开场画面{profile.firstFrameRequired ? "（当前模型必填）" : "（可选）"}</strong>
+                                <p className="text-xs" style={muted}>{keyframe ? keyframeError ? "首帧待确认" : "已确认首帧" : "可将场景、人物与商品合成首帧，或上传已有画面"}</p>
+                                <Button icon={<Images size={14} />} onClick={() => setTab("keyframe")}>准备与确认首帧</Button>
+                            </section>
+                            </div>
+                            <div hidden={step !== 2} className="space-y-5">
+                            {videoSettings}
+                            {!referenceMode && <section className="space-y-2">
+                                    <strong className="font-medium">已选首帧</strong>
+                                    {keyframe ? <img src={keyframe.url} alt="本次首帧" className="max-h-40 w-full object-contain" /> : <p className="text-xs" style={muted}>未选择首帧</p>}
+                                    <Button size="small" onClick={() => { goStep(1); setTab("keyframe"); }}>核对 / 更换首帧</Button>
                                     {mode === "first_last" && !wan && (
                                         <Select
                                             aria-label="生成尾帧"
@@ -896,11 +983,7 @@ export default function ViralRecreateWorkspace() {
                                             options={viralImageCandidates(d).map((m) => ({ value: m.id, label: m.name }))}
                                         />
                                     )}
-                                    <div className="text-xs" style={{ color: token.colorWarning }}>
-                                        原视频抽样画面仍含原商品或人物，选择前请核对。系统不会自动合成新主体。
-                                    </div>
-                                </section>
-                            )}
+                                </section>}
                             <section className="space-y-2">
                                 <strong className="font-medium">本次视频模型输入</strong>
                                 {materials.length ? (
@@ -908,7 +991,7 @@ export default function ViralRecreateWorkspace() {
                                         <div key={m.id} className="flex items-center gap-2 text-xs">
                                             {m.kind === "image" && <img src={m.url} alt={m.name} className="h-10 w-12 object-contain" />}
                                             <span>
-                                                {m.kind === "video" ? "视频" : "图片"} · {labels.find((l) => l.id === m.id)?.label} · {m.name}
+                                                {m.kind === "video" ? "参考视频" : viralVisualRole(m.role)} · {labels.find((l) => l.id === m.id)?.label} · {m.name}
                                             </span>
                                         </div>
                                     ))
@@ -922,10 +1005,9 @@ export default function ViralRecreateWorkspace() {
                                         <Switch aria-label="直接视频参考" disabled={locked} checked={Boolean(d.viralUseVideo)} onChange={(value) => wb.edit({ viralUseVideo: value }, "video")} /> 直接传参考视频（仅能力已确认的通道）
                                     </label>
                                 )}
-                                <p className="text-xs" style={muted}>
-                                    {d.viralUseVideo ? "按当前模型能力校验视频输入。" : "原视频只用于结构分析，不直接输入视频模型。"} 未发送的商品或人物图仅用于分析与脚本。
-                                </p>
+                                <Alert type={d.viralUseVideo ? "info" : "warning"} title={d.viralUseVideo ? "原视频将作为动作与节奏参考" : "本次不传原视频，动作按脚本重建"} description={d.viralUseVideo ? "输入能力校验通过不代表动作与身份能精确复现，需检查成片。" : "场景和人物需已在首帧中体现；无法保证逐帧复制原视频动作。"} />
                             </section>
+                            </div>
                             <Collapse
                                 items={[
                                     {
@@ -959,7 +1041,7 @@ export default function ViralRecreateWorkspace() {
                             {controls}
                         </div>
                     </section>
-                    <aside className="flex min-h-0 flex-col rounded-xl border p-4" style={surface} aria-label="作品与说明">
+                    <aside className="flex min-h-0 min-w-0 flex-col rounded-lg border p-4" style={surface} aria-label="作品与说明">
                         {wb.storageError && <Alert className="mb-3" type="error" title="本地保存异常" description={wb.storageError} />}
                         {busy && (
                             <Alert
@@ -1004,14 +1086,16 @@ export default function ViralRecreateWorkspace() {
                             activeKey={tab}
                             onChange={setTab}
                             items={[
-                                { key: "current", label: "当前作品" },
-                                { key: "editor", label: "文案编辑" },
+                                { key: "current", label: step === 0 ? "素材预览" : "视频对照" },
+                                { key: "editor", label: "脚本与分析" },
+                                ...(step === 1 ? [{ key: "keyframe", label: "首帧画面" }] : []),
                                 { key: "history", label: "本浏览器作品" },
                                 { key: "guide", label: "使用说明" },
                             ]}
                         />
                         <div className={`min-h-0 flex-1 ${tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "overflow-y-auto"}`}>
                             {tab === "editor" && editorBody(editingField)}
+                            {tab === "keyframe" && keyframePanel}
                             {tab === "current" && (
                                 <div className="space-y-3">
                                     {viewed && (
@@ -1037,9 +1121,17 @@ export default function ViralRecreateWorkspace() {
                                             )}
                                         </section>
                                         <section className="min-w-0 space-y-2">
-                                            <h2 className="text-sm font-medium">改编作品</h2>
-                                            {result ? (
-                                                <video controls src={result.url} className="max-h-[55vh] w-full rounded object-contain" onError={() => setPreviewError(true)} />
+                                            <h2 className="text-sm font-medium">{!viewed && step === 0 ? "目标素材" : viewed?.stage === "keyframe" ? "合成首帧" : "改编作品"}</h2>
+                                            {!viewed && step === 0 ? (
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {d.media.filter((m) => m.kind === "image" && ["background", "model", "product"].includes(m.role)).map((m) => <figure key={m.id} className="min-w-0 space-y-1">
+                                                        <img src={m.url} alt={m.name} className="h-40 w-full object-contain" />
+                                                        <figcaption className="truncate text-xs" title={m.name}>{viralVisualRole(m.role)} · {m.name}</figcaption>
+                                                    </figure>)}
+                                                    {!d.media.some((m) => m.kind === "image") && <div className="col-span-2 flex min-h-52 items-center justify-center"><Empty description="添加场景、人物或商品图片" /></div>}
+                                                </div>
+                                            ) : result ? (
+                                                result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史首帧" className="max-h-[55vh] w-full object-contain" /> : <video controls src={result.url} className="max-h-[55vh] w-full rounded object-contain" onError={() => setPreviewError(true)} />
                                             ) : viewed?.text ? (
                                                 <Input.TextArea aria-label="历史文案" rows={12} value={viewed.text} readOnly />
                                             ) : (
@@ -1053,7 +1145,7 @@ export default function ViralRecreateWorkspace() {
                                     {result && (
                                         <Space wrap>
                                             <Button icon={<Download size={15} />} onClick={() => void wb.download(result)}>
-                                                下载视频
+                                                下载{result.mimeType.startsWith("image/") ? "图片" : "视频"}
                                             </Button>
                                             {!viewed && (
                                                 <>
@@ -1067,7 +1159,7 @@ export default function ViralRecreateWorkspace() {
                                             )}
                                         </Space>
                                     )}
-                                    <p className="text-xs" style={muted}>
+                                    <p hidden={!viewed && step === 0} className="text-xs" style={muted}>
                                         当前输出单条短片。口播、字幕、配乐和多镜头剪辑不会自动完成；人物、商品与动作一致性需真实成片验收。
                                     </p>
                                 </div>
@@ -1107,6 +1199,17 @@ export default function ViralRecreateWorkspace() {
                                                 {viralRecordAnalysis(r)?.text.trim() && (
                                                     <Button size="small" disabled={locked} onClick={() => adoptAnalysis(viralRecordAnalysis(r)!, true)}>用于当前脚本</Button>
                                                 )}
+                                                {r.stage === "keyframe" && r.result && <Button size="small" disabled={locked} onClick={async () => {
+                                                    try {
+                                                        const file = await restoreWorkbenchFile(r.result!);
+                                                        const state = useVideoWorkbenchStore.getState(), current = state.drafts["viral-recreate"];
+                                                        if (state.busyTools["viral-recreate"] || current?.viralRevision !== d.viralRevision) { message.warning("草稿已变化，请重新选择首帧"); return; }
+                                                        const id = crypto.randomUUID();
+                                                        wb.edit({ media: [...d.media, { ...file, id, name: "历史合成首帧", role: "first-frame", kind: "image" }], viralFirstFrameId: id, viralKeyframe: undefined }, "video");
+                                                        goStep(1);
+                                                        setTab("keyframe");
+                                                    } catch (error) { message.error(error instanceof Error ? error.message : "首帧读取失败"); }
+                                                }}>使用这张首帧</Button>}
                                                 {r.viralInput && (
                                                     <Button size="small" disabled={locked} onClick={() => restoreInput(r)}>
                                                         恢复输入
@@ -1160,9 +1263,10 @@ export default function ViralRecreateWorkspace() {
                             {tab === "guide" && (
                                 <div className="space-y-4 text-sm">
                                     <p>视频与音轨分析将参考视频发送到所选模型渠道；抽样画面分析只发送图片和已提供的转写文字。两种分析的时间与镜头边界都需核对。</p>
-                                    <p>新商品资料与人物外观单独提供。平台视频服务只接收你选定的一张首帧；若希望换成新商品/人物，请上传包含目标主体的画面。多图和视频参考按后台确认的能力发送。</p>
+                                    <p>第 1 步分别添加参考视频、场景、人物及可选商品，填写真实资料与复刻要求。第 2 步分析原视频，编辑脚本；在「首帧画面」合成或上传目标画面，并明确确认后使用。</p>
+                                    <p>第 3 步核对实际输入与费用。首帧驱动只接收已选画面，多素材与原视频参考按当前模型已配置的能力发送；没有发送原视频时，动作依照文字重建，不能保证逐帧复现。</p>
                                     <p>两种分析分别保存，未人工编辑的新结果自动用于后续改编；人工编辑稿在替换前保留到历史。输入变化后需重新分析或确认沿用，历史分析可直接用于当前脚本。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
-                                    <p>视频与文案分别确认真实费用；停止等待不等于取消平台任务。恢复查询只查原任务，不再次提交收费任务。</p>
+                                    <p>分析、脚本、首帧与视频分别确认费用；停止等待不等于取消平台任务。恢复查询只查原任务，不再次提交收费任务。</p>
                                     <p>
                                         素材、草稿与作品保存在本浏览器。精准替换原视频主体可使用<Link to="/video/content-replace">内容替换</Link>；多片段剪辑、独立字幕与配音需后续处理。
                                     </p>

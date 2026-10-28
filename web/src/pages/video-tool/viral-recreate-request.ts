@@ -4,12 +4,10 @@ import { resolveModelRequestConfig, selectableModelsByCapability, useConfigStore
 import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
 import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
-import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralReference, viralSource } from "./viral-analysis";
+import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralFrameMaterials, viralReference } from "./viral-analysis";
+import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
 
-export { viralAnalysisMode, viralReference, viralSource } from "./viral-analysis";
-export function viralFrameMaterials(d: VideoDraft): WorkbenchMedia[] {
-    return d.viralFrameSource === viralSource(d) && d.viralFrameSource ? d.frames.map((f, i) => ({ ...f, id: `frame:${f.storageKey}`, name: `抽样画面${i + 1}`, role: "first-frame", kind: "image" })) : [];
-}
+export { viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 export const viralImageCandidates = (d: VideoDraft) => [...d.media.filter((m) => m.kind === "image"), ...viralFrameMaterials(d)];
 export function viralMaterialLabels(d: VideoDraft) {
     const images = d.media.filter((m) => m.kind === "image");
@@ -27,7 +25,7 @@ export function viralVideoMaterials(d: VideoDraft, cfg: AiConfig) {
     const candidates = viralImageCandidates(d);
     const images =
         mode === "reference"
-            ? d.media.filter((m) => m.kind === "image" && ["product", "model", "first-frame"].includes(m.role))
+            ? candidates.filter((m) => m.kind === "image" && (["product", "model", "background"].includes(m.role) || m.id === d.viralFirstFrameId))
             : [candidates.find((m) => m.id === d.viralFirstFrameId), ...(mode === "first_last" && cfg.videoModel !== REPLICATE_VIDEO_MODEL ? [candidates.find((m) => m.id === d.viralLastFrameId)] : [])].filter((m): m is WorkbenchMedia => Boolean(m));
     return [...images, ...(d.viralUseVideo && viralReference(d) ? [viralReference(d)!] : [])];
 }
@@ -38,6 +36,8 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
     if ((cfg.channelMode === "remote" || isReplicateVideoModel(model)) && !useUserStore.getState().token) return "登录后使用平台视频模型";
     if (!isReplicateVideoModel(model) && !useConfigStore.getState().isAiConfigReady(cfg, model)) return "请配置当前视频模型的渠道";
     if (!d.script.trim()) return "请填写或生成视频脚本";
+    const keyframeError = viralKeyframeError(d);
+    if (keyframeError) return keyframeError;
     const analysisError = viralAdoptedAnalysisError(d);
     if (analysisError) return analysisError;
     if (profile.interface === "unavailable") return profile.description;
@@ -56,7 +56,7 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
 export function viralVideoPrompt(d: VideoDraft, cfg: AiConfig) {
     const labels = viralMaterialLabels(d),
         materials = viralVideoMaterials(d, cfg);
-    return `${d.script}\n新商品真实资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}\n改编要求：${d.instructions}\n参考结构：${viralAdoptedAnalysisText(d)}\n商品分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${m.role === "product" ? "新商品" : m.role === "model" ? "人物" : "画面"}）`).join("；") || "纯文字"}。不要把未发送的素材当作视觉输入。生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
+    return `${d.script}\n主体与场景真实资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}\n改编要求：${d.instructions}\n参考结构：${viralAdoptedAnalysisText(d)}\n商品分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}）`).join("；") || "纯文字"}。场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${d.viralUseVideo ? "参考视频用于动作与节奏参考，实际一致性以成片为准。" : "没有向视频模型发送原视频，动作仅依照文字脚本重建，不声称逐帧复制原动作。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
 }
 export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
     const {
@@ -103,6 +103,9 @@ export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
         viralAnalysisStale,
         viralProductStale,
         viralScriptStale,
+        viralKeyframe: d.viralKeyframe,
+        viralKeyframePrompt: d.viralKeyframePrompt,
+        viralKeyframeReferenceId: d.viralKeyframeReferenceId,
         viralSettings: storeVideoSettings(cfg),
         channelMode: cfg.channelMode,
         baseUrl: resolveModelRequestConfig(cfg, cfg.videoModel).baseUrl,

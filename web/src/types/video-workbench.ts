@@ -29,6 +29,9 @@ export type ViralRecreateInput = Pick<
     | "viralAnalysisStale"
     | "viralProductStale"
     | "viralScriptStale"
+    | "viralKeyframe"
+    | "viralKeyframePrompt"
+    | "viralKeyframeReferenceId"
 > & { channelMode: AiConfig["channelMode"]; baseUrl: string };
 export type DigitalHumanInput = Pick<
     VideoDraft,
@@ -214,6 +217,10 @@ export type VideoDraft = {
     viralProductSuggestion?: string;
     viralScriptSuggestion?: string;
     viralRevision?: number;
+    viralStep?: number;
+    viralKeyframePrompt?: string;
+    viralKeyframeReferenceId?: string;
+    viralKeyframe?: { id: string; inputKey: string; confirmed: boolean; model?: string };
 };
 export type VideoRecord = {
     id: string;
@@ -225,6 +232,7 @@ export type VideoRecord = {
     modelTask?: VideoGenerationTask;
     workerJob?: { id: string; url: string };
     nativeAnalysisSubmitted?: boolean;
+    imageEditSubmitted?: boolean;
     replicateTask?: { id: string; operation: string };
     replicateBilling?: { credits: number; refunded: boolean };
     replacementMask?: UploadedFile;

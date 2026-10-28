@@ -13,8 +13,11 @@ import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/service
 import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
 import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
 import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
+import { inferVideoRatio } from "@/lib/media-size";
+import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
+import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
 import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
@@ -26,7 +29,7 @@ import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile, type UploadedFile 
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { configForFeature, managedModelBinding, resolveModelRequestConfig, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { configForFeature, managedModelBinding, resolveModelRequestConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { cancelReplicateTask, createReplicateTask, getReplicateModels, quoteReplicate, readReplicateTask, storeReplicateResult, uploadReplicateReference, waitForReplicateTask, type ReplicateOperation, type ReplicateQuote, type ReplicateTask } from "@/services/api/replicate";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -49,6 +52,7 @@ export const stageLabels: Record<string, string> = {
     cover: "生成封面",
     compatibility: "转换播放格式",
     "product-analyze": "新商品分析",
+    keyframe: "合成首帧",
     upscale: "视频增强",
     "subtitle-remove": "去除硬字幕",
 };
@@ -215,6 +219,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ...(sourceChanged || countChanged ? { frames: [], viralFrameSource: "", viralFrameTimes: [] } : {}),
                 ...(sourceChanged ? { transcript: "", viralTranscriptSource: "" } : {}),
                 ...(productChanged ? { viralProductStale: true, viralProductSuggestion: "" } : {}),
+                ...(current.viralKeyframe && viralKeyframeInputKey(current) !== viralKeyframeInputKey(next) ? { viralKeyframe: { ...current.viralKeyframe, confirmed: false } } : {}),
                 ...mentions,
                 ...value,
             });
@@ -337,7 +342,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             };
             const dialog = modal.confirm({
                 title: `确认${label}费用`,
-                content: `${details}；${quote.calculation}；本次 ${quote.credits.toLocaleString()} 算力点。文案与视频分开计费。`,
+                content: `${details}；${quote.calculation}；本次 ${quote.credits.toLocaleString()} 算力点。各制作环节单独计费。`,
                 okText: "确认制作",
                 cancelText: "取消",
                 onOk: () => finish(true),
@@ -721,6 +726,36 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (d.route !== "model" || !isWan30(cfg.videoModel)) throw new Error("当前模型不能在替换内容时同时去除原字幕，请关闭「去除原字幕」后继续。");
             if (d.regenerateSubtitles) return replacementPipeline(ctx, d);
         }
+        if (tool === "viral-recreate" && stage === "keyframe") {
+            const references = viralKeyframeMaterials(d);
+            if (!references.some((m) => ["background", "model", "product"].includes(m.role))) throw new Error("请先上传场景、人物或商品图片");
+            if (!d.script.trim()) throw new Error("请先填写开场脚本");
+            if (d.viralKeyframeReferenceId && !references.some((m) => m.id === d.viralKeyframeReferenceId)) throw new Error("动作参考画面已失效，请重新抽取或选择");
+            const scoped = configForFeature(config, "image.edit", "image");
+            const cfg = { ...scoped, model: scoped.imageModel, count: "1", size: inferVideoRatio(viralVideoConfig(d, config).size) };
+            const requestIdentity = () => {
+                const state = useConfigStore.getState(), user = useUserStore.getState();
+                return JSON.stringify([user.token, user.user?.group, user.user?.role, state.config, state.featureModels["image.edit"], state.publicSettings?.modelChannel.managed?.revision]);
+            };
+            const identity = requestIdentity();
+            if (!cfg.model || !useConfigStore.getState().isAiConfigReady(cfg, cfg.model)) throw new Error("请配置首帧图片编辑模型");
+            if (cfg.channelMode === "remote") {
+                const quote = await quoteManagedFixed(cfg, "image", 1, ctx.signal);
+                await confirmStorePrice(quote, "首帧合成", ctx.signal, `${cfg.model} · 1张 · ${cfg.size} · ${references.map((m) => `${viralVisualRole(m.role)}：${m.name}`).join("；")}。生成结果需再次确认`);
+            }
+            ctx.signal.throwIfAborted();
+            if (identity !== requestIdentity()) throw new DOMException("账号、模型或渠道已变化，请重新确认首帧费用", "AbortError");
+            store().patchRecord(ctx.recordId, { imageEditSubmitted: true, step: "图片通道正在合成首帧" });
+            const images = await requestEdit(cfg, viralKeyframePrompt(d), imagesOf(references), { signal: ctx.signal });
+            if (!images[0]) throw new Error("首帧模型未返回图片");
+            const image = await uploadImage(images[0].dataUrl, { signal: ctx.signal });
+            const candidate: WorkbenchMedia = { ...image, storageKey: image.storageKey || "", id: nanoid(), name: "合成首帧", role: "first-frame", kind: "image" };
+            return {
+                media: [...d.media, candidate], viralFirstFrameId: candidate.id,
+                viralKeyframe: { id: candidate.id, inputKey: viralKeyframeInputKey(d), confirmed: false, model: cfg.model },
+                viralOutputStale: true,
+            };
+        }
         if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
             if (stage === "analyze" && viralAnalysisMode(d, config) === "video") {
                 const scoped = videoAnalysisConfig(config);
@@ -736,13 +771,13 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             const cfg = viralVideoConfig(d, config),
                 labels = viralMaterialLabels(d);
-            const images = stage === "analyze" ? d.frames : d.media.filter((m) => m.kind === "image" && (stage === "product-analyze" ? m.role === "product" : ["product", "model", "first-frame"].includes(m.role)));
+            const images = stage === "analyze" ? d.frames : d.media.filter((m) => m.kind === "image" && (stage === "product-analyze" ? m.role === "product" : ["product", "background", "model", "first-frame"].includes(m.role)));
             const instruction =
                 stage === "analyze"
                     ? `分析原视频的均匀抽样画面。${viralAnalysisSections} 采样秒数：${(d.viralFrameTimes || []).join("、")}。这不是镜头边界，不推测精确转场或音乐节拍。${d.viralUseTranscript && d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨文字（只作文字依据，不代表实际听到声音）：${d.transcript}` : "没有采用音轨转写，只能按画面分析，不声称听到了口播或音乐。"} 只描述可见事实。`
                     : stage === "product-analyze"
                       ? `分析新商品图片，只写可见外观和可用展示方式。用户真实资料：${d.viralFacts || "未提供"}。不得编造价格、优惠、功效或承诺；未知标待确认。`
-                      : `为参考视频改编新商品中文脚本，只返回可编辑脚本，适配实际${cfg.videoSeconds}秒单片段。不能承诺多镜头后期、配音字幕已完成。真实商品资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}。参考结构：${viralAdoptedAnalysisText(d)}。新商品分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供"}。改编要求：${d.instructions}。原稿：${d.script}。编号：${labels.map((l) => `${l.label}=${l.name}`).join("；")}。保留用户@编号，不编造编号。当前视频实际输入为${
+                      : `为参考视频改编中文视频脚本，只返回可编辑脚本，适配实际${cfg.videoSeconds}秒单片段。描述开场姿势、动作顺序、结束姿势、机位和场景。不能承诺多镜头后期、配音字幕已完成。主体与场景真实资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}。参考结构：${viralAdoptedAnalysisText(d)}。新商品分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供"}。改编要求：${d.instructions}。原稿：${d.script}。编号与角色：${labels.map((l) => `${l.label}=${l.name}（${viralVisualRole(d.media.find((m) => m.id === l.id)?.role || "")}）`).join("；")}。保留用户@编号，不编造编号。人物半身照片未展示的全身、裙摆和背面须通过首帧补全并确认。当前视频实际输入为${
                             viralVideoMaterials(d, cfg)
                                 .map((m) => m.name)
                                 .join("、") || "尚未选择"
@@ -1188,7 +1223,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             if ((tool !== "viral-recreate" || (read(tool).viralRevision || 0) === (d.viralRevision || 0)) && (!digital || (read(tool).digitalRevision || 0) === (d.digitalRevision || 0))) {
                 const current = read(tool);
                 const mentions =
-                    tool === "viral-recreate" && value.frames
+                    tool === "viral-recreate" && (value.frames || value.media)
                         ? {
                               instructions: remapMaterialMentions(current.instructions, viralMaterialLabels(current), viralMaterialLabels({ ...current, ...value })),
                               script: remapMaterialMentions(current.script, viralMaterialLabels(current), viralMaterialLabels({ ...current, ...value })),
@@ -1196,7 +1231,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                         : {};
                 patch({ ...clearAfter(stage), ...value, ...mentions });
             }
-            const result = [value.final, value.cover, value.edited, value.video, value.speech, value.voicePreview].find(Boolean) || undefined;
+            const result = (stage === "keyframe" ? value.media?.find((m) => m.id === value.viralFirstFrameId) : undefined) || [value.final, value.cover, value.edited, value.video, value.speech, value.voicePreview].find(Boolean) || undefined;
             store().patchRecord(id, {
                 status: "completed",
                 result,
@@ -1218,8 +1253,8 @@ export function useVideoWorkbench(tool: VideoTool) {
         } catch (error) {
             const stopped = signal.aborted;
             const submitted = store().records.find((r) => r.id === id);
-            const detail = stopped ? submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
-            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
+            const detail = stopped ? submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
+            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.imageEditSubmitted && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
