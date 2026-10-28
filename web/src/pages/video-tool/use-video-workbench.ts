@@ -1202,6 +1202,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 result,
                 draftPatch: value,
                 text:
+                    (tool === "viral-recreate" && stage === "analyze" && value.viralAnalysisMode && (value.viralAnalyses?.[value.viralAnalysisMode]?.suggestion?.text || value.viralAnalyses?.[value.viralAnalysisMode]?.text)) ||
                     value.analysis ||
                     value.script ||
                     value.storeAnalysisSuggestion ||

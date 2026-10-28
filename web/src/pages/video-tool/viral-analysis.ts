@@ -1,6 +1,6 @@
 import { configForFeature, modelOptionLabel, type AiConfig } from "@/stores/use-config-store";
 import { videoAnalysisAvailable, videoAnalysisConfig } from "@/services/api/video-understanding";
-import type { VideoDraft, ViralAnalysisMode, ViralAnalysisProvenance, ViralAnalysisVersion } from "@/types/video-workbench";
+import type { VideoDraft, VideoRecord, ViralAnalysisMode, ViralAnalysisProvenance, ViralAnalysisVersion } from "@/types/video-workbench";
 
 export const viralAnalysisMode = (d: VideoDraft, config: AiConfig): ViralAnalysisMode => d.viralAnalysisMode || (videoAnalysisAvailable(config) ? "video" : "frames");
 export const viralReference = (d: VideoDraft) => d.media.find((m) => m.role === "reference" && m.kind === "video");
@@ -35,10 +35,57 @@ export function viralAnalysisProvenance(d: VideoDraft, mode: ViralAnalysisMode, 
 
 export function viralAnalysisResultPatch(d: VideoDraft, version: ViralAnalysisVersion): Partial<VideoDraft> {
     const mode = version.provenance.mode, previous = d.viralAnalyses?.[mode];
+    const protectedDraft = Boolean(previous?.text.trim() && previous.provenance.edited);
+    const autoAdopt = !protectedDraft && !viralAnalysisNeedsProtection(d) && version.provenance.inputKey === viralAnalysisInputKey(d, mode);
     return {
         viralAnalysisMode: mode,
-        viralAnalyses: { ...d.viralAnalyses, [mode]: previous?.text.trim() ? { ...previous, suggestion: version } : version },
+        viralAnalyses: { ...d.viralAnalyses, [mode]: protectedDraft ? { ...previous!, suggestion: version } : version },
+        ...(autoAdopt ? viralAdoptAnalysis(d, version) : {}),
     };
+}
+
+export function viralCurrentAnalysis(d: VideoDraft): ViralAnalysisVersion {
+    return {
+        text: d.analysis,
+        provenance: d.viralAdoptedAnalysis?.provenance || {
+            mode: d.viralAnalysisMode || "frames", source: "", sourceName: "来源未确认",
+            inputKey: "", model: "", modelLabel: "来源未确认", createdAt: 0, edited: true,
+        },
+    };
+}
+
+export function viralAnalysisIsCurrent(d: VideoDraft, version: ViralAnalysisVersion) {
+    const p = d.viralAdoptedAnalysis?.provenance, v = version.provenance;
+    return d.analysis === version.text && Boolean(p && p.mode === v.mode && p.createdAt === v.createdAt && p.inputKey === v.inputKey && p.model === v.model);
+}
+
+export function viralAnalysisNeedsProtection(d: VideoDraft) {
+    if (!d.analysis.trim()) return false;
+    const p = d.viralAdoptedAnalysis?.provenance;
+    if (!p || p.edited) return true;
+    const saved = d.viralAnalyses?.[p.mode];
+    return !saved || !viralAnalysisIsCurrent(d, saved);
+}
+
+export function viralEditAnalysis(d: VideoDraft, version: ViralAnalysisVersion, text: string, current = false): Partial<VideoDraft> {
+    const edited = { ...version, text, provenance: { ...version.provenance, edited: true } };
+    const mode = version.provenance.mode, saved = d.viralAnalyses?.[mode];
+    const syncCurrent = current || viralAnalysisIsCurrent(d, version);
+    return {
+        ...(!current || (saved && viralAnalysisIsCurrent(d, saved)) ? { viralAnalyses: { ...d.viralAnalyses, [mode]: { ...saved, ...edited } } } : {}),
+        ...(syncCurrent ? {
+            analysis: text,
+            ...(d.viralAdoptedAnalysis ? { viralAdoptedAnalysis: { ...d.viralAdoptedAnalysis, provenance: edited.provenance } } : {}),
+            viralScriptStale: Boolean(d.script), viralScriptSuggestion: "", viralOutputStale: true,
+        } : {}),
+    };
+}
+
+export function viralRecordAnalysis(record: VideoRecord): ViralAnalysisVersion | undefined {
+    if (record.tool !== "viral-recreate" || record.stage !== "analyze" || record.status !== "completed") return;
+    const mode = record.draftPatch?.viralAnalysisMode || record.viralInput?.viralAnalysisMode;
+    const result = mode && record.draftPatch?.viralAnalyses?.[mode];
+    return result ? result.suggestion || { text: result.text, provenance: result.provenance } : undefined;
 }
 
 export function viralAdoptAnalysis(d: VideoDraft, version: ViralAnalysisVersion): Partial<VideoDraft> {

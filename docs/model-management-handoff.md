@@ -2,7 +2,7 @@
 
 ## 交付状态
 
-模型按引用删除已随 v0.19.95（`fb957d6`）上线。生产第 9 版配置、37 个平台模型、64 个接入及 655 个绑定保持一致；内外健康、权限、既有目录/报价、余额与历史文件核对通过。本次没有实际删除生产记录，真实停用保存与删除交互仍需管理员验收。
+模型按引用删除已随 v0.19.95（`fb957d6`）上线。当次生产第 9 版配置、37 个平台模型、64 个接入及 655 个绑定保持一致；内外健康、权限、既有目录/报价、余额与历史文件核对通过。本次没有实际删除生产记录，真实停用保存与删除交互仍需管理员验收。当前第 10 版新增 Gemini 原生分析配置见下文。
 
 已随 v0.19.92（`de6dfd3`）发布生产，管理入口为 `https://studio.lingzhouai.com/admin/models`。已按用户授权通过比特浏览器 464 的登录会话保存并启用第 1 版配置，真实读取、持久化、目录和非收费报价检查通过。付费生成、扣费退款和上游质量仍由用户手动验收。
 
@@ -16,8 +16,10 @@
 
 ## 当前线上配置
 
+- 当前为第 10 版：按用户授权，将渠道 #23 的 `gemini-3.8-flash` 以 `text.gemini-video` 接入，平台模型 `model_gemini_video_flash` 固定 20 点/次，仅绑定 `viral-recreate.video-analyze` 并设为默认。共 38 个平台模型、65 个接入和 656 个绑定；其他模型、价格、渠道凭据、公共设置和功能绑定保持一致。管理员及 default/VIP 普通账号的内网/HTTPS 目录与签名报价均核对通过，真实视频调用、扣费退款及浏览器选模仍待验收。
+- 本轮备份与保存证据位于 `/opt/infinite-canvas/backups/gemini-video-20261028-044144/`。保存时余额和表数量未变；随后验收发现其他用户的三笔图片消费共 36 点，已与相应流水核对，不是本次 Gemini 调用。没有提交收费分析、重新部署或重启服务；详细交接见 `docs/gemini-video-analysis-handoff.md`。
 - 免费增强跳过 0 点费用确认已随 v0.19.96（`7d33452`）部署，收费报价仍须确认。生产静态资源分支与版本、default/VIP 普通账号的免费增强报价、完整管理配置与渠道凭据保持通过，第 9 版默认模型不变；余额、13 张表及 8,921 个既有文件一致，Worker 未重启。备份 `/opt/infinite-canvas/backups/v0.19.96-20261025-105810/`，报告 `.codex_tmp/release-v0.19.96/deployment.json`；浏览器增强/应用/撤销及旧标签刷新仍待验收。以下为模型配置变更时的历史记录。
-- 当前为第 9 版：用户在 #22「国模」渠道追加 `deepseek-v4.1-flash` 后，新增独立 `text.openai` 接入 `route_prompt_deepseek_v41_flash_ch22` 与免费平台模型 `model_prompt_deepseek_v41_flash`，展示名「DeepSeek 提示词增强」，仅绑定 `prompt.enhance` 并设为唯一启用默认项。旧 V4 Flash 接入身份保留、增强绑定保持停用，未原地更换真实模型。
+- 此前第 9 版：用户在 #22「国模」渠道追加 `deepseek-v4.1-flash` 后，新增独立 `text.openai` 接入 `route_prompt_deepseek_v41_flash_ch22` 与免费平台模型 `model_prompt_deepseek_v41_flash`，展示名「DeepSeek 提示词增强」，仅绑定 `prompt.enhance` 并设为唯一启用默认项。旧 V4 Flash 接入身份保留、增强绑定保持停用，未原地更换真实模型。
 - 新型号的后台同步测试曾在 30 秒超时；随后使用相同渠道凭据，`/responses` 和 `/chat/completions` 流式实测均成功，首次正文分别约 19.93/22.14 秒。保存第 9 版后，普通账号经站内 `/api/v1/responses` 的完整签名报价/调用通过，首次正文 1.58 秒、总计 2.03 秒，返回两只小狗玩耍的增强正文；这是单次耗时，不保证每次响应相同。管理员与普通账号报价均为 0 点，签名渠道为 #22，普通测试账号余额及计费日志数未变，公开 HTTPS 目录已读回第 9 版及正确默认项。
 - 本轮在线 SQLite/Compose 备份为 `/opt/infinite-canvas/backups/prompt-deepseek-20261025-102114/`，`save-report.json` 与 `verification.json` 记录保存及真实调用。保存前后其他功能绑定、既有模型/接入、渠道凭据、公共设置和用户余额保持一致；数据库 quick_check 正常。仅保存线上配置，未部署或重启服务，未修改 0 点确认弹窗，也未执行浏览器预览/应用或已打开标签页刷新验收。
 - 此前第 7 版：保留用户新增的 #22「国模」渠道，为真实模型 `deepseek-v4-flash` 登记 `text.openai` 接入 `route_prompt_deepseek_v4_flash_ch22` 和免费平台模型 `model_prompt_deepseek_v4_flash`，展示名为「DeepSeek 提示词增强」。仅为 `prompt.enhance` 准备绑定，不绑定其他文字、图片或视频功能。

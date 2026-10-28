@@ -13,7 +13,7 @@ const { configForFeature, defaultConfig, managedEffectiveConfig, useConfigStore 
 const { useUserStore } = await import("../src/stores/use-user-store");
 const { requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
 const { viralAnalysisMode, viralInput, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
-const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText } = await import("../src/pages/video-tool/viral-analysis");
+const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
 const { emptyVideoDraft } = await import("../src/types/video-workbench");
 
 const catalog: PublicManagedCatalog = {
@@ -119,22 +119,83 @@ test("sample analysis tracks frames and only the transcript explicitly selected 
     expect(viralAnalysisInputKey({ ...enabled, viralTranscriptSource: "another-video" }, "frames")).toBe(viralAnalysisInputKey({ ...enabled, transcript: "" }, "frames"));
 });
 
-test("analysis results remain separate and do not replace the adopted body or the other mode", () => {
-    const draft = referenceDraft();
+test("unedited results automatically become the current reference while preserving modes and script body", () => {
+    const draft = { ...referenceDraft(), script: "保留已有脚本" };
     const video = { text: "视频动作和声音", provenance: viralAnalysisProvenance(draft, "video", config) };
     const withVideo = { ...draft, ...viralAnalysisResultPatch(draft, video) };
     const frames = { text: "离散画面结构", provenance: viralAnalysisProvenance(draft, "frames", config) };
     const withBoth = { ...withVideo, ...viralAnalysisResultPatch(withVideo, frames) };
     expect(withBoth.viralAnalyses?.video).toEqual(video);
     expect(withBoth.viralAnalyses?.frames).toEqual(frames);
-    expect(withBoth.analysis).toBe("");
-    expect(withBoth.viralAdoptedAnalysis).toBeUndefined();
+    expect(withBoth.analysis).toBe(frames.text);
+    expect(withBoth.viralAdoptedAnalysis?.provenance).toEqual(frames.provenance);
+    expect(withBoth.viralScriptStale).toBe(true);
+    expect(withBoth.script).toBe(draft.script);
+    expect(viralAdoptedAnalysisError(withBoth)).toBe("");
     expect(draft.viralAnalyses).toBeUndefined();
     expect(video.provenance.model).toBe("remote::model_native");
     expect(frames.provenance.model).toBe("remote::model_script");
     expect(video.provenance.sourceName).toBe("原视频.mp4");
 });
 
+test("reanalyzing replaces an unedited result and records the new source without a pending suggestion", () => {
+    const draft = referenceDraft(), original = { text: "第一份分析", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const adopted = { ...draft, ...viralAnalysisResultPatch(draft, original) };
+    const next = { text: "第二份分析", provenance: { ...original.provenance, createdAt: original.provenance.createdAt + 1 } };
+    const updated = { ...adopted, ...viralAnalysisResultPatch(adopted, next) };
+    expect(updated.analysis).toBe(next.text);
+    expect(updated.viralAnalyses?.video).toEqual(next);
+    expect(updated.viralAdoptedAnalysis?.provenance.createdAt).toBe(next.provenance.createdAt);
+});
+
+test("another mode and unattributed legacy body both protect manual reference content", () => {
+    const draft = referenceDraft(), original = { text: "人工校对音画", provenance: { ...viralAnalysisProvenance(draft, "video", config), edited: true } };
+    const adopted = { ...draft, viralAnalyses: { video: original }, ...viralAdoptAnalysis(draft, original) };
+    const next = { text: "新抽样结果", provenance: viralAnalysisProvenance(draft, "frames", config) };
+    const updated = { ...adopted, ...viralAnalysisResultPatch(adopted, next) };
+    expect(updated.analysis).toBe(original.text);
+    expect(updated.viralAnalyses?.frames).toEqual(next);
+    const legacy = { ...draft, analysis: "旧分析，来源不明" };
+    expect(viralAnalysisResultPatch(legacy, next).analysis).toBeUndefined();
+    expect(viralCurrentAnalysis(legacy).provenance.modelLabel).toBe("来源未确认");
+    expect(viralCurrentAnalysis(legacy).provenance.createdAt).toBe(0);
+});
+
+test("editing an adopted version synchronizes the actual script reference and keeps stale input blocked", () => {
+    const draft = { ...referenceDraft(), script: "旧脚本" };
+    const version = { text: "原稿", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const adopted = { ...draft, ...viralAnalysisResultPatch(draft, version) };
+    const edited = { ...adopted, ...viralEditAnalysis(adopted, version, "右侧编辑稿") };
+    expect(edited.analysis).toBe("右侧编辑稿");
+    expect(edited.viralAnalyses?.video?.text).toBe(edited.analysis);
+    expect(edited.viralAdoptedAnalysis?.provenance.edited).toBe(true);
+    expect(edited.viralScriptStale).toBe(true);
+    expect(viralAdoptedAnalysisText(edited)).toContain("右侧编辑稿");
+    const stale = { ...edited, media: [] };
+    const editedStale = { ...stale, ...viralEditAnalysis(stale, viralCurrentAnalysis(stale), "再次编辑", true) };
+    expect(viralAdoptedAnalysisError(editedStale)).toContain("输入已变化");
+    const other = { text: "未采用抽样稿", provenance: viralAnalysisProvenance(edited, "frames", config) };
+    expect(viralEditAnalysis(edited, other, "只改抽样稿").analysis).toBeUndefined();
+});
+
+test("late results cannot automatically acknowledge changed inputs; record reuse preserves unrelated inputs", () => {
+    const draft = referenceDraft(), version = { text: "历史视频分析", provenance: viralAnalysisProvenance(draft, "video", config) };
+    const changed = { ...draft, media: [], viralFacts: "当前商品", instructions: "当前要求", script: "当前脚本" };
+    expect(viralAnalysisResultPatch(changed, version).analysis).toBeUndefined();
+    const adopted = { ...changed, ...viralAdoptAnalysis(changed, version) };
+    expect(adopted.media).toEqual([]);
+    expect(adopted.viralFacts).toBe(changed.viralFacts);
+    expect(adopted.instructions).toBe(changed.instructions);
+    expect(adopted.script).toBe(changed.script);
+    expect(viralAdoptedAnalysisText(adopted)).toContain("用户确认沿用原稿");
+    const record = {
+        id: "record", tool: "viral-recreate" as const, stage: "analyze", status: "completed" as const, createdAt: 1,
+        draftPatch: { viralAnalysisMode: "video" as const, viralAnalyses: { video: { ...version, suggestion: { ...version, text: "真正的新结果" } } } },
+    };
+    expect(viralRecordAnalysis(record)?.text).toBe("真正的新结果");
+    expect(viralRecordAnalysis({ ...record, status: "failed" })).toBeUndefined();
+    expect(viralRecordAnalysis({ ...record, stage: "product-analyze" })).toBeUndefined();
+});
 test("reanalyzing protects the editable draft and adopted version while storing a suggestion with its own provenance", () => {
     const draft = referenceDraft();
     const original = { text: "手动校对后的原稿", provenance: { ...viralAnalysisProvenance(draft, "video", config), edited: true } };
