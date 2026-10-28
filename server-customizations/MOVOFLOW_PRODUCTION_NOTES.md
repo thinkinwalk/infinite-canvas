@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.105
-- Current production source: tag v0.19.105, commit 6b138e52e9adc2d6cc8ce07dc88e4c66479324d4
+- Current production image: infinite-canvas:v0.19.106
+- Current production source: tag v0.19.106, commit 09fbbe306e00549a0418c73951c00a343dec067c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.106 deployment
+
+- Tag `v0.19.106`, commit `09fbbe306e00549a0418c73951c00a343dec067c`, is pushed on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.106`, ID `sha256:836a9a4275b25f8227bcf0c6bd052ec036743023764d56b444ad5e38fb858bf3`, matches the tag. Evaluation media and account artifacts remain local and excluded.
+- Viral recreation now uses three steps: prepare source/scene/person/product inputs, review script and explicitly confirm a composed/uploaded keyframe, then check actual video inputs and signed costs. Scene/person/product roles enter actual requests. Original-video motion guidance is explicit; text reconstruction does not promise frame-exact reproduction. Input changes invalidate keyframe confirmation. Image submission stop records and existing video-task recovery are preserved.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.106-20261028-123001/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.106-prebuild-20261028-122506/`. SQLite quick checks, all 13 table counts, settings, balances/roles/groups/status and 10,592 existing file hashes matched. Historical paused work and its completed Worker step remain preserved. Only app was recreated; Worker identity, image, start time and mounts remain unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full model catalogs and signed quotes passed. The initial preflight stopped before any application switch because the enhancement default had changed since the previous release. The actual pre-existing revision 12 configuration was then used as the comparison baseline and preserved in full: 38 models / 65 routes / 656 bindings. Image edit remains 10 credits per image, Gemini analysis 20 credits per request, and try-on 10 credits per image for both groups. No paid generation or configuration changes were submitted.
+- Asset `/assets/index-CaQ8ynD0.js` contains the version and new controls. BitBrowser local CDP in an independent unauthenticated context verified all three steps at 1440px, 390px and 320px: scene/person fields, import tabs and link login gating, editable keyframe requirements with missing-input protection, and actual-input/motion explanations. No page errors, document overflow or API writes; existing user tabs were preserved. Nine screenshots and `public-verification.json` are in workstation `.codex_tmp/release-v0.19.106/`.
+- Development regressions separately passed 6 keyframe tests / 29 assertions and 22 video-analysis tests / 131 assertions; 13 isolated mocked browser groups passed. Release repeated no local tests/builds; the server Docker build completed. Authenticated production end-to-end workflows, existing drafts, custom image channels, real inference quality and billing/refunds remain pending.
+- Server evidence: `/opt/infinite-canvas/releases/v0.19.106-deployment.json`; local copies include this report and `v0.19.106-prebuild.json`. Public-browser evidence is separately saved as `v0.19.106-public-verification.json` on the server. Rollback restores final-backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database and available v0.19.105 image.
 
 ## v0.19.105 deployment
 
