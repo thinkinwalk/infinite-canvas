@@ -1,0 +1,82 @@
+[
+  {
+    "id": "crossed-stand",
+    "photoId": "12857529",
+    "source": "https://www.pexels.com/photo/12857529/",
+    "download": "https://images.pexels.com/photos/12857529/pexels-photo-12857529.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "2b1c4881769a960c7952b2b844b4ba2fdfa2dd1bea27bddfe60ad6acf5abd404"
+  },
+  {
+    "id": "look-back",
+    "photoId": "4590986",
+    "source": "https://www.pexels.com/photo/4590986/",
+    "download": "https://images.pexels.com/photos/4590986/pexels-photo-4590986.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "0f2848b0f8aaf21bd909626a28e8672894e6609846830802df7e150bd40941b0"
+  },
+  {
+    "id": "relaxed-stand",
+    "photoId": "5665378",
+    "source": "https://www.pexels.com/photo/5665378/",
+    "download": "https://images.pexels.com/photos/5665378/pexels-photo-5665378.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "635ba6ec869713a207498214997f533554b5060a3c04d6864ee8b5810ff41d7d"
+  },
+  {
+    "id": "one-pocket",
+    "photoId": "6311050",
+    "source": "https://www.pexels.com/photo/6311050/",
+    "download": "https://images.pexels.com/photos/6311050/pexels-photo-6311050.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "ead6b3c9275ec803307e75f0c681f021ddba0c26148e784342b0a143f118c276"
+  },
+  {
+    "id": "both-pockets",
+    "photoId": "6140705",
+    "source": "https://www.pexels.com/photo/6140705/",
+    "download": "https://images.pexels.com/photos/6140705/pexels-photo-6140705.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "67ce652e301febe31527799651256c6e5b46df0cd6eb930f68e355cc60cf1d69"
+  },
+  {
+    "id": "one-hip",
+    "photoId": "15323444",
+    "source": "https://www.pexels.com/photo/15323444/",
+    "download": "https://images.pexels.com/photos/15323444/pexels-photo-15323444.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "74301ba70653b98cbf99c1b800cf7bf80002ef12e9c2f09efc884f5a1ca537d6"
+  },
+  {
+    "id": "both-hips",
+    "photoId": "5151058",
+    "source": "https://www.pexels.com/photo/5151058/",
+    "download": "https://images.pexels.com/photos/5151058/pexels-photo-5151058.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "50a2450f061ed3923950b08cb6aa6c85205e1ab4d47338dd30d0eb94d4b1d330"
+  },
+  {
+    "id": "walking",
+    "photoId": "7752448",
+    "source": "https://www.pexels.com/photo/7752448/",
+    "download": "https://images.pexels.com/photos/7752448/pexels-photo-7752448.jpeg?auto=compress&w=768",
+    "license": "https://www.pexels.com/license/",
+    "usage": "Pose reference only; not a try-on result or endorsement",
+    "processing": "EXIF orientation, resize preserving aspect ratio, JPEG",
+    "sha256": "59ade313dbcdf410ef3194bad76682aede5ef3e87ebb53a2856189884211e83e"
+  }
+]

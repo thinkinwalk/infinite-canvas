@@ -932,7 +932,7 @@ export default function CasesPage() {
         const busy = running || checking;
         const inputError = tryonInputError(values);
         const update = (changes: Record<string, CaseValue>) => setValues((current) => updateTryonValues(current, changes));
-        return <TryonWorkspace values={values} onChange={update} busy={busy} result={tryonResult} poses={tryonDraft.poses} onPosesChange={tryonDraft.setPoses}
+        return <TryonWorkspace values={values} onChange={update} busy={busy} generating={running} result={tryonResult} poses={tryonDraft.poses} onPosesChange={tryonDraft.setPoses}
             renderUpload={(key, label) => <CaseImageInput key={key} compact field={{ key, label, type: "image" }} value={values[key]} disabled={busy} onChange={(value) => update({ [key]: value })} />}
             footer={<div className="space-y-3">
                 {tryonDraft.error ? <div role="alert" className="flex items-center justify-between gap-2 text-xs text-red-600"><span>{tryonDraft.error}</span><Button size="small" icon={<RefreshCw className="size-3" />} onClick={tryonDraft.retry}>重试</Button></div> : null}

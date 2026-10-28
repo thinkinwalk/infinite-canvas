@@ -3,6 +3,6 @@
   "source": "https://github.com/usscottli-ctrl/novaryns",
   "input": "public/demos/tryon-before.webp",
   "output": "public/demos/tryon-after.webp",
-  "status": "inactive",
-  "note": "历史引用来源，已停止在服装上身工作台展示；不作为本站实际生成与验收通过的效果示例。"
+  "status": "reference-showcase",
+  "note": "按用户要求复用旧版参考案例，展示时标明参考项目及来源；不作为本站实际生成与验收通过的效果示例。"
 }

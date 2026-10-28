@@ -189,6 +189,12 @@ func TestTryonValidatesInputsBeforeGeneration(t *testing.T) {
 		{"wrong garment mode", map[string]any{"onePieceImageUrl": picture}, "切换"},
 		{"missing pose", map[string]any{"poseMode": "reference"}, "姿势参考"},
 		{"pose reference", map[string]any{"poseMode": "reference", "poseImageUrl": picture}, ""},
+		{"library pose", map[string]any{"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": tryonPresetPoses[0].URL}, ""},
+		{"missing library pose", map[string]any{"poseMode": "library"}, "常用姿势"},
+		{"mismatched library pose", map[string]any{"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": tryonPresetPoses[1].URL}, "常用姿势"},
+		{"uploaded library pose", map[string]any{"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": picture}, "常用姿势"},
+		{"library pose as model", map[string]any{"modelImageUrl": tryonPresetPoses[0].URL}, "本地"},
+		{"library pose in upload mode", map[string]any{"poseMode": "reference", "poseImageUrl": tryonPresetPoses[0].URL}, "本地"},
 		{"missing scene", map[string]any{"sceneMode": "library"}, "请选择场景"},
 		{"library scene", map[string]any{"sceneMode": "library", "sceneImageUrl": scenes[0].URL}, ""},
 		{"model used as scene", map[string]any{"sceneMode": "library", "sceneImageUrl": models[0].URL}, "官方素材库"},
@@ -222,13 +228,14 @@ func TestTryonOriginalModesDiscardUnusedReferences(t *testing.T) {
 	inputs := map[string]any{
 		"topImageUrl": picture, "modelImageUrl": picture,
 		"poseImageUrl":       "https://example.com/stale-pose",
+		"poseId":             tryonPresetPoses[0].ID,
 		"sceneImageUrl":      "https://example.com/stale-scene",
 		"referenceImageUrls": []any{"https://example.com/extra"},
 	}
 	if err := normalizeTryonInputs(inputs); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"poseImageUrl", "sceneImageUrl", "referenceImageUrls"} {
+	for _, key := range []string{"poseId", "poseImageUrl", "sceneImageUrl", "referenceImageUrls"} {
 		if _, exists := inputs[key]; exists {
 			t.Fatalf("inactive reference %s survived normalization", key)
 		}
@@ -312,8 +319,12 @@ func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 			if part.FormName() != "image[]" {
 				t.Fatalf("wrong image field: %s", part.FormName())
 			}
-			if _, _, err := image.DecodeConfig(bytes.NewReader(content)); err != nil {
+			dimensions, _, err := image.DecodeConfig(bytes.NewReader(content))
+			if err != nil {
 				t.Fatalf("attachment is not an image: %v", err)
+			}
+			if part.FileName() == "poseImageUrl.png" && dimensions.Width <= 2 {
+				t.Fatal("built-in pose attachment was replaced by an upload fixture")
 			}
 			filenames = append(filenames, part.FileName())
 		}
@@ -328,7 +339,7 @@ func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 	picture := tryonTestImage(t)
 	inputs := map[string]any{
 		"garmentMode": "one-piece", "onePieceImageUrl": picture, "modelImageUrl": picture,
-		"poseMode": "reference", "poseImageUrl": picture,
+		"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": tryonPresetPoses[0].URL,
 	}
 	if err := normalizeTryonInputs(inputs); err != nil {
 		t.Fatal(err)
@@ -336,5 +347,32 @@ func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 	result, err := executeCaseEdit(httptest.NewRequest(http.MethodPost, "/", nil), model.PublicUser(user), caseRuntimeConfig{Kind: "image", Model: "tryon-image-test", Operation: "image-edit", Size: "1024x1536", Quality: "high"}, tryonPrompt(inputs), inputs)
 	if err != nil || result["data"] == nil {
 		t.Fatalf("role-ordered edit failed: %v %v", result, err)
+	}
+}
+
+func TestTryonEmbeddedPoseAssets(t *testing.T) {
+	for _, pose := range tryonPresetPoses {
+		content, mime, err := caseImageBytes(pose.URL)
+		if err != nil || mime != "image/jpeg" || len(content) == 0 {
+			t.Fatalf("missing pose %s: %v", pose.ID, err)
+		}
+		if _, _, err := image.Decode(bytes.NewReader(content)); err != nil {
+			t.Fatalf("unreadable pose %s: %v", pose.ID, err)
+		}
+		w := httptest.NewRecorder()
+		TryonPoseAsset(w, httptest.NewRequest(http.MethodGet, pose.URL, nil))
+		if w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), content) {
+			t.Fatalf("pose URL and edit attachment differ: %s", pose.ID)
+		}
+	}
+	for _, path := range []string{"/api/tryon/assets/../provenance.json", "/api/tryon/assets/provenance.json", "/api/tryon/assets/missing.jpg"} {
+		w := httptest.NewRecorder()
+		TryonPoseAsset(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("unregistered asset exposed: %s", path)
+		}
+		if _, _, err := caseImageBytes(path); err == nil {
+			t.Fatalf("unregistered attachment accepted: %s", path)
+		}
 	}
 }

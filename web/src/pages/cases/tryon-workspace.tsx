@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { App, Button, Empty, Input, Modal, Segmented, Spin } from "antd";
-import { ArrowLeft, Download, ImagePlus, RefreshCw, Save, Shirt, Trash2, X, ZoomIn } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, ImagePlus, RefreshCw, Save, Shirt, Trash2, X, ZoomIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { saveAs } from "file-saver";
 import { fetchTryonLibrary, type TryonLibrary } from "@/services/api/cases";
 import { fetchImageBlob } from "@/services/image-storage";
-import { tryonSources, type TryonPose, type TryonResult, type TryonValues } from "./tryon-state";
+import { tryonDefaults, tryonSources, type TryonPose, type TryonResult, type TryonValues } from "./tryon-state";
 
 type Props = {
     values: TryonValues;
@@ -13,15 +13,16 @@ type Props = {
     renderUpload: (key: string, label: string) => ReactNode;
     footer: ReactNode;
     busy: boolean;
+    generating: boolean;
     result: TryonResult | null;
     poses: TryonPose[];
     onPosesChange: (poses: TryonPose[]) => void;
 };
 
-export default function TryonWorkspace({ values, onChange, renderUpload, footer, busy, result, poses, onPosesChange }: Props) {
+export default function TryonWorkspace({ values, onChange, renderUpload, footer, busy, generating, result, poses, onPosesChange }: Props) {
     const { message, modal } = App.useApp();
     const navigate = useNavigate();
-    const [library, setLibrary] = useState<TryonLibrary>({ models: [], scenes: [] });
+    const [library, setLibrary] = useState<TryonLibrary>({ models: [], scenes: [], poses: [] });
     const [libraryLoading, setLibraryLoading] = useState(false);
     const [libraryError, setLibraryError] = useState("");
     const [reload, setReload] = useState(0);
@@ -32,11 +33,15 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
     const [downloading, setDownloading] = useState(false);
     const [posePicker, setPosePicker] = useState(false);
     const [poseName, setPoseName] = useState<string | null>(null);
+    const [view, setView] = useState("examples");
+    useEffect(() => {
+        if (generating || result) setView("result");
+    }, [generating, result]);
     useEffect(() => {
         let active = true;
         setLibraryLoading(true);
         setLibraryError("");
-        void fetchTryonLibrary().then((data) => { if (active) setLibrary(data); })
+        void fetchTryonLibrary().then((data) => { if (active) setLibrary({ ...data, poses: data.poses || [] }); })
             .catch(() => { if (active) setLibraryError("素材库加载失败"); })
             .finally(() => { if (active) setLibraryLoading(false); });
         return () => { active = false; };
@@ -44,9 +49,11 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
 
     const model = library.models.find((item) => item.url === values.modelImageUrl);
     const scene = library.scenes.find((item) => item.url === values.sceneImageUrl);
+    const preset = library.poses.find((item) => item.id === values.poseId && item.url === values.poseImageUrl);
     const currentSources = tryonSources(values);
-    const displayedSources = result ? tryonSources(result.inputs) : currentSources;
-    const changed = result && Object.keys({ ...result.inputs, ...values }).some((key) => values[key] !== result.inputs[key]);
+    const displayedSources = view === "result" && result ? tryonSources(result.inputs) : currentSources;
+    const resultInputs: TryonValues = { ...tryonDefaults, ...result?.inputs };
+    const changed = result && Object.keys({ ...resultInputs, ...values }).some((key) => values[key] !== resultInputs[key]);
     const onePiece = values.garmentMode === "one-piece";
     const modelSource = String(values.modelSource || "library");
     const openPicker = (type: "model" | "scene") => { setFilter("全部"); setGender("全部"); setPicker(type); };
@@ -107,7 +114,8 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                             <div className="min-w-0"><h3 className="mb-2 text-xs text-stone-500">上装</h3>{renderUpload("topImageUrl", "上装")}</div>
                             <div className="min-w-0"><h3 className="mb-2 text-xs text-stone-500">下装</h3>{renderUpload("bottomImageUrl", "下装")}</div>
                         </div>}
-                        <Segmented block disabled={busy} value={String(values.garmentPhotoType || "flat")} options={[{ label: "平铺 / 挂拍图", value: "flat" }, { label: "人物穿着图", value: "person" }]} onChange={(value) => onChange({ garmentPhotoType: String(value) })} />
+                        <h3 className="text-xs text-stone-500">服装照片类型</h3>
+                        <Segmented block disabled={busy} value={String(values.garmentPhotoType || "flat")} options={[{ label: "衣服单独拍摄", value: "flat" }, { label: "衣服穿在人身上", value: "person" }]} onChange={(value) => onChange({ garmentPhotoType: String(value) })} />
                     </div>
                     <div className="space-y-3">
                         <h2 className="text-sm font-semibold">模特 <span className="text-red-500">*</span></h2>
@@ -116,7 +124,20 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                     </div>
                     <div className="space-y-3">
                         <h2 className="text-sm font-semibold">姿势</h2>
-                        <Segmented block disabled={busy} value={String(values.poseMode || "original")} options={[{ label: "保持原姿势", value: "original" }, { label: "参考照片", value: "reference" }]} onChange={(value) => onChange({ poseMode: String(value) })} />
+                        <Segmented block size="small" disabled={busy} value={String(values.poseMode || "original")} options={[{ label: "保持原姿势", value: "original" }, { label: "常用姿势", value: "library" }, { label: "自定义参考", value: "reference" }]} onChange={(value) => onChange({ poseMode: String(value) })} />
+                        {values.poseMode === "library" ? libraryLoading ? <div className="grid min-h-24 place-items-center"><Spin /></div> : libraryError ? <div role="alert" className="flex flex-wrap items-center gap-2 text-sm"><span>{libraryError}</span><Button size="small" icon={<RefreshCw className="size-3.5" />} onClick={() => setReload((value) => value + 1)}>重试</Button></div> : <>
+                            {library.poses.length ? <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto p-1">
+                                {library.poses.map((pose) => <figure key={pose.id} className="relative min-w-0">
+                                    <button type="button" disabled={busy} aria-label={`选择常用姿势：${pose.name}`} aria-pressed={preset?.id === pose.id} onClick={() => onChange({ poseMode: "library", poseId: pose.id, poseImageUrl: pose.url })} className={`block w-full overflow-hidden rounded-md border text-left ${preset?.id === pose.id ? "border-blue-500 ring-1 ring-blue-500" : "border-border"}`}>
+                                        <img loading="lazy" src={pose.url} alt={pose.name} className="aspect-[3/4] w-full bg-stone-50 object-contain dark:bg-stone-900" />
+                                        <span className="block min-h-10 break-words px-2 py-2 pr-7 text-xs">{pose.name}</span>
+                                    </button>
+                                    {preset?.id === pose.id ? <Check aria-label="已选择" className="pointer-events-none absolute left-1 top-1 size-5 rounded bg-blue-600 p-0.5 text-white" /> : null}
+                                    <Button type="text" size="small" className="!absolute bottom-1 right-1" title={`放大${pose.name}`} aria-label={`放大${pose.name}`} icon={<ZoomIn className="size-3.5" />} onClick={() => setPreview({ url: pose.url, label: pose.name })} />
+                                </figure>)}
+                            </div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无常用姿势" />}
+                            {preset ? <div className="flex items-center justify-between gap-2 text-xs text-stone-500"><a href={preset.source} target="_blank" rel="noreferrer" className="underline">照片来源：Pexels</a><Button disabled={busy} size="small" type="text" icon={<X className="size-3.5" />} onClick={() => onChange({ poseId: "", poseImageUrl: "" })}>移除姿势</Button></div> : null}
+                        </> : null}
                         {values.poseMode === "reference" ? <>
                             {renderUpload("poseImageUrl", "姿势参考（仅动作）")}
                             <div className="flex flex-wrap gap-2">
@@ -142,20 +163,29 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                 </section>
                 <section className="min-w-0" aria-label="试穿结果">
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                        <h2 className="text-sm font-semibold">{result ? changed ? "上次试穿结果" : "试穿结果" : "本次素材"}</h2>
-                        {result ? <Button disabled={busy} icon={<RefreshCw className="size-4" />} onClick={() => onChange(result.inputs)}>使用这组参数</Button> : null}
+                        <Segmented value={view} options={[{ label: "效果案例", value: "examples" }, { label: "本次结果", value: "result" }]} onChange={(value) => setView(String(value))} />
+                        {view === "result" && result ? <Button disabled={busy} icon={<RefreshCw className="size-4" />} onClick={() => onChange(result.inputs)}>使用这组参数</Button> : null}
                     </div>
-                    {busy ? <div role="status" className="mb-4 flex items-center gap-3 text-sm text-stone-500"><Spin size="small" />正在生成试穿照片…</div> : null}
-                    {changed ? <p className="mb-4 text-xs text-stone-500">参数已调整，下方仍为上次生成的照片和素材。</p> : null}
+                    {view === "result" ? <h2 className="mb-3 text-sm font-semibold">{result ? changed ? "上次试穿结果" : "试穿结果" : "本次素材"}</h2> : null}
+                    {generating ? <div role="status" className="mb-4 flex items-center gap-3 text-sm text-stone-500"><Spin size="small" />正在生成试穿照片…</div> : null}
+                    {view === "result" && changed ? <p className="mb-4 text-xs text-stone-500">参数已调整，下方仍为上次生成的照片和素材。</p> : null}
                     {displayedSources.length ? <div className="mb-5 flex flex-wrap gap-3">
                         {displayedSources.map(({ label, url }) => <figure key={label} className="w-20">
-                            {imagePreview(url, `${result ? "生成时" : "本次"}${label}`, "aspect-[3/4] w-full")}
+                            {imagePreview(url, `${view === "result" && result ? "生成时" : "本次"}${label}`, "aspect-[3/4] w-full")}
                             <figcaption className="mt-1 text-center text-xs text-stone-500">{label}</figcaption>
                         </figure>)}
                     </div> : null}
-                    {result ? <>
+                    {view === "examples" ? <div className="space-y-4 border-t border-border pt-5">
+                        <h2 className="text-sm font-semibold">参考项目示例</h2>
+                        <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                            <figure className="min-w-0">{imagePreview("/examples/tryon/source.webp", "案例原图", "aspect-[3/4] w-full")}<figcaption className="mt-2 text-center text-xs text-stone-500">示例原图</figcaption></figure>
+                            <ArrowRight aria-hidden="true" className="mx-auto size-5 rotate-90 text-stone-400 sm:rotate-0" />
+                            <figure className="min-w-0">{imagePreview("/examples/tryon/result.webp", "案例效果", "aspect-[3/4] w-full")}<figcaption className="mt-2 text-center text-xs text-stone-500">示例效果</figcaption></figure>
+                        </div>
+                        <p className="text-xs text-stone-500">来源：<a href="https://github.com/usscottli-ctrl/novaryns" target="_blank" rel="noreferrer" className="underline">Novaryn 参考项目</a>。沿用旧版案例，非本站生成记录。</p>
+                    </div> : result ? <>
                         <p className="mb-3 text-xs text-stone-500">
-                            {({ original: "原姿势", reference: "参考姿势" } as Record<string, string>)[String(result.inputs.poseMode || "original")]}
+                            {({ original: "原姿势", library: "常用姿势", reference: "自定义参考" } as Record<string, string>)[String(result.inputs.poseMode || "original")]}
                             {" · "}{({ original: "原背景", studio: "白底影棚", library: "场景库" } as Record<string, string>)[String(result.inputs.sceneMode || "original")]}
                             {" · "}{({ original: "原构图", full: "全身", half: "半身" } as Record<string, string>)[String(result.inputs.framing || "original")]}
                         </p>
@@ -168,7 +198,7 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                                 </figcaption>
                             </figure>)}
                         </div>
-                    </> : <div className="flex min-h-72 items-center justify-center border-t border-dashed border-stone-200 dark:border-stone-800"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={busy ? "正在试穿" : currentSources.length ? "待生成" : "暂无试穿结果"} /></div>}
+                    </> : <div className="flex min-h-72 items-center justify-center border-t border-dashed border-stone-200 dark:border-stone-800"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={generating ? "正在试穿" : currentSources.length ? "待生成" : "暂无试穿结果"} /></div>}
                 </section>
             </div>
         </div>

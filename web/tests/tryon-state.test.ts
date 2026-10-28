@@ -64,3 +64,24 @@ test("corrupt drafts are rejected without silently replacing the original data",
         expect(value).toEqual(before);
     }
 });
+
+test("preset pose selection survives drafts and restoring a result, while changing source clears it", () => {
+    const ready = { ...tryonDefaults, topImageUrl: "top", modelImageUrl: "model" };
+    expect(tryonInputError({ ...ready, poseMode: "library" })).toContain("常用姿势");
+    const preset = updateTryonValues(ready, { poseMode: "library", poseId: "walking", poseImageUrl: "/api/tryon/assets/walking.jpg" });
+    expect(tryonInputError(preset)).toBe("");
+    const draft = readTryonDraft({ values: preset, result: { inputs: preset, urls: ["result"] }, poses: [] });
+    expect(draft.values).toEqual(preset);
+    const custom = updateTryonValues(preset, { poseMode: "reference" });
+    expect(custom.poseImageUrl).toBe("");
+    expect(custom.poseId).toBe("");
+    const uploaded = updateTryonValues(custom, { poseImageUrl: "uploaded pose" });
+    const library = updateTryonValues(uploaded, { poseMode: "library" });
+    expect(library.poseImageUrl).toBe("");
+    expect(tryonInputError(library)).toContain("常用姿势");
+    expect(updateTryonValues(uploaded, preset)).toEqual(preset);
+    const original = updateTryonValues(preset, { poseMode: "original" });
+    expect(original.poseImageUrl).toBe("");
+    expect(original.poseId).toBe("");
+    expect(draft.result?.inputs.poseId).toBe("walking");
+});

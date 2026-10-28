@@ -87,6 +87,7 @@ func New() *gin.Engine {
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.GET("/cases", gin.WrapF(handler.Cases))
 	api.GET("/tryon/library", gin.WrapF(handler.TryonLibrary))
+	api.GET("/tryon/assets/:name", gin.WrapF(handler.TryonPoseAsset))
 	api.GET("/cases/:id", func(c *gin.Context) {
 		handler.CaseDetail(c.Writer, c.Request, c.Param("id"))
 	})

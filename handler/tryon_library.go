@@ -96,5 +96,5 @@ func tryonLibrary() ([]tryonModel, []tryonScene) {
 
 func TryonLibrary(w http.ResponseWriter, r *http.Request) {
 	models, scenes := tryonLibrary()
-	OK(w, map[string]any{"models": models, "scenes": scenes})
+	OK(w, map[string]any{"models": models, "scenes": scenes, "poses": tryonPresetPoses})
 }

@@ -42,7 +42,7 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	for key, options := range map[string][]string{
 		"garmentMode":      {"separates", "one-piece"},
 		"garmentPhotoType": {"flat", "person"},
-		"poseMode":         {"original", "reference"},
+		"poseMode":         {"original", "library", "reference"},
 		"sceneMode":        {"original", "studio", "library"},
 		"framing":          {"original", "full", "half"},
 	} {
@@ -83,12 +83,19 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	if stringInput(inputs, "framing") == "half" && (stringInput(inputs, "garmentMode") == "one-piece" || stringInput(inputs, "bottomImageUrl") != "") {
 		return errors.New("下装和连体装请选择全身或原构图")
 	}
-	if stringInput(inputs, "poseMode") == "reference" {
+	if stringInput(inputs, "poseMode") == "library" {
+		pose, ok := findTryonPose(stringInput(inputs, "poseId"))
+		if !ok || stringInput(inputs, "poseImageUrl") != pose.URL {
+			return errors.New("请选择官方常用姿势")
+		}
+	} else if stringInput(inputs, "poseMode") == "reference" {
+		delete(inputs, "poseId")
 		if stringInput(inputs, "poseImageUrl") == "" {
 			return errors.New("请上传姿势参考照片")
 		}
 	} else {
 		delete(inputs, "poseImageUrl")
+		delete(inputs, "poseId")
 	}
 	if stringInput(inputs, "sceneMode") == "library" {
 		if stringInput(inputs, "sceneImageUrl") == "" {
@@ -102,6 +109,16 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	for _, source := range tryonImageSources {
 		value := stringInput(inputs, source.key)
 		if value == "" {
+			continue
+		}
+		if source.role == "姿势" && stringInput(inputs, "poseMode") == "library" {
+			content, _, err := caseImageBytes(value)
+			if err != nil {
+				return err
+			}
+			if _, _, err := image.DecodeConfig(bytes.NewReader(content)); err != nil {
+				return errors.New("常用姿势图片无法读取")
+			}
 			continue
 		}
 		if strings.HasPrefix(value, "https://") && validTryonLibraryURL(value, source.role) {
@@ -145,7 +162,7 @@ func tryonPrompt(inputs map[string]any) string {
 	if stringInput(inputs, "bottomImageUrl") == "" && stringInput(inputs, "onePieceImageUrl") == "" {
 		parts = append(parts, "保持模特原有下装及其细节不变。")
 	}
-	if stringInput(inputs, "poseMode") == "reference" {
+	if stringInput(inputs, "poseMode") == "reference" || stringInput(inputs, "poseMode") == "library" {
 		parts = append(parts, "根据姿势图调整模特动作，身份与体型仍以模特图为准，处理自然的手臂、衣袖与衣摆遮挡。")
 	} else {
 		parts = append(parts, "保持模特原图的身体姿势、手脚动作及身体朝向，不因换衣自行改动作。")
