@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.100
-- Current production source: tag v0.19.100, commit de308f484c24abb84bd841e80cc3a6b8e013b2b0
+- Current production image: infinite-canvas:v0.19.101
+- Current production source: tag v0.19.101, commit e0b3bfa8daa337a7d800715b028714867b04ef13
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.101 deployment
+
+- Tag `v0.19.101`, commit `e0b3bfa8daa337a7d800715b028714867b04ef13`, is published on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.101`, ID `sha256:187ba9d7131806f510cb874a2af99e299de8997a845dbf3f2de5b548bd74a4dc`, matches the tag. Unrelated local video evaluation media, account responses and temporary evaluation scripts remain local.
+- Try-on supports uploaded models, separates or one-piece garments, garment source types, original/reference poses, original/studio/library backgrounds, framing, large previews, immutable result snapshots, parameter reuse and downloads. Account-isolated browser drafts, last successful results and personal pose photos use localforage. Existing cloud adapters, signed quotes and billing/refund behavior are retained; no GPU service, model weights or production configuration changes were introduced. External-project result examples are no longer displayed.
+- Production try-on schema is version 3 with 12 fields and a required model. Default/VIP signed quotes remain 10 model credits plus zero service credits per image. Full catalogs, management revision 10 (38 models / 65 routes / 656 bindings), saved settings and sampled managed quotes are unchanged.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.101-20261028-062740/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.101-prebuild-20261028-062307/`. Database quick checks, all 13 table counts, balances/roles/groups/status and 10,437 existing task/media file hashes matched. The historical stored planning task was confirmed paused with a completed linked Worker step and its file preserved.
+- Only app was recreated. Worker ID, image, start time and `v0.19.87-worker` mounts remain unchanged. Internal/external health, 11 public pages, default/VIP Worker gateways and permission checks passed. Public `/assets/index-BbrgcCjK.js` and the new case fields were independently verified from this workstation.
+- Development verification passed focused Go regressions, 12 frontend tests / 59 assertions and 16 isolated mocked browser groups with ten desktop/mobile screenshots. Release repeated no local tests/builds; the production Docker build passed. No paid inference was submitted. Production browser interactions, real upstream multi-image support, clothing/identity/pose quality and actual billing/refunds remain pending; see `docs/tryon-baseline-handoff.md`.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.101-deployment.json`; workstation copies `.codex_tmp/release-v0.19.101/deployment.json` and `public-verification.json`. Rollback restores the final backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; the prior v0.19.100 image remains available. Do not restore an old database over subsequent activity.
 
 ## v0.19.100 deployment
 
