@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.108
-- Current production source: tag v0.19.108, commit 4c850d3b697b08be22e03de98dcdd63f7a37a259
+- Current production image: infinite-canvas:v0.19.109
+- Current production source: tag v0.19.109, commit e4eb73e2930ba26253196d10f8cb67fbc9d4f112
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.109 deployment
+
+- Source tag `v0.19.109`, commit `e4eb73e2930ba26253196d10f8cb67fbc9d4f112`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.109`, ID `sha256:27ac25af2f12fb6d9435a683cf11de03cf431071dddd05d8fa95279af13d1dfd`, matches the source tag.
+- Viral-recreation busy status now displays the existing animated Spin indicator and polite live status. Stage text, stopping, task cancellation, generation, billing and recovery behavior are retained.
+- Development isolated CDP checks covered four busy stages, animation running/time progression, completion hiding, stop availability and 1440/390/320px layouts. Release repeated no local tests/builds; the server Docker build completed. Independent workstation HTTPS checks verified health, actual page, `/assets/index-Id5pUSuD.js` and the published loading-status code. Browser interaction was not repeated during release; real user task acceptance remains pending. No paid inference was submitted.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.109-20261028-152625/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.109-prebuild-20261028-152227/`. Database quick checks, 13 table counts, settings, user balances/roles/groups/status and 10,594 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts are unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Management revision 12, 38 models / 65 routes / 656 bindings, Gemini analysis at 20 credits and image edit/try-on at 10 credits per image are retained.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.109-deployment.json`, workstation `.codex_tmp/v0.19.109-deployment.json` and `.codex_tmp/v0.19.109-public-verification.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.108 image.
 
 ## v0.19.108 deployment
 
