@@ -1067,6 +1067,10 @@ export default function ViralRecreateWorkspace() {
                             <Alert
                                 className="mb-3"
                                 type="info"
+                                showIcon
+                                icon={<Spin size="small" />}
+                                role="status"
+                                aria-live="polite"
                                 title={`${active?.stage === "frames" ? "抽取参考画面" : stageLabels[active?.stage || ""] || "正在处理"}：${active?.step || "等待请求"}`}
                                 description={
                                     <Space>
