@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.106
-- Current production source: tag v0.19.106, commit 09fbbe306e00549a0418c73951c00a343dec067c
+- Current production image: infinite-canvas:v0.19.107
+- Current production source: tag v0.19.107, commit e1ecfb3a55fdd5ada0efc20795734463e6b6ca78
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.107 deployment
+
+- Source tag `v0.19.107`, commit `e1ecfb3a55fdd5ada0efc20795734463e6b6ca78`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.107`, ID `sha256:cdc0b1dfabcc2889f99f3586239f385518c77dad0d239d1904ea60c83ae3d03b`, matches the tag. Evaluation media and account artifacts remain local and excluded.
+- Viral recreation isolates analysis by actual video source identity when reference media changes. Foreign adopted analysis, both analysis modes and suggestions move to local history. Current video name/duration and original-analysis/adapted-script labels are explicit. AI writing requires adopted analysis; manual writing remains available. Cross-video history borrowing compares both source names, requires confirmation and retains a history warning. Existing facts, instructions, media and script text are preserved.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.107-20261028-141137/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.107-prebuild-20261028-140810/`. SQLite quick checks, all 13 table counts, settings, balances/roles/groups/status and 10,592 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts are unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Management revision 12 remains unchanged: 38 models / 65 routes / 656 bindings. Gemini analysis remains 20 credits per request; image edit and try-on remain 10 credits per image for both groups. No paid generation or configuration changes were submitted.
+- Public asset `/assets/index-ByJzR6RC.js` contains the release and source-isolation controls. Development verification passed 28 tests / 163 assertions and 7 isolated mocked browser groups. Release repeated no local tests/builds; the server Docker build completed. Real existing user drafts, authenticated model requests, inference quality and billing/refunds remain pending.
+- Actual production browser verification used local BitBrowser CDP with an isolated unauthenticated context and a seeded persisted draft. The published bundle detached and archived old-video analysis, deduplicated it across reload and preserved target facts. At 1440/390/320px, current-video labels, empty analysis, fullscreen editor, historical-source confirmation/cancel and three-step navigation passed without page errors or document overflow. The 320px history tab is reached through the tab overflow menu. No API writes or paid calls; existing user tabs were preserved. Report and three screenshots: workstation `.codex_tmp/release-v0.19.107/`; server report `/opt/infinite-canvas/releases/v0.19.107-public-verification.json`. This does not verify the user's actual original draft or authenticated inference.
+- Server evidence: `/opt/infinite-canvas/releases/v0.19.107-deployment.json`; local copies: `.codex_tmp/v0.19.107-deployment.json` and `.codex_tmp/v0.19.107-prebuild.json`. Rollback restores final-backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database and available v0.19.106 image.
 
 ## v0.19.106 deployment
 
