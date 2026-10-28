@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.98
-- Current production source: tag v0.19.98, commit ae1304315ebb3697e617951d0079c2b7243a8f95
+- Current production image: infinite-canvas:v0.19.99
+- Current production source: tag v0.19.99, commit 458140c9af9350466a3b3db35462bfb3aaf02fc4
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.99 deployment
+
+- Tag `v0.19.99`, commit `458140c9af9350466a3b3db35462bfb3aaf02fc4`, is published on `release/v0.19.60` with a GitHub Release. Server-built app image `infinite-canvas:v0.19.99`, ID `sha256:ceab6f252cb597e5ab1f70da6f63564d41c4c39ae3719a5e820952faba9caf5f`, matches the exact tag.
+- Viral recreation keeps native video/audio and sampled-frame analysis results, editable drafts and suggestions separately. Explicit adoption selects the script input; changed reference inputs invalidate that adoption unless the user confirms reuse. Sampling prepares frames and optional transcription in one action. Source/model details, manual failure switching and narrow-screen layout are published.
+- Native analysis is preferred only when a valid binding is available. Production management remains revision 9 with 37 models, 64 routes and 655 bindings; Gemini pricing and native-analysis binding remain unconfigured, so new production drafts still default to sampled frames. No paid generation or configuration changes were submitted.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.99-20261028-043002/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.99-prebuild-20261028-042752/`. SQLite quick_check, all 13 table counts, settings, balances/roles/groups/status, default/VIP catalogs and quotes matched; hashes of 10,417 existing files matched.
+- Only App was recreated. Worker ID/image/start time/source mounts remain unchanged. Internal/external health, ten public pages, default/VIP Worker gateways and permission checks passed. Server and independent workstation confirmed `/assets/index-CbEJWmof.js`, release version and analysis adoption/switching markers.
+- Development verification previously passed 23 focused tests with 126 assertions and 13 groups of mocked browser checks. No local tests/builds were repeated during release; server Docker build completed. Production browser interaction, real Gemini input/quality/billing/refunds, Worker extraction/transcription and historical draft acceptance remain pending.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.99-deployment.json`; workstation copies `.codex_tmp/release-v0.19.99/deployment.json` and `public-verification.json`. Rollback restores the final backup Compose and runs `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database. The v0.19.98 image remains available.
+- Concurrent unfinished try-on backend/frontend changes and local evaluation media/account responses were excluded from this release; the existing try-on proposal documentation was included.
 
 ## v0.19.98 deployment
 
