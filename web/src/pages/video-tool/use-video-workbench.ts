@@ -16,9 +16,9 @@ import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
 import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
-import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
+import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
-import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
+import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
@@ -777,19 +777,14 @@ export function useVideoWorkbench(tool: VideoTool) {
                     ctx.signal, () => store().patchRecord(ctx.recordId, { nativeAnalysisSubmitted: true }));
                 return viralAnalysisResultPatch(d, { text: value, provenance });
             }
-            const cfg = viralVideoConfig(d, config),
-                labels = viralMaterialLabels(d);
+            const cfg = viralVideoConfig(d, config);
             const images = stage === "analyze" ? d.frames : d.media.filter((m) => m.kind === "image" && (stage === "product-analyze" ? m.role === "product" : ["product", "background", "model", "first-frame"].includes(m.role)));
             const instruction =
                 stage === "analyze"
                     ? `分析原视频的均匀抽样画面。${viralAnalysisSections} 采样秒数：${(d.viralFrameTimes || []).join("、")}。这不是镜头边界，不推测精确转场或音乐节拍。${d.viralUseTranscript && d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨文字（只作文字依据，不代表实际听到声音）：${d.transcript}` : "没有采用音轨转写，只能按画面分析，不声称听到了口播或音乐。"} 只描述可见事实。`
                     : stage === "product-analyze"
                       ? `分析新商品图片，只写可见外观和可用展示方式。用户真实资料：${d.viralFacts || "未提供"}。不得编造价格、优惠、功效或承诺；未知标待确认。`
-                      : `为参考视频改编中文视频脚本，只返回可编辑脚本，适配实际${cfg.videoSeconds}秒单片段。描述开场姿势、动作顺序、结束姿势、机位和场景。不能承诺多镜头后期、配音字幕已完成。主体与场景真实资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}。参考结构：${viralAdoptedAnalysisText(d)}。新商品分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供"}。改编要求：${d.instructions}。原稿：${d.script}。编号与角色：${labels.map((l) => `${l.label}=${l.name}（${viralVisualRole(d.media.find((m) => m.id === l.id)?.role || "")}）`).join("；")}。保留用户@编号，不编造编号。人物半身照片未展示的全身、裙摆和背面须通过首帧补全并确认。当前视频实际输入为${
-                            viralVideoMaterials(d, cfg)
-                                .map((m) => m.name)
-                                .join("、") || "尚未选择"
-                        }；未发送的新人物/商品须准备相应首帧，不承诺凭文字即可精准替换。`;
+                      : viralScriptPrompt(d, cfg);
             const provenance = stage === "analyze" ? viralAnalysisProvenance(d, "frames", config) : undefined;
             const value = await text(ctx, instruction, images, stage !== "script");
             if (stage === "analyze") return viralAnalysisResultPatch(d, { text: value, provenance: provenance! });
