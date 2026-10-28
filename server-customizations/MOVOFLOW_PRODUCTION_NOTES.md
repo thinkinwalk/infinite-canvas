@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.104
-- Current production source: tag v0.19.104, commit 38cc4a9d2e2c9f411c67d8197b5891122ce45043
+- Current production image: infinite-canvas:v0.19.105
+- Current production source: tag v0.19.105, commit 6b138e52e9adc2d6cc8ce07dc88e4c66479324d4
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.105 deployment
+
+- Tag `v0.19.105`, commit `6b138e52e9adc2d6cc8ce07dc88e4c66479324d4`, is pushed on `release/v0.19.60` with a GitHub Release. Server-built image `infinite-canvas:v0.19.105`, ID `sha256:26d37315b26d9e55c03b5514fd4f4daadf75ef0c3120e65b62503e58fa1b753e`, matches the tag. Local evaluation media and account responses remain excluded.
+- Prompt enhancement independently selects eligible text models enabled for `prompt.enhance`, or follows the default. Image/video/canvas/Agent share the choice; custom channels retain a separate choice. Actual signed pricing, paid confirmation, free short circuit, undo and stale-request protection remain. Video writing explicitly uses `video.script`. Production still exposes only free DeepSeek enhancement to default/VIP users; administrators must enable more text models before the selector appears. No configuration was changed to demonstrate it.
+- Try-on removes the garment-photo-type control, accepts product/worn references through role-specific uploads, defaults to full-body framing with a half-body alternative for eligible inputs, and keeps supplementary requirements expanded. Official schema remains version 3 with 11 fields; the only intended schema differences are removal of `garmentPhotoType` and the `full` framing default. Prices, runtime model, pose assets and examples remain unchanged; both groups still quote 10 credits per image.
+- Final online SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.105-20261028-100401/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.105-prebuild-20261028-100023/`. SQLite quick checks, all 13 table counts, settings, balances/roles/groups/status and 10,588 existing file hashes matched. Historical paused work and its completed linked Worker step remain preserved. Only app was recreated; Worker ID, image, start time and mounts are unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permission denials, full model catalogs and sampled signed quotes passed. Management remains revision 10 (38 models / 65 routes / 656 bindings); Gemini video analysis remains 20 credits per request. No paid generation was submitted.
+- Public asset `/assets/index-BolDqQJZ.js` contains the new version and model controls. An isolated unauthenticated browser on the real production URL verified removed try-on controls, full-body default, full/half switching and visible/editable supplementary input at 1440px, 390px and 320px without horizontal overflow. Image enhancement renders with its selector hidden for one available model. Video script assistant changes modes and closes successfully. No page errors or API writes occurred. Three screenshots and `public-verification.json` are in workstation `.codex_tmp/release-v0.19.105/`.
+- Development enhancement regressions passed 19 tests / 98 assertions, model-management regressions 8 tests / 45 assertions and 16 isolated mocked browser groups; focused try-on regressions also passed. Release repeated no local tests or builds; server Docker build completed. Authenticated multi-model production workflows, already-open tabs, existing drafts, custom channels, real inference quality and billing/refunds remain pending acceptance.
+- Server evidence: `/opt/infinite-canvas/releases/v0.19.105-deployment.json`; workstation copies include that report and `v0.19.105-prebuild.json`. Rollback restores final-backup Compose and recreates only app using `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database and available v0.19.104 image.
 
 ## v0.19.104 deployment
 
