@@ -49,7 +49,7 @@ export function viralCurrentAnalysis(d: VideoDraft): ViralAnalysisVersion {
         text: d.analysis,
         provenance: d.viralAdoptedAnalysis?.provenance || {
             mode: d.viralAnalysisMode || "frames", source: "", sourceName: "来源未确认",
-            inputKey: "", model: "", modelLabel: "来源未确认", createdAt: 0, edited: true,
+            inputKey: "", model: "", modelLabel: "来源未确认", createdAt: 0,
         },
     };
 }
@@ -88,6 +88,39 @@ export function viralRecordAnalysis(record: VideoRecord): ViralAnalysisVersion |
     return result ? result.suggestion || { text: result.text, provenance: result.provenance } : undefined;
 }
 
+export function viralLegacyAnalysisRecovery(d: VideoDraft, records: VideoRecord[]) {
+    if (!d.analysis.trim() || d.viralAdoptedAnalysis) return;
+    const versions = [
+        ...Object.values(d.viralAnalyses || {}).flatMap((result) => result ? [result, ...(result.suggestion ? [result.suggestion] : [])] : []),
+        ...records.flatMap((record) => {
+            const version = viralRecordAnalysis(record);
+            const mode = record.draftPatch?.viralAnalysisMode || record.viralInput?.viralAnalysisMode;
+            const saved = mode && record.draftPatch?.viralAnalyses?.[mode];
+            return version ? [version, ...(saved?.suggestion ? [saved] : [])] : [];
+        }),
+    ].filter((version) => version.text.trim() && version.provenance.inputKey && version.provenance.createdAt > 0)
+        .sort((a, b) => b.provenance.createdAt - a.provenance.createdAt);
+    const matching = versions.find((version) => version.text === d.analysis && version.provenance.edited);
+    if (matching) return {
+        patch: {
+            viralAdoptedAnalysis: { provenance: matching.provenance, inputKey: matching.provenance.inputKey, adoptedAt: matching.provenance.createdAt },
+        } satisfies Partial<VideoDraft>,
+    };
+    const latest = versions.find((version) => !version.provenance.edited && version.provenance.model
+        && version.provenance.inputKey === viralAnalysisInputKey(d, version.provenance.mode));
+    const patch: Partial<VideoDraft> = latest ? {
+        ...viralAdoptAnalysis(d, latest), viralAnalysisMode: latest.provenance.mode,
+        viralAnalyses: { ...d.viralAnalyses, [latest.provenance.mode]:
+            d.viralAnalyses?.[latest.provenance.mode]?.provenance.edited
+                ? d.viralAnalyses[latest.provenance.mode]
+                : { text: latest.text, provenance: latest.provenance } },
+    } : {
+        analysis: "", viralAdoptedAnalysis: undefined, viralAnalysisStale: false,
+        viralScriptStale: Boolean(d.script), viralScriptSuggestion: "", viralOutputStale: true,
+    };
+    return { patch, archived: viralCurrentAnalysis(d) };
+}
+
 export function viralAdoptAnalysis(d: VideoDraft, version: ViralAnalysisVersion): Partial<VideoDraft> {
     return {
         analysis: version.text,
@@ -110,5 +143,5 @@ export function viralAdoptedAnalysisText(d: VideoDraft) {
     if (!d.analysis.trim()) return "未采用参考分析";
     const provenance = d.viralAdoptedAnalysis!.provenance;
     const reused = d.viralAdoptedAnalysis!.inputKey !== provenance.inputKey ? "；用户确认沿用原稿，未重新分析当前输入" : "";
-    return `【已采用：${viralAnalysisNames[provenance.mode]}；${provenance.modelLabel}${provenance.edited ? "，已编辑" : ""}；原分析素材：${provenance.sourceName}${reused}】\n${d.analysis}`;
+    return `【已采用：${provenance.inputKey ? viralAnalysisNames[provenance.mode] : "历史参考分析"}；${provenance.modelLabel}${provenance.edited ? "，已编辑" : ""}；原分析素材：${provenance.sourceName}${reused}】\n${d.analysis}`;
 }

@@ -109,13 +109,13 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                 <section className="flex min-w-0 flex-col gap-5 border-b border-stone-200 pb-6 lg:border-b-0 lg:border-r lg:pr-6 dark:border-stone-800" aria-label="服装上身参数">
                     <div className="space-y-3">
                         <h2 className="text-sm font-semibold">服装 <span className="text-red-500">*</span></h2>
+                        <h3 className="text-xs text-stone-500">服装照片类型</h3>
+                        <Segmented block disabled={busy} value={String(values.garmentPhotoType || "flat")} options={[{ label: "衣服单独拍摄", value: "flat" }, { label: "衣服穿在人身上", value: "person" }]} onChange={(value) => onChange({ garmentPhotoType: String(value) })} />
                         <Segmented block disabled={busy} value={String(values.garmentMode || "separates")} options={[{ label: "上装 / 下装", value: "separates" }, { label: "连衣裙 / 连体装", value: "one-piece" }]} onChange={(value) => onChange({ garmentMode: String(value) })} />
                         {onePiece ? renderUpload("onePieceImageUrl", "连衣裙 / 连体装") : <div className="grid grid-cols-2 gap-3">
                             <div className="min-w-0"><h3 className="mb-2 text-xs text-stone-500">上装</h3>{renderUpload("topImageUrl", "上装")}</div>
                             <div className="min-w-0"><h3 className="mb-2 text-xs text-stone-500">下装</h3>{renderUpload("bottomImageUrl", "下装")}</div>
                         </div>}
-                        <h3 className="text-xs text-stone-500">服装照片类型</h3>
-                        <Segmented block disabled={busy} value={String(values.garmentPhotoType || "flat")} options={[{ label: "衣服单独拍摄", value: "flat" }, { label: "衣服穿在人身上", value: "person" }]} onChange={(value) => onChange({ garmentPhotoType: String(value) })} />
                     </div>
                     <div className="space-y-3">
                         <h2 className="text-sm font-semibold">模特 <span className="text-red-500">*</span></h2>
@@ -123,8 +123,8 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                         {modelSource === "upload" ? renderUpload("modelImageUrl", "模特照片") : libraryButton("model")}
                     </div>
                     <div className="space-y-3">
-                        <h2 className="text-sm font-semibold">姿势</h2>
-                        <Segmented block size="small" disabled={busy} value={String(values.poseMode || "original")} options={[{ label: "保持原姿势", value: "original" }, { label: "常用姿势", value: "library" }, { label: "自定义参考", value: "reference" }]} onChange={(value) => onChange({ poseMode: String(value) })} />
+                        <h2 className="text-sm font-semibold">模特姿势</h2>
+                        <Segmented block size="small" disabled={busy} value={String(values.poseMode || "original")} options={[{ label: "保持模特姿势", value: "original" }, { label: "常用姿势", value: "library" }, { label: "自定义参考", value: "reference" }]} onChange={(value) => onChange({ poseMode: String(value) })} />
                         {values.poseMode === "library" ? libraryLoading ? <div className="grid min-h-24 place-items-center"><Spin /></div> : libraryError ? <div role="alert" className="flex flex-wrap items-center gap-2 text-sm"><span>{libraryError}</span><Button size="small" icon={<RefreshCw className="size-3.5" />} onClick={() => setReload((value) => value + 1)}>重试</Button></div> : <>
                             {library.poses.length ? <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto p-1">
                                 {library.poses.map((pose) => <figure key={pose.id} className="relative min-w-0">
@@ -185,7 +185,7 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                         <p className="text-xs text-stone-500">来源：<a href="https://github.com/usscottli-ctrl/novaryns" target="_blank" rel="noreferrer" className="underline">Novaryn 参考项目</a>。沿用旧版案例，非本站生成记录。</p>
                     </div> : result ? <>
                         <p className="mb-3 text-xs text-stone-500">
-                            {({ original: "原姿势", library: "常用姿势", reference: "自定义参考" } as Record<string, string>)[String(result.inputs.poseMode || "original")]}
+                            {({ original: "保持模特姿势", library: "常用姿势", reference: "自定义参考" } as Record<string, string>)[String(result.inputs.poseMode || "original")]}
                             {" · "}{({ original: "原背景", studio: "白底影棚", library: "场景库" } as Record<string, string>)[String(result.inputs.sceneMode || "original")]}
                             {" · "}{({ original: "原构图", full: "全身", half: "半身" } as Record<string, string>)[String(result.inputs.framing || "original")]}
                         </p>

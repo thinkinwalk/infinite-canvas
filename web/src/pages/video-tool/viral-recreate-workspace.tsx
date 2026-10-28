@@ -24,7 +24,7 @@ import type { StoreVideoSettings, VideoRecord, ViralAnalysisMode, ViralAnalysisV
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
-import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralRecordAnalysis } from "./viral-analysis";
+import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 
 type Role = "reference" | "product" | "model" | "first-frame";
@@ -71,7 +71,8 @@ export default function ViralRecreateWorkspace() {
         [priceError, setPriceError] = useState(""),
         [quoting, setQuoting] = useState(false),
         quoteController = useRef<AbortController | null>(null);
-    const referencePlayer = useRef<HTMLVideoElement | null>(null);
+    const referencePlayer = useRef<HTMLVideoElement | null>(null),
+        legacyAnalysisRecovered = useRef(false);
     const cfg = viralVideoConfig(d, config),
         settings = storeVideoSettings(cfg),
         profile = videoProfile(cfg, cfg.videoModel),
@@ -145,6 +146,26 @@ export default function ViralRecreateWorkspace() {
         if (wb.hydrated && !busy && reference && !d.viralAnalysisMode && (config.channelMode === "local" || settingsLoaded))
             wb.patch({ viralAnalysisMode: analysisMode });
     }, [wb.hydrated, busy, reference?.id, d.viralAnalysisMode, analysisMode, config.channelMode, settingsLoaded]);
+    useEffect(() => {
+        const store = useVideoWorkbenchStore.getState(), draft = store.drafts["viral-recreate"];
+        if (legacyAnalysisRecovered.current || !store.hydrated || store.storageError || locked || store.busyTools["viral-recreate"] || !draft) return;
+        legacyAnalysisRecovered.current = true;
+        const recovery = viralLegacyAnalysisRecovery(draft, store.records);
+        if (!recovery) return;
+        const archived = recovery.archived;
+        const exists = archived && store.records.some((r) => r.tool === "viral-recreate" && r.step === "旧稿归档" && r.text === archived.text);
+        const record: VideoRecord | undefined = archived && !exists ? {
+            id: crypto.randomUUID(), tool: "viral-recreate", stage: "analyze", status: "completed", createdAt: Date.now(),
+            step: "旧稿归档", text: archived.text,
+            draftPatch: { viralAnalysisMode: archived.provenance.mode, viralAnalyses: { [archived.provenance.mode]: archived } },
+        } : undefined;
+        useVideoWorkbenchStore.setState({
+            drafts: { ...store.drafts, "viral-recreate": { ...draft, ...recovery.patch, viralRevision: (draft.viralRevision || 0) + 1 } },
+            ...(record ? { records: [record, ...store.records] } : {}),
+        });
+        setShowCurrentAnalysis(Boolean(recovery.patch.analysis?.trim() || recovery.patch.viralAdoptedAnalysis));
+        if (archived) message.info("旧参考分析已归入本浏览器作品");
+    }, [wb.hydrated, wb.storageError, locked, d.analysis, d.viralAdoptedAnalysis]);
     useEffect(() => {
         quoteController.current?.abort();
         setQuoting(false);
@@ -234,6 +255,7 @@ export default function ViralRecreateWorkspace() {
     };
     const analysisSource = (version: ViralAnalysisVersion) => {
         const p = version.provenance;
+        if (!p.inputKey) return `历史参考分析 · 来源未确认${p.edited ? "（已编辑）" : ""}`;
         return `${viralAnalysisNames[p.mode]} · ${p.modelLabel}${p.edited ? "（已编辑）" : ""} · ${p.sourceName}${p.mode === "frames" && p.model ? ` · ${p.frameCount || 0} 张画面 · ${p.usesTranscript ? "采用音轨文字" : "未采用音轨文字"}` : ""}${p.createdAt ? ` · ${new Date(p.createdAt).toLocaleString()}` : ""}`;
     };
     const frameGallery = (
@@ -1044,7 +1066,7 @@ export default function ViralRecreateWorkspace() {
                                         <div key={r.id} className="space-y-2 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }}>
                                             <div className="flex justify-between gap-2">
                                                 <strong className="font-medium">
-                                                    {r.stage === "analyze" ? r.step === "编辑稿备份" ? "参考分析编辑稿" : "参考视频分析" : r.stage === "frames" ? "抽取参考画面" : stageLabels[r.stage]} · {states[r.status]}
+                                                    {r.stage === "analyze" ? r.step === "旧稿归档" ? "历史参考分析 · 旧稿" : r.step === "编辑稿备份" ? "参考分析编辑稿" : "参考视频分析" : r.stage === "frames" ? "抽取参考画面" : stageLabels[r.stage]} · {states[r.status]}
                                                 </strong>
                                                 <span className="text-xs" style={muted}>
                                                     {new Date(r.createdAt).toLocaleString()}

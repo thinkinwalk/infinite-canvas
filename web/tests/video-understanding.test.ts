@@ -13,7 +13,7 @@ const { configForFeature, defaultConfig, managedEffectiveConfig, useConfigStore 
 const { useUserStore } = await import("../src/stores/use-user-store");
 const { requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
 const { viralAnalysisMode, viralInput, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
-const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
+const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralLegacyAnalysisRecovery, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
 const { emptyVideoDraft } = await import("../src/types/video-workbench");
 
 const catalog: PublicManagedCatalog = {
@@ -272,4 +272,92 @@ test("unattributed body requires explicit adoption, while a script without refer
     expect(viralAdoptedAnalysisError(adopted)).toBe("");
     expect(viralAdoptedAnalysisText(adopted)).toContain("手写");
     expect(viralVideoPrompt({ ...emptyVideoDraft("viral-recreate"), script: "直接手写脚本" }, defaultConfig)).toContain("直接手写脚本");
+});
+
+test("legacy sample body is archived and current input uses the newest attributed generated analysis", () => {
+    const d = { ...referenceDraft(), viralAnalysisMode: "video" as const, analysis: "此前六张抽样画面分析", script: "现有脚本", viralFacts: "真实商品" };
+    const frames = { text: "旧抽样结果", provenance: { ...viralAnalysisProvenance(d, "frames", config), createdAt: 1 } };
+    const video = { text: "新 Gemini 音画结果", provenance: { ...viralAnalysisProvenance(d, "video", config), createdAt: 2 } };
+    const draft = { ...d, viralAnalyses: { video, frames } };
+    const recovery = viralLegacyAnalysisRecovery(draft, []);
+    const restored = { ...draft, ...recovery!.patch };
+    expect(recovery?.archived?.text).toBe(d.analysis);
+    expect(recovery?.archived?.provenance.modelLabel).toBe("来源未确认");
+    expect(recovery?.archived?.provenance.edited).toBeUndefined();
+    const reused = viralAdoptedAnalysisText({ ...draft, ...viralAdoptAnalysis(draft, recovery!.archived!) });
+    expect(reused).toContain("历史参考分析；来源未确认");
+    expect(reused).not.toContain("已采用：视频与音轨");
+    expect(restored.analysis).toBe(video.text);
+    expect(restored.viralAdoptedAnalysis?.provenance).toEqual(video.provenance);
+    expect(restored.viralAnalyses.frames).toEqual(frames);
+    expect(restored.script).toBe(d.script);
+    expect(restored.viralFacts).toBe(d.viralFacts);
+    expect(restored.viralScriptStale).toBe(true);
+    expect(viralAdoptedAnalysisError(restored)).toBe("");
+    expect(viralLegacyAnalysisRecovery(restored, [])).toBeUndefined();
+});
+
+test("legacy recovery finds a completed result in history without restoring the task's input", () => {
+    const d = { ...referenceDraft(), analysis: "旧正文" };
+    const version = { text: "历史中已完成的音画结果", provenance: viralAnalysisProvenance(d, "video", config) };
+    const record = {
+        id: "saved-result", tool: "viral-recreate" as const, stage: "analyze", status: "completed" as const, createdAt: 1,
+        draftPatch: { viralAnalysisMode: "video" as const, viralAnalyses: { video: version } },
+    };
+    const recovery = viralLegacyAnalysisRecovery(d, [record]);
+    expect(recovery?.patch.analysis).toBe(version.text);
+    expect(recovery?.patch.media).toBeUndefined();
+    expect(recovery?.patch.viralAnalyses?.video).toEqual(version);
+    expect(viralLegacyAnalysisRecovery(d, [{ ...record, status: "failed" }])?.patch.analysis).toBe("");
+});
+
+test("unknown legacy body without a matching result moves to history instead of blocking the next analysis", () => {
+    const d = { ...referenceDraft(), analysis: "来源未知的旧正文", script: "保留脚本" };
+    const recovery = viralLegacyAnalysisRecovery(d, []);
+    const restored = { ...d, ...recovery!.patch };
+    expect(recovery?.archived?.text).toBe(d.analysis);
+    expect(restored.analysis).toBe("");
+    expect(restored.script).toBe(d.script);
+    expect(viralAdoptedAnalysisError(restored)).toBe("");
+    const result = { text: "下一次新分析", provenance: viralAnalysisProvenance(restored, "video", config) };
+    expect(viralAnalysisResultPatch(restored, result).analysis).toBe(result.text);
+    expect(viralLegacyAnalysisRecovery(restored, [])).toBeUndefined();
+});
+
+test("legacy recovery never auto-reuses results for a different source or invalid sampled inputs", () => {
+    const original = referenceDraft();
+    const video = { text: "另一视频结果", provenance: viralAnalysisProvenance(original, "video", config) };
+    const frames = { text: "旧抽样输入结果", provenance: viralAnalysisProvenance(original, "frames", config) };
+    const d = { ...original, analysis: "旧正文", frameCount: original.frameCount + 1, media: [] };
+    expect(viralLegacyAnalysisRecovery({ ...d, viralAnalyses: { video, frames } }, [])?.patch.analysis).toBe("");
+    expect(viralLegacyAnalysisRecovery({ ...original, analysis: "旧正文", frameCount: original.frameCount + 1, viralAnalyses: { frames } }, [])?.patch.analysis).toBe("");
+});
+
+test("provable manual edits retain their source and are not replaced or acknowledged for changed inputs", () => {
+    const d = { ...referenceDraft(), analysis: "我修改过的稿件" };
+    const edited = { text: d.analysis, provenance: { ...viralAnalysisProvenance(d, "frames", config), createdAt: 1, edited: true } };
+    const video = { text: "新视频结果", provenance: { ...viralAnalysisProvenance(d, "video", config), createdAt: 2 } };
+    const draft = { ...d, viralAnalyses: { frames: edited, video }, frameCount: d.frameCount + 1 };
+    const recovery = viralLegacyAnalysisRecovery(draft, []);
+    expect(recovery?.archived).toBeUndefined();
+    expect(recovery?.patch.analysis).toBeUndefined();
+    expect(recovery?.patch.viralAdoptedAnalysis?.provenance).toEqual(edited.provenance);
+    expect(viralAdoptedAnalysisError({ ...draft, ...recovery!.patch })).toContain("输入已变化");
+    const adopted = { ...d, ...viralAdoptAnalysis(d, edited) };
+    expect(viralLegacyAnalysisRecovery(adopted, [])).toBeUndefined();
+});
+
+test("legacy recovery protects a manual draft stored in a completed history record with a newer suggestion", () => {
+    const d = { ...referenceDraft(), analysis: "历史人工校对正文" };
+    const edited = { text: d.analysis, provenance: { ...viralAnalysisProvenance(d, "video", config), edited: true, createdAt: 1 } };
+    const suggestion = { text: "后来的模型建议", provenance: { ...viralAnalysisProvenance(d, "video", config), createdAt: 2 } };
+    const record = {
+        id: "history-with-edits", tool: "viral-recreate" as const, stage: "analyze", status: "completed" as const, createdAt: 2,
+        draftPatch: { viralAnalysisMode: "video" as const, viralAnalyses: { video: { ...edited, suggestion } } },
+    };
+    const recovery = viralLegacyAnalysisRecovery(d, [record]);
+    expect(recovery?.archived).toBeUndefined();
+    expect(recovery?.patch.analysis).toBeUndefined();
+    expect(recovery?.patch.viralAdoptedAnalysis?.provenance).toEqual(edited.provenance);
+    expect(viralLegacyAnalysisRecovery(d, [{ ...record, status: "failed" }])?.patch.analysis).toBe("");
 });
