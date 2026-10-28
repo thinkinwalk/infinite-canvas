@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.107
-- Current production source: tag v0.19.107, commit e1ecfb3a55fdd5ada0efc20795734463e6b6ca78
+- Current production image: infinite-canvas:v0.19.108
+- Current production source: tag v0.19.108, commit 4c850d3b697b08be22e03de98dcdd63f7a37a259
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.108 deployment
+
+- Source tag `v0.19.108`, commit `4c850d3b697b08be22e03de98dcdd63f7a37a259`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.108`, ID `sha256:80f75ef48f6c9655a6f64e483ff5b1100c9e4356d1a85d7e5f77701777492869`, matches the source tag. Unrelated local evaluation media remain excluded.
+- Video-workbench text processing resolves saved images by storage key instead of treating stale blob URLs as inline data. All images are prepared before the existing signed quote and confirmation. Missing images report filenames and preserve existing analysis/script; cancellation is passed to image reads. Models, prices, defaults, limits and Worker configuration are unchanged.
+- Development passed five isolated CDP groups using the provided building/person photos, including cross-reload byte recovery, separate missing-image errors with no quote/inference, confirmation cancellation and optional-image absence. All model APIs were mocked. Release repeated no local builds/tests; the necessary server Docker build completed. No paid inference was submitted.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.108-20261028-145948/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.108-prebuild-20261028-145759/`. Quick checks, all 13 table counts, settings, user balances/roles/groups/status and 10,592 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts are unchanged.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Management revision 12, 38 models / 65 routes / 656 bindings, Gemini analysis at 20 credits and image edit/try-on at 10 credits per image remain unchanged.
+- Production asset `/assets/index-BmqCC_6X.js` contains the new release and image-error messages. Independent workstation HTTPS checks verified health, actual viral-recreation page, bundle status and markers. No browser interaction was repeated during release. The original Firefox draft, authenticated inference and billing/refunds remain pending; the reproduced stale-image defect is consistent with the failure but not proven its sole cause.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.108-deployment.json`, workstation `.codex_tmp/v0.19.108-deployment.json`, `.codex_tmp/v0.19.108-prebuild.json` and `.codex_tmp/v0.19.108-public-verification.json`. Rollback restores final-backup Compose and recreates only app with `docker compose -f /opt/infinite-canvas/docker-compose.deploy.yml up -d --no-build --no-deps app`; retain the current database and available v0.19.107 image.
 
 ## v0.19.107 deployment
 
