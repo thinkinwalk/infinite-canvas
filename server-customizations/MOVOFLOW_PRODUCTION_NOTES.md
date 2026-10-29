@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.112
-- Current production source: tag v0.19.112, commit 756e16e6e17aa26e2d63788f54a7a778ab67d163
+- Current production image: infinite-canvas:v0.19.113
+- Current production source: tag v0.19.113, commit 53b977c3673db97ecb6bc8c15c59fb199aa0877d
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.113 deployment
+
+- Source tag `v0.19.113`, commit `53b977c3673db97ecb6bc8c15c59fb199aa0877d`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.113`, ID `sha256:8c4641e1f145c0161a8f908bcdfdb2fa86c3d5b8af407652210301b935fa3f37`, matches the tag. Local evaluation media and account artifacts remain excluded.
+- Try-on exposes independent model, optional display pose and optional scene entries, each with staged confirmation/cancellation. Pose defaults to front standing and shows the current action, custom text or reference thumbnail; reset restores the default without replacing model/scene. Scene thumbnails retain their complete portrait image. Schema remains version 5 with 12 fields.
+- Image workbench tasks share three image request slots per browser tab, with queued progress, immutable request snapshots, manual failed-image retries and continuation across in-app routes. Refresh marks unfinished work interrupted without resubmitting paid requests; server persistence and global scheduling remain follow-up work.
+- Viral recreation step two has one script editor and one current primary action. Analysis, optional frames, history and advanced settings open on demand; provenance isolation, manual-script protection, necessary-frame and fee confirmation remain.
+- Server Docker build, 115 image asset markers, internal/external health, 11 public pages, default/VIP Worker gateways, permissions, complete catalogs and signed quotes passed. Independent workstation HTTPS confirmed actual pages, `/assets/index-DuicwRJK.js`, independent pose ordering and unchanged case fields. Release repeated no local tests/builds or browser interactions; no paid inference was submitted.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.113-20261029-054522/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.113-prebuild-20261029-054307/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 10,766 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts are unchanged.
+- Management revision 13 and all 38 models / 65 routes / 656 bindings are preserved. Default/VIP image edit and try-on remain 10 credits per image, Gemini video analysis 20 credits and prompt enhancement free. No configuration was changed.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.113-deployment.json`, `/opt/infinite-canvas/releases/v0.19.113-public-verification.json` and workstation `.codex_tmp/v0.19.113-*.json`. Rollback restores the final-backup Compose and recreates only app, retaining the current database and available v0.19.112 image. Real existing drafts, inference quality, upstream concurrency/rate limits and billing/refunds remain pending.
 
 ## v0.19.112 deployment
 
