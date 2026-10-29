@@ -204,7 +204,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 next = { ...current, ...value };
             const sourceChanged = viralSource(current) !== viralSource(next),
                 countChanged = value.frameCount !== undefined && value.frameCount !== current.frameCount;
-            const productChanged = value.viralFacts !== undefined || (value.media && JSON.stringify(viralReferenceImages(current).map((m) => [m.id, m.role])) !== JSON.stringify(viralReferenceImages(next).map((m) => [m.id, m.role])));
+            const productChanged = value.instructions !== undefined || value.viralFacts !== undefined || (value.media && JSON.stringify(viralReferenceImages(current).map((m) => [m.id, m.role])) !== JSON.stringify(viralReferenceImages(next).map((m) => [m.id, m.role])));
             const mentions =
                 value.media || sourceChanged || countChanged
                     ? {

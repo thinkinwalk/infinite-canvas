@@ -28,12 +28,12 @@ import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInpu
 import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
-import { viralBriefFields, viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanState, viralPreserveOptions, viralReferenceImages } from "./viral-plan";
+import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanState, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
 import ViralScriptComparison from "./viral-script-comparison";
 
 type Role = "reference" | "visual-reference" | "product" | "background" | "model" | "first-frame";
-type Editor = "analysis" | "transcript" | "viralFacts" | "viralProductAnalysis" | "instructions" | "script";
-const editorNames: Record<Editor, string> = { analysis: "原视频结构分析", transcript: "参考音轨文字", viralFacts: "补充资料", viralProductAnalysis: "参考图片分析", instructions: "复刻要求", script: "改编视频脚本" };
+type Editor = "analysis" | "transcript" | "viralProductAnalysis" | "instructions" | "script";
+const editorNames: Record<Editor, string> = { analysis: "原视频结构分析", transcript: "参考音轨文字", viralProductAnalysis: "参考图片分析", instructions: "复刻要求", script: "改编视频脚本" };
 const suggestionFields = {
     viralProductAnalysis: { key: "viralProductSuggestion", stale: "viralProductStale" },
     script: { key: "viralScriptSuggestion", stale: "viralScriptStale" },
@@ -140,13 +140,13 @@ export default function ViralRecreateWorkspace() {
     const currentAnalysis = viralCurrentAnalysis(d),
         editorAnalysis = showCurrentAnalysis ? currentAnalysis : analysisResult,
         viewedAnalysis = viewed && viralRecordAnalysis(viewed);
-    const fieldValue = (field: Editor) => field === "analysis" ? editorAnalysis?.text || "" : d[field] || "";
+    const fieldValue = (field: Editor) => field === "analysis" ? editorAnalysis?.text || "" : field === "instructions" ? viralRequirements(d) : d[field] || "";
     const suggestedValue = (field: Editor) => field === "analysis" ? !showCurrentAnalysis ? analysisResult?.suggestion?.text || "" : "" : suggestionInfo(field) ? d[suggestionInfo(field)!.key] || "" : "";
     const historicalReference = Boolean(d.analysis.trim() && d.viralAdoptedAnalysis && d.viralAdoptedAnalysis.provenance.source !== viralSource(d));
     const referenceStatus = d.analysis.trim()
         ? adoptedError ? "分析依据已变化" : historicalReference ? `历史借鉴 · ${d.viralAdoptedAnalysis!.provenance.sourceName}` : `已采用当前视频分析 · ${d.viralAdoptedAnalysis?.provenance.modelLabel || "来源未确认"}${d.viralAdoptedAnalysis?.provenance.edited ? "（已编辑）" : ""}`
         : "当前视频分析 · 未采用";
-    const invalidMentions = materialMentionError(`${d.instructions}\n${d.script}`, labels);
+    const invalidMentions = materialMentionError(`${viralRequirements(d)}\n${d.script}`, labels);
     const priceKey = JSON.stringify([
         d.media.map((m) => [m.id, m.storageKey]),
         frames.map((f) => f.id),
@@ -292,6 +292,10 @@ export default function ViralRecreateWorkspace() {
             wb.edit(viralEditAnalysis(d, editorAnalysis || { text: "", provenance: viralAnalysisProvenance(d, analysisMode) }, value, showCurrentAnalysis));
             return;
         }
+        if (field === "instructions") {
+            wb.edit({ instructions: value, ...(d.viralFacts ? { viralFacts: "" } : {}), ...(d.viralBrief ? { viralBrief: undefined } : {}) }, "script");
+            return;
+        }
         wb.edit(
             {
                 [field]: value,
@@ -303,7 +307,7 @@ export default function ViralRecreateWorkspace() {
                           ? { viralTranscriptSource: viralSource(d) }
                           : {}),
             },
-            field === "viralFacts" ? "materials" : field === "script" ? "video" : "script",
+            field === "script" ? "video" : "script",
         );
     };
     const changeAnalysisMode = (value: ViralAnalysisMode) => {
@@ -531,7 +535,7 @@ export default function ViralRecreateWorkspace() {
         setTab("editor");
         if (step !== 1 && !window.matchMedia("(min-width: 1024px)").matches) setEditor(field);
     };
-    const textPreview = (field: Editor, placeholder: string) => ["viralFacts", "instructions", "script"].includes(field) ? (
+    const textPreview = (field: Editor, placeholder: string) => ["instructions", "script"].includes(field) ? (
         <Input.TextArea
             aria-label={editorNames[field]} value={fieldValue(field)} placeholder={placeholder}
             autoSize={{ minRows: field === "script" ? 6 : 3, maxRows: 12 }} disabled={locked}
@@ -1065,21 +1069,10 @@ export default function ViralRecreateWorkspace() {
                             {materialField("visual-reference", "参考图片（可选）", "商品、场景、主体或风格参考")}
                             {materialField("model", "人物图片（可选）", "需要指定人物时添加")}
                             <section className="space-y-3">
-                                <strong className="block font-medium">复刻要求（可选）</strong>
-                                {textPreview("instructions", "填写希望替换的内容、需要保留的特点或目标风格；留空参考原片。")}
+                                <strong className="block font-medium">复刻要求（选填）</strong>
+                                {textPreview("instructions", "想改什么、保留什么？也可写名称、准确文字或其他资料；留空参考原片。")}
                                 {intentError && <p role="alert" className="text-xs" style={{ color: token.colorWarning }}>{intentError}</p>}
                             </section>
-                            <Collapse items={[{ key: "extra-details", label: "资料与细节（可选）", children: <div className="space-y-4">
-                                <section className="space-y-3">
-                                    <strong className="block text-sm font-medium">补充资料</strong>
-                                    {textPreview("viralFacts", "补充图片以外的真实资料，例如品牌名称、产品卖点；不需要可留空")}
-                                    {(Object.keys(viralBriefFields) as (keyof typeof viralBriefFields)[]).map((field) => <label key={field} className="block space-y-1 text-sm">
-                                        <span>{viralBriefFields[field]}</span>
-                                        <Input aria-label={viralBriefFields[field]} value={d.viralBrief?.[field] || ""} disabled={locked} onChange={(e) => wb.edit({ viralBrief: { subject: "", person: "", scene: "", marks: "", ...d.viralBrief, [field]: e.target.value } }, "script")} placeholder={{ subject: "品牌、产品或本次主题，可留空", person: "本次涉及的人物资料，可留空", scene: "本次环境或地点资料，可留空", marks: "必须准确表达的名称或标识，可留空" }[field]} />
-                                    </label>)}
-                                </section>
-                                {intentFields}
-                            </div> }]} />
                             <Collapse items={[{ key: "product", label: "参考图片分析（可选）", children: <div className="space-y-3">
                                 {heading("viralProductAnalysis", textAction("product-analyze", "分析参考图片", !viralReferenceImages(d).length))}
                                 {modelPicker("viral-recreate.analyze", "图片分析模型")}
@@ -1415,7 +1408,7 @@ export default function ViralRecreateWorkspace() {
                             {tab === "guide" && (
                                 <div className="space-y-4 text-sm">
                                     <p>视频与音轨分析将参考视频发送到所选模型渠道；抽样画面分析只发送图片和已提供的转写文字。两种分析的时间与镜头边界都需核对。</p>
-                                    <p>第 1 步添加原视频，可选参考图片与人物图片，按需填写复刻要求。第 2 步分析原片、生成或编辑脚本，按当前模型需要准备画面。准确文字等细节可在「资料与细节」指定。</p>
+                                    <p>第 1 步添加原视频，可选参考图片与人物图片，按需填写复刻要求。第 2 步分析原片、生成或编辑脚本，按当前模型需要准备画面。</p>
                                     <p>参考图片可提供商品、场景、主体或风格，人物图按需添加；已知用途可在图片下选择。脚本按原片实际类型借鉴结构与表现特点，不要求每次都有商品、人物、文字或特殊效果。</p>
                                     <p>新分析中的复刻要点自动带入，无需导入或填写脚本位置；完整分析仍用于改编。个别要点可在「细节调整」修改，真实效果需查看成片。</p>
                                     <p>只有当前模型需要首帧时，才必须准备视频画面；支持多素材参考的模型可以直接使用参考图片。补充画面可供预览，或按模型能力明确选为普通参考、结束尾帧，普通参考不能锁定时刻。图片合成与视频分别计费。</p>

@@ -7,7 +7,7 @@ import type { VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/vid
 import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
 import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralFrameMaterials, viralReference } from "./viral-analysis";
 import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
-import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanPrompt, viralTargetFacts } from "./viral-plan";
+import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanPrompt, viralRequirements, viralTargetFacts } from "./viral-plan";
 
 export { viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 export const viralImageCandidates = (d: VideoDraft) => [...d.media.filter((m) => m.kind === "image"), ...viralFrameMaterials(d)];
@@ -28,11 +28,10 @@ export function viralScriptPrompt(d: VideoDraft, cfg: AiConfig) {
     const labels = viralMaterialLabels(d), ratio = inferVideoRatio(cfg.size);
     return `为参考视频改编中文视频脚本，只返回可编辑脚本。目标规格：${cfg.videoSeconds}秒单片段，画幅${ratio === "auto" ? "16:9" : ratio}；按此规格重排内容与节奏，不机械照搬原片秒数。逐段写时间范围和实际画面，按本片需要描述镜头、主体、信息或动作；仅在实际存在或用户要求时写文字、声音和特殊效果，不强制凑齐字段。结尾遵循本片表达方式。
 ${viralContinuityRules}
-主体与场景真实资料：${viralTargetFacts(d)}。
+用户复刻要求与资料：${viralTargetFacts(d)}。
 ${viralPlanPrompt(d)}
 已采用的参考结构：${viralAdoptedAnalysisText(d)}。
 参考图片分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供，按图片可见内容和用途使用"}。
-用户改编要求：${d.instructions}。
 待修改原稿：${d.script || "无"}。原稿可能遗漏关键内容，须按已采用分析补齐；旧稿没有写到不代表用户要求删除。
 编号与角色：${labels.map((l) => `${l.label}=${l.name}（${viralVisualRole(d.media.find((m) => m.id === l.id)?.role || "")}）`).join("；")}。保留用户@编号，不编造编号。图片未展示的外观不当作已知事实。
 当前视频实际输入为${viralVideoMaterials(d, cfg).map((m) => m.name).join("、") || "尚未选择"}；只要求当前模型实际必需的输入，多素材参考不强制另做合成首帧。未发送的图片不能当作视频模型已收到，不能承诺精准替换或多镜头后期、配音字幕已完成。
@@ -65,7 +64,7 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
     if (profile.interface === "unavailable") return profile.description;
     if (profile.seconds.length && !profile.seconds.includes(cfg.videoSeconds)) return "当前模型不支持所选时长，请调整视频设置";
     if (profile.resolutions.length && !profile.resolutions.includes(cfg.vquality)) return "当前模型不支持所选清晰度，请调整视频设置";
-    const mentionError = materialMentionError(`${d.instructions}\n${d.script}`, viralMaterialLabels(d));
+    const mentionError = materialMentionError(`${viralRequirements(d)}\n${d.script}`, viralMaterialLabels(d));
     if (mentionError) return mentionError;
     const mode = videoInputMode(cfg, model),
         candidates = viralImageCandidates(d);
@@ -82,7 +81,7 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
 export function viralVideoPrompt(d: VideoDraft, cfg: AiConfig) {
     const labels = viralMaterialLabels(d),
         materials = viralVideoMaterials(d, cfg);
-    return `${d.script}\n${viralContinuityRules}\n${viralPlanPrompt(d)}\n脚本遗漏的关键内容与表现特点按已采用分析补齐，用户明确修改或删除的内容除外；脚本中的核对清单和待确认说明不是画面字幕。\n主体与场景真实资料：${viralTargetFacts(d)}\n改编要求：${d.instructions}\n参考结构：${viralAdoptedAnalysisText(d)}\n参考图片分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}${m.id === d.viralClimaxId ? "，已确认的补充画面" : ""}）`).join("；") || "纯文字"}。通用参考图按可见内容及用户要求提供主体、环境或风格；场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${d.viralUseVideo ? "参考视频用于内容结构、镜头与节奏参考，实际一致性以成片为准。" : "没有向视频模型发送原视频，内容依照文字脚本重建，不声称逐帧复制。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
+    return `${d.script}\n${viralContinuityRules}\n${viralPlanPrompt(d)}\n脚本遗漏的关键内容与表现特点按已采用分析补齐，用户明确修改或删除的内容除外；脚本中的核对清单和待确认说明不是画面字幕。\n用户复刻要求与资料：${viralTargetFacts(d)}\n参考结构：${viralAdoptedAnalysisText(d)}\n参考图片分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}${m.id === d.viralClimaxId ? "，已确认的补充画面" : ""}）`).join("；") || "纯文字"}。通用参考图按可见内容及用户要求提供主体、环境或风格；场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${d.viralUseVideo ? "参考视频用于内容结构、镜头与节奏参考，实际一致性以成片为准。" : "没有向视频模型发送原视频，内容依照文字脚本重建，不声称逐帧复制。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
 }
 export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
     const {

@@ -3,6 +3,9 @@ import type { VideoDraft, ViralEffect, ViralIntent } from "@/types/video-workben
 export const viralPreserveOptions = ["内容结构", "镜头节奏", "关键画面", "视觉风格", "结尾表达"];
 export const viralBriefFields = { subject: "主体名称", person: "人物资料", scene: "场景资料", marks: "准确名称与标识" } as const;
 export const viralReferenceImages = (d: VideoDraft) => d.media.filter((m) => m.kind === "image" && ["visual-reference", "product", "background"].includes(m.role));
+export function viralRequirements(d: VideoDraft) {
+    return [...new Set([d.instructions, d.viralFacts, ...Object.entries(d.viralBrief || {}).filter(([, value]) => value.trim()).map(([key, value]) => `${viralBriefFields[key as keyof typeof viralBriefFields]}：${value}`)].filter((value): value is string => Boolean(value?.trim())))].join("\n\n");
+}
 export function viralIntent(d: VideoDraft): ViralIntent {
     return d.viralIntent || {
         preserve: viralPreserveOptions,
@@ -11,7 +14,7 @@ export function viralIntent(d: VideoDraft): ViralIntent {
     };
 }
 export function viralTargetFacts(d: VideoDraft) {
-    return [d.viralFacts, ...Object.entries(d.viralBrief || {}).filter(([, value]) => value.trim()).map(([key, value]) => `${viralBriefFields[key as keyof typeof viralBriefFields]}：${value}`)].filter(Boolean).join("\n") || "未提供，不虚构价格、优惠、功效或承诺";
+    return viralRequirements(d) || "未提供，不虚构价格、优惠、功效或承诺";
 }
 export function viralPlanPrompt(d: VideoDraft) {
     const intent = viralIntent(d), roles = { background: "场景", model: "人物", product: "商品" };
