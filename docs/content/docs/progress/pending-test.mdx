@@ -5,6 +5,13 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## v0.19.114 发布验收
+
+- 「爆款复刻脚本差异对照」已随 `v0.19.114`（`1b2158b`）提交、打 tag、发布正式 GitHub Release 并部署。下节本地/未发布状态为实施过程记录，以本节为准。线上 `https://studio.lingzhouai.com/video/viral-recreate`，资源 `/assets/index-DehV7nWu.js`。
+- 服务器 Docker 构建、135 项镜像资源检查、内外健康、11 个页面、普通/VIP Worker 网关、权限、完整模型目录及签名报价通过。工作站独立 HTTPS 确认实际页面和新资源包含两种对照、差异筛选/跳转及采用操作；发布未重复本地测试、构建或浏览器交互。
+- 13 张表数量、设置、用户余额/角色/分组及 10,818 个既有文件哈希一致；第 13 版模型配置、38 模型/65 接入/656 绑定、默认项与价格保留，Worker 未重启。最终备份 `/opt/infinite-canvas/backups/v0.19.114-20261029-070218/`，构建前备份 `/opt/infinite-canvas/backups/v0.19.114-prebuild-20261029-065931/`，报告 `/opt/infinite-canvas/releases/v0.19.114-deployment.json` 与本机 `.codex_tmp/v0.19.114-*.json`。
+- 用户刷新第二步后验收「对照原片」以及有新建议时的「查看本次修改」，检查真实草稿的差异可读性、返回编辑、采用/保留与手机布局。原片内容来自已采用分析，当前只做文字对照；语义遗漏、原片理解和真实生成质量仍待单独验收，未提交真实收费生成。
+
 ## 爆款复刻脚本差异对照
 
 - 本地实现，尚未提交或发布；当前线上仍为 `v0.19.113`。第二步继续使用唯一脚本编辑区，标题旁「对照原片」按需打开弹窗，不默认占用主页面；存在新建议时另提供「查看本次修改」。

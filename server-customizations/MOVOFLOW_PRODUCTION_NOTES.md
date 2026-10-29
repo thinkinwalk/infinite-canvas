@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.113
-- Current production source: tag v0.19.113, commit 53b977c3673db97ecb6bc8c15c59fb199aa0877d
+- Current production image: infinite-canvas:v0.19.114
+- Current production source: tag v0.19.114, commit 1b2158b1a1b009a603da09d6e54c29a0f1f31237
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.114 deployment
+
+- Source tag `v0.19.114`, commit `1b2158b1a1b009a603da09d6e54c29a0f1f31237`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.114`, ID `sha256:40c21b889b543af852ce784009449f1bbe51b57bc98358e42d6f46e2ac082618`, matches the tag. Local evaluation media and account artifacts remain excluded.
+- Viral recreation offers on-demand source-analysis versus adapted-script comparison and adopted-script versus new-suggestion comparison, with Chinese text highlighting, filtering/navigation, desktop columns and mobile paired blocks. Viewing/closing preserves drafts; adopting a suggestion remains explicit. Source content is analysis reconstruction rather than the creator's original script; this adds no semantic omission detection or shot-time alignment.
+- Development passed seven isolated comparison groups and eight mocked workflow regression groups. Release repeated no local tests/builds or browser interactions. Server Docker build, 135 image asset markers, internal/external health, 11 public pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Independent workstation HTTPS confirmed actual pages and `/assets/index-DehV7nWu.js`.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.114-20261029-070218/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.114-prebuild-20261029-065931/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 10,818 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts are unchanged.
+- Management revision 13 and all 38 models / 65 routes / 656 bindings, defaults and pricing are preserved. Image edit/try-on remain 10 credits per image, Gemini video analysis 20 credits, prompt enhancement free. No configuration was changed.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.114-deployment.json`, `/opt/infinite-canvas/releases/v0.19.114-public-verification.json` and workstation `.codex_tmp/v0.19.114-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.113 image. Real drafts, comparison readability, model quality and billing/refunds remain pending; no paid inference was submitted.
 
 ## v0.19.113 deployment
 
