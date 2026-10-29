@@ -1,7 +1,6 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Copy, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
-import localforage from "localforage";
+import { Alert, App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -17,58 +16,14 @@ import { configForFeature, modelOptionLabel, useConfigStore, useEffectiveConfig,
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { requestEdit, requestGeneration } from "@/services/api/image";
-import { deleteStoredImages, ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
+import { getImagePreviewRevision, previewUrlFor, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { useWorkbenchAgentStore, type WorkbenchCommand } from "@/stores/use-workbench-agent-store";
-import type { ReferenceImage } from "@/types/image";
-import i18n from "@/i18n";
-
-type GeneratedImage = {
-    id: string;
-    dataUrl: string;
-    storageKey?: string;
-    durationMs: number;
-    width: number;
-    height: number;
-    bytes: number;
-    mimeType?: string;
-};
-
-type GenerationResult = {
-    id: string;
-    status: "pending" | "success" | "failed";
-    image?: GeneratedImage;
-    error?: string;
-};
-
-type GenerationLog = {
-    id: string;
-    createdAt: number;
-    title: string;
-    prompt: string;
-    time: string;
-    model: string;
-    modelLabel?: string;
-    config: GenerationLogConfig;
-    references: ReferenceImage[];
-    durationMs: number;
-    successCount: number;
-    failCount: number;
-    imageCount: number;
-    size: string;
-    quality: string;
-    status: "success" | "failed";
-    images: GeneratedImage[];
-};
-
-type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count">;
+import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
+import { imageLogResults, isActiveImageLog, useImageWorkbenchStore, type GeneratedImage, type GenerationLog } from "@/stores/use-image-workbench-store";
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
-const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 
 export default function ImagePage() {
     const { message } = App.useApp();
@@ -82,21 +37,33 @@ export default function ImagePage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
-    const [prompt, setPrompt] = useState("");
-    const [templateInput, setTemplateInput] = useState<WorkbenchCommand["templateInput"]>();
-    const [references, setReferences] = useState<ReferenceImage[]>([]);
-    const effectiveConfig = baseEffectiveConfig.managed?.enabled ? configForFeature(baseEffectiveConfig,references.length ? "image.edit" : "image.generate","image") : baseEffectiveConfig;
-    const [results, setResults] = useState<GenerationResult[]>([]);
-    const [logs, setLogs] = useState<GenerationLog[]>([]);
-    const [running, setRunning] = useState(false);
+    const prompt = useImageWorkbenchStore((state) => state.prompt);
+    const setPrompt = useImageWorkbenchStore((state) => state.setPrompt);
+    const templateInput = useImageWorkbenchStore((state) => state.templateInput);
+    const setTemplateInput = useImageWorkbenchStore((state) => state.setTemplateInput);
+    const references = useImageWorkbenchStore((state) => state.references);
+    const setReferences = useImageWorkbenchStore((state) => state.setReferences);
+    const logs = useImageWorkbenchStore((state) => state.logs);
+    const activeLogId = useImageWorkbenchStore((state) => state.activeLogId);
+    const selectLog = useImageWorkbenchStore((state) => state.selectLog);
+    const loaded = useImageWorkbenchStore((state) => state.loaded);
+    const loadError = useImageWorkbenchStore((state) => state.loadError);
+    const storageError = useImageWorkbenchStore((state) => state.storageError);
+    const loadLogs = useImageWorkbenchStore((state) => state.loadLogs);
+    const enqueue = useImageWorkbenchStore((state) => state.enqueue);
+    const retry = useImageWorkbenchStore((state) => state.retry);
+    const removeLogs = useImageWorkbenchStore((state) => state.removeLogs);
+    const effectiveConfig = baseEffectiveConfig.managed?.enabled ? configForFeature(baseEffectiveConfig, references.length ? "image.edit" : "image.generate", "image") : baseEffectiveConfig;
+    const previewLog = logs.find((log) => log.id === activeLogId);
+    const results = previewLog ? imageLogResults(previewLog) : [];
+    const running = Boolean(previewLog && isActiveImageLog(previewLog));
+    const activeTasks = logs.filter(isActiveImageLog).length;
     const [logsOpen, setLogsOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [promptDialogOpen, setPromptDialogOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
-    const [startedAt, setStartedAt] = useState(0);
-    const [elapsedMs, setElapsedMs] = useState(0);
+    const [now, setNow] = useState(Date.now);
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
-    const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [isReferenceDragActive, setIsReferenceDragActive] = useState(false);
     const [autoRunToken, setAutoRunToken] = useState(0);
@@ -108,22 +75,25 @@ export default function ImagePage() {
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
-    const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
+    const generationCount = Math.max(1, Math.min(10, Math.floor(Number(config.count) || 1)));
     const enhancement = usePromptEnhancement({
-        prompt, onChange: setPrompt, scenario: references.length ? "image-reference" : "image", disabled: running,
-        contextKey: JSON.stringify([references.map((item) => [item.id, item.name, item.storageKey, item.dataUrl]), templateInput, previewLog?.id, imageCommand?.nonce]),
+        prompt,
+        onChange: setPrompt,
+        scenario: references.length ? "image-reference" : "image",
+        contextKey: JSON.stringify([references.map((item) => [item.id, item.name, item.storageKey, item.dataUrl]), templateInput, imageCommand?.nonce]),
         references: references.map((item, index) => ({ marker: imageReferenceLabel(index), title: item.name, kind: "image" })),
     });
 
     useEffect(() => {
-        if (!running || !startedAt) return;
-        const timer = window.setInterval(() => setElapsedMs(performance.now() - startedAt), 1000);
+        if (!activeTasks) return;
+        setNow(Date.now());
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
         return () => window.clearInterval(timer);
-    }, [running, startedAt]);
+    }, [activeTasks]);
 
     useEffect(() => {
-        void refreshLogs();
-    }, []);
+        void loadLogs();
+    }, [loadLogs]);
 
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
@@ -179,48 +149,12 @@ export default function ImagePage() {
             return;
         }
 
-        const snapshot = buildRequestSnapshot();
-        if (!snapshot) {
-            if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("imageWorkbench.invalidParams") });
+        if (!loaded) {
+            message.warning(loadError || t("imageWorkbench.loadingLogs"));
+            if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: loadError || t("imageWorkbench.loadingLogs") });
             return;
         }
-
-        setElapsedMs(0);
-        setRunning(true);
-        if (agentTaskId) updateAgentTask(agentTaskId, { status: "running", error: undefined });
-        setPreviewLog(null);
-        setResults(Array.from({ length: generationCount }, () => ({ id: nanoid(), status: "pending" })));
-        const batchStartedAt = performance.now();
-        setStartedAt(batchStartedAt);
-
-        const tasks = Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot));
-
-        const result = await Promise.allSettled(tasks);
-        const successImages = result.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
-        const successCount = successImages.length;
-        const failCount = generationCount - successCount;
-        const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");
-        const error = failed?.reason instanceof Error ? failed.reason.message : failCount ? t("workbench.generationFailed") : undefined;
-        if (agentTaskId) updateAgentTask(agentTaskId, { status: successCount ? "succeeded" : "failed", successCount, failCount, error: successCount ? undefined : error });
-
-        try {
-            saveLog(
-                buildLog({
-                    prompt: text,
-                    model,
-                    config: { ...snapshot.config, count: String(generationCount) },
-                    references: snapshot.references,
-                    durationMs: performance.now() - batchStartedAt,
-                    successCount,
-                    failCount,
-                    status: successCount ? "success" : "failed",
-                    images: successImages,
-                }),
-            );
-            successCount ? message.success(t("imageWorkbench.generated")) : message.error(failed?.reason instanceof Error ? failed.reason.message : t("workbench.generationFailed"));
-        } finally {
-            setRunning(false);
-        }
+        enqueue({ ...effectiveConfig, model, imageModel: model }, text, references, generationCount, agentTaskId);
     };
 
     // Handle image-generation commands from the Agent panel by setting the prompt and optionally starting generation.
@@ -230,15 +164,11 @@ export default function ImagePage() {
         clearImageCommand();
         if (typeof imageCommand.prompt === "string") setPrompt(imageCommand.prompt);
         setTemplateInput(imageCommand.templateInput);
-        if (imageCommand.run && running) {
-            if (imageCommand.taskId) updateAgentTask(imageCommand.taskId, { status: "failed", error: t("imageWorkbench.busy") });
-            return;
-        }
         if (imageCommand.run) {
             agentTaskIdRef.current = imageCommand.taskId;
             setAutoRunToken((value) => value + 1);
         }
-    }, [imageCommand, clearImageCommand, running, updateAgentTask]);
+    }, [imageCommand, clearImageCommand, setPrompt, setTemplateInput]);
 
     useEffect(() => {
         if (!autoRunToken) return;
@@ -257,6 +187,7 @@ export default function ImagePage() {
     };
 
     const saveResultToAssets = async (image: GeneratedImage, index: number) => {
+        const sourcePrompt = previewLog?.prompt || "";
         const stored = await uploadImage(image.dataUrl);
         addAsset({
             kind: "image",
@@ -265,7 +196,7 @@ export default function ImagePage() {
             tags: [],
             source: t("imageWorkbench.source"),
             data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
-            metadata: { source: "image-page", prompt },
+            metadata: { source: "image-page", prompt: sourcePrompt },
         });
         message.success(t("common.addedToAssets"));
     };
@@ -284,36 +215,27 @@ export default function ImagePage() {
     };
 
     const createSession = () => {
-        setPrompt("");
-        setTemplateInput(undefined);
-        setReferences([]);
-        setResults([]);
-        setElapsedMs(0);
-        setStartedAt(0);
+        useImageWorkbenchStore.getState().newDraft();
         setSelectedLogIds([]);
-        setPreviewLog(null);
-    };
-
-    const deleteSelectedLogs = () => {
-        const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.map((id) => logStore.removeItem(id))]).then(refreshLogs);
-        if (previewLog && selectedLogIds.includes(previewLog.id)) {
-            setPreviewLog(null);
-            setResults([]);
-        }
-        setSelectedLogIds([]);
-        setDeleteConfirmOpen(false);
-    };
-
-    const saveLog = (log: GenerationLog) => {
-        void logStore.setItem(log.id, serializeLog(log)).then(refreshLogs);
-    };
-
-    const refreshLogs = async () => setLogs(await readStoredLogs());
-
-    const previewGenerationLog = async (log: GenerationLog) => {
-        setPreviewLog(log);
         setLogsOpen(false);
+    };
+
+    const deleteSelectedLogs = async () => {
+        try {
+            await removeLogs(selectedLogIds);
+            setSelectedLogIds([]);
+            setDeleteConfirmOpen(false);
+        } catch {
+            message.error(t("imageWorkbench.deleteFailed"));
+        }
+    };
+
+    const previewGenerationLog = (log: GenerationLog) => {
+        selectLog(log.id);
+        setLogsOpen(false);
+    };
+
+    const reuseGenerationLog = (log: GenerationLog) => {
         setPrompt(log.prompt);
         setTemplateInput(undefined);
         setReferences(log.references || []);
@@ -321,64 +243,17 @@ export default function ImagePage() {
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
-        setResults(log.images.map((image) => ({ id: image.id, status: "success", image })));
+        if (log.config.background !== undefined) updateConfig("background", log.config.background);
+        if (log.config.systemPrompt !== undefined) updateConfig("systemPrompt", log.config.systemPrompt);
+        if (baseEffectiveConfig.managed?.enabled) {
+            const feature = log.references.length ? "image.edit" : "image.generate";
+            useConfigStore.setState((state) => ({ featureModels: { ...state.featureModels, [feature]: log.model } }));
+        }
+        message.success(t("imageWorkbench.reused"));
     };
 
-    const buildRequestSnapshot = () => {
-        const text = prompt.trim();
-        if (!text) {
-            message.error(t("imageWorkbench.promptRequired"));
-            return null;
-        }
-        if (!isAiConfigReady(effectiveConfig, model)) {
-            message.warning(t("workbench.configFirst"));
-            openConfigDialog(true);
-            return null;
-        }
-        return { text, config: { ...effectiveConfig, model, count: "1" }, references: [...references] };
-    };
-
-    const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
-        const itemStartedAt = performance.now();
-        try {
-            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
-            const image = result[0];
-            if (!image) throw new Error(t("imageWorkbench.missingResult"));
-            const stored = await uploadImage(image.dataUrl);
-            const nextImage: GeneratedImage = { id: image.id, dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: performance.now() - itemStartedAt, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
-            setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
-            return nextImage;
-        } catch (error) {
-            setResults((value) => updateResultAt(value, index, { status: "failed", error: error instanceof Error ? error.message : t("workbench.generationFailed") }));
-            throw error;
-        }
-    };
-
-    const retryResult = async (index: number) => {
-        const snapshot = buildRequestSnapshot();
-        if (!snapshot) return;
-        setPreviewLog(null);
-        setResults((value) => updateResultAt(value, index, { status: "pending", error: undefined, image: undefined }));
-        const retryStartedAt = performance.now();
-        try {
-            const image = await runGenerationSlot(index, snapshot);
-            saveLog(
-                buildLog({
-                    prompt: snapshot.text,
-                    model,
-                    config: { ...snapshot.config, count: "1" },
-                    references: snapshot.references,
-                    durationMs: performance.now() - retryStartedAt,
-                    successCount: 1,
-                    failCount: 0,
-                    status: "success",
-                    images: [image],
-                }),
-            );
-            message.success(t("workbench.retrySuccess"));
-        } catch {
-            // runGenerationSlot has already marked the result as failed.
-        }
+    const retryResult = (resultId: string) => {
+        if (previewLog && !retry(previewLog.id, resultId)) message.warning(t("imageWorkbench.retryUnavailable"));
     };
 
     return (
@@ -388,7 +263,7 @@ export default function ImagePage() {
                     <LogPanel
                         logs={logs}
                         selectedLogIds={selectedLogIds}
-                        activeLogId={previewLog?.id}
+                        activeLogId={activeLogId || undefined}
                         onSelectedLogIdsChange={setSelectedLogIds}
                         onCreateSession={createSession}
                         onDeleteSelected={() => setDeleteConfirmOpen(true)}
@@ -396,20 +271,24 @@ export default function ImagePage() {
                     />
                 </aside>
 
-                <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
+                <section className="grid min-w-0 grid-cols-1 gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="thin-scrollbar flex min-w-0 flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
                         <div>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">{t("imageWorkbench.title")}</h1>
                                 </div>
                                 <div className="flex shrink-0 gap-2 lg:hidden">
-                                    <Button icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
-                                        {t("workbench.logs")}
-                                    </Button>
-                                    <Button icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
-                                        {t("workbench.settings")}
-                                    </Button>
+                                    <Tooltip title={t("workbench.logs")}>
+                                        <Button aria-label={t("workbench.logs")} icon={<History className="size-4" />} onClick={() => setLogsOpen(true)}>
+                                            <span className="hidden sm:inline">{t("workbench.logs")}</span>
+                                        </Button>
+                                    </Tooltip>
+                                    <Tooltip title={t("workbench.settings")}>
+                                        <Button aria-label={t("workbench.settings")} icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
+                                            <span className="hidden sm:inline">{t("workbench.settings")}</span>
+                                        </Button>
+                                    </Tooltip>
                                 </div>
                             </div>
                         </div>
@@ -419,7 +298,7 @@ export default function ImagePage() {
                                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                     <span className="shrink-0 text-base font-semibold">{t("workbench.prompt")}</span>
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <PromptEnhancementButton state={enhancement} disabled={running || !prompt.trim()} />
+                                        <PromptEnhancementButton state={enhancement} disabled={!prompt.trim()} />
                                         <Button size="small" icon={<BookOpen className="size-3.5" />} onClick={() => setPromptDialogOpen(true)}>
                                             {t("workbench.viewPrompts")}
                                         </Button>
@@ -429,7 +308,15 @@ export default function ImagePage() {
                                     </div>
                                 </div>
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("imageWorkbench.promptPlaceholder")} />
-                                {templateInput ? <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400"><span className="font-medium">{templateInput.title}</span> · 请准备：{templateInput.inputHint}。{templateInput.minReferenceImages ? `参考图 ${references.length}/${templateInput.minReferenceImages} 张（至少），按资料说明排列。` : "可直接文字生图。"}<Button type="link" size="small" onClick={() => setTemplateInput(undefined)}>取消模板要求</Button></div> : null}
+                                {templateInput ? (
+                                    <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">
+                                        <span className="font-medium">{templateInput.title}</span> · 请准备：{templateInput.inputHint}。
+                                        {templateInput.minReferenceImages ? `参考图 ${references.length}/${templateInput.minReferenceImages} 张（至少），按资料说明排列。` : "可直接文字生图。"}
+                                        <Button type="link" size="small" onClick={() => setTemplateInput(undefined)}>
+                                            取消模板要求
+                                        </Button>
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div className="min-w-0">
@@ -506,28 +393,59 @@ export default function ImagePage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={running} disabled={!canGenerate || running} onClick={() => void generate()}>
+                            {loadError || storageError ? (
+                                <Alert
+                                    className="mb-3"
+                                    type="error"
+                                    title={loadError || storageError}
+                                    action={
+                                        loadError ? (
+                                            <Button size="small" onClick={() => void loadLogs()}>
+                                                {t("workbench.retry")}
+                                            </Button>
+                                        ) : undefined
+                                    }
+                                />
+                            ) : null}
+                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} disabled={!canGenerate || !loaded} onClick={() => void generate()}>
                                 {t("workbench.generate")}
                             </Button>
+                            {activeTasks ? (
+                                <div role="status" className="mt-2 text-center text-xs text-stone-500 dark:text-stone-400">
+                                    {t("imageWorkbench.activeTasks", { count: activeTasks })}
+                                </div>
+                            ) : null}
                         </div>
                     </div>
 
-                    <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
-                        <div className="mb-4 flex items-center justify-between gap-3">
-                            <div>
+                    <div className="thin-scrollbar min-w-0 rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0">
                                 <h2 className="text-xl font-semibold">{t("workbench.results")}</h2>
+                                {previewLog ? (
+                                    <p className="mt-1 truncate text-xs text-stone-500" title={previewLog.prompt}>
+                                        {previewLog.title} · {previewLog.modelLabel || previewLog.model}
+                                    </p>
+                                ) : null}
                             </div>
-                            {running ? <Tag className="m-0 px-2 py-1">{t("workbench.waiting", { time: formatDuration(elapsedMs) })}</Tag> : null}
+                            <div className="flex flex-wrap items-center gap-2">
+                                {running && previewLog ? <Tag className="m-0 px-2 py-1">{t("workbench.waiting", { time: formatDuration(Math.max(0, now - previewLog.createdAt)) })}</Tag> : null}
+                                {previewLog ? (
+                                    <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => reuseGenerationLog(previewLog)}>
+                                        {t("imageWorkbench.reuse")}
+                                    </Button>
+                                ) : null}
+                            </div>
                         </div>
                         {results.length ? (
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
                                         <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
-                                    ) : result.status === "failed" ? (
-                                        <FailedImageCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={() => retryResult(index)} />
+                                    ) : result.status === "failed" || result.status === "interrupted" ? (
+                                        <FailedImageCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={() => retryResult(result.id)} interrupted={result.status === "interrupted"} />
                                     ) : (
-                                        <PendingImageCard key={result.id} />
+                                        <PendingImageCard key={result.id} queued={result.status === "queued"} />
                                     ),
                                 )}
                             </div>
@@ -555,7 +473,7 @@ export default function ImagePage() {
                 <LogPanel
                     logs={logs}
                     selectedLogIds={selectedLogIds}
-                    activeLogId={previewLog?.id}
+                    activeLogId={activeLogId || undefined}
                     onSelectedLogIdsChange={setSelectedLogIds}
                     onCreateSession={createSession}
                     onDeleteSelected={() => setDeleteConfirmOpen(true)}
@@ -567,7 +485,14 @@ export default function ImagePage() {
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
-            <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={(text, item) => { setPrompt(text); setTemplateInput({ title: item.title, inputHint: item.inputHint || "", minReferenceImages: item.minReferenceImages ?? (item.requiresRef ? 1 : 0) }); }} />
+            <PromptSelectDialog
+                open={promptDialogOpen}
+                onOpenChange={setPromptDialogOpen}
+                onSelect={(text, item) => {
+                    setPrompt(text);
+                    setTemplateInput({ title: item.title, inputHint: item.inputHint || "", minReferenceImages: item.minReferenceImages ?? (item.requiresRef ? 1 : 0) });
+                }}
+            />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title={t("workbench.deleteLogs")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("workbench.deleteLogsConfirm", { count: selectedLogIds.length })}
@@ -584,7 +509,16 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">{t("workbench.model")}</span>
-                <ModelPicker config={config} value={model} onChange={(value) => config.managed?.enabled ? useConfigStore.setState((s) => ({featureModels:{...s.featureModels,[config.featureId || config.featureIds?.image || "image.generate"]:value}})) : updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                <ModelPicker
+                    config={config}
+                    value={model}
+                    onChange={(value) =>
+                        config.managed?.enabled ? useConfigStore.setState((s) => ({ featureModels: { ...s.featureModels, [config.featureId || config.featureIds?.image || "image.generate"]: value } })) : updateConfig("imageModel", value)
+                    }
+                    capability="image"
+                    fullWidth
+                    onMissingConfig={() => openConfigDialog(false)}
+                />
             </label>
             <div className="col-span-2">
                 <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
@@ -613,10 +547,12 @@ function ResultImageCard({
             <Image src={previewUrlFor(image.storageKey) || image.dataUrl} preview={{ src: image.dataUrl }} alt={t("imageWorkbench.resultAlt", { count: index + 1 })} className="aspect-square object-cover" />
             <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
                 <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
-                    <span>
-                        {image.width}x{image.height}
-                    </span>
-                    <span>{formatBytes(image.bytes)}</span>
+                    {image.width > 0 && image.height > 0 ? (
+                        <span>
+                            {image.width}x{image.height}
+                        </span>
+                    ) : null}
+                    {image.bytes > 0 ? <span>{formatBytes(image.bytes)}</span> : null}
                     <span>{formatDuration(image.durationMs)}</span>
                 </div>
                 <div className="grid min-w-0 grid-cols-3 gap-2">
@@ -641,7 +577,7 @@ function ResultImageCard({
     );
 }
 
-function PendingImageCard() {
+function PendingImageCard({ queued }: { queued: boolean }) {
     const { t } = useTranslation();
     return (
         <div className="relative aspect-square overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
@@ -653,34 +589,32 @@ function PendingImageCard() {
                 }}
             />
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
-                <LoaderCircle className="size-6 animate-spin" />
-                <span>{t("workbench.generating")}</span>
+                <LoaderCircle className={`size-6 ${queued ? "" : "animate-spin"}`} />
+                <span>{t(queued ? "imageWorkbench.queued" : "workbench.generating")}</span>
             </div>
         </div>
     );
 }
 
-function FailedImageCard({ error, onRetry }: { error: string; onRetry: () => void }) {
+function FailedImageCard({ error, onRetry, interrupted }: { error: string; onRetry: () => void; interrupted: boolean }) {
     const { t } = useTranslation();
     return (
         <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
             <div className="flex aspect-square flex-col items-center justify-center gap-3 p-5 text-center">
-                <div className="text-sm font-medium text-red-600 dark:text-red-300">{t("workbench.failed")}</div>
+                <div className="text-sm font-medium text-red-600 dark:text-red-300">{t(interrupted ? "imageWorkbench.interruptedTitle" : "workbench.failed")}</div>
                 <Typography.Paragraph ellipsis={{ rows: 4 }} className="!mb-0 !text-xs !text-red-500 dark:!text-red-300">
                     {error}
                 </Typography.Paragraph>
             </div>
-            <div className="flex justify-end border-t border-red-200 p-3 dark:border-red-950">
-                <Button size="small" danger onClick={onRetry}>
-                    {t("workbench.retry")}
-                </Button>
-            </div>
+            {!interrupted ? (
+                <div className="flex justify-end border-t border-red-200 p-3 dark:border-red-950">
+                    <Button size="small" danger onClick={onRetry}>
+                        {t("workbench.retry")}
+                    </Button>
+                </div>
+            ) : null}
         </div>
     );
-}
-
-function updateResultAt(results: GenerationResult[], index: number, next: Partial<GenerationResult>) {
-    return results.map((item, itemIndex) => (itemIndex === index ? { ...item, ...next } : item));
 }
 
 function LogPanel({
@@ -701,8 +635,9 @@ function LogPanel({
     onPreviewLog: (log: GenerationLog) => void;
 }) {
     const { t } = useTranslation();
-    const allSelected = Boolean(logs.length) && selectedLogIds.length === logs.length;
-    const toggleAll = () => onSelectedLogIdsChange(allSelected ? [] : logs.map((log) => log.id));
+    const deletableLogs = logs.filter((log) => !isActiveImageLog(log));
+    const allSelected = Boolean(deletableLogs.length) && deletableLogs.every((log) => selectedLogIds.includes(log.id));
+    const toggleAll = () => onSelectedLogIdsChange(allSelected ? [] : deletableLogs.map((log) => log.id));
 
     return (
         <>
@@ -716,7 +651,7 @@ function LogPanel({
                 <Button size="small" icon={<Plus className="size-3.5" />} onClick={onCreateSession}>
                     {t("workbench.new")}
                 </Button>
-                <Button size="small" icon={<CheckSquare className="size-3.5" />} disabled={!logs.length} onClick={toggleAll}>
+                <Button size="small" icon={<CheckSquare className="size-3.5" />} disabled={!deletableLogs.length} onClick={toggleAll}>
                     {allSelected ? t("common.cancel") : t("workbench.selectAll")}
                 </Button>
                 <Button size="small" danger icon={<Trash2 className="size-3.5" />} disabled={!selectedLogIds.length} onClick={onDeleteSelected}>
@@ -746,15 +681,14 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     const thumbnails = log.images.filter((image) => image.dataUrl).slice(0, 4);
 
     return (
-        <button
-            type="button"
+        <div
+            data-image-task-id={log.id}
             className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`}
-            onClick={onClick}
         >
-            <div className="grid grid-cols-[minmax(128px,1fr)_auto] gap-2">
-                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
-                    <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
-                    <div className="min-w-0">
+            <div className="flex items-start gap-2">
+                <Checkbox className="mt-0.5" aria-label={t("imageWorkbench.selectTask", { title: log.title })} disabled={isActiveImageLog(log)} checked={selected} onChange={(event) => onSelectedChange(event.target.checked)} />
+                <button type="button" aria-pressed={active} aria-label={t("imageWorkbench.viewTask", { title: log.title })} className="flex min-w-0 flex-1 flex-col gap-2 text-left" onClick={onClick}>
+                    <div className="w-full min-w-0">
                         <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
                         {log.modelLabel && <div className="truncate text-xs opacity-60">{log.modelLabel}</div>}
                         {thumbnails.length ? (
@@ -765,98 +699,41 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                             </div>
                         ) : null}
                     </div>
-                </div>
-                <div className="grid justify-items-end gap-2">
-                    <div className="flex gap-1">
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
-                            {t("workbench.successCount", { count: log.successCount ?? log.imageCount })}
-                        </Tag>
-                        {log.failCount ? (
-                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="red">
-                                {t("workbench.failCount", { count: log.failCount })}
+                    <div className="grid w-full min-w-0 gap-2">
+                        <div className="flex flex-wrap gap-1">
+                            {isActiveImageLog(log) ? (
+                                <Tag className="m-0 flex h-6 items-center gap-1 rounded-md px-1.5 text-xs leading-none" color="processing">
+                                    <LoaderCircle className={`size-3 ${log.status === "running" ? "animate-spin" : ""}`} />
+                                    {t(log.status === "queued" ? "imageWorkbench.queued" : "imageWorkbench.progress", { completed: log.successCount + log.failCount, total: log.imageCount })}
+                                </Tag>
+                            ) : log.status === "interrupted" ? (
+                                <Tag className="m-0" color="warning">
+                                    {t("imageWorkbench.interruptedTitle")}
+                                </Tag>
+                            ) : null}
+                            {!isActiveImageLog(log) || log.successCount > 0 ? (
+                                <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
+                                    {t("workbench.successCount", { count: log.successCount ?? log.imageCount })}
+                                </Tag>
+                            ) : null}
+                            {log.failCount ? (
+                                <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="red">
+                                    {t("workbench.failCount", { count: log.failCount })}
+                                </Tag>
+                            ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{t("workbench.itemCount", { count: log.imageCount })}</Tag>
+                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">
+                                {formatDuration(log.durationMs)}
                             </Tag>
-                        ) : null}
+                        </div>
+                        <div className="truncate text-xs text-stone-500 dark:text-stone-400">{log.time}</div>
                     </div>
-                    <div className="flex flex-wrap justify-end gap-1">
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{t("workbench.itemCount", { count: log.imageCount })}</Tag>
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">
-                            {formatDuration(log.durationMs)}
-                        </Tag>
-                    </div>
-                    <div className="flex justify-end">
-                        <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.time}</Tag>
-                    </div>
-                </div>
+                </button>
             </div>
-        </button>
+        </div>
     );
-}
-
-async function readStoredLogs() {
-    if (typeof window === "undefined") return [];
-    try {
-        const values: GenerationLog[] = [];
-        await logStore.iterate<GenerationLog, void>((value) => {
-            values.push(value);
-        });
-        const logs = await Promise.all(values.map(normalizeLog));
-        return logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    } catch {
-        return [];
-    }
-}
-
-async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog> {
-    const references = await Promise.all(
-        (log.references || []).map(async (item) => {
-            void ensureImagePreview(item.storageKey);
-            return { ...item, dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl) };
-        }),
-    );
-    const images = await Promise.all(
-        (log.images || []).map(async (item) => {
-            void ensureImagePreview(item.storageKey);
-            return { ...item, dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl) };
-        }),
-    );
-    const config = normalizeLogConfig(log);
-    return {
-        id: log.id || nanoid(),
-        createdAt: log.createdAt || Date.now(),
-        title: log.title || log.model || i18n.t("workbench.untitled"),
-        prompt: log.prompt || log.title || "",
-        time: log.time || new Date().toLocaleString(i18n.resolvedLanguage, { hour12: false }),
-        model: log.model || config.imageModel || "",
-        modelLabel: log.modelLabel,
-        config,
-        references,
-        durationMs: log.durationMs || 0,
-        successCount: log.successCount ?? log.imageCount ?? 0,
-        failCount: log.failCount || 0,
-        imageCount: log.imageCount || log.successCount || 0,
-        size: log.size || config.size || "",
-        quality: log.quality || config.quality || "",
-        status: log.status || "success",
-        images,
-    };
-}
-
-function serializeLog(log: GenerationLog): GenerationLog {
-    return {
-        ...log,
-        references: log.references.map((item) => ({ ...item, dataUrl: item.storageKey ? "" : item.dataUrl })),
-        images: log.images.map((image) => ({ ...image, dataUrl: image.storageKey ? "" : image.dataUrl })),
-    };
-}
-
-function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
-    return {
-        model: log.config?.model || log.model || "",
-        imageModel: log.config?.imageModel || log.model || "",
-        quality: log.config?.quality || log.quality || "",
-        size: log.config?.size || log.size || "",
-        count: log.config?.count || String(log.imageCount || log.successCount || 1),
-    };
 }
 
 function moveListItem<T>(items: T[], index: number, offset: number) {
@@ -875,53 +752,4 @@ function ReferenceOrderButtons({ index, total, onMove }: { index: number; total:
             <Button size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !bg-white/85 !p-0 !shadow-sm" icon={<ArrowRight className="size-3" />} disabled={index >= total - 1} onClick={() => onMove(1)} />
         </div>
     );
-}
-
-function buildLog({
-    prompt,
-    model,
-    config,
-    references,
-    durationMs,
-    successCount,
-    failCount,
-    status,
-    images,
-}: {
-    prompt: string;
-    model: string;
-    config: AiConfig;
-    references: ReferenceImage[];
-    durationMs: number;
-    successCount: number;
-    failCount: number;
-    status: GenerationLog["status"];
-    images: GeneratedImage[];
-}): GenerationLog {
-    const logConfig = {
-        model: config.model,
-        imageModel: config.imageModel,
-        quality: config.quality,
-        size: config.size,
-        count: config.count,
-    };
-    return {
-        id: nanoid(),
-        createdAt: Date.now(),
-        title: prompt.slice(0, 12) || i18n.t("workbench.untitled"),
-        prompt,
-        time: new Date().toLocaleString(i18n.resolvedLanguage, { hour12: false }),
-        model,
-        modelLabel: modelOptionLabel(config,model),
-        config: logConfig,
-        references,
-        durationMs,
-        successCount,
-        failCount,
-        imageCount: Number(logConfig.count) || successCount,
-        size: logConfig.size,
-        quality: logConfig.quality,
-        status,
-        images,
-    };
 }
