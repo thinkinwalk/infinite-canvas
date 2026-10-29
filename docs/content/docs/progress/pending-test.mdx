@@ -5,6 +5,12 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 爆款复刻移除人工效果检查
+
+- 本地移除成片区「效果检查（可选）」、人工符合/需修改下拉框、关联提醒与验收状态字段；不再要求用户重复填写自己已目视判断的结果。
+- 「修改脚本」直接放在当前成片操作区，与下载、保存素材、加入画布并列；历史作品继续保留原有查看和下载操作。
+- 待验收当前/历史成片不再显示人工检查区，当前成片可直接返回脚本编辑；手机端操作区正常换行。按项目约定未运行构建、类型检查或自动化测试，未做浏览器交互验证；尚未发布部署。
+
 ## v0.19.115 发布验收
 
 - 「爆款复刻统一要求输入」已随 `v0.19.115`（`8a8c10a`）提交、打 tag、发布正式 GitHub Release 并部署。线上 `https://studio.lingzhouai.com/video/viral-recreate`，资源 `/assets/index-Cawqk4c6.js`；刷新后首屏只填写一个复刻要求，旧资料在同一区域可见。

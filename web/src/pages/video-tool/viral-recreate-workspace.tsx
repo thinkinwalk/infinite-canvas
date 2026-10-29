@@ -178,14 +178,6 @@ export default function ViralRecreateWorkspace() {
     const quote = price?.key === priceKey ? price.value : null,
         result = viewed ? viewed.result : d.video;
     const original = viewed ? viralReference({ ...d, media: viewed.viralInput?.media || [] }) : reference;
-    const resultRecord = viewed ? wb.records.find((r) => r.id === viewed.id) || viewed : (d.video ? wb.records.find((r) => r.stage === "video" && r.result && (r.result.storageKey ? r.result.storageKey === d.video?.storageKey : r.result.url === d.video?.url)) : undefined);
-    const acceptanceInput = resultRecord?.viralInput;
-    const acceptanceItems = [
-        ...(acceptanceInput?.viralEffects || []).map((effect) => ({ id: effect.id, label: `${effect.action === "remove" ? "已去除" : effect.action === "replace" ? `已改为${effect.target}` : "已保留"}：${effect.description}` })),
-        { id: "identity", label: "画面内容与本次素材、复刻要求一致" },
-        ...((acceptanceInput?.viralIntent?.textMode === "replace" || acceptanceInput?.viralIntent?.textMode === "remove") ? [{ id: "text", label: acceptanceInput.viralIntent.textMode === "replace" ? `文字显示「${acceptanceInput.viralIntent.text}」；${acceptanceInput.viralIntent.textSurface || "位置与时机跟随原片"}` : "用户要求去除的画面文字已去除" }] : []),
-        { id: "spec", label: `比例、时长与清晰度符合本次规格${acceptanceInput?.viralSettings ? `（${inferVideoRatio(acceptanceInput.viralSettings.size)} / ${acceptanceInput.viralSettings.videoSeconds}秒 / ${acceptanceInput.viralSettings.vquality}p）` : ""}` },
-    ];
     const muted = { color: token.colorTextSecondary },
         surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
     useEffect(() => {
@@ -1274,20 +1266,14 @@ export default function ViralRecreateWorkspace() {
                                         <Tooltip title="暂停对照"><Button aria-label="暂停对照视频" icon={<Pause size={15} />} onClick={() => { comparisonOriginal.current?.pause(); comparisonResult.current?.pause(); }} /></Tooltip>
                                         <div className="min-w-0 flex-1"><Slider aria-label="对照进度（按时长比例）" value={comparisonProgress} onChange={seekComparison} tooltip={{ formatter: (value) => `${Math.round(value || 0)}%` }} /></div>
                                     </div>}
-                                    {(step !== 0 || viewed) && result?.mimeType.startsWith("video/") && resultRecord?.stage === "video" && <>
-                                    {Object.values(resultRecord.viralAcceptance || {}).includes("fail") && <Alert type="warning" title="任务已生成，复刻效果仍需修改" description="原视频和结果已保留，返回脚本或画面调整后再生成。" />}
-                                    <Collapse items={[{ key: "acceptance", label: "效果检查（可选）", children: <section className="space-y-3">
-                                        <span className="text-xs" style={muted}>{acceptanceInput ? "按本次制作内容检查" : "检查通用项目"}</span>
-                                        {acceptanceItems.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                            <span className="min-w-0 flex-1 break-words text-sm">{item.label}</span>
-                                            <Select aria-label={`验收：${item.label}`} className="w-28 shrink-0" value={resultRecord.viralAcceptance?.[item.id] || "pending"} options={[{ value: "pending", label: "待检查" }, { value: "pass", label: "符合" }, { value: "fail", label: "需修改" }]} onChange={(value) => useVideoWorkbenchStore.getState().patchRecord(resultRecord.id, { viralAcceptance: { ...resultRecord.viralAcceptance, [item.id]: value } })} />
-                                        </div>)}
-                                        {!viewed && <Button disabled={locked} onClick={() => { goStep(1); openEditor("script"); }}>修改脚本</Button>}
-                                    </section> }]} />
-                                    </>}
                                     {previewError && <Alert type="warning" title="当前浏览器无法播放此编码，仍可下载原文件" />}
                                     {result && (
                                         <Space wrap>
+                                            {!viewed && step !== 0 && result.mimeType.startsWith("video/") && (
+                                                <Button icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => { goStep(1); openEditor("script"); }}>
+                                                    修改脚本
+                                                </Button>
+                                            )}
                                             <Button icon={<Download size={15} />} onClick={() => void wb.download(result)}>
                                                 下载{result.mimeType.startsWith("image/") ? "图片" : "视频"}
                                             </Button>

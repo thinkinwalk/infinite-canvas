@@ -310,7 +310,6 @@ export type VideoRecord = {
     };
     storeExploreInput?: StoreExploreInput;
     viralInput?: ViralRecreateInput;
-    viralAcceptance?: Record<string, "pending" | "pass" | "fail">;
     digitalHumanInput?: DigitalHumanInput;
     digitalHumanQuote?: import("@/services/api/replicate").ReplicateQuote;
     upscaleInput?: UpscaleInput;
