@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Alert, App, Button, Checkbox, Collapse, Dropdown, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Steps, Switch, Tabs, Tooltip, Upload, theme } from "antd";
+import { Alert, App, Button, Checkbox, Collapse, ConfigProvider, Dropdown, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Steps, Switch, Tabs, Tooltip, Upload, theme } from "antd";
 import { ArrowLeft, ArrowRight, Check, Columns2, Copy, Download, Expand, FolderPlus, Grid2X2, Images, MoreHorizontal, Pause, Play, Plus, RefreshCw, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
@@ -82,8 +82,7 @@ export default function ViralRecreateWorkspace() {
         [priceError, setPriceError] = useState(""),
         [quoting, setQuoting] = useState(false),
         quoteController = useRef<AbortController | null>(null);
-    const referencePlayer = useRef<HTMLVideoElement | null>(null),
-        legacyAnalysisRecovered = useRef(false);
+    const legacyAnalysisRecovered = useRef(false);
     const inputScroll = useRef<HTMLDivElement | null>(null),
         workspaceScroll = useRef<HTMLDivElement | null>(null);
     const previewPanel = useRef<HTMLElement | null>(null);
@@ -117,6 +116,8 @@ export default function ViralRecreateWorkspace() {
         frames = viralFrameMaterials(d),
         reference = viralReference(d);
     const intent = viralIntent(d), effects = viralPlanEffects(d), intentError = viralIntentError(d);
+    const referenceImages = viralReferenceImages(d),
+        targetImages = d.media.filter((m) => m.kind === "image" && ["visual-reference", "background", "model", "product"].includes(m.role));
     const sourceRatio = reference?.width && reference?.height ? inferVideoRatio(`${reference.width}x${reference.height}`) : "";
     const sourceEffectsChanged = Boolean(d.viralEffects?.length && d.viralEffectsSource !== viralEffectsSource(d));
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
@@ -372,7 +373,7 @@ export default function ViralRecreateWorkspace() {
         <div className="grid grid-cols-3 gap-2">
             {frames.map((f, i) => (
                 <button key={f.id} type="button" aria-label={`预览抽样画面${i + 1}`} onClick={() => {
-                    if (referencePlayer.current && Number.isFinite(d.viralFrameTimes?.[i])) referencePlayer.current.currentTime = d.viralFrameTimes![i];
+                    if (comparisonOriginal.current && Number.isFinite(d.viralFrameTimes?.[i])) comparisonOriginal.current.currentTime = d.viralFrameTimes![i];
                     modal.info({
                         title: `抽样画面${i + 1} · ${Number.isFinite(d.viralFrameTimes?.[i]) ? `${d.viralFrameTimes![i].toFixed(2)}秒` : "未返回采样时间"}`,
                         content: <img src={f.url} alt={f.name} className="w-full object-contain" />,
@@ -438,7 +439,7 @@ export default function ViralRecreateWorkspace() {
         const upload = (
             <div className="space-y-2">
                 <Upload.Dragger
-                    height={96}
+                    height={role === "reference" ? 96 : 72}
                     accept={role === "reference" ? "video/*" : "image/*"}
                     multiple={role === "visual-reference" || role === "product" || role === "model"}
                     showUploadList={false}
@@ -469,18 +470,22 @@ export default function ViralRecreateWorkspace() {
                     {d.media.filter(matches).length} {role === "reference" ? "个" : "张"}
                 </span>
             </div>
-            <div className={role === "reference" ? "space-y-2" : "grid grid-cols-2 gap-2"}>
+            <div className={role === "reference" ? "space-y-2" : "grid grid-cols-1 gap-2 sm:grid-cols-2"}>
                 {d.media
                     .filter(matches)
                     .map((m) => (
-                        <div key={m.id} className="min-w-0 rounded-lg border p-2" style={{ borderColor: token.colorBorderSecondary }}>
+                        <div key={m.id} className={`min-w-0 rounded-lg border p-2 ${m.kind === "video" ? "flex items-center gap-3" : ""}`} style={{ borderColor: token.colorBorderSecondary }}>
                             {m.kind === "video" ? (
-                                <video ref={referencePlayer} controls src={m.url} className="max-h-28 w-full rounded object-contain" />
+                                <button type="button" className="relative h-16 w-16 shrink-0" aria-label={`预览${m.name}`} onClick={() => showPanel("current")}>
+                                    <video preload="metadata" muted playsInline src={m.url} className="h-full w-full rounded object-contain" />
+                                    <span className="absolute bottom-0 right-0 rounded p-1" style={surface}><Play size={13} /></span>
+                                </button>
                             ) : (
                                 <button type="button" className="w-full" aria-label={`预览${m.name}`} onClick={() => modal.info({ title: m.name, width: 800, content: <img src={m.url} alt={m.name} className="max-h-[65vh] w-full object-contain" /> })}>
                                     <img src={m.url} alt={m.name} className="h-24 w-full object-contain" />
                                 </button>
                             )}
+                            <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1">
                                 <span className="min-w-0 flex-1 truncate text-xs" title={m.name}>
                                     {labels.find((l) => l.id === m.id)?.label} · {m.name}
@@ -490,11 +495,13 @@ export default function ViralRecreateWorkspace() {
                             <div className="text-xs" style={muted}>
                                 {formatBytes(m.bytes)}
                                 {m.durationMs ? ` · ${(m.durationMs / 1000).toFixed(1)}秒` : ""}
+                                {m.kind === "video" && m.width && m.height ? ` · ${m.width} × ${m.height}` : ""}
                             </div>
                             {role === "visual-reference" && <Select size="small" className="mt-1 w-full" aria-label={`${m.name}用途`} disabled={locked} value={m.role} options={[{ value: "visual-reference", label: "自动识别用途" }, { value: "product", label: "目标商品" }, { value: "background", label: "目标场景" }]} onChange={(value) => {
                                 const media = d.media.map((item) => item.id === m.id ? { ...item, role: value as Role } : item);
                                 wb.edit({ media, ...(d.viralIntent ? { viralIntent: { ...intent, replacements: [...new Set([...intent.replacements.filter((item) => media.some((image) => image.role === item)), ...(value === "product" || value === "background" ? [value as "product" | "background"] : [])])] } } : {}) }, "materials");
                             }} />}
+                            </div>
                         </div>
                     ))}
             </div>
@@ -521,11 +528,11 @@ export default function ViralRecreateWorkspace() {
         </Button>
     );
     const openEditor = (field: Editor, showSuggestion = false) => {
+        if (step !== 1) goStep(1);
         setViewed(null);
         setEditingField(field);
         setSuggestionView(showSuggestion);
         setTab("editor");
-        if (step !== 1 && !window.matchMedia("(min-width: 1024px)").matches) setEditor(field);
     };
     const textPreview = (field: Editor, placeholder: string) => ["instructions", "script"].includes(field) ? (
         <Input.TextArea
@@ -546,7 +553,7 @@ export default function ViralRecreateWorkspace() {
     const heading = (field: Editor, action?: ReactNode) => (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <strong className="font-medium">{editorNames[field]}</strong>
-            <Space size={4}>
+            <Space size={4} wrap className="max-w-full">
                 {action}
                 <Button type="text" size="small" icon={<Expand size={13} />} onClick={() => {
                     if (field === "analysis") setShowCurrentAnalysis(false);
@@ -707,7 +714,7 @@ export default function ViralRecreateWorkspace() {
                             disabled={disabled}
                             options={labels.map((l) => ({ value: l.label, label: `${l.label} · ${l.name}` }))}
                             onChange={(next) => edit(field, next)}
-                            placeholder={field === "script" ? "填写改编脚本" : "填写复刻要求"}
+                            placeholder={field === "script" ? reference && !d.analysis.trim() ? "尚未生成脚本。分析原视频后可由 AI 撰写，也可直接填写自己的镜头、画面与台词。" : "填写镜头顺序、画面与台词，或由 AI 撰写改编脚本。" : "填写复刻要求"}
                             style={{ height: "100%" }}
                             styles={{ textarea: inputStyle }}
                         />
@@ -764,10 +771,10 @@ export default function ViralRecreateWorkspace() {
     };
     const showRecord = async (r: VideoRecord) => {
         if (viralRecordAnalysis(r)) {
+            if (step !== 1) goStep(1);
             setViewed(r);
             setEditingField("analysis");
             setTab("editor");
-            if (!window.matchMedia("(min-width: 1024px)").matches) setEditor("analysis");
             return;
         }
         try {
@@ -911,7 +918,7 @@ export default function ViralRecreateWorkspace() {
         <div className="flex items-center gap-2">
             {step > 0 && <Button aria-label="上一步" icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => goStep(step - 1)} />}
             <Button type="primary" block disabled={locked || (step === 0 ? !reference && !d.script.trim() && !d.instructions.trim() && !d.viralFacts?.trim() && !Object.values(d.viralBrief || {}).some((value) => value.trim()) : nextAction.disabled)} icon={<ArrowRight size={15} />} onClick={() => step === 0 ? goStep(1) : nextAction.run()}>
-                {step === 0 ? "下一步：改编脚本" : nextAction.label}
+                {step === 0 ? "进入改编脚本" : nextAction.label}
             </Button>
         </div>
     ) : (
@@ -1031,6 +1038,7 @@ export default function ViralRecreateWorkspace() {
             </div>
         );
     return (
+        <ConfigProvider theme={{ cssVar: { key: "viral-workspace" }, token: { colorTextPlaceholder: token.colorTextSecondary } }}>
         <main className="flex h-full min-h-0 flex-col" style={{ color: token.colorText }}>
             <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
                 <div className="flex items-center gap-3">
@@ -1040,6 +1048,8 @@ export default function ViralRecreateWorkspace() {
                     </Link>
                     <h1 className="text-lg font-semibold">爆款复刻</h1>
                 </div>
+                <div className="flex items-center gap-1">
+                {step === 0 && <Button type="text" size="small" icon={<Play size={14} />} onClick={() => showPanel("current")}>预览素材</Button>}
                 {step !== 1 && <Dropdown trigger={["click"]} menu={{ items: [
                     { key: "history", label: "本浏览器作品" },
                     { key: "guide", label: "使用说明" },
@@ -1048,29 +1058,32 @@ export default function ViralRecreateWorkspace() {
                 ], onClick: ({ key }) => key === "options" ? setOptionsOpen(true) : showPanel(key) }}>
                     <Tooltip title="更多"><Button type="text" aria-label="更多" icon={<MoreHorizontal size={18} />} /></Tooltip>
                 </Dropdown>}
+                </div>
             </header>
             <nav aria-label="复刻步骤" className={`mx-auto w-full ${step === 1 ? "max-w-[1100px]" : "max-w-[1800px]"} shrink-0 px-4 pb-3 sm:px-6`}>
-                <Steps size="small" current={step} responsive={false} onChange={goStep} items={["准备素材", "改编脚本", "生成视频"].map((title) => ({ title, disabled: locked }))} />
+                <Steps size="small" current={step} responsive={false} onChange={goStep} items={["准备素材", "改编脚本", "生成视频"].map((title, index) => ({ title: <><span className="sm:hidden">{["素材", "脚本", "成片"][index]}</span><span className="hidden sm:inline">{title}</span></>, disabled: locked }))} />
             </nav>
             <div ref={workspaceScroll} className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 ${step === 1 ? "" : "lg:overflow-hidden"}`} data-testid="viral-scroll">
                 <div className={`mx-auto grid min-h-full grid-cols-1 gap-5 ${step === 1 ? "max-w-[1052px]" : "max-w-[1800px] lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]"}`}>
                     <section className={`${step === 1 ? "hidden" : "flex"} min-h-0 min-w-0 flex-col rounded-lg border`} style={surface} aria-label="复刻素材与设置">
-                        <div ref={inputScroll} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 [&>*]:shrink-0" data-testid="viral-input-scroll">
+                        <div ref={inputScroll} className="flex min-h-0 flex-1 flex-col gap-5 p-4 lg:overflow-y-auto [&>*]:shrink-0" data-testid="viral-input-scroll">
                             <div hidden={step !== 0} className="space-y-4">
                             {materialField("reference", "参考视频", "参考内容结构、镜头、节奏与创意")}
-                            {materialField("visual-reference", "参考图片（可选）", "商品、场景、主体或风格参考")}
-                            {materialField("model", "人物图片（可选）", "需要指定人物时添加")}
                             <section className="space-y-3">
                                 <strong className="block font-medium">复刻要求（选填）</strong>
                                 {textPreview("instructions", "想改什么、保留什么？也可写名称、准确文字或其他资料；留空参考原片。")}
                                 {intentError && <p role="alert" className="text-xs" style={{ color: token.colorWarning }}>{intentError}</p>}
                             </section>
-                            <Collapse items={[{ key: "product", label: "参考图片分析（可选）", children: <div className="space-y-3">
-                                {heading("viralProductAnalysis", textAction("product-analyze", "分析参考图片", !viralReferenceImages(d).length))}
-                                {modelPicker("viral-recreate.analyze", "图片分析模型")}
+                            <Collapse defaultActiveKey={targetImages.length ? ["images"] : []} items={[{ key: "images", forceRender: true, label: <span className="flex items-center justify-between gap-2"><span>补充图片（可选）</span>{targetImages.length > 0 && <span className="shrink-0 text-xs" style={muted}>{targetImages.length} 张</span>}</span>, children: <div className="space-y-4">
+                                {materialField("visual-reference", "参考图片", "商品、场景、主体或风格参考")}
+                                {materialField("model", "人物图片", "需要指定人物时添加")}
+                                {(referenceImages.length > 0 || d.viralProductAnalysis || d.viralProductSuggestion) && <Collapse items={[{ key: "product", label: "参考图片分析（可选）", children: <div className="space-y-3">
+                                {heading("viralProductAnalysis", textAction("product-analyze", "分析参考图片", !referenceImages.length))}
+                                <Collapse size="small" items={[{ key: "product-model", label: "分析模型", children: modelPicker("viral-recreate.analyze", "图片分析模型") }]} />
                                 {productBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{productBlocked}</p>}
                                 {textPreview("viralProductAnalysis", "参考图片的可见信息")}
                                 {suggestion("viralProductAnalysis")}
+                                </div> }]} />}
                             </div> }]} />
                             </div>
                             <div hidden={step !== 2} className="space-y-5">
@@ -1126,14 +1139,14 @@ export default function ViralRecreateWorkspace() {
                         </div>
                     </section>
                     <aside ref={previewPanel} className={`flex min-h-0 min-w-0 flex-col ${step === 1 ? "" : "rounded-lg border p-4"}`} style={step === 1 ? undefined : surface} aria-label="作品与说明">
-                        {step === 1 && <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b pb-3" style={{ borderColor: token.colorBorderSecondary }}>
-                            <div className="flex min-w-0 flex-1 items-center gap-3">
-                                {reference && <button type="button" className="min-w-0 truncate text-sm" style={muted} title={reference.name} onClick={() => showPanel("current")}>{reference.name}</button>}
+                        {step === 1 && <div className="mb-4 flex shrink-0 flex-col gap-2 border-b pb-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
+                            <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
+                                {reference && <button type="button" className="min-w-0 flex-1 truncate text-left text-sm" style={{ ...muted, overflow: "hidden" }} title={reference.name} onClick={() => showPanel("current")}>{reference.name}</button>}
                                 <div className="flex shrink-0 gap-1">
-                                    {d.media.filter((m) => m.kind === "image" && ["visual-reference", "product", "model", "background"].includes(m.role)).slice(0, 3).map((m) => <img key={m.id} src={m.url} alt={m.name} className="h-8 w-8 rounded object-cover" />)}
+                                    {targetImages.slice(0, 3).map((m) => <img key={m.id} src={m.url} alt={m.name} className="h-8 w-8 rounded object-cover" />)}
                                 </div>
                             </div>
-                            <Button type="text" size="small" disabled={locked} onClick={() => goStep(0)}>更换素材</Button>
+                            <Button type="text" size="small" className="self-end sm:self-auto" disabled={locked} onClick={() => goStep(0)}>更换素材</Button>
                         </div>}
                         {step === 1 && <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
                             <div className="min-w-0 flex-1">
@@ -1205,14 +1218,15 @@ export default function ViralRecreateWorkspace() {
                         {!busy && active?.error && <Alert className="mb-3" type="warning" title="上次处理未完成" description={publicServiceText(active.error)} />}
                         {step !== 1 && <Tabs
                             activeKey={tab}
-                            onChange={setTab}
+                            onChange={(value) => value === "editor" ? goStep(1) : setTab(value)}
+                            tabBarExtraContent={step === 0 ? <Button type="text" size="small" aria-label="返回素材填写" icon={<ArrowLeft size={14} />} className="lg:!hidden" onClick={() => { workspaceScroll.current?.scrollTo({ top: 0, behavior: "smooth" }); inputScroll.current?.scrollTo(0, 0); }} /> : undefined}
                             items={[
                                 { key: "current", label: step === 0 ? "素材预览" : "视频对照" },
-                                { key: "editor", label: "脚本与分析" },
+                                { key: "editor", label: "改编脚本" },
                                 { key: "history", label: "本浏览器作品" },
                             ]}
                         />}
-                        <div className={`min-h-0 flex-1 ${step === 1 ? tab === "editor" ? `h-[60vh] ${editingField === "analysis" ? "min-h-[700px]" : "min-h-[460px]"}` : "" : tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "overflow-y-auto"}`}>
+                        <div className={`min-h-0 flex-1 ${step === 1 ? tab === "editor" ? `h-[60vh] ${editingField === "analysis" ? "min-h-[700px]" : "min-h-[460px]"}` : "" : tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "lg:overflow-y-auto"}`}>
                             {tab === "editor" && editorBody(editingField)}
                             {tab === "plan" && effectsPanel}
                             {tab === "keyframe" && keyframePanel}
@@ -1229,26 +1243,25 @@ export default function ViralRecreateWorkspace() {
                                         </div>
                                     )}
                                     {!viewed && d.viralOutputStale && d.video && <Alert type="warning" title="输入已变化，以下为上一次制作结果" />}
-                                    <div className="grid gap-3 xl:grid-cols-2">
+                                    <div className={`grid gap-3 ${!viewed && step === 0 && !targetImages.length ? "" : "xl:grid-cols-2"}`}>
                                         <section className="min-w-0 space-y-2">
                                             <h2 className="text-sm font-medium">参考视频</h2>
                                             {original ? (
-                                                <video ref={comparisonOriginal} controls muted src={original.url} className="max-h-[55vh] w-full rounded object-contain" />
+                                                <video ref={comparisonOriginal} controls muted src={original.url} className={`max-h-[55vh] w-full rounded object-contain ${!viewed && step === 0 && !targetImages.length ? "mx-auto max-w-3xl" : ""}`} />
                                             ) : (
                                                 <div className="flex min-h-52 items-center justify-center">
                                                     <Empty description="上传后预览原视频" />
                                                 </div>
                                             )}
                                         </section>
-                                        <section className="min-w-0 space-y-2">
+                                        {(viewed || step !== 0 || targetImages.length > 0) && <section className="min-w-0 space-y-2">
                                             <h2 className="text-sm font-medium">{!viewed && step === 0 ? "目标素材" : viewed?.stage === "keyframe" ? viewed.viralInput?.viralImageTarget === "climax" ? "合成补充画面" : "合成首帧" : "改编作品"}</h2>
                                             {!viewed && step === 0 ? (
                                                 <div className="grid grid-cols-2 gap-3">
-                                                    {d.media.filter((m) => m.kind === "image" && ["visual-reference", "background", "model", "product"].includes(m.role)).map((m) => <figure key={m.id} className="min-w-0 space-y-1">
+                                                    {targetImages.map((m) => <figure key={m.id} className="min-w-0 space-y-1">
                                                         <img src={m.url} alt={m.name} className="h-40 w-full object-contain" />
                                                         <figcaption className="truncate text-xs" title={m.name}>{viralVisualRole(m.role)} · {m.name}</figcaption>
                                                     </figure>)}
-                                                    {!d.media.some((m) => m.kind === "image" && ["visual-reference", "background", "model", "product"].includes(m.role)) && <div className="col-span-2 flex min-h-52 items-center justify-center"><Empty description="暂无参考图片" /></div>}
                                                 </div>
                                             ) : result ? (
                                                 result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史关键画面" className="max-h-[55vh] w-full object-contain" /> : <video ref={comparisonResult} controls src={result.url} className="max-h-[55vh] w-full rounded object-contain" onTimeUpdate={(e) => { const player = e.currentTarget; if (Number.isFinite(player.duration) && player.duration > 0) setComparisonProgress(player.currentTime / player.duration * 100); }} onError={() => setPreviewError(true)} />
@@ -1259,7 +1272,7 @@ export default function ViralRecreateWorkspace() {
                                                     <Empty description="生成后在这里对照预览" />
                                                 </div>
                                             )}
-                                        </section>
+                                        </section>}
                                     </div>
                                     {(step !== 0 || viewed) && original && result?.mimeType.startsWith("video/") && <div className="flex items-center gap-3">
                                         <Tooltip title="按时长比例联动播放"><Button aria-label="联动播放对照视频" icon={<Play size={15} />} onClick={() => void playComparison()} /></Tooltip>
@@ -1296,6 +1309,7 @@ export default function ViralRecreateWorkspace() {
                             )}
                             {tab === "history" && (
                                 <div className="space-y-3">
+                                    <p className="text-xs" style={muted}>记录与草稿仅保存在当前浏览器，不会同步到其他设备。清理浏览器数据前请下载需要保留的作品。</p>
                                     {!wb.records.length && <Empty description="暂无本浏览器制作记录" />}
                                     {wb.records.map((r) => (
                                         <div key={r.id} className="space-y-2 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }}>
@@ -1574,5 +1588,6 @@ export default function ViralRecreateWorkspace() {
                 </div>
             </Modal>
         </main>
+        </ConfigProvider>
     );
 }
