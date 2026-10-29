@@ -1,10 +1,59 @@
 package repository
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/basketikun/infinite-canvas/model"
 )
+
+func TestOfficialTryonSeedUsesSupplementaryFraming(t *testing.T) {
+	setupRedemptionTestDB(t)
+	database, err := DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Model(&model.CaseApp{}).Where("id = ?", "official-tryon").Update("public_schema", `{"fields":[{"key":"framing","defaultValue":"full"}]}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := seedOfficialCases(database); err != nil {
+		t.Fatal(err)
+	}
+	item, ok, err := GetCaseByID("official-tryon")
+	if err != nil || !ok {
+		t.Fatalf("try-on case missing: found=%v err=%v", ok, err)
+	}
+	var schema struct {
+		Fields []struct {
+			Key         string `json:"key"`
+			Placeholder string `json:"placeholder"`
+			Default     string `json:"defaultValue"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(item.PublicSchema), &schema); err != nil {
+		t.Fatal(err)
+	}
+	promptFound := false
+	poseDefaults := map[string]string{}
+	for _, field := range schema.Fields {
+		if field.Key == "framing" {
+			t.Fatal("standalone framing survived reseeding")
+		}
+		if field.Key == "prompt" {
+			promptFound = field.Placeholder != ""
+		}
+		poseDefaults[field.Key] = field.Default
+	}
+	if len(schema.Fields) != 12 || !promptFound {
+		t.Fatal("try-on schema must keep supplementary instructions with an example")
+	}
+	if poseDefaults["poseMode"] != "preset" || poseDefaults["poseId"] != "front" {
+		t.Fatal("try-on schema must default to front display pose")
+	}
+	if _, exists := poseDefaults["posePrompt"]; !exists {
+		t.Fatal("try-on schema must support custom pose text")
+	}
+}
 
 func TestOfficialProductSetSeedRemovesBatchFee(t *testing.T) {
 	setupRedemptionTestDB(t)

@@ -18,7 +18,7 @@ import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
-import { viralIntentError, viralPlanState, viralTargetFacts } from "./viral-plan";
+import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
@@ -52,7 +52,7 @@ export const stageLabels: Record<string, string> = {
     compose: "字幕与配乐",
     cover: "生成封面",
     compatibility: "转换播放格式",
-    "product-analyze": "新商品分析",
+    "product-analyze": "参考图片分析",
     keyframe: "合成首帧",
     upscale: "视频增强",
     "subtitle-remove": "去除硬字幕",
@@ -204,7 +204,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 next = { ...current, ...value };
             const sourceChanged = viralSource(current) !== viralSource(next),
                 countChanged = value.frameCount !== undefined && value.frameCount !== current.frameCount;
-            const productChanged = value.viralFacts !== undefined || (value.media && JSON.stringify(current.media.filter((m) => m.role === "product").map((m) => m.id)) !== JSON.stringify(value.media.filter((m) => m.role === "product").map((m) => m.id)));
+            const productChanged = value.viralFacts !== undefined || (value.media && JSON.stringify(viralReferenceImages(current).map((m) => [m.id, m.role])) !== JSON.stringify(viralReferenceImages(next).map((m) => [m.id, m.role])));
             const mentions =
                 value.media || sourceChanged || countChanged
                     ? {
@@ -326,10 +326,11 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
     };
     const removeMedia = (id: string) => {
-        const item = read(tool).media.find((m) => m.id === id);
+        const current = read(tool), item = current.media.find((m) => m.id === id);
         if (!item) return;
+        const media = current.media.filter((m) => m.id !== id);
         edit(
-            { media: read(tool).media.filter((m) => m.id !== id) },
+            { media, ...(tool === "viral-recreate" && current.viralIntent ? { viralIntent: { ...current.viralIntent, replacements: current.viralIntent.replacements.filter((role) => role !== item.role || media.some((m) => m.kind === "image" && m.role === role)) } } : {}) },
             item.role === "learning" ? "learning" : item.role === "music" ? "finish" : item.role === "voice" ? "speech" : item.role === "avatar" || item.role === "first-frame" || (digital && item.role === "reference") ? "video" : "materials",
         );
     };
@@ -739,9 +740,9 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (d.regenerateSubtitles) return replacementPipeline(ctx, d);
         }
         if (tool === "viral-recreate" && stage === "keyframe") {
-            const target = d.viralImageTarget || "opening", name = target === "climax" ? "高潮画面" : "首帧";
+            const target = d.viralImageTarget || "opening", name = target === "climax" ? "补充画面" : "首帧";
             const references = viralKeyframeMaterials(d, target);
-            if (!references.some((m) => ["background", "model", "product"].includes(m.role))) throw new Error("请先上传场景、人物或商品图片");
+            if (!references.some((m) => ["visual-reference", "background", "model", "product"].includes(m.role))) throw new Error("请先上传参考图片或人物图片");
             if (!d.script.trim()) throw new Error("请先填写视频脚本");
             const intentError = viralIntentError(d);
             if (intentError) throw new Error(intentError);
@@ -790,12 +791,12 @@ export function useVideoWorkbench(tool: VideoTool) {
                 return viralAnalysisResultPatch(d, { text: value, provenance });
             }
             const cfg = viralVideoConfig(d, config);
-            const images = stage === "analyze" ? d.frames : stage === "product-analyze" ? d.media.filter((m) => m.kind === "image" && m.role === "product") : d.media.filter((m) => viralKeyframeMaterials(d).some((input) => input.id === m.id) || m.id === d.viralFirstFrameId || m.id === d.viralClimaxId);
+            const images = stage === "analyze" ? d.frames : stage === "product-analyze" ? viralReferenceImages(d) : d.media.filter((m) => viralKeyframeMaterials(d).some((input) => input.id === m.id) || m.id === d.viralFirstFrameId || (d.viralClimaxUse !== "preview" && d.viralClimaxUse && m.id === d.viralClimaxId));
             const instruction =
                 stage === "analyze"
                     ? `分析原视频的均匀抽样画面。${viralAnalysisSections} 采样秒数：${(d.viralFrameTimes || []).join("、")}。这不是镜头边界，不推测精确转场或音乐节拍。${d.viralUseTranscript && d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨文字（只作文字依据，不代表实际听到声音）：${d.transcript}` : "没有采用音轨转写，只能按画面分析，不声称听到了口播或音乐。"} 只描述可见事实。`
                     : stage === "product-analyze"
-                      ? `分析新商品图片，只写可见外观和可用展示方式。用户真实资料：${viralTargetFacts(d)}。不得编造价格、优惠、功效或承诺；未知标待确认。`
+                      ? `分析参考图片的可见内容与可用于视频改编的特征，按每张图的实际内容区分主体、环境或视觉风格，不默认都是商品或背景。编号与用途：${images.map((m) => `${viralMaterialLabels(d).find((l) => l.id === m.id)?.label}=${viralVisualRole(m.role)}`).join("；")}。用户真实资料：${viralTargetFacts(d)}。只写可见事实，不编造身份、价格、优惠、功效或承诺；不能辨认时说明。`
                       : viralScriptPrompt(d, cfg);
             const provenance = stage === "analyze" ? viralAnalysisProvenance(d, "frames", config) : undefined;
             const value = await text(ctx, instruction, images, stage !== "script");
@@ -1324,7 +1325,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (error) throw new Error(error);
                 if (store().records.some((r) => r.tool === tool && r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask))) throw new Error("已有视频任务，请恢复查询原任务，避免重复付费");
             }
-            if (tool === "viral-recreate" && stage === "product-analyze" && !read(tool).media.some((m) => m.role === "product" && m.kind === "image")) throw new Error("请先上传新商品图片");
+            if (tool === "viral-recreate" && stage === "product-analyze" && !viralReferenceImages(read(tool)).length) throw new Error("请先上传参考图片");
             if (tool === "store-explore" && stage === "video") {
                 const error = storeVideoError(read(tool), storeVideoConfig(read(tool), config));
                 if (error) throw new Error(error);

@@ -31,8 +31,8 @@ test("keyframe composition sends role images and only the explicitly selected cu
     expect(viralKeyframeMaterials(d).map((m) => m.id)).toEqual(["building", "woman", "product", "frame:sample"]);
     expect(viralKeyframePrompt(d)).toContain("图1=场景");
     expect(viralKeyframePrompt(d)).toContain("图2=人物");
-    expect(viralKeyframePrompt(d)).toContain("开场姿势参考");
-    expect(viralKeyframePrompt(d)).toContain("全身、裙摆与背面属于生成补全");
+    expect(viralKeyframePrompt(d)).toContain("开场首帧");
+    expect(viralKeyframePrompt(d)).toContain("图片未展示的外观与空间属于生成补全");
     d.viralFrameSource = "old-reference";
     expect(viralKeyframeMaterials(d).some((m) => m.id.startsWith("frame:"))).toBe(false);
 });

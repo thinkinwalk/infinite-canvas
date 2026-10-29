@@ -30,9 +30,10 @@ func hasTryonImages(inputs map[string]any) bool {
 }
 
 func normalizeTryonInputs(inputs map[string]any) error {
+	delete(inputs, "framing")
 	for key, fallback := range map[string]string{
 		"garmentMode": "separates",
-		"poseMode": "original", "sceneMode": "original", "framing": "full",
+		"poseMode": "preset", "sceneMode": "original",
 	} {
 		value, exists := inputs[key]
 		if !exists || value == "" {
@@ -41,9 +42,8 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	}
 	for key, options := range map[string][]string{
 		"garmentMode": {"separates", "one-piece"},
-		"poseMode":    {"original", "library", "reference"},
+		"poseMode":    {"original", "preset", "library", "reference"},
 		"sceneMode":   {"original", "studio", "library"},
-		"framing":     {"full", "half"},
 	} {
 		valid := false
 		for _, option := range options {
@@ -79,22 +79,36 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	if stringInput(inputs, "modelImageUrl") == "" {
 		return errors.New("请选择或上传模特照片")
 	}
-	if stringInput(inputs, "framing") == "half" && (stringInput(inputs, "garmentMode") == "one-piece" || stringInput(inputs, "bottomImageUrl") != "") {
-		return errors.New("下装和连体装请选择全身构图")
-	}
-	if stringInput(inputs, "poseMode") == "library" {
+	if stringInput(inputs, "poseMode") == "preset" {
+		if _, exists := inputs["poseId"]; !exists {
+			inputs["poseId"] = "front"
+		}
+		if tryonDisplayPosePrompt(stringInput(inputs, "poseId")) == "" {
+			return errors.New("请选择展示姿势")
+		}
+		delete(inputs, "poseImageUrl")
+	} else if stringInput(inputs, "poseMode") == "library" {
 		pose, ok := findTryonPose(stringInput(inputs, "poseId"))
 		if !ok || stringInput(inputs, "poseImageUrl") != pose.URL {
 			return errors.New("请选择官方常用姿势")
 		}
 	} else if stringInput(inputs, "poseMode") == "reference" {
 		delete(inputs, "poseId")
-		if stringInput(inputs, "poseImageUrl") == "" {
-			return errors.New("请上传姿势参考照片")
+		if value, exists := inputs["posePrompt"]; exists {
+			if _, ok := value.(string); !ok {
+				return errors.New("自定义姿势描述格式无效")
+			}
+			inputs["posePrompt"] = strings.TrimSpace(stringInput(inputs, "posePrompt"))
+		}
+		if stringInput(inputs, "poseImageUrl") == "" && stringInput(inputs, "posePrompt") == "" {
+			return errors.New("请描述自定义姿势或上传姿势参考照片")
 		}
 	} else {
 		delete(inputs, "poseImageUrl")
 		delete(inputs, "poseId")
+	}
+	if stringInput(inputs, "poseMode") != "reference" {
+		delete(inputs, "posePrompt")
 	}
 	if stringInput(inputs, "sceneMode") == "library" {
 		if stringInput(inputs, "sceneImageUrl") == "" {
@@ -140,6 +154,20 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	return nil
 }
 
+func tryonDisplayPosePrompt(id string) string {
+	switch id {
+	case "front":
+		return "模特正对镜头自然站立，双脚平稳落地，肩膀放松，双臂自然垂在身体两侧，手部放松，清楚呈现衣服正面和整体版型。"
+	case "side":
+		return "模特身体轻轻转向一侧，头部与身体朝向一致，肩膀放松，双脚自然站稳，双臂放松垂于身体两侧，清楚呈现衣服正面与侧面的版型轮廓。"
+	case "back":
+		return "模特背向镜头自然站立，头部与身体朝向一致，肩膀放松，双臂自然垂在身体两侧，清楚呈现衣服背面的版型。背部款式依据上传的背面服装参考图呈现；没有背面参考时不凭空添加背部图案、文字或设计细节。"
+	case "walking":
+		return "模特朝镜头自然迈出一小步，双臂随着步伐轻轻摆动，身体姿态舒展，呈现衣服行走时的整体穿着状态和自然垂感。"
+	}
+	return ""
+}
+
 func tryonPrompt(inputs map[string]any) string {
 	parts := []string{
 		"生成一张真实服装电商照片。将指定商品穿到指定模特身上，服装一致性与人物身份优先于场景美化。",
@@ -159,10 +187,15 @@ func tryonPrompt(inputs map[string]any) string {
 	if stringInput(inputs, "bottomImageUrl") == "" && stringInput(inputs, "onePieceImageUrl") == "" {
 		parts = append(parts, "保持模特原有下装及其细节不变。")
 	}
-	if stringInput(inputs, "poseMode") == "reference" || stringInput(inputs, "poseMode") == "library" {
+	if stringInput(inputs, "poseMode") == "preset" {
+		parts = append(parts, "展示姿势："+tryonDisplayPosePrompt(stringInput(inputs, "poseId"))+"人物身份与体型仍以模特图为准，不沿用模特照片中与所选展示姿势冲突的动作。")
+	} else if stringInput(inputs, "poseImageUrl") != "" && (stringInput(inputs, "poseMode") == "reference" || stringInput(inputs, "poseMode") == "library") {
 		parts = append(parts, "根据姿势图调整模特动作，身份与体型仍以模特图为准，处理自然的手臂、衣袖与衣摆遮挡。")
-	} else {
+	} else if stringInput(inputs, "poseMode") == "original" {
 		parts = append(parts, "保持模特原图的身体姿势、手脚动作及身体朝向，不因换衣自行改动作。")
+	}
+	if stringInput(inputs, "poseMode") == "reference" && stringInput(inputs, "posePrompt") != "" {
+		parts = append(parts, "自定义姿势要求（仅调整身体朝向与动作，人物身份、体型与服装来源保持不变；与姿势参考图动作冲突时以此描述为准）："+stringInput(inputs, "posePrompt"))
 	}
 	switch stringInput(inputs, "sceneMode") {
 	case "studio":
@@ -172,11 +205,7 @@ func tryonPrompt(inputs map[string]any) string {
 	default:
 		parts = append(parts, "保持模特原图背景和环境光线，不引入服装或姿势参考图的背景。")
 	}
-	if stringInput(inputs, "framing") == "half" {
-		parts = append(parts, "采用半身构图，完整展示目标上装，不裁掉领口、袖口与衣摆。")
-	} else {
-		parts = append(parts, "采用全身构图，完整展示头部、服装和双脚，不裁掉衣摆与裤脚。")
-	}
+	parts = append(parts, "构图优先遵循用户补充要求；未指定时，根据模特参考图的取景与目标服装的展示需要自然安排构图，清晰展示目标服装的关键细节。")
 	if prompt := strings.TrimSpace(stringInput(inputs, "prompt")); prompt != "" {
 		parts = append(parts, "可选补充要求（不得覆盖以上人物、服装及姿势来源规则）："+prompt)
 	}

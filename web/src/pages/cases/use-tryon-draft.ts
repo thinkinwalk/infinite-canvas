@@ -5,7 +5,7 @@ import { readTryonDraft, type TryonDraft, type TryonPose, type TryonResult, type
 
 const storage = localforage.createInstance({ name: "infinite-canvas", storeName: "tryon_workbench" });
 
-export function useTryonDraft(enabled: boolean, values: TryonValues, setValues: Dispatch<SetStateAction<TryonValues>>, result: TryonResult | null, setResult: Dispatch<SetStateAction<TryonResult | null>>) {
+export function useTryonDraft(enabled: boolean, values: TryonValues, setValues: Dispatch<SetStateAction<TryonValues>>, setResult: Dispatch<SetStateAction<TryonResult | null>>) {
     const userId = useUserStore((state) => state.user?.id);
     const token = useUserStore((state) => state.token);
     const key = token && !userId ? "" : `tryon-v1:${userId || "guest"}`;
@@ -24,7 +24,7 @@ export function useTryonDraft(enabled: boolean, values: TryonValues, setValues: 
             if (!active) return;
             const draft = readTryonDraft(value);
             setValues(draft.values);
-            setResult(draft.result);
+            setResult(null);
             setPoses(draft.poses);
             setLoadedKey(key);
         }).catch((cause) => {
@@ -35,14 +35,14 @@ export function useTryonDraft(enabled: boolean, values: TryonValues, setValues: 
     useEffect(() => {
         if (!enabled || !key || loadedKey !== key) return;
         let active = true;
-        const draft: TryonDraft = { values, result, poses };
+        const draft: TryonDraft = { values, poses };
         queue.current = queue.current.catch(() => undefined).then(() => storage.setItem(key, draft)).then(() => {
             if (active) setError("");
         }).catch(() => {
             if (active) setError("本机保存失败，请保留当前页面并下载结果后重试");
         });
         return () => { active = false; };
-    }, [enabled, key, loadedKey, values, result, poses, saveRetry]);
+    }, [enabled, key, loadedKey, values, poses, saveRetry]);
     const ready = Boolean(key) && loadedKey === key;
     return { ready, error, poses, setPoses, retry: () => ready ? setSaveRetry((value) => value + 1) : setReload((value) => value + 1) };
 }

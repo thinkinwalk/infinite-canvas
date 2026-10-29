@@ -731,7 +731,7 @@ export default function CasesPage() {
     const [quoteError, setQuoteError] = useState("");
     const [quoting, setQuoting] = useState(false);
     const [checking, setChecking] = useState(false);
-    const tryonDraft = useTryonDraft(selected?.id === "official-tryon" && !loading, values, setValues, tryonResult, setTryonResult);
+    const tryonDraft = useTryonDraft(selected?.id === "official-tryon" && !loading, values, setValues, setTryonResult);
 
     const load = useCallback(async () => {
         const id = caseId;
@@ -933,7 +933,7 @@ export default function CasesPage() {
         const inputError = tryonInputError(values);
         const update = (changes: Record<string, CaseValue>) => setValues((current) => updateTryonValues(current, changes));
         return <TryonWorkspace values={values} onChange={update} busy={busy} generating={running} result={tryonResult} poses={tryonDraft.poses} onPosesChange={tryonDraft.setPoses}
-            renderUpload={(key, label) => <CaseImageInput key={key} compact field={{ key, label, type: "image" }} value={values[key]} disabled={busy} onChange={(value) => update({ [key]: value })} />}
+            renderUpload={(key, label, target) => <CaseImageInput key={key} compact field={{ key, label, type: "image" }} value={(target?.values || values)[key]} disabled={busy} onChange={(value) => (target?.onChange || update)({ [key]: value })} />}
             footer={<div className="space-y-3">
                 {tryonDraft.error ? <div role="alert" className="flex items-center justify-between gap-2 text-xs text-red-600"><span>{tryonDraft.error}</span><Button size="small" icon={<RefreshCw className="size-3" />} onClick={tryonDraft.retry}>重试</Button></div> : null}
                 {inputError ? <p className="text-xs text-stone-500">{inputError}</p> : null}

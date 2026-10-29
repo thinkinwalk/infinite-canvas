@@ -86,7 +86,7 @@ export type DigitalHumanInput = Pick<
 
 export type VideoTool = "cloud-create" | "content-replace" | "store-explore" | "viral-recreate" | "upscale" | "subtitle-remove" | "digital-human" | "photo-talk" | "lipsync";
 export const isTalkingVideoTool = (tool: VideoTool) => ["digital-human", "photo-talk", "lipsync"].includes(tool);
-export type MediaRole = "reference" | "learning" | "product" | "model" | "background" | "voice" | "avatar" | "music" | "mask" | "first-frame";
+export type MediaRole = "reference" | "visual-reference" | "learning" | "product" | "model" | "background" | "voice" | "avatar" | "music" | "mask" | "first-frame";
 export type VideoImportSource = { platform: string; title: string; author: string; sourceUrl: string; coverUrl?: string; clip?: { extractionId: string; start: number; end: number } };
 export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole; source?: VideoImportSource };
 export type UpscaleInput = Pick<VideoDraft, "media" | "route" | "replicateTargetResolution" | "replicateFps" | "scale" | "fps">;

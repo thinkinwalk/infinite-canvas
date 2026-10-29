@@ -1,16 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { App, Button, Empty, Input, Modal, Segmented, Spin } from "antd";
-import { ArrowLeft, ArrowRight, Check, Download, ImagePlus, RefreshCw, Save, Shirt, Trash2, X, ZoomIn } from "lucide-react";
+import { App, Button, Empty, Input, Modal, Segmented, Spin, Tabs } from "antd";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Download, Footprints, ImagePlus, PersonStanding, RefreshCw, RotateCcw, Save, Shirt, Trash2, UserRound, X, ZoomIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { saveAs } from "file-saver";
 import { fetchTryonLibrary, type TryonLibrary } from "@/services/api/cases";
 import { fetchImageBlob } from "@/services/image-storage";
-import { tryonDefaults, tryonSources, type TryonPose, type TryonResult, type TryonValues } from "./tryon-state";
+import { tryonDefaults, tryonDisplayPoses, tryonPoseLabel, tryonSources, updateTryonValues, type TryonPose, type TryonResult, type TryonValues } from "./tryon-state";
 
 type Props = {
     values: TryonValues;
     onChange: (changes: TryonValues) => void;
-    renderUpload: (key: string, label: string) => ReactNode;
+    renderUpload: (key: string, label: string, target?: { values: TryonValues; onChange: (changes: TryonValues) => void }) => ReactNode;
     footer: ReactNode;
     busy: boolean;
     generating: boolean;
@@ -27,6 +27,8 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
     const [libraryError, setLibraryError] = useState("");
     const [reload, setReload] = useState(0);
     const [picker, setPicker] = useState<"model" | "scene" | null>(null);
+    const [selectionValues, setSelectionValues] = useState<TryonValues | null>(null);
+    const [modelTab, setModelTab] = useState("model");
     const [filter, setFilter] = useState("全部");
     const [gender, setGender] = useState("全部");
     const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
@@ -49,19 +51,36 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
 
     const model = library.models.find((item) => item.url === values.modelImageUrl);
     const scene = library.scenes.find((item) => item.url === values.sceneImageUrl);
-    const preset = library.poses.find((item) => item.id === values.poseId && item.url === values.poseImageUrl);
     const currentSources = tryonSources(values);
     const displayedSources = view === "result" && result ? tryonSources(result.inputs) : currentSources;
     const resultInputs: TryonValues = { ...tryonDefaults, ...result?.inputs };
     const changed = result && Object.keys({ ...resultInputs, ...values }).some((key) => values[key] !== resultInputs[key]);
     const onePiece = values.garmentMode === "one-piece";
-    const modelSource = String(values.modelSource || "library");
-    const openPicker = (type: "model" | "scene") => { setFilter("全部"); setGender("全部"); setPicker(type); };
+    const selection = selectionValues || values;
+    const updateSelection = (changes: TryonValues) => setSelectionValues((current) => updateTryonValues(current || values, changes));
+    const closePicker = () => { setPicker(null); setSelectionValues(null); setPosePicker(false); setPoseName(null); };
+    const openPicker = (type: "model" | "scene") => {
+        setSelectionValues(type === "scene" && (!values.sceneMode || values.sceneMode === "original") ? updateTryonValues(values, { sceneMode: "library" }) : { ...values });
+        setModelTab("model");
+        setFilter("全部");
+        setGender("全部");
+        setPicker(type);
+    };
+    const customPoseMissing = selection.poseMode === "reference" && !selection.poseImageUrl && !String(selection.posePrompt || "").trim();
+    const selectionError = picker === "model"
+        ? !selection.modelImageUrl ? "请选择或上传模特照片" : customPoseMissing ? "请描述自定义姿势或上传参考照片" : ""
+        : selection.sceneMode === "library" && !selection.sceneImageUrl ? "请选择场景" : "";
+    const confirmPicker = () => {
+        if (busy || selectionError) return;
+        const keys = picker === "model" ? ["modelSource", "modelImageUrl", "poseMode", "poseId", "poseImageUrl", "posePrompt"] : ["sceneMode", "sceneImageUrl"];
+        onChange(Object.fromEntries(keys.map((key) => [key, selection[key] || ""])));
+        closePicker();
+    };
     const options = picker === "model"
         ? library.models.filter((item) => (filter === "全部" || item.group === filter) && (gender === "全部" || item.gender === gender))
         : library.scenes.filter((item) => filter === "全部" || item.env === filter);
     const savePose = () => {
-        const image = String(values.poseImageUrl || "");
+        const image = String(selection.poseImageUrl || "");
         if (busy || !poseName?.trim() || !image.startsWith("data:" + "image/")) return;
         onPosesChange([...poses, { id: crypto.randomUUID(), name: poseName.trim(), image }]);
         setPoseName(null);
@@ -81,18 +100,38 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
     };
     const libraryButton = (type: "model" | "scene") => {
         const item = type === "model" ? model : scene;
-        const key = type === "model" ? "modelImageUrl" : "sceneImageUrl";
         const label = type === "model" ? "模特" : "场景";
+        const url = type === "model" ? String(values.modelImageUrl || "") : values.sceneMode === "library" ? String(values.sceneImageUrl || "") : "";
+        const title = type === "model" ? url ? item?.name || (values.modelSource === "upload" ? "已上传模特" : "已选模特") : "选择模特" : values.sceneMode === "library" ? item?.name || "选择场景" : values.sceneMode === "studio" ? "白底影棚" : "默认保留原背景";
+        const summary = type === "model" && url ? `${title} · ${tryonPoseLabel(values)}` : title;
+        const clearable = type === "scene" && (values.sceneMode === "library" || values.sceneMode === "studio");
         return <div className="relative">
-            <button type="button" disabled={busy} onClick={() => openPicker(type)} className="flex min-h-20 w-full items-center gap-3 rounded-md border border-stone-200 p-2.5 pr-9 text-left transition hover:border-blue-500 disabled:opacity-60 dark:border-stone-700">
-                <div className="grid h-16 w-12 shrink-0 place-items-center overflow-hidden rounded bg-stone-100 dark:bg-stone-900">
-                    {item ? <img src={item.thumb || item.url} alt={item.name} className="size-full object-contain" /> : <ImagePlus className="size-5 text-stone-400" />}
+            <button type="button" disabled={busy} aria-label={`选择${label}`} onClick={() => openPicker(type)} className={`flex min-h-16 w-full items-center gap-3 rounded-md border border-border py-2 pl-2.5 text-left transition hover:border-blue-500 disabled:opacity-60 ${clearable ? "pr-12" : "pr-2.5"}`}>
+                <div className="grid h-11 w-8 shrink-0 place-items-center overflow-hidden rounded">
+                    {url ? <img src={item?.thumb || url} alt={title} className="size-full object-contain" /> : <ImagePlus className="size-5 text-muted-foreground" />}
                 </div>
-                <span className="min-w-0"><span className="block break-words text-sm font-medium">{item?.name || `选择${label}`}</span><span className="mt-1 block text-xs text-stone-500">{item ? "更换" : "从图库选择"}</span></span>
+                <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{label}{type === "model" ? <span className="ml-1 text-red-500">*</span> : <span className="text-xs font-normal text-muted-foreground">（可选）</span>}</span><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{summary}</span></span>
+                <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             </button>
-            {item ? <button type="button" disabled={busy} title={`移除${label}`} aria-label={`移除${label}`} onClick={() => onChange({ [key]: "" })} className="absolute right-2 top-2 grid size-7 place-items-center rounded text-stone-500 hover:bg-black/5 dark:hover:bg-white/10"><X className="size-4" /></button> : null}
+            {clearable ? <button type="button" disabled={busy} aria-label="清除场景" title="清除场景，保留原背景" onClick={() => onChange({ sceneMode: "original", sceneImageUrl: "" })} className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-60"><X aria-hidden="true" className="size-4" /></button> : null}
         </div>;
     };
+    const selectionUpload = (key: string, label: string) => renderUpload(key, label, { values: selection, onChange: updateSelection });
+    const poseIcons = [PersonStanding, UserRound, RotateCcw, Footprints];
+    const catalog = libraryLoading ? <div className="grid min-h-40 place-items-center"><Spin /></div> : libraryError ? <div role="alert" className="flex min-h-40 flex-wrap items-center justify-center gap-3"><span className="text-sm text-red-500">{libraryError}</span><Button icon={<RefreshCw className="size-4" />} onClick={() => setReload((value) => value + 1)}>重试</Button></div> : <>
+        <div className="mb-3 overflow-x-auto"><Segmented className="min-w-max" value={filter} options={picker === "scene" ? ["全部", "室内", "户外", "街景", "影棚", "度假"] : [{ label: "全部", value: "全部" }, { label: "中国", value: "cn" }, { label: "日本", value: "jp" }, { label: "韩国", value: "kr" }, { label: "其他", value: "intl" }]} onChange={(value) => setFilter(String(value))} /></div>
+        {picker === "model" ? <div className="mb-4"><Segmented value={gender} options={[{ label: "全部", value: "全部" }, { label: "女模", value: "f" }, { label: "男模", value: "m" }]} onChange={(value) => setGender(String(value))} /></div> : null}
+        {options.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {options.map((item) => {
+                const selected = item.url === (picker === "model" ? selection.modelImageUrl : selection.sceneImageUrl);
+                return <button key={item.id} type="button" disabled={busy} aria-pressed={selected} aria-label={`选择${picker === "model" ? "模特" : "场景"}：${item.name}`} className={`relative min-w-0 overflow-hidden rounded-md border text-left ${selected ? "border-blue-500 ring-1 ring-blue-500" : "border-border"}`} onClick={() => updateSelection(picker === "model" ? { modelSource: "library", modelImageUrl: item.url } : { sceneMode: "library", sceneImageUrl: item.url })}>
+                    <img loading="lazy" src={item.thumb || item.url} alt={item.name} className={`${picker === "model" ? "aspect-[3/4] object-contain" : "aspect-[4/3] object-cover"} w-full bg-muted`} />
+                    <span className="block break-words px-2 py-2 text-xs">{item.name}</span>
+                    {selected ? <Check aria-label="已选择" className="absolute right-1 top-1 size-5 rounded bg-blue-600 p-0.5 text-white" /> : null}
+                </button>;
+            })}
+        </div> : <Empty description="没有匹配素材" />}
+    </>;
     const imagePreview = (url: string, label: string, className: string) => <button type="button" onClick={() => setPreview({ url, label })} title={`放大${label}`} aria-label={`放大${label}`} className={`group relative block overflow-hidden rounded-md border border-stone-200 bg-stone-50 dark:border-stone-800 dark:bg-stone-900 ${className}`}>
         <img src={url} alt={label} className="size-full object-contain" />
         <ZoomIn className="absolute bottom-2 right-2 size-5 rounded bg-black/60 p-0.5 text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100" />
@@ -115,47 +154,13 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                             <div className="min-w-0"><h3 className="mb-2 text-xs text-stone-500">下装</h3>{renderUpload("bottomImageUrl", "下装")}</div>
                         </div>}
                     </div>
-                    <div className="space-y-3">
-                        <h2 className="text-sm font-semibold">模特 <span className="text-red-500">*</span></h2>
-                        <Segmented block disabled={busy} value={modelSource} options={[{ label: "图库选择", value: "library" }, { label: "上传照片", value: "upload" }]} onChange={(value) => onChange({ modelSource: String(value), modelImageUrl: "" })} />
-                        {modelSource === "upload" ? renderUpload("modelImageUrl", "模特照片") : libraryButton("model")}
-                    </div>
-                    <div className="space-y-3">
-                        <h2 className="text-sm font-semibold">模特姿势</h2>
-                        <Segmented block size="small" disabled={busy} value={String(values.poseMode || "original")} options={[{ label: "保持模特姿势", value: "original" }, { label: "常用姿势", value: "library" }, { label: "自定义参考", value: "reference" }]} onChange={(value) => onChange({ poseMode: String(value) })} />
-                        {values.poseMode === "library" ? libraryLoading ? <div className="grid min-h-24 place-items-center"><Spin /></div> : libraryError ? <div role="alert" className="flex flex-wrap items-center gap-2 text-sm"><span>{libraryError}</span><Button size="small" icon={<RefreshCw className="size-3.5" />} onClick={() => setReload((value) => value + 1)}>重试</Button></div> : <>
-                            {library.poses.length ? <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto p-1">
-                                {library.poses.map((pose) => <figure key={pose.id} className="relative min-w-0">
-                                    <button type="button" disabled={busy} aria-label={`选择常用姿势：${pose.name}`} aria-pressed={preset?.id === pose.id} onClick={() => onChange({ poseMode: "library", poseId: pose.id, poseImageUrl: pose.url })} className={`block w-full overflow-hidden rounded-md border text-left ${preset?.id === pose.id ? "border-blue-500 ring-1 ring-blue-500" : "border-border"}`}>
-                                        <img loading="lazy" src={pose.url} alt={pose.name} className="aspect-[3/4] w-full bg-stone-50 object-contain dark:bg-stone-900" />
-                                        <span className="block min-h-10 break-words px-2 py-2 pr-7 text-xs">{pose.name}</span>
-                                    </button>
-                                    {preset?.id === pose.id ? <Check aria-label="已选择" className="pointer-events-none absolute left-1 top-1 size-5 rounded bg-blue-600 p-0.5 text-white" /> : null}
-                                    <Button type="text" size="small" className="!absolute bottom-1 right-1" title={`放大${pose.name}`} aria-label={`放大${pose.name}`} icon={<ZoomIn className="size-3.5" />} onClick={() => setPreview({ url: pose.url, label: pose.name })} />
-                                </figure>)}
-                            </div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无常用姿势" />}
-                            {preset ? <div className="flex items-center justify-between gap-2 text-xs text-stone-500"><a href={preset.source} target="_blank" rel="noreferrer" className="underline">照片来源：Pexels</a><Button disabled={busy} size="small" type="text" icon={<X className="size-3.5" />} onClick={() => onChange({ poseId: "", poseImageUrl: "" })}>移除姿势</Button></div> : null}
-                        </> : null}
-                        {values.poseMode === "reference" ? <>
-                            {renderUpload("poseImageUrl", "姿势参考（仅动作）")}
-                            <div className="flex flex-wrap gap-2">
-                                <Button disabled={busy} icon={<ImagePlus className="size-4" />} onClick={() => setPosePicker(true)}>本机姿势库{poses.length ? ` (${poses.length})` : ""}</Button>
-                                <Button disabled={busy || !String(values.poseImageUrl || "").startsWith("data:" + "image/")} icon={<Save className="size-4" />} onClick={() => setPoseName("")}>保存参考</Button>
-                            </div>
-                        </> : null}
-                    </div>
-                    <div className="space-y-3">
-                        <h2 className="text-sm font-semibold">场景</h2>
-                        <Segmented block disabled={busy} value={String(values.sceneMode || "original")} options={[{ label: "原背景", value: "original" }, { label: "白底影棚", value: "studio" }, { label: "场景库", value: "library" }]} onChange={(value) => onChange({ sceneMode: String(value) })} />
-                        {values.sceneMode === "library" ? libraryButton("scene") : null}
-                    </div>
-                    <div className="space-y-3">
-                        <h2 className="text-sm font-semibold">构图</h2>
-                        <Segmented block disabled={busy} value={String(values.framing || "full")} options={[{ label: "全身", value: "full" }, { label: "半身", value: "half", disabled: onePiece || Boolean(values.bottomImageUrl) }]} onChange={(value) => onChange({ framing: String(value) })} />
+                    <div className="flex flex-col gap-3">
+                        {libraryButton("model")}
+                        {libraryButton("scene")}
                     </div>
                     <div className="space-y-3">
                         <label htmlFor="tryon-prompt" className="block text-sm text-stone-500">补充要求（可选）</label>
-                        <Input.TextArea id="tryon-prompt" disabled={busy} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="例如：上衣下摆自然垂放，不塞进裤腰" value={String(values.prompt || "")} onChange={(event) => onChange({ prompt: event.target.value })} />
+                        <Input.TextArea id="tryon-prompt" disabled={busy} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="例如：半身构图，突出上衣细节，下摆自然垂放，不塞进裤腰" value={String(values.prompt || "")} onChange={(event) => onChange({ prompt: event.target.value })} />
                     </div>
                     <div className="sticky bottom-0 z-10 mt-auto border-t border-stone-200 bg-background pb-3 pt-4 dark:border-stone-800">{footer}</div>
                 </section>
@@ -180,12 +185,10 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                             <ArrowRight aria-hidden="true" className="mx-auto size-5 rotate-90 text-stone-400 sm:rotate-0" />
                             <figure className="min-w-0">{imagePreview("/examples/tryon/result.webp", "案例效果", "aspect-[3/4] w-full")}<figcaption className="mt-2 text-center text-xs text-stone-500">示例效果</figcaption></figure>
                         </div>
-                        <p className="text-xs text-stone-500">来源：<a href="https://github.com/usscottli-ctrl/novaryns" target="_blank" rel="noreferrer" className="underline">Novaryn 参考项目</a>。沿用旧版案例，非本站生成记录。</p>
                     </div> : result ? <>
                         <p className="mb-3 text-xs text-stone-500">
-                            {({ original: "保持模特姿势", library: "常用姿势", reference: "自定义参考" } as Record<string, string>)[String(result.inputs.poseMode || "original")]}
+                            {tryonPoseLabel(result.inputs)}
                             {" · "}{({ original: "原背景", studio: "白底影棚", library: "场景库" } as Record<string, string>)[String(result.inputs.sceneMode || "original")]}
-                            {result.inputs.framing === "full" || result.inputs.framing === "half" ? <>{" · "}{result.inputs.framing === "half" ? "半身" : "全身"}</> : null}
                         </p>
                         <div className={result.urls.length > 1 ? "grid gap-5 xl:grid-cols-2" : "mx-auto w-full max-w-[560px]"}>
                             {result.urls.map((url, index) => <figure key={`${index}-${url}`}>
@@ -200,17 +203,50 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
                 </section>
             </div>
         </div>
-        <Modal open={picker !== null} title={picker === "model" ? "选择模特" : "选择场景"} footer={null} onCancel={() => setPicker(null)} width={760} destroyOnHidden>
-            {libraryLoading ? <div className="grid min-h-40 place-items-center"><Spin /></div> : libraryError ? <div className="flex min-h-40 items-center justify-center gap-3"><span className="text-sm text-red-500">{libraryError}</span><Button icon={<RefreshCw className="size-4" />} onClick={() => setReload((value) => value + 1)}>重试</Button></div> : <>
-                <div className="mb-3"><Segmented block value={filter} options={picker === "scene" ? ["全部", "室内", "户外", "街景", "影棚", "度假"] : [{ label: "全部", value: "全部" }, { label: "中国", value: "cn" }, { label: "日本", value: "jp" }, { label: "韩国", value: "kr" }, { label: "其他", value: "intl" }]} onChange={(value) => setFilter(String(value))} /></div>
-                {picker === "model" ? <div className="mb-4"><Segmented value={gender} options={[{ label: "全部", value: "全部" }, { label: "女模", value: "f" }, { label: "男模", value: "m" }]} onChange={(value) => setGender(String(value))} /></div> : null}
-                {options.length ? <div className="grid max-h-[60vh] grid-cols-2 gap-3 overflow-auto sm:grid-cols-4">
-                    {options.map((item) => <button key={item.id} type="button" disabled={busy} aria-pressed={item.url === (picker === "model" ? values.modelImageUrl : values.sceneImageUrl)} className={`min-w-0 overflow-hidden rounded-md border text-left ${item.url === (picker === "model" ? values.modelImageUrl : values.sceneImageUrl) ? "border-blue-500" : "border-stone-200 dark:border-stone-700"}`} onClick={() => { onChange(picker === "model" ? { modelSource: "library", modelImageUrl: item.url } : { sceneMode: "library", sceneImageUrl: item.url }); setPicker(null); }}>
-                        <img loading="lazy" src={item.thumb || item.url} alt={item.name} className={`${picker === "model" ? "aspect-[3/4] object-contain" : "aspect-[4/3] object-cover"} w-full bg-stone-50 dark:bg-stone-900`} />
-                        <span className="block break-words px-2 py-2 text-xs">{item.name}</span>
-                    </button>)}
-                </div> : <Empty description="没有匹配素材" />}
-            </>}
+        <Modal open={picker !== null} title={picker === "model" ? "选择模特与姿势" : "选择场景"} onCancel={closePicker} onOk={confirmPicker} okText="确认" cancelText="取消" okButtonProps={{ disabled: busy || Boolean(selectionError) }} cancelButtonProps={{ disabled: busy }} width={760} destroyOnHidden styles={{ body: { maxHeight: "65vh", overflowY: "auto" } }}>
+            {picker === "model" ? <Tabs activeKey={modelTab} onChange={setModelTab} items={[
+                { key: "model", label: "模特", children: <div className="space-y-4">
+                    <Segmented block disabled={busy} value={String(selection.modelSource || "library")} options={[{ label: "图库选择", value: "library" }, { label: "上传照片", value: "upload" }]} onChange={(value) => updateSelection({ modelSource: String(value), modelImageUrl: "" })} />
+                    {selection.modelSource === "upload" ? selectionUpload("modelImageUrl", "模特照片") : catalog}
+                </div> },
+                { key: "pose", label: "展示姿势", children: <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3 p-1">
+                        {tryonDisplayPoses.map((pose, index) => {
+                            const selected = selection.poseMode === "preset" && selection.poseId === pose.id;
+                            const Icon = poseIcons[index];
+                            return <button type="button" key={pose.id} disabled={busy} aria-label={`展示姿势：${pose.name}`} aria-pressed={selected} onClick={() => updateSelection({ poseMode: "preset", poseId: pose.id })} className={`relative flex min-h-32 min-w-0 flex-col items-center justify-center gap-2 rounded-md border p-3 text-center ${selected ? "border-blue-500 ring-1 ring-blue-500" : "border-border hover:border-blue-400"}`}>
+                                <Icon aria-hidden="true" className="size-7 text-muted-foreground" />
+                                <span className="break-words text-sm font-medium">{pose.name}</span>
+                                <span className="break-words text-xs text-muted-foreground">{pose.purpose}</span>
+                                {selected ? <Check aria-label="已选择" className="absolute right-1 top-1 size-5 rounded bg-blue-600 p-0.5 text-white" /> : null}
+                            </button>;
+                        })}
+                    </div>
+                    {selection.poseMode === "preset" && selection.poseId === "back" ? <p className="text-xs text-muted-foreground">背面展示适合有背面服装参考图时使用。</p> : null}
+                    <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+                        <Button type={selection.poseMode === "reference" ? "primary" : "text"} disabled={busy} icon={<ImagePlus className="size-4" />} onClick={() => updateSelection({ poseMode: "reference" })}>自定义姿势</Button>
+                        <Button type="text" disabled={busy} aria-pressed={selection.poseMode === "original"} icon={<UserRound className="size-4" />} onClick={() => updateSelection({ poseMode: "original" })}>沿用照片姿势{selection.poseMode === "original" ? <Check className="size-4" /> : null}</Button>
+                    </div>
+                    {selection.poseMode === "reference" ? <div className="space-y-3">
+                        <Input.TextArea aria-label="自定义姿势描述" disabled={busy} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="例如：身体微侧，单手轻扶腰部，另一只手自然下垂" value={String(selection.posePrompt || "")} onChange={(event) => updateSelection({ posePrompt: event.target.value })} />
+                        {selectionUpload("poseImageUrl", "姿势参考（可选，仅动作）")}
+                        <div className="flex flex-wrap gap-2">
+                            <Button disabled={busy} icon={<ImagePlus className="size-4" />} onClick={() => setPosePicker(true)}>本机姿势库{poses.length ? ` (${poses.length})` : ""}</Button>
+                            <Button disabled={busy || !String(selection.poseImageUrl || "").startsWith("data:" + "image/")} icon={<Save className="size-4" />} onClick={() => setPoseName("")}>保存参考</Button>
+                        </div>
+                    </div> : null}
+                </div> },
+            ]} /> : picker === "scene" ? <div className="space-y-4 pt-3">
+                <Segmented block disabled={busy} value={String(selection.sceneMode || "library")} options={[{ label: "场景库", value: "library" }, { label: "白底影棚", value: "studio" }]} onChange={(value) => updateSelection({ sceneMode: String(value) })} />
+                {selection.sceneMode === "library" ? catalog : <div className="flex min-h-32 items-center justify-center gap-3 text-sm text-muted-foreground">
+                    <ImagePlus aria-hidden="true" className="size-6" />
+                    <span>纯白背景，自然接地阴影</span>
+                </div>}
+            </div> : null}
+            <div aria-live="polite" className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                {picker === "model" ? `${library.models.find((item) => item.url === selection.modelImageUrl)?.name || (selection.modelImageUrl ? "已上传模特" : "未选择模特")} · ${tryonPoseLabel(selection)}` : selection.sceneMode === "library" ? library.scenes.find((item) => item.url === selection.sceneImageUrl)?.name || "未选择场景" : "白底影棚"}
+                {selectionError ? <span className="mt-1 block">{selectionError}</span> : null}
+            </div>
         </Modal>
         <Modal open={preview !== null} title={preview?.label} footer={null} onCancel={() => setPreview(null)} width={960} destroyOnHidden>
             {preview ? <img src={preview.url} alt={preview.label} className="max-h-[75vh] w-full object-contain" /> : null}
@@ -221,7 +257,7 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
         <Modal open={posePicker} title="本机姿势库" footer={null} onCancel={() => setPosePicker(false)} width={760} destroyOnHidden>
             {poses.length ? <div className="grid max-h-[60vh] grid-cols-2 gap-3 overflow-auto sm:grid-cols-4">
                 {poses.map((pose) => <figure key={pose.id} className="min-w-0">
-                    <button type="button" disabled={busy} aria-label={`使用姿势：${pose.name}`} aria-pressed={values.poseImageUrl === pose.image} className={`block aspect-[2/3] w-full overflow-hidden rounded-md border ${values.poseImageUrl === pose.image ? "border-blue-500" : "border-border"}`} onClick={() => { onChange({ poseMode: "reference", poseImageUrl: pose.image }); setPosePicker(false); }}>
+                    <button type="button" disabled={busy} aria-label={`使用姿势：${pose.name}`} aria-pressed={selection.poseImageUrl === pose.image} className={`block aspect-[2/3] w-full overflow-hidden rounded-md border ${selection.poseImageUrl === pose.image ? "border-blue-500" : "border-border"}`} onClick={() => { updateSelection({ poseMode: "reference", poseImageUrl: pose.image }); setPosePicker(false); }}>
                         <img src={pose.image} alt={pose.name} className="size-full object-contain" />
                     </button>
                     <figcaption className="mt-1 flex items-center justify-between gap-1"><span className="min-w-0 break-words text-xs">{pose.name}</span>

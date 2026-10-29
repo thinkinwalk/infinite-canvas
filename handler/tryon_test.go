@@ -94,7 +94,7 @@ func TestTryonCloudEditQuotePayloadAndRefund(t *testing.T) {
 		if len(fields) != 4 || r.FormValue("model") != "tryon-cloud-test" || r.FormValue("size") != "1024x1536" || r.FormValue("quality") != "high" {
 			t.Fatalf("wrong cloud edit fields: %v", fields)
 		}
-		for _, text := range []string{"图1为模特", "图2为上装", "图3为下装", "图4为姿势", "仅参考身体朝向", "纯白影棚", "全身构图", "穿着图", "衣摆自然垂放"} {
+		for _, text := range []string{"图1为模特", "图2为上装", "图3为下装", "图4为姿势", "仅参考身体朝向", "纯白影棚", "构图优先遵循用户补充要求", "穿着图", "半身构图，衣摆自然垂放"} {
 			if !strings.Contains(r.FormValue("prompt"), text) {
 				t.Fatalf("cloud prompt missing instruction: %s", text)
 			}
@@ -123,7 +123,7 @@ func TestTryonCloudEditQuotePayloadAndRefund(t *testing.T) {
 	run := func(patch map[string]any, token string) map[string]any {
 		inputs := map[string]any{
 			"modelImageUrl": picture, "topImageUrl": picture, "bottomImageUrl": picture,
-			"poseMode": "reference", "poseImageUrl": picture, "sceneMode": "studio", "framing": "full", "prompt": "衣摆自然垂放",
+			"poseMode": "reference", "poseImageUrl": picture, "sceneMode": "studio", "prompt": "半身构图，衣摆自然垂放",
 		}
 		for key, value := range patch {
 			inputs[key] = value
@@ -149,7 +149,7 @@ func TestTryonCloudEditQuotePayloadAndRefund(t *testing.T) {
 	}
 	for _, patch := range []map[string]any{
 		{"modelImageUrl": ""}, {"topImageUrl": "", "bottomImageUrl": ""}, {"poseImageUrl": ""},
-		{"sceneMode": "library"}, {"framing": "half"}, {"garmentMode": "one-piece", "onePieceImageUrl": picture},
+		{"sceneMode": "library"}, {"garmentMode": "one-piece", "onePieceImageUrl": picture},
 	} {
 		if run(patch, quote.Data.Token)["code"] == float64(0) || balance() != 100 || calls != 0 {
 			t.Fatal("invalid cloud input reached upstream or consumed credits")
@@ -189,6 +189,10 @@ func TestTryonValidatesInputsBeforeGeneration(t *testing.T) {
 		{"wrong garment mode", map[string]any{"onePieceImageUrl": picture}, "切换"},
 		{"missing pose", map[string]any{"poseMode": "reference"}, "姿势参考"},
 		{"pose reference", map[string]any{"poseMode": "reference", "poseImageUrl": picture}, ""},
+		{"custom pose text", map[string]any{"poseMode": "reference", "posePrompt": "单手轻扶腰部"}, ""},
+		{"blank custom pose text", map[string]any{"poseMode": "reference", "posePrompt": " \n "}, "姿势参考"},
+		{"invalid custom pose text", map[string]any{"poseMode": "reference", "posePrompt": []any{"站立"}}, "格式无效"},
+		{"invalid display pose", map[string]any{"poseMode": "preset", "poseId": "unknown"}, "展示姿势"},
 		{"library pose", map[string]any{"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": tryonPresetPoses[0].URL}, ""},
 		{"missing library pose", map[string]any{"poseMode": "library"}, "常用姿势"},
 		{"mismatched library pose", map[string]any{"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": tryonPresetPoses[1].URL}, "常用姿势"},
@@ -204,10 +208,9 @@ func TestTryonValidatesInputsBeforeGeneration(t *testing.T) {
 		{"unreadable image", map[string]any{"modelImageUrl": "data:" + "image/png;base64,dGVzdA=="}, "无法解码"},
 		{"array model", map[string]any{"modelImageUrl": []any{picture}}, "图片格式"},
 		{"invalid pose mode", map[string]any{"poseMode": map[string]any{"value": "original"}}, "选项无效"},
-		{"removed original framing", map[string]any{"framing": "original"}, "选项无效"},
-		{"half body top", map[string]any{"framing": "half"}, ""},
-		{"half body trousers", map[string]any{"framing": "half", "bottomImageUrl": picture}, "全身"},
-		{"half body one piece", map[string]any{"garmentMode": "one-piece", "topImageUrl": "", "onePieceImageUrl": picture, "framing": "half"}, "全身"},
+		{"custom framing top", map[string]any{"prompt": "半身构图，突出上衣细节"}, ""},
+		{"custom framing trousers", map[string]any{"prompt": "突出裤腰细节", "bottomImageUrl": picture}, ""},
+		{"custom framing one piece", map[string]any{"garmentMode": "one-piece", "topImageUrl": "", "onePieceImageUrl": picture, "prompt": "全身构图"}, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			inputs := map[string]any{"topImageUrl": picture, "modelImageUrl": picture}
@@ -229,28 +232,29 @@ func TestTryonValidatesInputsBeforeGeneration(t *testing.T) {
 func TestTryonOriginalModesDiscardUnusedReferences(t *testing.T) {
 	picture := tryonTestImage(t)
 	inputs := map[string]any{
-		"topImageUrl": picture, "modelImageUrl": picture,
+		"topImageUrl": picture, "modelImageUrl": picture, "poseMode": "original",
 		"poseImageUrl":       "https://example.com/stale-pose",
 		"poseId":             tryonPresetPoses[0].ID,
 		"sceneImageUrl":      "https://example.com/stale-scene",
 		"referenceImageUrls": []any{"https://example.com/extra"},
+		"framing":            "half",
 	}
 	if err := normalizeTryonInputs(inputs); err != nil {
 		t.Fatal(err)
 	}
-	if inputs["framing"] != "full" {
-		t.Fatal("default framing must show the full body")
-	}
-	for _, key := range []string{"poseId", "poseImageUrl", "sceneImageUrl", "referenceImageUrls"} {
+	for _, key := range []string{"poseId", "poseImageUrl", "sceneImageUrl", "referenceImageUrls", "framing"} {
 		if _, exists := inputs[key]; exists {
 			t.Fatalf("inactive reference %s survived normalization", key)
 		}
 	}
 	prompt := tryonPrompt(inputs)
-	for _, text := range []string{"图1为模特", "图2为上装", "保持模特原图的身体姿势", "保持模特原图背景", "保持模特原有下装", "采用全身构图"} {
+	for _, text := range []string{"图1为模特", "图2为上装", "保持模特原图的身体姿势", "保持模特原图背景", "保持模特原有下装", "模特参考图的取景与目标服装的展示需要"} {
 		if !strings.Contains(prompt, text) {
 			t.Fatalf("missing preservation instruction: %s", text)
 		}
+	}
+	if strings.Contains(prompt, "采用全身构图") || strings.Contains(prompt, "采用半身构图") {
+		t.Fatal("default prompt must not force full-body or half-body framing")
 	}
 }
 
@@ -259,7 +263,7 @@ func TestTryonReferenceRolesAndModes(t *testing.T) {
 	inputs := map[string]any{
 		"garmentMode": "one-piece", "onePieceImageUrl": picture, "modelImageUrl": picture,
 		"poseMode": "reference", "poseImageUrl": picture, "sceneMode": "studio",
-		"framing": "full", "prompt": "衣摆自然垂放",
+		"prompt": "全身构图，衣摆自然垂放",
 	}
 	if err := normalizeTryonInputs(inputs); err != nil {
 		t.Fatal(err)
@@ -290,7 +294,7 @@ func TestTryonGarmentReferencesUseOnlyAssignedClothing(t *testing.T) {
 		{"one piece", map[string]any{"garmentMode": "one-piece", "onePieceImageUrl": picture}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			inputs := map[string]any{"modelImageUrl": picture}
+			inputs := map[string]any{"modelImageUrl": picture, "poseMode": "original"}
 			for key, value := range test.garment {
 				inputs[key] = value
 			}
@@ -394,6 +398,54 @@ func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 	result, err := executeCaseEdit(httptest.NewRequest(http.MethodPost, "/", nil), model.PublicUser(user), caseRuntimeConfig{Kind: "image", Model: "tryon-image-test", Operation: "image-edit", Size: "1024x1536", Quality: "high"}, tryonPrompt(inputs), inputs)
 	if err != nil || result["data"] == nil {
 		t.Fatalf("role-ordered edit failed: %v %v", result, err)
+	}
+}
+
+func TestTryonDisplayPosesAndCustomInstructions(t *testing.T) {
+	picture := tryonTestImage(t)
+	for _, pose := range []struct{ id, instruction string }{
+		{"front", "正对镜头自然站立"},
+		{"side", "头部与身体朝向一致"},
+		{"back", "没有背面参考时不凭空添加"},
+		{"walking", "自然迈出一小步"},
+	} {
+		t.Run(pose.id, func(t *testing.T) {
+			inputs := map[string]any{
+				"topImageUrl": picture, "modelImageUrl": picture,
+				"poseMode": "preset", "poseId": pose.id,
+				"poseImageUrl": picture, "posePrompt": "旧的自定义要求",
+			}
+			if err := normalizeTryonInputs(inputs); err != nil {
+				t.Fatal(err)
+			}
+			prompt := tryonPrompt(inputs)
+			if !strings.Contains(prompt, pose.instruction) || strings.Contains(prompt, "保持模特原图的身体姿势") || strings.Contains(prompt, "图3为姿势") || strings.Contains(prompt, "旧的自定义要求") {
+				t.Fatalf("wrong display pose prompt: %s", prompt)
+			}
+			if _, exists := inputs["poseImageUrl"]; exists {
+				t.Fatal("display pose must not attach an unrelated reference")
+			}
+		})
+	}
+	defaults := map[string]any{"topImageUrl": picture, "modelImageUrl": picture}
+	if err := normalizeTryonInputs(defaults); err != nil || defaults["poseMode"] != "preset" || defaults["poseId"] != "front" {
+		t.Fatalf("front pose must be the default: %v %v", defaults, err)
+	}
+	custom := map[string]any{"topImageUrl": picture, "modelImageUrl": picture, "poseMode": "reference", "posePrompt": " 单手轻扶腰部 "}
+	if err := normalizeTryonInputs(custom); err != nil {
+		t.Fatal(err)
+	}
+	prompt := tryonPrompt(custom)
+	if custom["posePrompt"] != "单手轻扶腰部" || !strings.Contains(prompt, "自定义姿势要求") || !strings.Contains(prompt, "单手轻扶腰部") || strings.Contains(prompt, "保持模特原图的身体姿势") || strings.Contains(prompt, "根据姿势图") {
+		t.Fatalf("text-only pose contains contradictory or missing instructions: %s", prompt)
+	}
+	custom["poseImageUrl"] = picture
+	if err := normalizeTryonInputs(custom); err != nil {
+		t.Fatal(err)
+	}
+	prompt = tryonPrompt(custom)
+	if !strings.Contains(prompt, "图3为姿势") || !strings.Contains(prompt, "与姿势参考图动作冲突时以此描述为准") {
+		t.Fatal("custom pose image and text must both reach the prompt")
 	}
 }
 
