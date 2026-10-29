@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.116
-- Current production source: tag v0.19.116, commit e57212cdbeeb387c57c807da1c3ff3654a57b7e3
+- Current production image: infinite-canvas:v0.19.117
+- Current production source: tag v0.19.117, commit 14c99e20fbba22691c55b98876b6303ddf3eac02
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.117 deployment
+
+- Source tag `v0.19.117`, commit `14c99e20fbba22691c55b98876b6303ddf3eac02`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.117`, ID `sha256:ff290e20be60592c12f1d20c9d9b1cd8bc29708a57d05aa570870ebf966fb0e7`, matches the tag. Unrelated local evaluation media/account artifacts remain excluded.
+- Viral recreation prioritizes reference video and unified requirements, collapses optional images, summarizes reference media, removes the empty target column and synchronizes script entry with step two. Theme placeholder contrast, mobile navigation/preview, image controls and long filenames are improved; browser-only storage is explicit. Script protection, source provenance, required frames and billing confirmation remain.
+- Development passed 20 isolated mocked browser groups. Release repeated no local tests/builds or browser interaction. Server Docker build, 143 resource markers and old acceptance removal, internal/external health, 11 pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Independent workstation HTTPS confirmed `/assets/index-gSs0JP9S.js`.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.117-20261029-121321/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.117-prebuild-20261029-121114/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 11,029 existing file hashes matched. Only app was replaced; Worker identity, image, start time and mounts are unchanged.
+- Existing H3 task `bf3e73b8-82c2-4dc0-9ecc-f21f8839b320` retained its persisted provider/channel/billing identity and returned `succeeded` when queried after replacement. No task was cancelled or resubmitted. Management revision 13, 38 models / 65 routes / 656 bindings, defaults and pricing are preserved; no paid generation was submitted.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.117-deployment.json`, `v0.19.117-public-verification.json` and workstation `.codex_tmp/v0.19.117-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.116 image. Real drafts, mobile usability and model quality remain pending.
 
 ## v0.19.116 deployment
 

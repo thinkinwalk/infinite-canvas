@@ -1,6 +1,14 @@
 # 爆款复刻工作台交接
 
-## 当前线上 v0.19.116
+## 当前线上 v0.19.117
+
+设计与手机体验优化已随 `v0.19.117`（`14c99e20fbba22691c55b98876b6303ddf3eac02`）提交、打 tag、发布正式 Release 并部署。线上 `https://studio.lingzhouai.com/video/viral-recreate`，资源 `/assets/index-gSs0JP9S.js`。参考视频与统一要求优先显示，补充图片按需展开，左侧视频使用摘要；空目标列收起，脚本入口同步第二步，输入对比度、手机步骤/预览往返、图片用途及长文件名布局改善，本地保存范围明确。
+
+开发 20 组隔离模拟 CDP 检查通过；发布未重复本地测试、构建或浏览器交互。服务器 Docker 构建、143 项资源标记及旧人工验收区移除检查、内外健康、11 页面、普通/VIP 网关、权限、完整目录和签名报价通过；工作站独立 HTTPS 确认真实页面与新资源。13 张表数量、设置、用户余额/权限和 11,029 个既有文件哈希一致，第 13 版配置、38 模型/65 接入/656 绑定及价格默认项保持，Worker 未重启。
+
+最终 SQLite/Compose/私有环境备份 `/opt/infinite-canvas/backups/v0.19.117-20261029-121321/`，构建前备份 `/opt/infinite-canvas/backups/v0.19.117-prebuild-20261029-121114/`。证据 `/opt/infinite-canvas/releases/v0.19.117-deployment.json`、`v0.19.117-public-verification.json` 与本机 `.codex_tmp/v0.19.117-*.json`。既有 H3 云端任务以原 ID 查询到成功，身份/扣费记录保留，未取消或重发；未提交真实收费生成。回滚可恢复最终备份 Compose，仅重建 app，保留当前数据库及 v0.19.116 镜像。真实草稿、手机操作和模型成片质量继续待用户验收。
+
+## v0.19.116 发布记录
 
 人工效果检查移除已随 `v0.19.116`（`e57212cdbeeb387c57c807da1c3ff3654a57b7e3`）提交、打 tag、发布正式 Release 并部署。线上 `https://studio.lingzhouai.com/video/viral-recreate`，资源 `/assets/index-BxkYsmRw.js`；移除人工符合/需修改选择、关联提醒和状态字段，「修改脚本」直接放在成片操作区。
 
