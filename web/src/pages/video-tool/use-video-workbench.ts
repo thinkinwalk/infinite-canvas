@@ -18,6 +18,7 @@ import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
+import { viralIntentError, viralPlanState, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
@@ -212,14 +213,16 @@ export function useVideoWorkbench(tool: VideoTool) {
                       }
                     : {};
             const analysisOnly = Object.keys(value).every((key) => ["viralAnalysisMode", "viralAnalyses", "frameCount", "transcript", "viralTranscriptSource", "viralUseTranscript"].includes(key));
-            const selectedFrameChanged = countChanged && [current.viralFirstFrameId, current.viralLastFrameId].some((id) => id?.startsWith("frame:"));
+            const imageSelectionOnly = Object.keys(value).every((key) => ["media", "viralFirstFrameId", "viralLastFrameId", "viralKeyframe", "viralKeyframePrompt", "viralKeyframeReferenceId", "viralClimaxId", "viralClimax", "viralClimaxPrompt", "viralClimaxReferenceId", "viralClimaxUse", "viralImageTarget", "viralUseVideo"].includes(key)) && (!value.media || JSON.stringify(current.media.filter((m) => m.role !== "first-frame")) === JSON.stringify(next.media.filter((m) => m.role !== "first-frame")));
+            const selectedFrameChanged = countChanged && [current.viralFirstFrameId, current.viralLastFrameId, current.viralClimaxId].some((id) => id?.startsWith("frame:"));
             patch({
                 viralRevision: (current.viralRevision || 0) + 1,
-                ...(invalidate && (!analysisOnly || selectedFrameChanged) ? { viralOutputStale: true, viralScriptStale: true, viralScriptSuggestion: "" } : {}),
+                ...(invalidate && (!analysisOnly || selectedFrameChanged) ? { viralOutputStale: true, ...(!imageSelectionOnly ? { viralScriptStale: true, viralScriptSuggestion: "" } : {}) } : {}),
                 ...(sourceChanged || countChanged ? { frames: [], viralFrameSource: "", viralFrameTimes: [] } : {}),
                 ...(sourceChanged ? { transcript: "", viralTranscriptSource: "" } : {}),
                 ...(productChanged ? { viralProductStale: true, viralProductSuggestion: "" } : {}),
                 ...(current.viralKeyframe && viralKeyframeInputKey(current) !== viralKeyframeInputKey(next) ? { viralKeyframe: { ...current.viralKeyframe, confirmed: false } } : {}),
+                ...(current.viralClimax && viralKeyframeInputKey(current, "climax") !== viralKeyframeInputKey(next, "climax") ? { viralClimax: { ...current.viralClimax, confirmed: false } } : {}),
                 ...mentions,
                 ...value,
             });
@@ -281,10 +284,11 @@ export function useVideoWorkbench(tool: VideoTool) {
             imported?.signal.throwIfAborted();
             imported?.validate();
             if (imported && store().busyTools[tool]) throw new Error("当前正在制作视频，请稍后重新导入");
-            const single = ["voice", "avatar", "music", "mask", "first-frame", "learning"].includes(role) || (tool === "content-replace" && ["model", "background"].includes(role)) || (role === "reference" && added.some((m) => m.kind === "video"));
-            const media = [...read(tool).media.filter((m) => !single || m.role !== role), ...added];
+            const single = (["voice", "avatar", "music", "mask", "first-frame", "learning"].includes(role) || (tool === "content-replace" && ["model", "background"].includes(role)) || (role === "reference" && added.some((m) => m.kind === "video"))) && !(tool === "viral-recreate" && role === "first-frame");
+            const current = read(tool);
+            const media = [...current.media.filter((m) => !single || m.role !== role), ...added];
             edit(
-                { media, ...(digital && role === "avatar" && added[0] ? { digitalHumanMode: added[0].kind === "video" ? "video" : "photo" } : {}), ...(digital && role === "reference" ? { video: added.find((m) => m.kind === "video") || null } : {}) },
+                { media, ...(tool === "viral-recreate" && current.viralIntent && (role === "model" || role === "background" || role === "product") && !current.media.some((m) => m.role === role) ? { viralIntent: { ...current.viralIntent, replacements: [...new Set([...current.viralIntent.replacements, role])] } } : {}), ...(digital && role === "avatar" && added[0] ? { digitalHumanMode: added[0].kind === "video" ? "video" : "photo" } : {}), ...(digital && role === "reference" ? { video: added.find((m) => m.kind === "video") || null } : {}) },
                 role === "learning" ? "learning" : role === "music" ? "finish" : role === "voice" ? "speech" : role === "avatar" || role === "first-frame" || (digital && role === "reference") ? "video" : "materials",
             );
             return added;
@@ -735,10 +739,14 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (d.regenerateSubtitles) return replacementPipeline(ctx, d);
         }
         if (tool === "viral-recreate" && stage === "keyframe") {
-            const references = viralKeyframeMaterials(d);
+            const target = d.viralImageTarget || "opening", name = target === "climax" ? "高潮画面" : "首帧";
+            const references = viralKeyframeMaterials(d, target);
             if (!references.some((m) => ["background", "model", "product"].includes(m.role))) throw new Error("请先上传场景、人物或商品图片");
-            if (!d.script.trim()) throw new Error("请先填写开场脚本");
-            if (d.viralKeyframeReferenceId && !references.some((m) => m.id === d.viralKeyframeReferenceId)) throw new Error("动作参考画面已失效，请重新抽取或选择");
+            if (!d.script.trim()) throw new Error("请先填写视频脚本");
+            const intentError = viralIntentError(d);
+            if (intentError) throw new Error(intentError);
+            const poseId = target === "climax" ? d.viralClimaxReferenceId : d.viralKeyframeReferenceId;
+            if (poseId && !references.some((m) => m.id === poseId)) throw new Error("动作参考画面已失效，请重新抽取或选择");
             const scoped = configForFeature(config, "image.edit", "image");
             const cfg = { ...scoped, model: scoped.imageModel, count: "1", size: inferVideoRatio(viralVideoConfig(d, config).size) };
             const requestIdentity = () => {
@@ -746,18 +754,22 @@ export function useVideoWorkbench(tool: VideoTool) {
                 return JSON.stringify([user.token, user.user?.group, user.user?.role, state.config, state.featureModels["image.edit"], state.publicSettings?.modelChannel.managed?.revision]);
             };
             const identity = requestIdentity();
-            if (!cfg.model || !useConfigStore.getState().isAiConfigReady(cfg, cfg.model)) throw new Error("请配置首帧图片编辑模型");
+            if (!cfg.model || !useConfigStore.getState().isAiConfigReady(cfg, cfg.model)) throw new Error("请配置关键画面图片编辑模型");
             if (cfg.channelMode === "remote") {
                 const quote = await quoteManagedFixed(cfg, "image", 1, ctx.signal);
-                await confirmStorePrice(quote, "首帧合成", ctx.signal, `${cfg.model} · 1张 · ${cfg.size} · ${references.map((m) => `${viralVisualRole(m.role)}：${m.name}`).join("；")}。生成结果需再次确认`);
+                await confirmStorePrice(quote, `${name}合成`, ctx.signal, `${cfg.model} · 1张 · ${cfg.size} · ${references.map((m) => `${viralVisualRole(m.role)}：${m.name}`).join("；")}。生成结果需再次确认`);
             }
             ctx.signal.throwIfAborted();
             if (identity !== requestIdentity()) throw new DOMException("账号、模型或渠道已变化，请重新确认首帧费用", "AbortError");
-            store().patchRecord(ctx.recordId, { imageEditSubmitted: true, step: "图片通道正在合成首帧" });
-            const images = await requestEdit(cfg, viralKeyframePrompt(d), imagesOf(references), { signal: ctx.signal });
+            store().patchRecord(ctx.recordId, { imageEditSubmitted: true, step: `图片通道正在合成${name}` });
+            const images = await requestEdit(cfg, viralKeyframePrompt(d, target), imagesOf(references), { signal: ctx.signal });
             if (!images[0]) throw new Error("首帧模型未返回图片");
             const image = await uploadImage(images[0].dataUrl, { signal: ctx.signal });
-            const candidate: WorkbenchMedia = { ...image, storageKey: image.storageKey || "", id: nanoid(), name: "合成首帧", role: "first-frame", kind: "image" };
+            const candidate: WorkbenchMedia = { ...image, storageKey: image.storageKey || "", id: nanoid(), name: `合成${name}`, role: "first-frame", kind: "image" };
+            if (target === "climax") return {
+                media: [...d.media, candidate], viralClimaxId: candidate.id,
+                viralClimax: { id: candidate.id, inputKey: viralKeyframeInputKey(d, target), confirmed: false, model: cfg.model }, viralOutputStale: true,
+            };
             return {
                 media: [...d.media, candidate], viralFirstFrameId: candidate.id,
                 viralKeyframe: { id: candidate.id, inputKey: viralKeyframeInputKey(d), confirmed: false, model: cfg.model },
@@ -778,12 +790,12 @@ export function useVideoWorkbench(tool: VideoTool) {
                 return viralAnalysisResultPatch(d, { text: value, provenance });
             }
             const cfg = viralVideoConfig(d, config);
-            const images = stage === "analyze" ? d.frames : d.media.filter((m) => m.kind === "image" && (stage === "product-analyze" ? m.role === "product" : ["product", "background", "model", "first-frame"].includes(m.role)));
+            const images = stage === "analyze" ? d.frames : stage === "product-analyze" ? d.media.filter((m) => m.kind === "image" && m.role === "product") : d.media.filter((m) => viralKeyframeMaterials(d).some((input) => input.id === m.id) || m.id === d.viralFirstFrameId || m.id === d.viralClimaxId);
             const instruction =
                 stage === "analyze"
                     ? `分析原视频的均匀抽样画面。${viralAnalysisSections} 采样秒数：${(d.viralFrameTimes || []).join("、")}。这不是镜头边界，不推测精确转场或音乐节拍。${d.viralUseTranscript && d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨文字（只作文字依据，不代表实际听到声音）：${d.transcript}` : "没有采用音轨转写，只能按画面分析，不声称听到了口播或音乐。"} 只描述可见事实。`
                     : stage === "product-analyze"
-                      ? `分析新商品图片，只写可见外观和可用展示方式。用户真实资料：${d.viralFacts || "未提供"}。不得编造价格、优惠、功效或承诺；未知标待确认。`
+                      ? `分析新商品图片，只写可见外观和可用展示方式。用户真实资料：${viralTargetFacts(d)}。不得编造价格、优惠、功效或承诺；未知标待确认。`
                       : viralScriptPrompt(d, cfg);
             const provenance = stage === "analyze" ? viralAnalysisProvenance(d, "frames", config) : undefined;
             const value = await text(ctx, instruction, images, stage !== "script");
@@ -1234,7 +1246,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                         : {};
                 patch({ ...clearAfter(stage), ...value, ...mentions });
             }
-            const result = (stage === "keyframe" ? value.media?.find((m) => m.id === value.viralFirstFrameId) : undefined) || [value.final, value.cover, value.edited, value.video, value.speech, value.voicePreview].find(Boolean) || undefined;
+            const result = (stage === "keyframe" ? value.media?.find((m) => m.id === (value.viralClimaxId || value.viralFirstFrameId)) : undefined) || [value.final, value.cover, value.edited, value.video, value.speech, value.voicePreview].find(Boolean) || undefined;
             store().patchRecord(id, {
                 status: "completed",
                 result,
@@ -1323,6 +1335,8 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
             if (tool === "viral-recreate" && stage === "script") {
+                const intentError = viralIntentError(read(tool));
+                if (intentError) throw new Error(intentError);
                 const error = viralAdoptedAnalysisError(read(tool));
                 if (error) throw new Error(error);
                 if (viralReference(read(tool)) && !read(tool).analysis.trim())
@@ -1400,7 +1414,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     const frames = await Promise.all(input.frames.map(restoreWorkbenchFile));
                     signal.throwIfAborted();
-                    patch({ ...input, viralAnalyses: input.viralAnalyses, viralAdoptedAnalysis: input.viralAdoptedAnalysis, viralUseTranscript: input.viralUseTranscript, media, frames, activeRecord: record.id, video: null, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "" });
+                    patch({ ...input, ...viralPlanState(input), viralAnalyses: input.viralAnalyses, viralAdoptedAnalysis: input.viralAdoptedAnalysis, viralUseTranscript: input.viralUseTranscript, media, frames, activeRecord: record.id, video: null, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "" });
                 } else if (tool === "store-explore" && record.storeExploreInput) {
                     if (record.storeExploreInput.channelMode !== config.channelMode) throw new Error("请切换回该任务原来的平台 / 自定义渠道后恢复查询");
                     if (config.channelMode === "local" && record.storeExploreInput.baseUrl !== resolveModelRequestConfig(config, record.storeExploreInput.storeSettings?.videoModel || record.modelTask?.model || "").baseUrl)

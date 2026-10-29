@@ -7,6 +7,7 @@ import type { VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/vid
 import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
 import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralFrameMaterials, viralReference } from "./viral-analysis";
 import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
+import { viralIntent, viralPlanPrompt, viralReviewError, viralTargetFacts } from "./viral-plan";
 
 export { viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 export const viralImageCandidates = (d: VideoDraft) => [...d.media.filter((m) => m.kind === "image"), ...viralFrameMaterials(d)];
@@ -27,7 +28,8 @@ export function viralScriptPrompt(d: VideoDraft, cfg: AiConfig) {
     const labels = viralMaterialLabels(d), ratio = inferVideoRatio(cfg.size);
     return `为参考视频改编中文视频脚本，只返回可编辑脚本。目标规格：${cfg.videoSeconds}秒单片段，画幅${ratio === "auto" ? "16:9" : ratio}；按此规格重排节奏，保留高潮展示时间，不机械照搬原片秒数。逐段写时间范围、机位与构图、人物动作、物体变化和可见文字，结尾写明最终画面。
 ${viralContinuityRules}
-主体与场景真实资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}。
+主体与场景真实资料：${viralTargetFacts(d)}。
+${viralPlanPrompt(d)}
 已采用的参考结构：${viralAdoptedAnalysisText(d)}。
 新商品分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供"}。
 用户改编要求：${d.instructions}。
@@ -41,8 +43,8 @@ export function viralVideoMaterials(d: VideoDraft, cfg: AiConfig) {
     const candidates = viralImageCandidates(d);
     const images =
         mode === "reference"
-            ? candidates.filter((m) => m.kind === "image" && (["product", "model", "background"].includes(m.role) || m.id === d.viralFirstFrameId))
-            : [candidates.find((m) => m.id === d.viralFirstFrameId), ...(mode === "first_last" && cfg.videoModel !== REPLICATE_VIDEO_MODEL ? [candidates.find((m) => m.id === d.viralLastFrameId)] : [])].filter((m): m is WorkbenchMedia => Boolean(m));
+            ? candidates.filter((m) => m.kind === "image" && (viralIntent(d).replacements.some((role) => role === m.role) || m.id === d.viralFirstFrameId || (d.viralClimaxUse === "reference" && m.id === d.viralClimaxId)))
+            : [candidates.find((m) => m.id === d.viralFirstFrameId), ...(mode === "first_last" && cfg.videoModel !== REPLICATE_VIDEO_MODEL ? [candidates.find((m) => m.id === (d.viralClimaxUse === "last" ? d.viralClimaxId : d.viralLastFrameId))] : [])].filter((m): m is WorkbenchMedia => Boolean(m));
     return [...images, ...(d.viralUseVideo && viralReference(d) ? [viralReference(d)!] : [])];
 }
 export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
@@ -52,8 +54,12 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
     if ((cfg.channelMode === "remote" || isReplicateVideoModel(model)) && !useUserStore.getState().token) return "登录后使用平台视频模型";
     if (!isReplicateVideoModel(model) && !useConfigStore.getState().isAiConfigReady(cfg, model)) return "请配置当前视频模型的渠道";
     if (!d.script.trim()) return "请填写或生成视频脚本";
+    const reviewError = viralReviewError(d, cfg);
+    if (reviewError) return reviewError;
     const keyframeError = viralKeyframeError(d);
     if (keyframeError) return keyframeError;
+    const climaxError = viralKeyframeError(d, "climax");
+    if (climaxError) return climaxError;
     const analysisError = viralAdoptedAnalysisError(d);
     if (analysisError) return analysisError;
     if (profile.interface === "unavailable") return profile.description;
@@ -63,8 +69,12 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
     if (mentionError) return mentionError;
     const mode = videoInputMode(cfg, model),
         candidates = viralImageCandidates(d);
+    if (d.viralClimaxUse === "reference" && mode !== "reference") return "当前模式不支持高潮参考图，请调整关键画面的用途";
+    if (d.viralClimaxUse === "last" && (mode !== "first_last" || model === REPLICATE_VIDEO_MODEL)) return "当前模式不支持将高潮图作为尾帧";
+    if (d.viralClimaxUse === "last" && !d.viralFirstFrameId) return "使用高潮图作为尾帧时，请先选择并确认开场首帧";
+    if (d.viralClimaxUse && d.viralClimaxUse !== "preview" && !d.viralClimaxId) return "请先选择并确认高潮画面";
     if (mode !== "reference" && d.viralFirstFrameId && !candidates.some((m) => m.id === d.viralFirstFrameId)) return "所选首帧已失效，请重新选择";
-    if (mode === "first_last" && model !== REPLICATE_VIDEO_MODEL && d.viralLastFrameId && !candidates.some((m) => m.id === d.viralLastFrameId)) return "所选尾帧已失效，请重新选择";
+    if (mode === "first_last" && model !== REPLICATE_VIDEO_MODEL && d.viralClimaxUse !== "last" && d.viralLastFrameId && !candidates.some((m) => m.id === d.viralLastFrameId)) return "所选尾帧已失效，请重新选择";
     if (d.viralUseVideo && !viralReference(d)) return "请上传参考视频，或关闭直接视频参考";
     const materials = viralVideoMaterials(d, cfg);
     return videoReferenceError(cfg, model, materials.filter((m) => m.kind === "image").length, materials.filter((m) => m.kind === "video").length, 0);
@@ -72,7 +82,7 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
 export function viralVideoPrompt(d: VideoDraft, cfg: AiConfig) {
     const labels = viralMaterialLabels(d),
         materials = viralVideoMaterials(d, cfg);
-    return `${d.script}\n${viralContinuityRules}\n脚本未展开的核心动作与视觉效果按已采用分析补齐，用户明确修改或删除的内容除外；脚本中的核对清单和待确认说明不是需要出现在画面上的字幕。\n主体与场景真实资料：${d.viralFacts || "未提供，不虚构价格、优惠、功效或承诺"}\n改编要求：${d.instructions}\n参考结构：${viralAdoptedAnalysisText(d)}\n商品分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}）`).join("；") || "纯文字"}。场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${d.viralUseVideo ? "参考视频用于动作与节奏参考，实际一致性以成片为准。" : "没有向视频模型发送原视频，动作仅依照文字脚本重建，不声称逐帧复制原动作。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
+    return `${d.script}\n${viralContinuityRules}\n${viralPlanPrompt(d)}\n脚本未展开的核心动作与视觉效果按已采用分析补齐，用户明确修改或删除的内容除外；脚本中的核对清单和待确认说明不是需要出现在画面上的字幕。\n主体与场景真实资料：${viralTargetFacts(d)}\n改编要求：${d.instructions}\n参考结构：${viralAdoptedAnalysisText(d)}\n商品分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}${m.id === d.viralClimaxId ? "，已确认的高潮效果画面" : ""}）`).join("；") || "纯文字"}。场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${d.viralUseVideo ? "参考视频用于动作与节奏参考，实际一致性以成片为准。" : "没有向视频模型发送原视频，动作仅依照文字脚本重建，不声称逐帧复制原动作。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
 }
 export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
     const {
@@ -122,6 +132,18 @@ export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
         viralKeyframe: d.viralKeyframe,
         viralKeyframePrompt: d.viralKeyframePrompt,
         viralKeyframeReferenceId: d.viralKeyframeReferenceId,
+        viralBrief: d.viralBrief,
+        viralIntent: d.viralIntent,
+        viralEffects: d.viralEffects,
+        viralEffectsSource: d.viralEffectsSource,
+        viralNoEffects: d.viralNoEffects,
+        viralReviewKey: d.viralReviewKey,
+        viralClimax: d.viralClimax,
+        viralClimaxId: d.viralClimaxId,
+        viralClimaxPrompt: d.viralClimaxPrompt,
+        viralClimaxReferenceId: d.viralClimaxReferenceId,
+        viralClimaxUse: d.viralClimaxUse,
+        viralImageTarget: d.viralImageTarget,
         viralSettings: storeVideoSettings(cfg),
         channelMode: cfg.channelMode,
         baseUrl: resolveModelRequestConfig(cfg, cfg.videoModel).baseUrl,

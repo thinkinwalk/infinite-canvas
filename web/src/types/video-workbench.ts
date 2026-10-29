@@ -32,6 +32,18 @@ export type ViralRecreateInput = Pick<
     | "viralKeyframe"
     | "viralKeyframePrompt"
     | "viralKeyframeReferenceId"
+    | "viralBrief"
+    | "viralIntent"
+    | "viralEffects"
+    | "viralEffectsSource"
+    | "viralNoEffects"
+    | "viralReviewKey"
+    | "viralClimax"
+    | "viralClimaxId"
+    | "viralClimaxPrompt"
+    | "viralClimaxReferenceId"
+    | "viralClimaxUse"
+    | "viralImageTarget"
 > & { channelMode: AiConfig["channelMode"]; baseUrl: string };
 export type DigitalHumanInput = Pick<
     VideoDraft,
@@ -96,6 +108,21 @@ export type ViralAnalysisProvenance = {
 };
 export type ViralAnalysisVersion = { text: string; provenance: ViralAnalysisProvenance };
 export type ViralAnalysisResult = ViralAnalysisVersion & { suggestion?: ViralAnalysisVersion };
+export type ViralEffect = {
+    id: string;
+    time: string;
+    description: string;
+    action: "keep" | "replace" | "remove";
+    target: string;
+    scriptRange: string;
+};
+export type ViralIntent = {
+    preserve: string[];
+    replacements: ("background" | "model" | "product")[];
+    textMode: "pending" | "keep" | "replace" | "remove" | "none";
+    text: string;
+    textSurface: string;
+};
 export type DigitalHumanBrief = {
     type: "persona" | "selling" | "knowledge" | "story";
     industry: string;
@@ -221,6 +248,18 @@ export type VideoDraft = {
     viralKeyframePrompt?: string;
     viralKeyframeReferenceId?: string;
     viralKeyframe?: { id: string; inputKey: string; confirmed: boolean; model?: string };
+    viralBrief?: { subject: string; person: string; scene: string; marks: string };
+    viralIntent?: ViralIntent;
+    viralEffects?: ViralEffect[];
+    viralEffectsSource?: string;
+    viralNoEffects?: boolean;
+    viralReviewKey?: string;
+    viralClimaxId?: string;
+    viralClimaxPrompt?: string;
+    viralClimaxReferenceId?: string;
+    viralClimaxUse?: "preview" | "reference" | "last";
+    viralClimax?: { id: string; inputKey: string; confirmed: boolean; model?: string };
+    viralImageTarget?: "opening" | "climax";
 };
 export type VideoRecord = {
     id: string;
@@ -271,6 +310,7 @@ export type VideoRecord = {
     };
     storeExploreInput?: StoreExploreInput;
     viralInput?: ViralRecreateInput;
+    viralAcceptance?: Record<string, "pending" | "pass" | "fail">;
     digitalHumanInput?: DigitalHumanInput;
     digitalHumanQuote?: import("@/services/api/replicate").ReplicateQuote;
     upscaleInput?: UpscaleInput;
