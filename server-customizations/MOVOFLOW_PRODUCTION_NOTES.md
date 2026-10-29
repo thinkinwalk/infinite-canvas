@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.110
-- Current production source: tag v0.19.110, commit fa957c3ec528fc46528a13a3e810b09bae3731fa
+- Current production image: infinite-canvas:v0.19.111
+- Current production source: tag v0.19.111, commit 7908d7379d6cf58b83def640d6ca28ff6d898807
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.111 deployment
+
+- Source tag `v0.19.111`, commit `7908d7379d6cf58b83def640d6ca28ff6d898807`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.111`, ID `sha256:b36f83ef1269b4dbbf33318e553f27d2a1e85102120764b1f663245500d505a4`, matches the source tag. Unrelated local evaluation media remain excluded.
+- Viral recreation retains three steps and adds structured facts, preserve/replace choices, explicit physical-text handling, analysis-linked critical effects and manual script coverage confirmation. Settings appear before writing. Opening and climax images are independent; climax defaults to preview and is only sent as a supported reference or last frame after an explicit selection. Result acceptance uses the task input snapshot; comparison playback follows duration proportions, without semantic alignment or output-quality guarantees.
+- Development passed nine isolated mocked CDP groups including request inputs, cancellation, independent images, routing, snapshot acceptance, persistence, old input restore and 1440/390/320px layouts. Release repeated no local tests/builds or browser interactions; the necessary server Docker build completed. Independent workstation HTTPS verified `/assets/index-hXYqSt73.js`, health, actual page and new controls. No paid inference; actual fan unfolding, physical text, identity/scene quality and billing/refunds remain pending.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.111-20261029-030918/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.111-prebuild-20261029-030450/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 10,630 existing file hashes matched. Only app was recreated; Worker identity, image, start time and mounts remain unchanged.
+- The first attempt automatically restored v0.19.110 because a legacy verifier expected a full static confirmation label that is now composed dynamically for opening/climax images. Its backup remains `/opt/infinite-canvas/backups/v0.19.111-20261029-030645/`. After updating that deployment assertion to the actual published template, redeployment passed all checks; no application code was changed after tagging.
+- Internal/external health, 11 public pages, default/VIP Worker gateways, permissions, complete catalogs and signed quotes passed. Management remains revision 12, 38 models / 65 routes / 656 bindings; defaults, pricing and try-on settings are unchanged.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.111-deployment.json`, `/opt/infinite-canvas/releases/v0.19.111-public-verification.json` and workstation `.codex_tmp/v0.19.111-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.110 image. Users should refresh, confirm text handling/effects/script positions and target settings, then reconfirm chosen key images; existing human scripts are not overwritten.
 
 ## v0.19.110 deployment
 
