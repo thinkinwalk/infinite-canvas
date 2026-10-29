@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.117
-- Current production source: tag v0.19.117, commit 14c99e20fbba22691c55b98876b6303ddf3eac02
+- Current production image: infinite-canvas:v0.19.118
+- Current production source: tag v0.19.118, commit f5ea7a06728106f61bc6e360f60f35ccd7ecdbce
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.118 deployment
+
+- Source tag `v0.19.118`, commit `f5ea7a06728106f61bc6e360f60f35ccd7ecdbce`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.118`, ID `sha256:89326e2c5dab5dce0ff13324294002ac5f9a98b6f811aac9382464d9916d0544`, matches the tag. Unrelated local evaluation media/account artifacts remain excluded.
+- Viral recreation restores original-video analysis, transcript correction and analysis confirmation to preparation. Successful analysis remains visible before proceeding to script adaptation; missing analysis returns to preparation. Manual scripts, protected drafts, source isolation and separate fee confirmation remain. Native-analysis errors now include model/status and the actual refund outcome, without automatic retry or fallback.
+- The Gemini gateway defect is unresolved: application channel 23 routes through OpenAI gateway channel 85, whose converter maps video inlineData to image_url. A real request returned HTTP 400 and its 20 credits were refunded. This release changes workflow and error reporting only; channels, prices and defaults remain unchanged, and no paid analysis or generation was submitted.
+- Development passed two targeted backend checks and seven isolated mocked browser groups. Release repeated no local tests/builds or browser interaction. Server Docker build, 153 frontend markers, backend error/refund strings, internal/external health, 11 pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Independent workstation HTTPS confirmed `/assets/index-DoPS1B3b.js`.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.118-20261029-145002/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.118-prebuild-20261029-144718/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 11,033 existing file hashes matched. Only app was replaced; Worker identity, image, start time and mounts are unchanged.
+- No cloud generation task was active before replacement. One stored planning record is effectively paused with its linked Worker completed; its files are preserved. No task was cancelled or resubmitted. Management revision 13, 38 models / 65 routes / 656 bindings, defaults and prices remain unchanged; Gemini analysis is 20 credits.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.118-deployment.json`, `v0.19.118-public-verification.json` and workstation `.codex_tmp/v0.19.118-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.117 image. Real drafts, mobile usability and model quality remain pending.
 
 ## v0.19.117 deployment
 
