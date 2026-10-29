@@ -154,6 +154,12 @@ func TestVideoUnderstandingQuoteScopeChargeAndRefund(t *testing.T) {
 		if envelope.Code != 1 || current.Credits != 493 {
 			t.Fatalf("failed analysis not refunded: %s balance=%d", result.Body.String(), current.Credits)
 		}
+		if !strings.Contains(result.Body.String(), "本次 7 算力点已退回") {
+			t.Fatalf("failed analysis did not confirm refund: %s", result.Body.String())
+		}
+		if status == 400 && (!strings.Contains(result.Body.String(), "视频分析") || !strings.Contains(result.Body.String(), "HTTP 400") || !strings.Contains(result.Body.String(), "video unsupported")) {
+			t.Fatalf("upstream video error lost context: %s", result.Body.String())
+		}
 	}
 	cross := invoke(AIResponses, `{"model":"model_video_analysis","input":"绕过视频步骤"}`, feature, proof, "9")
 	if !strings.Contains(cross.Body.String(), "不支持") || calls != 6 {

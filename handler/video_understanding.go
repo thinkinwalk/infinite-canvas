@@ -89,6 +89,9 @@ func proxyVideoUnderstanding(w http.ResponseWriter, r *http.Request, channel mod
 	fail := func(message string) {
 		if err := service.RefundUserCredits(userID, name, credits, path, channel); err != nil {
 			log.Printf("video analysis refund failed: user=%s channel=%d err=%v", userID, channel.ID, err)
+			message += "；算力点返还未确认，请联系管理员核对账单"
+		} else if credits > 0 {
+			message += fmt.Sprintf("；本次 %d 算力点已退回", credits)
 		}
 		Fail(w, message)
 	}
@@ -100,7 +103,8 @@ func proxyVideoUnderstanding(w http.ResponseWriter, r *http.Request, channel mod
 	defer response.Body.Close()
 	if response.StatusCode >= http.StatusBadRequest {
 		errorBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		fail(aiUpstreamStatusMessage(response.StatusCode, errorBody))
+		log.Printf("video analysis upstream failed: channel=%d model=%s status=%d", channel.ID, name, response.StatusCode)
+		fail(fmt.Sprintf("视频与音轨分析失败（%s，HTTP %d）：%s。请核对分析渠道的视频输入能力，或手动选择抽样画面分析", name, response.StatusCode, aiUpstreamStatusMessage(response.StatusCode, errorBody)))
 		return
 	}
 	var result struct {

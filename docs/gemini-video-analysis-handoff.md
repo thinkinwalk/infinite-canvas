@@ -1,5 +1,15 @@
 # 爆款复刻 Gemini 视频分析交接
 
+## 当前真实链路问题
+
+已核实一条用户实际原生视频分析请求：应用渠道 #23 选择 `gemini-3.8-flash`，发送至 `api.lingzhouai.com/v1beta/models/gemini-3.8-flash:generateContent`；中转渠道 #85 为 OpenAI 类型，第三方地址 `vip-coco.online`，返回 HTTP 400 与通用参数错误。应用流水显示本次扣除的 20 点已全额退回，本轮排查未重发推理。
+
+中转线上镜像源码提交为 `218c2522801579de7d2dd84ea961f92dfc17dea6`。`relay/channel/openai/adaptor.go` 调用 `service/convert.go` 的 `GeminiToOpenAIRequest`；转换器将所有 inlineData（含 video/mp4）写为 image_url，渠道未开启原样透传。已确认存在视频格式转换缺陷；第三方没有返回被拒绝的具体字段，未取得其内部校验细节。
+
+应先核实供应商实际支持的原生视频/音轨协议，再使用独立适配路由或修正视频输入转换。只改前端步骤、模型名称或仅打开请求体透传不能证明链路修复，不能自动转抽样并继续扣费。当前生产模型管理为第 13 版，不得按下文早期第 10 版记录回写配置。
+
+本地页面已把解析、音轨校对及分析确认恢复至第一步，第二步仅承接分析撰写或编辑脚本；后端失败提示补充 HTTP 状态和实际退款结果，尚未部署。上述 UI 和错误提示不等于原生视频推理已验收。
+
 ## 接入范围
 
 新增 `POST /api/v1/video-understanding`，仅已登录用户通过统一模型目录签名报价调用。后端选定真实渠道和模型后，使用 Gemini 原生 `generateContent` 发送视频 inlineData 与分析要求，返回可编辑中文结果。沿用现有 HTTP 客户端和计费，不新增自动重试、截断素材或视频大小/时长限制。
