@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Checkbox, Collapse, Dropdown, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Steps, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowLeft, ArrowRight, Check, Copy, Download, Expand, FolderPlus, Grid2X2, Images, MoreHorizontal, Pause, Play, Plus, RefreshCw, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Columns2, Copy, Download, Expand, FolderPlus, Grid2X2, Images, MoreHorizontal, Pause, Play, Plus, RefreshCw, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { FeatureModelPicker } from "@/components/feature-model-picker";
@@ -29,6 +29,7 @@ import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, v
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
 import { viralBriefFields, viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanState, viralPreserveOptions, viralReferenceImages } from "./viral-plan";
+import ViralScriptComparison from "./viral-script-comparison";
 
 type Role = "reference" | "visual-reference" | "product" | "background" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralFacts" | "viralProductAnalysis" | "instructions" | "script";
@@ -73,6 +74,7 @@ export default function ViralRecreateWorkspace() {
         [viewed, setViewed] = useState<VideoRecord | null>(null),
         [previewError, setPreviewError] = useState(false);
     const [effectSourceOpen, setEffectSourceOpen] = useState(false), [effectSelection, setEffectSelection] = useState("");
+    const [comparison, setComparison] = useState<{ kind: "source" | "revision"; target: "script" | "suggestion" } | null>(null);
     const [comparisonProgress, setComparisonProgress] = useState(0);
     const comparisonOriginal = useRef<HTMLVideoElement | null>(null), comparisonResult = useRef<HTMLVideoElement | null>(null);
     const completedStage = useRef<string | undefined>(undefined);
@@ -229,6 +231,10 @@ export default function ViralRecreateWorkspace() {
         return () => quoteController.current?.abort();
     }, [priceKey]);
     useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
+    useEffect(() => setComparison(null), [reference?.id, reference?.storageKey, d.analysis, d.viralAdoptedAnalysis]);
+    useEffect(() => {
+        if (comparison?.target === "suggestion" && !d.viralScriptSuggestion) setComparison(null);
+    }, [comparison?.target, d.viralScriptSuggestion]);
     useEffect(() => {
         inputScroll.current?.scrollTo(0, 0);
         workspaceScroll.current?.scrollTo(0, 0);
@@ -589,7 +595,7 @@ export default function ViralRecreateWorkspace() {
                         setSuggestionView(false);
                     }}
                 >
-                    保留原稿
+                    {field === "script" ? "保留已采用稿" : "保留原稿"}
                 </Button>
             </Space>
         );
@@ -639,6 +645,7 @@ export default function ViralRecreateWorkspace() {
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
                     <h2 className="text-base font-medium">{editorNames[field]}</h2>
                     <Space wrap>
+                        {field === "script" && <Button size="small" icon={<Columns2 size={14} />} onClick={() => setComparison({ kind: "source", target: viewingSuggestion ? "suggestion" : "script" })}>对照原片</Button>}
                         {field === "transcript" && <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("transcribe")}>转写参考音轨</Button>}
                         {field === "script" && d.script.trim() && !viewingSuggestion && <Button size="small" disabled={locked || Boolean(textBlocked || scriptWritingBlocked)} icon={<Sparkles size={14} />} onClick={() => void wb.run("script")}>重新生成</Button>}
                         <Tooltip title="复制全文"><Button type="text" aria-label="复制全文" icon={<Copy size={15} />} disabled={!value} onClick={() => copyText(value, "文案已复制")} /></Tooltip>
@@ -683,15 +690,18 @@ export default function ViralRecreateWorkspace() {
                 )}
                 {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" />}
                 {suggested && (
-                    <Tabs
-                        className="shrink-0"
-                        activeKey={viewingSuggestion ? "suggestion" : "draft"}
-                        onChange={(key) => setSuggestionView(key === "suggestion")}
-                        items={[
-                            { key: "draft", label: "当前原稿" },
-                            { key: "suggestion", label: "新建议（待采用）" },
-                        ]}
-                    />
+                    <div className="shrink-0">
+                        <Tabs
+                            className="shrink-0"
+                            activeKey={viewingSuggestion ? "suggestion" : "draft"}
+                            onChange={(key) => setSuggestionView(key === "suggestion")}
+                            items={[
+                                { key: "draft", label: field === "script" ? "已采用脚本" : "当前原稿" },
+                                { key: "suggestion", label: "新建议（待采用）" },
+                            ]}
+                        />
+                        {field === "script" && <Button type="link" size="small" className="!px-0" icon={<Columns2 size={14} />} onClick={() => setComparison({ kind: "revision", target: "suggestion" })}>查看本次修改</Button>}
+                    </div>
                 )}
                 <div className="min-h-0 flex-1">
                     {!viewingSuggestion && (field === "script" || field === "instructions") ? (
@@ -1428,6 +1438,38 @@ export default function ViralRecreateWorkspace() {
                 </div>
             </footer>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
+            <Modal
+                title={comparison?.kind === "revision" ? "本次修改对照" : "原片与改编对照"}
+                width={1200}
+                open={Boolean(comparison)}
+                onCancel={() => setComparison(null)}
+                destroyOnHidden
+                style={{ top: 20 }}
+                styles={{ container: { height: "calc(100dvh - 40px)", display: "flex", flexDirection: "column" }, body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }, header: { flexShrink: 0 }, footer: { flexShrink: 0 } }}
+                footer={<div className="flex flex-wrap items-center justify-between gap-2">
+                    <Button onClick={() => setComparison(null)}>返回编辑</Button>
+                    {comparison?.target === "suggestion" && suggestionActions("script")}
+                </div>}
+            >
+                {comparison && <>
+                    {d.viralScriptStale && d.script.trim() && <Alert className="mb-3 shrink-0" type="warning" title="输入已变化，已采用脚本尚未更新" />}
+                    {comparison.kind === "source" ? <div className="mb-3 shrink-0 space-y-2">
+                        <p className="break-words text-xs" style={muted}>
+                            {d.analysis.trim() ? `${analysisSource(currentAnalysis)}。依据已采用的原片分析还原，并非拍摄者的原始脚本。` : "尚未采用原片分析。"}
+                        </p>
+                        {adoptedError && <Alert type="warning" title={adoptedError} />}
+                        {historicalReference && <Alert type="warning" title="左侧为历史视频内容" description={`来源：${currentAnalysis.provenance.sourceName}；当前视频：${reference?.name || "未添加"}。不是当前视频的分析。`} />}
+                        {!d.analysis.trim() && <Button size="small" disabled={locked} onClick={() => { setComparison(null); setShowCurrentAnalysis(false); openEditor("analysis"); }}>查看 / 分析原视频</Button>}
+                    </div> : <p className="mb-3 shrink-0 text-xs" style={muted}>对比已采用的改编脚本与本次新建议；新建议尚未替换已采用稿。</p>}
+                    {comparison.kind === "source" && !d.analysis.trim() ? <div className="flex min-h-0 flex-1 items-center justify-center"><Empty description="分析原视频后，可在这里对照改编脚本" /></div> : <ViralScriptComparison
+                        key={`${comparison.kind}-${comparison.target}`}
+                        before={comparison.kind === "source" ? d.analysis : d.script}
+                        after={comparison.target === "suggestion" ? d.viralScriptSuggestion || "" : d.script}
+                        beforeLabel={comparison.kind === "revision" ? "已采用脚本" : `${historicalReference ? "历史视频" : "原片"}内容（${!currentAnalysis.provenance.model ? "已采用分析" : currentAnalysis.provenance.edited ? "AI 还原·已校对" : "AI 还原"}）`}
+                        afterLabel={comparison.target === "suggestion" ? "新建议（待采用）" : "改编脚本"}
+                    />}
+                </>}
+            </Modal>
             <Modal title="高级设置" open={optionsOpen} onCancel={() => setOptionsOpen(false)} footer={<Button onClick={() => setOptionsOpen(false)}>完成</Button>}>
                 <div className="space-y-4">
                     <Collapse items={[
