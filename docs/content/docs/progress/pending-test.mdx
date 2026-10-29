@@ -7,9 +7,11 @@ description: Implemented changes that still need manual verification
 
 ## 爆款复刻移除人工效果检查
 
-- 本地移除成片区「效果检查（可选）」、人工符合/需修改下拉框、关联提醒与验收状态字段；不再要求用户重复填写自己已目视判断的结果。
+- 已随 `v0.19.116`（`e57212c`）提交、打 tag、发布正式 GitHub Release 并部署。线上 `https://studio.lingzhouai.com/video/viral-recreate`，资源 `/assets/index-BxkYsmRw.js`。成片区移除「效果检查（可选）」、人工符合/需修改下拉框、关联提醒与验收状态字段。
 - 「修改脚本」直接放在当前成片操作区，与下载、保存素材、加入画布并列；历史作品继续保留原有查看和下载操作。
-- 待验收当前/历史成片不再显示人工检查区，当前成片可直接返回脚本编辑；手机端操作区正常换行。按项目约定未运行构建、类型检查或自动化测试，未做浏览器交互验证；尚未发布部署。
+- 服务器 Docker 构建、137 项保留功能资源检查及人工检查区移除核对、内外健康、11 页面、普通/VIP Worker 网关、权限、完整目录及签名报价通过；工作站独立 HTTPS 确认实际页面与新版资源。未运行本地构建、类型检查或自动化测试，未做浏览器交互验收，未提交收费生成。
+- 13 张表数量、设置、用户余额/角色/分组及 11,019 个既有文件哈希一致；第 13 版模型配置、38 模型/65 接入/656 绑定和价格默认项保留，Worker 未重启。上游 H3 排队任务按持久化 ID/渠道/扣费记录保留，切换后同 ID 查询为运行中，没有取消或重发。
+- 最终 SQLite/Compose/私有环境备份 `/opt/infinite-canvas/backups/v0.19.116-20261029-103323/`，构建前备份 `/opt/infinite-canvas/backups/v0.19.116-prebuild-20261029-102733/`；证据 `/opt/infinite-canvas/releases/v0.19.116-deployment.json`、`v0.19.116-public-verification.json` 与本机 `.codex_tmp/v0.19.116-*.json`。待用户验收当前/历史成片、直接返回脚本及手机操作布局。
 
 ## v0.19.115 发布验收
 

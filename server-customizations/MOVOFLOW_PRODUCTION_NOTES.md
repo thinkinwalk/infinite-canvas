@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.115
-- Current production source: tag v0.19.115, commit 8a8c10ae9a44f65c0b7e1bf6df8e7484f8223915
+- Current production image: infinite-canvas:v0.19.116
+- Current production source: tag v0.19.116, commit e57212cdbeeb387c57c807da1c3ff3654a57b7e3
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.116 deployment
+
+- Source tag `v0.19.116`, commit `e57212cdbeeb387c57c807da1c3ff3654a57b7e3`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.116`, ID `sha256:9c8909a92057e601158979971f411018d6f8ddc19c546bcc86dfa01132bd18c3`, matches the tag. Local evaluation media and account artifacts remain excluded.
+- Viral recreation removes the manual result acceptance panel, pass/fail selectors, associated warning and unused acceptance field. The existing edit-script action is directly available beside video download/save/canvas actions. Reference comparison, unified requirements, source isolation, manual drafts and billing confirmation remain.
+- Server Docker build, 137 retained feature markers and acceptance-removal assertions, internal/external health, 11 pages, default/VIP Worker gateways, permissions, full catalogs and signed quotes passed. Independent workstation HTTPS confirmed `/assets/index-BxkYsmRw.js` and removed acceptance code. No local build/typecheck/tests or browser interaction was performed; real current/history results and mobile layout remain pending.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.116-20261029-103323/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.116-prebuild-20261029-102733/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 11,019 existing file hashes matched. Worker identity, image, start time and mounts are unchanged.
+- One existing `h3-video` task remained queued upstream. Review confirmed its provider ID, channel and billing were persisted and status queries use the saved task rather than process memory. Only this known cloud task was allowed through the deployment guard; local/Replicate active tasks remained blocked. The same ID `bf3e73b8-82c2-4dc0-9ecc-f21f8839b320` returned `running` after app replacement. No task was cancelled or resubmitted and no paid generation was submitted.
+- Management revision 13 and all 38 models / 65 routes / 656 bindings, defaults and pricing are preserved. Evidence: `/opt/infinite-canvas/releases/v0.19.116-deployment.json`, `v0.19.116-public-verification.json` and workstation `.codex_tmp/v0.19.116-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.115 image.
 
 ## v0.19.115 deployment
 
