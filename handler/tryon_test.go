@@ -182,6 +182,10 @@ func TestTryonValidatesInputsBeforeGeneration(t *testing.T) {
 	}{
 		{"uploaded model", nil, ""},
 		{"library model", map[string]any{"modelImageUrl": models[0].URL}, ""},
+		{"child model", map[string]any{"modelImageUrl": tryonChildModels[0].URL}, ""},
+		{"child thumbnail as model", map[string]any{"modelImageUrl": tryonChildModels[0].Thumb}, "本地"},
+		{"child as garment", map[string]any{"topImageUrl": tryonChildModels[0].URL}, "本地"},
+		{"child as scene", map[string]any{"sceneMode": "library", "sceneImageUrl": tryonChildModels[0].URL}, "官方素材库"},
 		{"missing model", map[string]any{"modelImageUrl": ""}, "模特"},
 		{"missing garment", map[string]any{"topImageUrl": ""}, "上装或下装"},
 		{"one piece", map[string]any{"garmentMode": "one-piece", "topImageUrl": "", "onePieceImageUrl": picture}, ""},
@@ -325,6 +329,14 @@ func TestTryonGarmentReferencesUseOnlyAssignedClothing(t *testing.T) {
 
 func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 	db := setupVideoLogTest(t)
+	childContent, _, err := caseImageBytes(tryonChildModels[0].URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childImage, _, err := image.Decode(bytes.NewReader(childContent))
+	if err != nil {
+		t.Fatal(err)
+	}
 	user := model.User{ID: "tryon-edit-owner", Username: "tryon-edit-owner", AffCode: "tryon-edit-owner", Group: "default", Credits: 100, Status: model.UserStatusActive}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
@@ -377,6 +389,17 @@ func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 			if part.FileName() == "poseImageUrl.png" && dimensions.Width <= 2 {
 				t.Fatal("built-in pose attachment was replaced by an upload fixture")
 			}
+			if part.FileName() == "modelImageUrl.png" {
+				attachment, _, err := image.Decode(bytes.NewReader(content))
+				if err != nil || attachment.Bounds() != childImage.Bounds() {
+					t.Fatal("child model attachment must use the original image")
+				}
+				r, g, b, _ := attachment.At(100, 100).RGBA()
+				wantR, wantG, wantB, _ := childImage.At(100, 100).RGBA()
+				if r != wantR || g != wantG || b != wantB {
+					t.Fatal("child model pixels changed before reaching upstream")
+				}
+			}
 			filenames = append(filenames, part.FileName())
 		}
 		if strings.Join(filenames, ",") != "modelImageUrl.png,onePieceImageUrl.png,poseImageUrl.png" {
@@ -389,7 +412,7 @@ func TestTryonEditSendsActualRoleOrderedImages(t *testing.T) {
 	})}
 	picture := tryonTestImage(t)
 	inputs := map[string]any{
-		"garmentMode": "one-piece", "onePieceImageUrl": picture, "modelImageUrl": picture,
+		"garmentMode": "one-piece", "onePieceImageUrl": picture, "modelImageUrl": tryonChildModels[0].URL,
 		"poseMode": "library", "poseId": tryonPresetPoses[0].ID, "poseImageUrl": tryonPresetPoses[0].URL,
 	}
 	if err := normalizeTryonInputs(inputs); err != nil {
@@ -459,19 +482,51 @@ func TestTryonEmbeddedPoseAssets(t *testing.T) {
 			t.Fatalf("unreadable pose %s: %v", pose.ID, err)
 		}
 		w := httptest.NewRecorder()
-		TryonPoseAsset(w, httptest.NewRequest(http.MethodGet, pose.URL, nil))
+		TryonAsset(w, httptest.NewRequest(http.MethodGet, pose.URL, nil))
 		if w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), content) {
 			t.Fatalf("pose URL and edit attachment differ: %s", pose.ID)
 		}
 	}
 	for _, path := range []string{"/api/tryon/assets/../provenance.json", "/api/tryon/assets/provenance.json", "/api/tryon/assets/missing.jpg"} {
 		w := httptest.NewRecorder()
-		TryonPoseAsset(w, httptest.NewRequest(http.MethodGet, path, nil))
+		TryonAsset(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("unregistered asset exposed: %s", path)
 		}
 		if _, _, err := caseImageBytes(path); err == nil {
 			t.Fatalf("unregistered attachment accepted: %s", path)
 		}
+	}
+}
+
+func TestTryonChildModelAssetsAndRoles(t *testing.T) {
+	models, _ := tryonLibrary()
+	children, genders := 0, map[string]int{}
+	for _, item := range models {
+		if !item.Child {
+			continue
+		}
+		children++
+		genders[item.Gender]++
+		for _, url := range []string{item.URL, item.Thumb} {
+			content, mime, err := caseImageBytes(url)
+			if err != nil || mime != "image/jpeg" {
+				t.Fatalf("missing child asset %s: %v", url, err)
+			}
+			if _, _, err := image.Decode(bytes.NewReader(content)); err != nil {
+				t.Fatalf("unreadable child asset %s: %v", url, err)
+			}
+			w := httptest.NewRecorder()
+			TryonAsset(w, httptest.NewRequest(http.MethodGet, url, nil))
+			if w.Code != http.StatusOK || !bytes.Equal(w.Body.Bytes(), content) {
+				t.Fatalf("child preview and edit bytes differ: %s", url)
+			}
+		}
+		if !validTryonLibraryURL(item.URL, "模特") || validTryonLibraryURL(item.Thumb, "模特") || validTryonLibraryURL(item.URL, "场景") {
+			t.Fatalf("incorrect child asset role: %s", item.ID)
+		}
+	}
+	if children != 12 || genders["m"] != 6 || genders["f"] != 6 {
+		t.Fatalf("child catalog must include both genders: %d, %v", children, genders)
 	}
 }

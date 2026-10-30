@@ -1,6 +1,6 @@
 import { ArrowUpRight, Copy, FileText, ImagePlus } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -27,6 +27,7 @@ export function PromptCard({
 }) {
     const { t } = useTranslation();
     const [imageFailed, setImageFailed] = useState(false);
+    useEffect(() => setImageFailed(false), [item.id, item.coverUrl]);
     const scenario = getPromptScenario(item);
     const description = item.problem || item.description || t("prompts.noDescription");
 
@@ -37,7 +38,7 @@ export function PromptCard({
             styles={{ body: compact ? { padding: 0 } : { display: "flex", flex: 1, flexDirection: "column", padding: 0 } }}
             cover={
                 <button type="button" className="block w-full cursor-pointer overflow-hidden text-left" onClick={onOpen}>
-                    {item.coverUrl && !imageFailed ? <img src={item.coverUrl} alt={item.title} className="block h-auto w-full transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" onError={() => setImageFailed(true)} /> : <span className="grid aspect-[4/3] w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"><FileText className="size-8" /></span>}
+                    {item.coverUrl && !imageFailed ? <img src={item.coverUrl} alt={item.title} referrerPolicy="no-referrer" className="block h-auto w-full transition-transform duration-300 group-hover:scale-[1.02]" loading="lazy" onError={() => setImageFailed(true)} /> : <span className="grid aspect-[4/3] w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"><FileText className="size-8" /></span>}
                 </button>
             }
         >

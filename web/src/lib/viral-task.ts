@@ -1,7 +1,7 @@
 import { emptyVideoDraft, type VideoDraft, type VideoRecord } from "@/types/video-workbench";
 
 export function hasViralTaskContent(draft: VideoDraft) {
-    return Boolean(draft.media.length || draft.frames.length || draft.video || draft.activeRecord ||
+    return Boolean(draft.media.length || draft.frames.length || draft.video || draft.activeRecord || draft.viralScriptTurns?.length || draft.viralScriptChatInput?.trim() ||
         [draft.instructions, draft.analysis, draft.script, draft.transcript, draft.viralFacts, draft.viralProductAnalysis,
             draft.viralKeyframePrompt, draft.viralClimaxPrompt, draft.viralScriptSuggestion, draft.viralProductSuggestion,
             ...Object.values(draft.viralBrief || {}), ...Object.values(draft.viralAnalyses || {}).map((value) => value?.text),

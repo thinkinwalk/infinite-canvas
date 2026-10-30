@@ -43,7 +43,7 @@ export type CaseApp = {
 
 export type CaseListResponse = { items: CaseApp[]; total: number };
 
-export type TryonModel = { id: string; name: string; group: string; gender: string; url: string; thumb: string };
+export type TryonModel = { id: string; name: string; group: string; gender: string; url: string; thumb: string; child?: boolean };
 export type TryonScene = { id: string; name: string; env: string; url: string; thumb: string };
 export type TryonPresetPose = { id: string; name: string; url: string; source: string };
 export type TryonLibrary = { models: TryonModel[]; scenes: TryonScene[]; poses: TryonPresetPose[] };

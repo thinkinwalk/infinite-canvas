@@ -10,6 +10,21 @@ import (
 //go:embed tryon_assets/*.jpg
 var tryonAssets embed.FS
 
+var tryonChildModels = []tryonModel{
+	{ID: "child-boy-1", Name: "男童 01", Group: "intl", Gender: "m", URL: "/api/tryon/assets/child-boy-1.jpg", Thumb: "/api/tryon/assets/child-boy-1-thumb.jpg", Child: true},
+	{ID: "child-boy-2", Name: "男童 02", Group: "intl", Gender: "m", URL: "/api/tryon/assets/child-boy-2.jpg", Thumb: "/api/tryon/assets/child-boy-2-thumb.jpg", Child: true},
+	{ID: "child-boy-3", Name: "男童 03", Group: "intl", Gender: "m", URL: "/api/tryon/assets/child-boy-3.jpg", Thumb: "/api/tryon/assets/child-boy-3-thumb.jpg", Child: true},
+	{ID: "child-boy-4", Name: "男童 04", Group: "intl", Gender: "m", URL: "/api/tryon/assets/child-boy-4.jpg", Thumb: "/api/tryon/assets/child-boy-4-thumb.jpg", Child: true},
+	{ID: "child-boy-5", Name: "男童 05", Group: "intl", Gender: "m", URL: "/api/tryon/assets/child-boy-5.jpg", Thumb: "/api/tryon/assets/child-boy-5-thumb.jpg", Child: true},
+	{ID: "child-boy-6", Name: "男童 06", Group: "intl", Gender: "m", URL: "/api/tryon/assets/child-boy-6.jpg", Thumb: "/api/tryon/assets/child-boy-6-thumb.jpg", Child: true},
+	{ID: "child-girl-1", Name: "女童 01", Group: "intl", Gender: "f", URL: "/api/tryon/assets/child-girl-1.jpg", Thumb: "/api/tryon/assets/child-girl-1-thumb.jpg", Child: true},
+	{ID: "child-girl-2", Name: "女童 02", Group: "intl", Gender: "f", URL: "/api/tryon/assets/child-girl-2.jpg", Thumb: "/api/tryon/assets/child-girl-2-thumb.jpg", Child: true},
+	{ID: "child-girl-3", Name: "女童 03", Group: "intl", Gender: "f", URL: "/api/tryon/assets/child-girl-3.jpg", Thumb: "/api/tryon/assets/child-girl-3-thumb.jpg", Child: true},
+	{ID: "child-girl-4", Name: "女童 04", Group: "intl", Gender: "f", URL: "/api/tryon/assets/child-girl-4.jpg", Thumb: "/api/tryon/assets/child-girl-4-thumb.jpg", Child: true},
+	{ID: "child-girl-5", Name: "女童 05", Group: "intl", Gender: "f", URL: "/api/tryon/assets/child-girl-5.jpg", Thumb: "/api/tryon/assets/child-girl-5-thumb.jpg", Child: true},
+	{ID: "child-girl-6", Name: "女童 06", Group: "intl", Gender: "f", URL: "/api/tryon/assets/child-girl-6.jpg", Thumb: "/api/tryon/assets/child-girl-6-thumb.jpg", Child: true},
+}
+
 type tryonPresetPose struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -47,8 +62,25 @@ func tryonPoseImage(url string) ([]byte, bool) {
 	return nil, false
 }
 
-func TryonPoseAsset(w http.ResponseWriter, r *http.Request) {
+func tryonModelImage(url string) ([]byte, bool) {
+	for _, model := range tryonChildModels {
+		if url == model.URL || url == model.Thumb {
+			name := model.ID + ".jpg"
+			if url == model.Thumb {
+				name = model.ID + "-thumb.jpg"
+			}
+			data, err := tryonAssets.ReadFile("tryon_assets/" + name)
+			return data, err == nil
+		}
+	}
+	return nil, false
+}
+
+func TryonAsset(w http.ResponseWriter, r *http.Request) {
 	data, ok := tryonPoseImage(r.URL.Path)
+	if !ok {
+		data, ok = tryonModelImage(r.URL.Path)
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return

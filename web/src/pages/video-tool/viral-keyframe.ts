@@ -1,6 +1,7 @@
 import type { VideoDraft, WorkbenchMedia } from "@/types/video-workbench";
 import { viralAdoptedAnalysisText, viralFrameMaterials, viralSource } from "./viral-analysis";
 import { viralIntent, viralPlanEffects, viralPlanPrompt, viralTargetFacts } from "./viral-plan";
+import { viralScriptAuthority } from "./viral-script-revisions";
 
 const visualRoles: Record<string, string> = { "visual-reference": "参考图片", background: "场景", model: "人物", product: "商品", "first-frame": "视频画面" };
 export const viralVisualRole = (role: string) => visualRoles[role] || "参考";
@@ -37,6 +38,7 @@ ${viralPlanPrompt(d)}
 当前采用的观察依据：${d.viralAdoptedAnalysis ? viralAdoptedAnalysisText(d) : "按用户脚本与实际图片，不推测原片事实"}。
 保持对应物体的身份、材质与连接关系，外形相似不代表新增独立道具；文字附着在指定承载物上，不改成悬浮字幕。用户明确要求的改编优先。
 视频脚本：${d.script}。
+${viralScriptAuthority(d)}
 画面补充：${(climax ? d.viralClimaxPrompt : d.viralKeyframePrompt) || "构图与景别跟随该时刻脚本内容，只生成单幅画面，不制作拼图。"}。
 画幅参考：${d.viralSettings?.size || "跟随当前图片设置"}。图片未展示的外观与空间属于生成补全，不声称与实物完全一致；静态图仅呈现指定时刻，不能把整段过程同时画入。不要虚构价格、优惠、功效或承诺。`;
 }

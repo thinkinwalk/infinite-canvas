@@ -13,6 +13,9 @@ export type ViralRecreateInput = Pick<
     | "analysis"
     | "instructions"
     | "script"
+    | "viralScriptTurns"
+    | "viralScriptChatInput"
+    | "viralScriptSeeded"
     | "viralFacts"
     | "viralProductAnalysis"
     | "viralSettings"
@@ -109,6 +112,16 @@ export type ViralAnalysisProvenance = {
 };
 export type ViralAnalysisVersion = { text: string; provenance: ViralAnalysisProvenance };
 export type ViralAnalysisResult = ViralAnalysisVersion & { suggestion?: ViralAnalysisVersion };
+export type ViralScriptTurn = {
+    id: string;
+    source: string;
+    request: string;
+    before: string;
+    beforeStale: boolean;
+    after: string;
+    status: "pending" | "accepted" | "rejected" | "reverted";
+    createdAt: number;
+};
 export type ViralEffect = {
     id: string;
     time: string;
@@ -244,6 +257,10 @@ export type VideoDraft = {
     viralAnalysisSuggestion?: string;
     viralProductSuggestion?: string;
     viralScriptSuggestion?: string;
+    viralScriptSuggestionBase?: string;
+    viralScriptChatInput?: string;
+    viralScriptTurns?: ViralScriptTurn[];
+    viralScriptSeeded?: boolean;
     viralRevision?: number;
     viralTaskId?: string;
     viralStep?: number;

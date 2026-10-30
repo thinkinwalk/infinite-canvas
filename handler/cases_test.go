@@ -33,8 +33,8 @@ func TestCaseTextRequestIncludesVisualInputs(t *testing.T) {
 
 func TestTryonLibraryMatchesReferenceCatalog(t *testing.T) {
 	models, scenes := tryonLibrary()
-	if len(models) != 51 || len(scenes) != 14 {
-		t.Fatalf("try-on catalog = %d models/%d scenes, want 51/14", len(models), len(scenes))
+	if len(models) != 51+len(tryonChildModels) || len(scenes) != 14 {
+		t.Fatalf("try-on catalog = %d models/%d scenes, want %d/14", len(models), len(scenes), 51+len(tryonChildModels))
 	}
 }
 

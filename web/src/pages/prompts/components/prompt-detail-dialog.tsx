@@ -9,15 +9,15 @@ export function PromptDetailDialog({ prompt, onClose, onCopy, onSaveAsset, onUse
     const { i18n, t } = useTranslation();
     const scenario = prompt ? getPromptScenario(prompt) : "";
     const [imageFailed, setImageFailed] = useState(false);
-    useEffect(() => setImageFailed(false), [prompt?.id]);
+    useEffect(() => setImageFailed(false), [prompt?.id, prompt?.coverUrl]);
 
     return (
         <Modal title={null} open={Boolean(prompt)} onCancel={onClose} footer={null} width={980} centered styles={{ body: { padding: 0 } }}>
             {prompt ? <div className="grid max-h-[82vh] min-h-0 overflow-y-auto md:h-[82vh] md:max-h-[760px] md:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)] md:overflow-hidden">
                 <div className="border-b border-stone-200 p-4 md:border-b-0 md:border-r md:p-6 dark:border-stone-800">
                     {prompt.featured ? <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">来源示例 · 生成效果随模型和输入素材变化</p> : null}
-                    {prompt.coverUrl && !imageFailed ? <img src={prompt.coverUrl} alt={prompt.title} className="max-h-[68vh] w-full rounded-xl object-contain object-top" onError={() => setImageFailed(true)} /> : <div className="grid aspect-[4/3] w-full place-items-center rounded-xl bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"><FileText className="size-9" /></div>}
-                    {prompt.referenceImageUrls.length > 1 ? <div className="mt-3 grid grid-cols-6 gap-2">{prompt.referenceImageUrls.filter((url) => url !== prompt.coverUrl).slice(0, 6).map((url) => <img key={url} src={url} alt="" className="aspect-square w-full rounded-md object-cover" loading="lazy" />)}</div> : null}
+                    {prompt.coverUrl && !imageFailed ? <img src={prompt.coverUrl} alt={prompt.title} referrerPolicy="no-referrer" className="max-h-[68vh] w-full rounded-xl object-contain object-top" onError={() => setImageFailed(true)} /> : <div className="grid aspect-[4/3] w-full place-items-center rounded-xl bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"><FileText className="size-9" /></div>}
+                    {prompt.referenceImageUrls.length > 1 ? <div className="mt-3 grid grid-cols-6 gap-2">{prompt.referenceImageUrls.filter((url) => url !== prompt.coverUrl).slice(0, 6).map((url) => <img key={url} src={url} alt="" referrerPolicy="no-referrer" className="aspect-square w-full rounded-md object-cover" loading="lazy" />)}</div> : null}
                 </div>
                 <div className="flex min-h-0 flex-col p-5 md:h-full md:p-6">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-stone-500 dark:text-stone-400"><ImagePlus className="size-3.5" />{scenario}</div>

@@ -37,6 +37,9 @@ func caseImageBytes(value any) ([]byte, string, error) {
 	if content, ok := tryonPoseImage(uri); ok {
 		return content, "image/jpeg", nil
 	}
+	if content, ok := tryonModelImage(uri); ok {
+		return content, "image/jpeg", nil
+	}
 	if strings.HasPrefix(uri, "https://") {
 		if !validTryonLibraryURL(uri, "模特") && !validTryonLibraryURL(uri, "场景") {
 			return nil, "", errors.New("素材不在官方素材库中")

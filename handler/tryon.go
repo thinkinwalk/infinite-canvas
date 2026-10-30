@@ -33,7 +33,7 @@ func normalizeTryonInputs(inputs map[string]any) error {
 	delete(inputs, "framing")
 	for key, fallback := range map[string]string{
 		"garmentMode": "separates",
-		"poseMode": "preset", "sceneMode": "original",
+		"poseMode":    "preset", "sceneMode": "original",
 	} {
 		value, exists := inputs[key]
 		if !exists || value == "" {
@@ -134,7 +134,7 @@ func normalizeTryonInputs(inputs map[string]any) error {
 			}
 			continue
 		}
-		if strings.HasPrefix(value, "https://") && validTryonLibraryURL(value, source.role) {
+		if validTryonLibraryURL(value, source.role) {
 			continue
 		}
 		if source.role == "场景" {
@@ -173,6 +173,7 @@ func tryonPrompt(inputs map[string]any) string {
 		"生成一张真实服装电商照片。将指定商品穿到指定模特身上，服装一致性与人物身份优先于场景美化。",
 		"不要拼图、并排展示输入图、添加水印或凭空添加配饰。不要采用服装参考图中其他人的身份。",
 		"服装参考可为平铺图、挂拍图或穿着图，各张图片只提取其指定的目标服装，不复制参考图中人物的面容、发型、肤色、体型、动作或背景。",
+		"保持模特原有年龄感及头身、四肢比例；儿童模特保持自然的儿童体态，不因服装或姿势参考而成人化。",
 	}
 	roles := []string{}
 	for _, source := range tryonImageSources {

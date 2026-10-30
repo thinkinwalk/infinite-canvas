@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.123
-- Current production source: tag v0.19.123, commit 68129f8ed917b961912a1319690933a23a79ae10
+- Current production image: infinite-canvas:v0.19.123-prompt-images-20261030
+- Current production source: tag v0.19.123, commit 68129f8ed917b961912a1319690933a23a79ae10, plus the frontend-only prompt image patch documented below
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## Prompt image hotfix
+
+- Frontend-only hotfix image `infinite-canvas:v0.19.123-prompt-images-20261030` serves `/assets/index-bcVNVW3R.js`. It uses the exact existing backend binary and applies four frontend source edits to base tag `v0.19.123`; no new source tag or GitHub Release was created. Source patch and staged source remain under `/opt/infinite-canvas/releases/prompt-images-20261030/`; local changes remain in the working tree for the next normal release.
+- Homepage templates, shared prompt cards, detail cover/reference images and source preview thumbnails omit the Referer request header to avoid external hotlink rejection. Card/detail failures reset when template/cover changes; homepage failures follow cover URLs. Template catalogues and external source configuration are unchanged, with no automatic retries or new proxy service.
+- Development browser checks decoded all 250 curated covers, all six homepage covers and a detail image, observed no Referer on 256 catalogue requests, and checked desktop/390/320px layouts. Seven default source catalogues contain 1,742 records; ten covers per source were sampled and all 70 decoded. These samples do not certify every external-source image.
+- Server build, internal/external health, deployed public bundle and unchanged catalogues passed. Backend binary, Worker identity/start time/mounts, SQLite integrity/table counts, settings/account balances and 11,104 existing file hashes were preserved. Backup `/opt/infinite-canvas/backups/prompt-images-20261030-105321/`; evidence `/opt/infinite-canvas/releases/prompt-images-20261030/deployment.json`.
+- The first attempt rolled back because public HTML includes the existing server-injected `movoflow-hide-front-github` script. Verification was corrected to compare the prior public HTML with only the main bundle URL replaced; the second attempt passed. Rollback restores the backup Compose file and recreates app only, retaining the current database and base `v0.19.123` image.
+- Public isolated Chrome verification passed all 250 real curated cards, detail cover, six homepage covers and a non-curated external-source card in all-inspirations mode. All 276 observed curated-image requests omitted Referer. Desktop/390/320px had no page errors or horizontal overflow; screenshots were inspected. Local evidence `.codex_tmp/prompt-images-qa/production/report.json` and `source-samples.json`, archived with the server hotfix. Existing browser tabs/data were not modified; refresh to load the hotfix.
 
 ## v0.19.123 deployment
 

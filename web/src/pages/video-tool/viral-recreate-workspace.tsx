@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Checkbox, Collapse, ConfigProvider, Dropdown, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Steps, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowLeft, ArrowRight, Check, Columns2, Copy, Download, Expand, FolderPlus, Grid2X2, Images, MoreHorizontal, Pause, Play, Plus, RefreshCw, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Columns2, Copy, Download, Expand, FolderPlus, Grid2X2, History, Images, MessageSquare, MoreHorizontal, Pause, Play, Plus, RefreshCw, Send, SlidersHorizontal, Sparkles, Undo2, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { FeatureModelPicker } from "@/components/feature-model-picker";
@@ -32,6 +32,7 @@ import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-vide
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
 import ViralScriptComparison from "./viral-script-comparison";
+import { viralInitialScript, viralResolveScript, viralRestoreScript } from "./viral-script-revisions";
 
 type Role = "reference" | "visual-reference" | "product" | "background" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralProductAnalysis" | "instructions" | "script";
@@ -83,6 +84,8 @@ function ViralTaskWorkspace() {
         [errors, setErrors] = useState<Partial<Record<Role, string>>>({});
     const [expandedRoles, setExpandedRoles] = useState<Partial<Record<Role, boolean>>>({});
     const [imagesOpen, setImagesOpen] = useState(false);
+    const [sourceOpen, setSourceOpen] = useState(false), [versionsOpen, setVersionsOpen] = useState(false);
+    const chatScroll = useRef<HTMLDivElement | null>(null);
     const [assetRole, setAssetRole] = useState<Role | null>(null),
         [editor, setEditor] = useState<Editor | null>(null),
         [editingField, setEditingField] = useState<Editor>("script"),
@@ -116,6 +119,10 @@ function ViralTaskWorkspace() {
     };
     const step = d.viralStep || 0;
     const goStep = (value: number) => {
+        if (value === 2 && (d.viralScriptSuggestion || d.viralScriptStale || !d.script.trim())) {
+            message.warning(d.viralScriptSuggestion ? "请先采用或保留当前脚本建议" : d.viralScriptStale ? "请先更新或确认沿用当前脚本" : "请先填写或生成脚本");
+            return;
+        }
         wb.patch({ viralStep: value });
         setViewed(null);
         setTab(value === 1 ? "editor" : "current");
@@ -262,6 +269,14 @@ function ViralTaskWorkspace() {
         if (wb.hydrated && step === 1) { setTab("editor"); setEditingField("script"); setShowCurrentAnalysis(Boolean(d.analysis.trim())); }
     }, [wb.hydrated]);
     useEffect(() => {
+        if (!wb.hydrated || locked || wb.storageError || step !== 1) return;
+        const initial = viralInitialScript(d);
+        if (initial.script) wb.edit(initial, "video");
+    }, [wb.hydrated, locked, step, d.analysis, d.script, d.viralScriptSeeded, d.viralAdoptedAnalysis]);
+    useEffect(() => {
+        chatScroll.current?.scrollTo({ top: chatScroll.current.scrollHeight, behavior: "smooth" });
+    }, [d.viralScriptTurns?.length, busy]);
+    useEffect(() => {
         if (busy) { completedStage.current = active?.id; return; }
         if (!active || active.status !== "completed" || completedStage.current !== active.id) return;
         completedStage.current = undefined;
@@ -330,7 +345,7 @@ function ViralTaskWorkspace() {
                 ...(field === "viralProductAnalysis"
                       ? { viralProductStale: false }
                       : field === "script"
-                        ? { viralScriptStale: false, viralScriptSuggestion: d.viralScriptSuggestion }
+                        ? { viralScriptStale: false, viralScriptSeeded: true, viralScriptSuggestion: d.viralScriptSuggestion }
                         : field === "transcript"
                           ? { viralTranscriptSource: viralSource(d) }
                           : {}),
@@ -621,8 +636,18 @@ function ViralTaskWorkspace() {
                 <Button
                     disabled={locked}
                     onClick={() => {
-                        wb.edit({ [field]: d[info.key], [info.key]: "", [info.stale]: false }, "script");
-                        setSuggestionView(false);
+                        const apply = () => {
+                            const current = useVideoWorkbenchStore.getState().drafts["viral-recreate"];
+                            if (!current || useVideoWorkbenchStore.getState().busyTools["viral-recreate"] || current.viralRevision !== d.viralRevision) {
+                                message.warning("草稿已变化，请重新查看建议");
+                                return;
+                            }
+                            wb.edit(field === "script" ? viralResolveScript(current, true) : { [field]: d[info.key], [info.key]: "", [info.stale]: false }, field === "script" ? "video" : "script");
+                            setSuggestionView(false);
+                        };
+                        if (field === "script" && d.viralScriptSuggestionBase !== undefined && d.viralScriptSuggestionBase !== d.script) {
+                            modal.confirm({ title: "采用建议并替换当前脚本？", content: "建议生成后，你又修改了脚本。当前编辑稿会保存在版本记录，采用建议将替换它。", okText: "保存当前稿并采用", cancelText: "继续编辑", onOk: apply });
+                        } else apply();
                     }}
                 >
                     采用新{field === "script" ? "脚本" : "分析"}
@@ -630,7 +655,7 @@ function ViralTaskWorkspace() {
                 <Button
                     disabled={locked}
                     onClick={() => {
-                        wb.patch({ [info.key]: "" });
+                        wb.patch(field === "script" ? viralResolveScript(d, false) : { [info.key]: "" });
                         setSuggestionView(false);
                     }}
                 >
@@ -687,7 +712,8 @@ function ViralTaskWorkspace() {
                     <Space wrap>
                         {field === "script" && <Button size="small" icon={<Columns2 size={14} />} onClick={() => setComparison({ kind: "source", target: viewingSuggestion ? "suggestion" : "script" })}>对照原片</Button>}
                         {field === "transcript" && <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("transcribe")}>转写参考音轨</Button>}
-                        {field === "script" && d.script.trim() && !viewingSuggestion && <Button size="small" disabled={locked || Boolean(textBlocked || scriptWritingBlocked)} icon={<Sparkles size={14} />} onClick={() => void wb.run("script")}>重新生成</Button>}
+                        {field === "script" && <Tooltip title="脚本版本"><Button type="text" aria-label="脚本版本" icon={<History size={15} />} onClick={() => setVersionsOpen(true)} /></Tooltip>}
+                        {field === "script" && !fullscreen && <Tooltip title="对话调整"><Button className="xl:!hidden" type="text" aria-label="前往对话调整" icon={<MessageSquare size={15} />} onClick={() => document.getElementById("viral-script-chat")?.scrollIntoView({ block: "start", behavior: "smooth" })} /></Tooltip>}
                         <Tooltip title="复制全文"><Button type="text" aria-label="复制全文" icon={<Copy size={15} />} disabled={!value} onClick={() => copyText(value, "文案已复制")} /></Tooltip>
                         {!fullscreen && (
                             <Tooltip title="全屏编辑"><Button type="text" aria-label="全屏编辑" icon={<Expand size={15} />} onClick={() => setEditor(field)} /></Tooltip>
@@ -724,7 +750,7 @@ function ViralTaskWorkspace() {
                         )}
                     </div>
                 )}
-                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" action={field === "script" && !viewingSuggestion ? <Button size="small" disabled={locked} onClick={() => wb.edit({ viralScriptStale: false }, "video")}>确认沿用当前脚本</Button> : undefined} />}
+                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title={field === "script" && d.viralScriptSeeded && d.script === viralVisibleAnalysis(d.analysis) ? "已带入原片提取内容，请改编或确认沿用" : "输入已变化，原稿已保留；请核对或更新"} action={field === "script" && !viewingSuggestion ? <Button size="small" disabled={locked} onClick={() => wb.edit({ viralScriptStale: false }, "video")}>确认沿用当前脚本</Button> : undefined} />}
                 {suggested && (
                     <div className="shrink-0">
                         <Tabs
@@ -996,7 +1022,7 @@ function ViralTaskWorkspace() {
         label: "AI 根据要求修改脚本", disabled: Boolean(textBlocked || scriptWritingBlocked), run: () => void wb.run("script"),
     } : keyframeError || ((d.viralClimaxUse === "reference" || d.viralClimaxUse === "last") && viralKeyframeError(d, "climax")) || (profile.firstFrameRequired && !keyframe) ? {
         label: "准备视频画面", disabled: false, run: () => { wb.patch({ viralImageTarget: keyframeError || !keyframe ? "opening" : "climax" }); showPanel("keyframe"); },
-    } : { label: "下一步：生成视频", disabled: Boolean(scriptBlocked), run: () => goStep(2) };
+    } : { label: "确认脚本，下一步", disabled: Boolean(scriptBlocked), run: () => goStep(2) };
     const scriptPanel = tab === "editor" && editingField === "script" && !viewed;
     const actionHint = !busy && (step === 0 && preparationAction.disabled || step === 1 && scriptPanel && nextAction.disabled) ? <p className="mb-2 text-xs" style={{ color: token.colorWarning }}>{step === 0 ? analysisBlocked : scriptBlocked || textBlocked || scriptWritingBlocked}</p> : null;
     const controls = step === 1 && !scriptPanel ? (
@@ -1118,6 +1144,89 @@ function ViralTaskWorkspace() {
             {!climaxTarget && <Collapse items={[{ key: "optional-climax", label: `补充画面（可选）${d.viralClimaxId ? " · 已准备" : ""}`, children: <Button disabled={locked} icon={<Images size={14} />} onClick={() => wb.patch({ viralImageTarget: "climax" })}>准备补充画面</Button> }]} />}
         </div>
     );
+    const adaptationInputs = <div className="space-y-5" aria-label="复刻改编输入">
+        <section className="space-y-3">
+            <div className="flex items-start justify-between gap-2">
+                <h2 className="font-medium">素材与改编要求</h2>
+                <Button type="text" size="small" disabled={locked} onClick={() => goStep(0)}>更换原片</Button>
+            </div>
+            {reference && <div className="flex min-w-0 items-center gap-3">
+                <button type="button" className="h-16 w-12 shrink-0" aria-label="预览原片" onClick={() => showPanel("current")}><video src={reference.url} muted preload="metadata" className="h-full w-full rounded object-contain" /></button>
+                <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm" title={reference.name}>{reference.name}</p>
+                    <p className="text-xs" style={muted}>{reference.durationMs ? `${(reference.durationMs / 1000).toFixed(1)} 秒 · ` : ""}{adoptedError ? "分析待确认" : historicalReference ? "借鉴历史分析" : d.analysis.trim() ? "原片已解析" : "尚未解析"}</p>
+                </div>
+            </div>}
+            {d.analysis.trim() ? <Button size="small" type="link" className="!px-0" icon={<Columns2 size={14} />} onClick={() => setSourceOpen(true)}>查看原片提取内容</Button> : reference && <Button size="small" disabled={locked} onClick={openAnalysis}>返回第一步解析</Button>}
+            {historicalReference && <p className="break-words text-xs" style={{ color: token.colorWarning }}>历史来源：{d.viralAdoptedAnalysis!.provenance.sourceName}</p>}
+            <label className="block space-y-2">
+                <span className="text-sm">复刻要求（选填）</span>
+                {textPreview("instructions", "想改什么、保留什么？也可写名称、准确文字或其他资料。")}
+            </label>
+            {intentError && <p role="alert" className="text-xs" style={{ color: token.colorWarning }}>{intentError}</p>}
+        </section>
+        <Collapse activeKey={imagesOpen ? ["images"] : []} onChange={(keys) => setImagesOpen(keys.includes("images"))} items={[{ key: "images", forceRender: true, label: `补充图片（可选）${targetImages.length ? ` · ${targetImages.length} 张` : ""}`, children: <div className="space-y-4">
+            {materialField("visual-reference", "参考图片", "商品、场景、主体或风格参考")}
+            {materialField("model", "人物图片", "需要指定人物时添加")}
+            {(referenceImages.length > 0 || d.viralProductAnalysis || d.viralProductSuggestion) && <Collapse items={[{ key: "product", label: "参考图片分析（可选）", children: <div className="space-y-3">
+                {heading("viralProductAnalysis", textAction("product-analyze", "分析参考图片", !referenceImages.length))}
+                <Collapse size="small" items={[{ key: "product-model", label: "分析模型", children: modelPicker("viral-recreate.analyze", "图片分析模型") }]} />
+                {productBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{productBlocked}</p>}
+                {textPreview("viralProductAnalysis", "参考图片的可见信息")}
+                {suggestion("viralProductAnalysis")}
+            </div> }]} />}
+        </div> }]} />
+    </div>;
+    const turns = (d.viralScriptTurns || []).filter((turn) => turn.source === viralSource(d));
+    const undoTurn = [...turns].reverse().find((turn) => turn.status === "accepted" && turn.after === d.script && turn.before !== turn.after);
+    const sendScriptMessage = () => {
+        if (locked || d.viralScriptSuggestion || !d.viralScriptChatInput?.trim()) return;
+        void wb.reviseScript(d.viralScriptChatInput).then(() => {
+            if (useVideoWorkbenchStore.getState().drafts["viral-recreate"]?.viralScriptSuggestion && !window.matchMedia("(min-width: 1280px)").matches)
+                previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
+    };
+    const scriptChat = <aside id="viral-script-chat" className="flex min-h-0 min-w-0 flex-col border-t pt-4 lg:col-start-2 xl:col-start-auto xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0" style={{ borderColor: token.colorBorderSecondary }} aria-label="脚本对话调整">
+        <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+            <h2 className="font-medium">对话调整</h2>
+            <div className="flex items-center gap-1">
+            <Tooltip title="返回脚本编辑"><Button className="xl:!hidden" type="text" aria-label="返回脚本编辑" icon={<ArrowLeft size={15} />} onClick={() => { openEditor("script", Boolean(d.viralScriptSuggestion)); requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" })); }} /></Tooltip>
+            <Tooltip title="撤销上次采用"><Button type="text" aria-label="撤销上次采用" icon={<Undo2 size={15} />} disabled={locked || !undoTurn || Boolean(d.viralScriptSuggestion)} onClick={() => {
+                if (!undoTurn) return;
+                wb.edit({ script: undoTurn.before, viralScriptStale: undoTurn.beforeStale, viralScriptTurns: (d.viralScriptTurns || []).map((turn) => turn.id === undoTurn.id ? { ...turn, status: "reverted" } : turn) }, "video");
+                setSuggestionView(false);
+            }} /></Tooltip>
+            </div>
+        </div>
+        <div ref={chatScroll} className="min-h-32 flex-1 space-y-5 overflow-y-auto pb-4 xl:min-h-0" role="log" aria-label="脚本修改记录" aria-live="polite">
+            {!turns.length && <p className="text-sm" style={muted}>{d.script.trim() ? "想先调整哪一部分？" : "这次想做怎样的视频？"}</p>}
+            {turns.map((turn, index) => <section key={turn.id} className="space-y-2 border-b pb-4 text-sm [overflow-wrap:anywhere]" style={{ borderColor: token.colorBorderSecondary }}>
+                <p className="text-xs" style={muted}>你 · 第 {index + 1} 轮</p>
+                <p className="whitespace-pre-wrap">{turn.request}</p>
+                <p className="text-xs" style={muted}>AI · {turn.status === "pending" ? "修改建议待确认" : turn.status === "accepted" ? "已采用" : turn.status === "reverted" ? "已撤销" : "未采用"}</p>
+                <Button type="link" size="small" className="!px-0" onClick={() => {
+                    if (turn.status === "pending" && d.viralScriptSuggestion) { setComparison({ kind: "revision", target: "suggestion" }); return; }
+                    setVersionsOpen(true);
+                }}>{turn.status === "pending" ? "查看本次修改" : "查看版本"}</Button>
+            </section>)}
+            {busy && active?.stage === "script" && <p className="flex items-center gap-2 text-sm"><Spin size="small" />正在调整脚本…</p>}
+        </div>
+        {d.viralScriptSuggestion && <div className="mb-3 shrink-0 space-y-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
+            <Button block icon={<Columns2 size={14} />} onClick={() => { openEditor("script", true); setComparison({ kind: "revision", target: "suggestion" }); }}>对照本次修改</Button>
+            <span className="text-xs" style={muted}>采用或保留当前稿后继续对话</span>
+        </div>}
+        <div className="shrink-0 space-y-3 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
+            <div className="flex flex-wrap gap-1">
+                {["开头更吸引人，其他部分不变", "台词更自然，保持画面不变"].map((request) => <Button key={request} type="text" size="small" className="!h-auto !whitespace-normal !text-left" disabled={locked || Boolean(d.viralScriptSuggestion)} onClick={() => wb.patch({ viralScriptChatInput: request })}>{request}</Button>)}
+            </div>
+            <Input.TextArea aria-label="本轮脚本修改要求" value={d.viralScriptChatInput || ""} disabled={locked || Boolean(d.viralScriptSuggestion)} autoSize={{ minRows: 3, maxRows: 7 }} placeholder="例如：只改第二个镜头，结尾保留……" onChange={(event) => wb.patch({ viralScriptChatInput: event.target.value })} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <Tooltip title="脚本模型"><Button type="text" aria-label="脚本模型设置" icon={<SlidersHorizontal size={15} />} onClick={() => setOptionsOpen(true)} /></Tooltip>
+                <Button icon={<Send size={14} />} loading={busy && active?.stage === "script"} disabled={locked || Boolean(textBlocked || scriptWritingBlocked || d.viralScriptSuggestion) || !d.viralScriptChatInput?.trim()} onClick={sendScriptMessage}>发送修改</Button>
+            </div>
+            {(textBlocked || scriptWritingBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptWritingBlocked}</p>}
+        </div>
+    </aside>;
     if (!wb.hydrated)
         return (
             <div className="p-12 text-center">
@@ -1148,13 +1257,14 @@ function ViralTaskWorkspace() {
                 </Dropdown>}
                 </div>
             </header>
-            <nav aria-label="复刻步骤" className={`mx-auto w-full ${step === 1 ? "max-w-[1100px]" : "max-w-[1800px]"} shrink-0 px-4 pb-3 sm:px-6`}>
+            <nav aria-label="复刻步骤" className="mx-auto w-full max-w-[1800px] shrink-0 px-4 pb-3 sm:px-6">
                 <Steps size="small" current={step} responsive={false} onChange={goStep} items={["素材与解析", "改编脚本", "生成视频"].map((title, index) => ({ title: <><span className="sm:hidden">{["解析", "脚本", "成片"][index]}</span><span className="hidden sm:inline">{title}</span></>, disabled: locked }))} />
             </nav>
-            <div ref={workspaceScroll} className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 ${step === 1 ? "" : "lg:overflow-hidden"}`} data-testid="viral-scroll">
-                <div className={`mx-auto grid min-h-full grid-cols-1 gap-5 ${step === 1 ? "max-w-[1052px]" : "max-w-[1800px] lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]"}`}>
-                    <section className={`${step === 1 ? "hidden" : "flex"} min-h-0 min-w-0 flex-col rounded-lg border`} style={surface} aria-label="复刻素材与设置">
+            <div ref={workspaceScroll} className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 ${step === 1 ? "xl:overflow-hidden" : "lg:overflow-hidden"}`} data-testid="viral-scroll">
+                <div className={`mx-auto grid min-h-full max-w-[1800px] grid-cols-1 gap-5 ${step === 1 ? "lg:grid-cols-[280px_minmax(0,1fr)] xl:h-full xl:min-h-0 xl:grid-cols-[280px_minmax(0,1fr)_300px]" : "lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]"}`}>
+                    <section className={`flex min-h-0 min-w-0 flex-col ${step === 1 ? "border-b pb-4 lg:border-b-0 lg:border-r lg:pb-0" : "rounded-lg border"}`} style={step === 1 ? { borderColor: token.colorBorderSecondary } : surface} aria-label="复刻素材与设置">
                         <div ref={inputScroll} className="flex min-h-0 flex-1 flex-col gap-5 p-4 lg:overflow-y-auto [&>*]:shrink-0" data-testid="viral-input-scroll">
+                            {step === 1 && adaptationInputs}
                             <div hidden={step !== 0} className="space-y-4">
                             {materialField("reference", "参考视频", "参考内容结构、镜头、节奏与创意")}
                             {analysisStatus}
@@ -1207,26 +1317,15 @@ function ViralTaskWorkspace() {
                             </section>
                             </div>
                         </div>
-                        <div className="hidden shrink-0 border-t p-4 lg:block" style={{ borderColor: token.colorBorderSecondary }}>
+                        <div className={`hidden shrink-0 border-t p-4 ${step === 1 ? "" : "lg:block"}`} style={{ borderColor: token.colorBorderSecondary }}>
                             {actionHint}
                             {controls}
                         </div>
                     </section>
-                    <aside ref={previewPanel} className={`flex min-h-0 min-w-0 flex-col ${step === 1 ? "" : "rounded-lg border p-4"}`} style={step === 1 ? undefined : surface} aria-label="作品与说明">
-                        {step === 1 && <div className="mb-4 flex shrink-0 flex-col gap-2 border-b pb-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
-                            <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
-                                {reference && <button type="button" className="min-w-0 flex-1 truncate text-left text-sm" style={{ ...muted, overflow: "hidden" }} title={reference.name} onClick={() => showPanel("current")}>{reference.name}</button>}
-                                <div className="flex shrink-0 gap-1">
-                                    {targetImages.slice(0, 3).map((m) => <img key={m.id} src={m.url} alt={m.name} className="h-8 w-8 rounded object-cover" />)}
-                                </div>
-                            </div>
-                            <Button type="text" size="small" className="self-end sm:self-auto" disabled={locked} onClick={() => goStep(0)}>更换原视频</Button>
-                        </div>}
+                    <aside ref={previewPanel} className={`flex min-h-0 min-w-0 flex-col ${step === 1 ? "lg:overflow-y-auto" : "rounded-lg border p-4"}`} style={step === 1 ? undefined : surface} aria-label="作品与说明">
                         {step === 1 && <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
                             <div className="min-w-0 flex-1">
-                                {scriptPanel ? <Button type="link" size="small" className="!h-auto !max-w-full !px-0" title={referenceStatus} onClick={() => { setShowCurrentAnalysis(Boolean(d.analysis.trim())); openEditor("analysis", Boolean(analysisResult?.suggestion)); }}>
-                                    <span className="truncate" style={adoptedError || historicalReference ? { color: token.colorWarning } : undefined}>{adoptedError ? "原片分析待确认" : historicalReference ? `借鉴历史分析 · ${d.viralAdoptedAnalysis!.provenance.sourceName}` : analysisResult?.suggestion ? "新分析待采用" : d.analysis.trim() ? "原片已分析 · 查看" : "原片尚未分析"}</span>
-                                </Button> : <Button type="text" size="small" icon={<ArrowLeft size={14} />} onClick={() => openEditor("script", Boolean(d.viralScriptSuggestion))}>返回脚本</Button>}
+                                {!scriptPanel && <Button type="text" size="small" icon={<ArrowLeft size={14} />} onClick={() => openEditor("script", Boolean(d.viralScriptSuggestion))}>返回脚本</Button>}
                             </div>
                             <Button size="small" type="text" disabled={locked} icon={<SlidersHorizontal size={14} />} onClick={() => setSettingsOpen(true)}>{spec}</Button>
                             <Dropdown trigger={["click"]} menu={{ items: [
@@ -1237,7 +1336,7 @@ function ViralTaskWorkspace() {
                                 { key: "history", label: "历史任务" },
                                 { key: "guide", label: "使用说明" },
                                 { key: "options", label: "高级设置" },
-                            ], onClick: ({ key }) => key === "options" ? setOptionsOpen(true) : key === "analysis" ? openEditor(key) : showPanel(key) }}>
+                            ], onClick: ({ key }) => key === "options" ? setOptionsOpen(true) : key === "analysis" ? setSourceOpen(true) : showPanel(key) }}>
                                 <Tooltip title="更多"><Button size="small" type="text" aria-label="更多" icon={<MoreHorizontal size={16} />} /></Tooltip>
                             </Dropdown>
                         </div>}
@@ -1289,24 +1388,6 @@ function ViralTaskWorkspace() {
                             />
                         )}
                         {!busy && active?.error && active.stage !== "analyze" && <Alert className="mb-3" type="warning" title="上次处理未完成" description={publicServiceText(active.error)} />}
-                        {step === 1 && scriptPanel && <div className="mb-5 space-y-4 border-b pb-5" style={{ borderColor: token.colorBorderSecondary }} aria-label="复刻改编输入">
-                            <section className="space-y-3">
-                                <strong className="block font-medium">复刻要求（选填）</strong>
-                                {textPreview("instructions", "想改什么、保留什么？也可写名称、准确文字或其他资料；留空参考原片。")}
-                                {intentError && <p role="alert" className="text-xs" style={{ color: token.colorWarning }}>{intentError}</p>}
-                            </section>
-                            <Collapse activeKey={imagesOpen ? ["images"] : []} onChange={(keys) => setImagesOpen(keys.includes("images"))} items={[{ key: "images", forceRender: true, label: <span className="flex items-center justify-between gap-2"><span>补充图片（可选）</span>{targetImages.length > 0 && <span className="shrink-0 text-xs" style={muted}>{targetImages.length} 张</span>}</span>, children: <div className="space-y-4">
-                                {materialField("visual-reference", "参考图片", "商品、场景、主体或风格参考")}
-                                {materialField("model", "人物图片", "需要指定人物时添加")}
-                                {(referenceImages.length > 0 || d.viralProductAnalysis || d.viralProductSuggestion) && <Collapse items={[{ key: "product", label: "参考图片分析（可选）", children: <div className="space-y-3">
-                                    {heading("viralProductAnalysis", textAction("product-analyze", "分析参考图片", !referenceImages.length))}
-                                    <Collapse size="small" items={[{ key: "product-model", label: "分析模型", children: modelPicker("viral-recreate.analyze", "图片分析模型") }]} />
-                                    {productBlocked && <p className="text-xs" style={{ color: token.colorWarning }}>{productBlocked}</p>}
-                                    {textPreview("viralProductAnalysis", "参考图片的可见信息")}
-                                    {suggestion("viralProductAnalysis")}
-                                </div> }]} />}
-                            </div> }]} />
-                        </div>}
                         {step !== 1 && <Tabs
                             activeKey={tab}
                             onChange={(value) => value === "editor" ? openEditor(step === 0 ? "analysis" : "script") : setTab(value)}
@@ -1317,7 +1398,7 @@ function ViralTaskWorkspace() {
                                 { key: "history", label: "历史任务" },
                             ]}
                         />}
-                        <div className={`min-h-0 flex-1 ${step === 1 ? tab === "editor" ? `h-[60vh] ${editingField === "analysis" ? "min-h-[700px]" : "min-h-[460px]"}` : "" : tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "lg:overflow-y-auto"}`}>
+                        <div className={`min-h-0 flex-1 ${step === 1 ? tab === "editor" ? "h-[65vh] min-h-[460px] xl:h-auto xl:min-h-0" : "lg:overflow-y-auto" : tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "lg:overflow-y-auto"}`}>
                             {tab === "editor" && editorBody(editingField)}
                             {tab === "plan" && effectsPanel}
                             {tab === "keyframe" && keyframePanel}
@@ -1528,15 +1609,46 @@ function ViralTaskWorkspace() {
                             )}
                         </div>
                     </aside>
+                    {step === 1 && scriptChat}
                 </div>
             </div>
             <footer className={`shrink-0 border-t px-4 py-3 ${step === 1 ? "" : "lg:hidden"}`} style={{ background: token.colorBgContainer, borderColor: token.colorBorderSecondary }}>
-                <div className={step === 1 ? "mx-auto max-w-[1052px]" : ""}>
+                <div className={step === 1 ? "mx-auto flex max-w-[1800px] flex-col gap-2 sm:items-end" : ""}>
                     {actionHint}
-                    <div className={step === 1 ? "lg:ml-auto lg:max-w-sm" : ""}>{controls}</div>
+                    <div className={step === 1 ? "w-full sm:max-w-sm" : ""}>{controls}</div>
                 </div>
             </footer>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
+            <Modal title="原片提取内容" open={sourceOpen} onCancel={() => setSourceOpen(false)} width={900} footer={<Button onClick={() => setSourceOpen(false)}>返回脚本</Button>}>
+                <div className="space-y-3">
+                    <p className="break-words text-xs" style={muted}>{analysisSource(currentAnalysis)}</p>
+                    {historicalReference && <Alert type="warning" title={`历史来源：${currentAnalysis.provenance.sourceName}`} />}
+                    {adoptedError && <Alert type="warning" title={adoptedError} />}
+                    {d.analysis.trim() ? <Input.TextArea aria-label="原片提取内容" readOnly value={viralVisibleAnalysis(d.analysis)} autoSize={{ minRows: 8, maxRows: 20 }} /> : <Empty description="尚未采用原片分析" />}
+                </div>
+            </Modal>
+            <Modal title="脚本版本" open={versionsOpen} onCancel={() => setVersionsOpen(false)} footer={<Button onClick={() => setVersionsOpen(false)}>返回编辑</Button>} width={900}>
+                <div className="max-h-[65vh] space-y-4 overflow-y-auto">
+                    {!turns.length && <Empty description="暂无修改版本" />}
+                    {[...turns].reverse().map((turn) => <section key={turn.id} className="space-y-2 border-b pb-4" style={{ borderColor: token.colorBorderSecondary }}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="min-w-0 break-words text-sm">{turn.request}</span>
+                            <span className="text-xs" style={muted}>{turn.status === "accepted" ? "已采用" : turn.status === "pending" ? "待采用" : turn.status === "reverted" ? "已撤销" : "未采用"}</span>
+                        </div>
+                        <Input.TextArea aria-label={`版本：${turn.request}`} readOnly value={turn.after} autoSize={{ minRows: 2, maxRows: 6 }} />
+                        <Space wrap>
+                            <Button size="small" disabled={locked || Boolean(d.viralScriptSuggestion) || turn.after === d.script} onClick={() => {
+                                wb.edit(viralRestoreScript(d, turn.after, "恢复历史脚本版本"), "video");
+                                setVersionsOpen(false); setSuggestionView(false);
+                            }}>恢复此版本</Button>
+                            <Button size="small" disabled={locked || Boolean(d.viralScriptSuggestion) || turn.before === d.script} onClick={() => {
+                                wb.edit(viralRestoreScript(d, turn.before, "恢复修改前的脚本"), "video");
+                                setVersionsOpen(false); setSuggestionView(false);
+                            }}>恢复修改前</Button>
+                        </Space>
+                    </section>)}
+                </div>
+            </Modal>
             <Modal
                 title={comparison?.kind === "revision" ? "本次修改对照" : "原片与改编对照"}
                 width={1200}

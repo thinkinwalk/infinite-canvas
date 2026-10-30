@@ -77,7 +77,7 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
         closePicker();
     };
     const options = picker === "model"
-        ? library.models.filter((item) => (filter === "全部" || item.group === filter) && (gender === "全部" || item.gender === gender))
+        ? library.models.filter((item) => (filter === "全部" || item.group === filter) && (gender === "全部" || (gender === "child" ? item.child : !item.child && item.gender === gender)))
         : library.scenes.filter((item) => filter === "全部" || item.env === filter);
     const savePose = () => {
         const image = String(selection.poseImageUrl || "");
@@ -126,7 +126,7 @@ export default function TryonWorkspace({ values, onChange, renderUpload, footer,
     const selectionUpload = (key: string, label: string) => renderUpload(key, label, { values: selection, onChange: updateSelection });
     const catalog = libraryLoading ? <div className="grid min-h-40 place-items-center"><Spin /></div> : libraryError ? <div role="alert" className="flex min-h-40 flex-wrap items-center justify-center gap-3"><span className="text-sm text-red-500">{libraryError}</span><Button icon={<RefreshCw className="size-4" />} onClick={() => setReload((value) => value + 1)}>重试</Button></div> : <>
         <div className="mb-3 overflow-x-auto"><Segmented className="min-w-max" value={filter} options={picker === "scene" ? ["全部", "室内", "户外", "街景", "影棚", "度假"] : [{ label: "全部", value: "全部" }, { label: "中国", value: "cn" }, { label: "日本", value: "jp" }, { label: "韩国", value: "kr" }, { label: "其他", value: "intl" }]} onChange={(value) => setFilter(String(value))} /></div>
-        {picker === "model" ? <div className="mb-4"><Segmented value={gender} options={[{ label: "全部", value: "全部" }, { label: "女模", value: "f" }, { label: "男模", value: "m" }]} onChange={(value) => setGender(String(value))} /></div> : null}
+        {picker === "model" ? <div className="mb-4"><Segmented value={gender} options={[{ label: "全部", value: "全部" }, { label: "女模", value: "f" }, { label: "男模", value: "m" }, { label: "儿童", value: "child" }]} onChange={(value) => setGender(String(value))} /></div> : null}
         {options.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {options.map((item) => {
                 const selected = item.url === (picker === "model" ? selection.modelImageUrl : selection.sceneImageUrl);
