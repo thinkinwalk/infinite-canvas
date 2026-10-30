@@ -15,14 +15,24 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.123-prompt-images-20261030
-- Current production source: tag v0.19.123, commit 68129f8ed917b961912a1319690933a23a79ae10, plus the frontend-only prompt image patch documented below
+- Current production image: infinite-canvas:v0.19.124
+- Current production source: tag v0.19.124, commit c41445d25cb60c5906f238b25f7b5809b35a5aa0
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
 
-## Prompt image hotfix
+## v0.19.124 deployment
 
-- Frontend-only hotfix image `infinite-canvas:v0.19.123-prompt-images-20261030` serves `/assets/index-bcVNVW3R.js`. It uses the exact existing backend binary and applies four frontend source edits to base tag `v0.19.123`; no new source tag or GitHub Release was created. Source patch and staged source remain under `/opt/infinite-canvas/releases/prompt-images-20261030/`; local changes remain in the working tree for the next normal release.
+- Tag `v0.19.124`, commit `c41445d25cb60c5906f238b25f7b5809b35a5aa0`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.124`, ID `sha256:5e30efa43cddf586445daa7bae7f8d2c581be562541b2b400f878891144cafa1`, serves `/assets/index-CfgaJUwq.js`. Local evaluation media and account artifacts are excluded.
+- Try-on adds one children category with six boy and six girl references, retaining all 51 adults. All 24 public originals/thumbnails match provenance SHA-256. Viral recreation step two uses materials, script and conversation columns, with explicit suggestions, adoption, undo, version recovery and browser persistence. The prior prompt-image referrer hotfix is included in the tagged source.
+- Development evidence is retained in `.codex_tmp/tryon-child-qa/` and `.codex_tmp/viral-script-chat-qa/`. Release repeated no local tests, typecheck, build or browser interaction; server Docker build and 198 resource assertions passed. No paid inference was submitted, and actual try-on/script/video quality is pending.
+- Internal/external health, 11 public routes, default/VIP Worker gateways, full catalogs and signed quotes passed. Thirteen table counts, settings, balances/roles/groups and 11,104 existing file hashes were preserved. Management revision 15, 39 models/66 routes/657 bindings, defaults and prices are unchanged. Worker v0.19.87 was not restarted; no cloud tasks were cancelled or resubmitted.
+- Independent workstation HTTPS verification confirmed the exact public bundle, 63 models and 12 children; all 24 child originals/thumbnails decoded and matched provenance SHA-256. Evidence `.codex_tmp/v0.19.124-public-verification.json`, also archived under `/opt/infinite-canvas/releases/`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.124-20261030-135343/`; prebuild `/opt/infinite-canvas/backups/v0.19.124-prebuild-20261030-134349/`. Evidence `/opt/infinite-canvas/releases/v0.19.124-deployment.json` and local `.codex_tmp/v0.19.124-deployment.json`. Rollback restores final-backup Compose and recreates app only, preserving current database and the prior `v0.19.123-prompt-images-20261030` image.
+- Initial deployment automatically rolled back because the new deployment verifier compared a double-escaped JPEG header. The verifier was corrected to use `bytes.fromhex("ffd8")`; fresh backup and all strict checks then passed. No product-source change or relaxed file/hash guard was needed. First backup `/opt/infinite-canvas/backups/v0.19.124-20261030-134739/` remains available.
+
+## Prompt image hotfix (included in v0.19.124)
+
+- Previous frontend-only hotfix image `infinite-canvas:v0.19.123-prompt-images-20261030` served `/assets/index-bcVNVW3R.js`. It used the exact existing backend binary and applied four frontend source edits to base tag `v0.19.123`; no separate source tag or GitHub Release was created. Source patch and staged source remain under `/opt/infinite-canvas/releases/prompt-images-20261030/`; these changes are now committed and deployed in `v0.19.124`.
 - Homepage templates, shared prompt cards, detail cover/reference images and source preview thumbnails omit the Referer request header to avoid external hotlink rejection. Card/detail failures reset when template/cover changes; homepage failures follow cover URLs. Template catalogues and external source configuration are unchanged, with no automatic retries or new proxy service.
 - Development browser checks decoded all 250 curated covers, all six homepage covers and a detail image, observed no Referer on 256 catalogue requests, and checked desktop/390/320px layouts. Seven default source catalogues contain 1,742 records; ten covers per source were sampled and all 70 decoded. These samples do not certify every external-source image.
 - Server build, internal/external health, deployed public bundle and unchanged catalogues passed. Backend binary, Worker identity/start time/mounts, SQLite integrity/table counts, settings/account balances and 11,104 existing file hashes were preserved. Backup `/opt/infinite-canvas/backups/prompt-images-20261030-105321/`; evidence `/opt/infinite-canvas/releases/prompt-images-20261030/deployment.json`.
