@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.122
-- Current production source: tag v0.19.122, commit b01ea485a680cbfd8694d8c7a10cd8c0f5c583c8
+- Current production image: infinite-canvas:v0.19.123
+- Current production source: tag v0.19.123, commit 68129f8ed917b961912a1319690933a23a79ae10
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.123 deployment
+
+- Tag `v0.19.123`, commit `68129f8ed917b961912a1319690933a23a79ae10`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.123`, ID `sha256:2408d8724010709ad3d31098ab34c052a4c8020fa324530ffaa64065649fa925`, serves `/assets/index-B5cvoHkR.js`. Unrelated local evaluation artifacts are excluded.
+- Original-video upload and analysis remain in step one. Requirements, reference/person pictures and optional picture analysis are in step two above the script. Requirement changes preserve source analysis and manual text; the primary action updates the script through AI and keeps a suggestion until adopted. The prompt applies deletions/replacements to the target script rather than reintroducing removed source content.
+- Development verification passed 45 targeted tests/266 assertions and five isolated mocked browser groups, including desktop/390/320px in both themes. Combined Bun execution crashed, separate suites passed. Release did not repeat local tests/builds; required server Docker build passed. Actual AI adaptation and final video quality remain unverified; no paid inference was submitted for this release.
+- Server verification passed 186 resource markers, internal/external health, 11 public routes, default/VIP gateways, catalogs, signed quotes and workstation HTTPS. Thirteen table counts, settings, balances/roles/groups and 11,092 existing file hashes were preserved. Revision 15, 39 models/66 routes/657 bindings, defaults and prices are unchanged. Worker v0.19.87 was not restarted; no active cloud tasks, no cancellation or resubmission.
+- Final backup `/opt/infinite-canvas/backups/v0.19.123-20261030-102236/`; prebuild `/opt/infinite-canvas/backups/v0.19.123-prebuild-20261030-102010/`. Evidence `/opt/infinite-canvas/releases/v0.19.123-deployment.json` and local `.codex_tmp/v0.19.123-deployment.json`, `v0.19.123-public-verification.json`. Rollback restores final-backup Compose and recreates app only, preserving the current database and prior v0.19.122 image.
+- Post-deployment BitBrowser 464 CDP 51360 verification used an isolated context and copied existing analyzed draft/media. Step ownership, reference-free progression, preserving analysis/manual script after requirement/picture edits, refresh/navigation retention and the AI modification primary action passed. Desktop/390/320px screenshots were inspected, with no page errors or overflow. Original tab URLs and draft SHA-256 were preserved. Initial isolated Blob copying failed; using media data URLs passed without product changes. No inference was submitted. Evidence `/opt/infinite-canvas/releases/v0.19.123-browser-verification.json`, local `.codex_tmp/release-v0.19.123/`; refresh the original page to load this release. Actual AI adaptation/video quality is not accepted by these UI checks.
 
 ## v0.19.122 deployment
 
