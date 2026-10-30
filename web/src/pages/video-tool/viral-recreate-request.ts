@@ -30,6 +30,7 @@ export function viralScriptPrompt(d: VideoDraft, cfg: AiConfig) {
     return `为参考视频改编中文视频脚本，只返回可编辑脚本。目标规格：${cfg.videoSeconds}秒单片段，画幅${ratio === "auto" ? "16:9" : ratio}；按此规格重排内容与节奏，不机械照搬原片秒数。逐段写时间范围和实际画面，按本片需要描述镜头、主体、信息或动作；仅在实际存在或用户要求时写文字、声音和特殊效果，不强制凑齐字段。结尾遵循本片表达方式。
 ${viralContinuityRules}
 用户复刻要求与资料：${viralTargetFacts(d)}。
+将复刻要求及参考图片应用到输出脚本：要求删除的元素不再列为需要复现的画面，要求替换的内容只写修改后的目标状态；原片分析用于理解来源，不能把已删除或已替换的原内容重新补回。
 ${viralPlanPrompt(d)}
 已采用的参考结构：${viralAdoptedAnalysisText(d)}。
 参考图片分析：${d.viralProductStale ? "旧分析素材已变，以资料和图片为准" : d.viralProductAnalysis || "未提供，按图片可见内容和用途使用"}。
