@@ -71,6 +71,11 @@ func geminiVideoRequest(r *http.Request, channel model.ModelChannel, name string
 }
 
 func proxyVideoUnderstanding(w http.ResponseWriter, r *http.Request, channel model.ModelChannel, body []byte, userID, name string, credits int) {
+	var input struct{ Recreation bool `json:"recreation"` }
+	if json.Unmarshal(body, &input) == nil && input.Recreation {
+		proxyViralVideoAnalysis(w, r, channel, body, userID, name, credits)
+		return
+	}
 	selected := service.ManagedSelectionFromContext(r.Context())
 	if selected == nil || selected.Route.Adapter != "text.gemini-video" {
 		Fail(w, "请在模型管理中配置 Gemini 原生视频分析适配器；本次未扣费")

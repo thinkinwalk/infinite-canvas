@@ -27,7 +27,7 @@ import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
 import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
-import { viralEvidence, viralEvidenceError } from "./viral-evidence";
+import { viralEvidence, viralEvidenceError, viralVisibleAnalysis } from "./viral-evidence";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
@@ -167,8 +167,8 @@ function ViralTaskWorkspace() {
     const currentAnalysis = viralCurrentAnalysis(d),
         editorAnalysis = showCurrentAnalysis ? currentAnalysis : analysisResult,
         viewedAnalysis = viewed && viralRecordAnalysis(viewed);
-    const fieldValue = (field: Editor) => field === "analysis" ? editorAnalysis?.text || "" : field === "instructions" ? viralRequirements(d) : d[field] || "";
-    const suggestedValue = (field: Editor) => field === "analysis" ? !showCurrentAnalysis ? analysisResult?.suggestion?.text || "" : "" : suggestionInfo(field) ? d[suggestionInfo(field)!.key] || "" : "";
+    const fieldValue = (field: Editor) => field === "analysis" ? viralVisibleAnalysis(editorAnalysis?.text || "") : field === "instructions" ? viralRequirements(d) : d[field] || "";
+    const suggestedValue = (field: Editor) => field === "analysis" ? !showCurrentAnalysis ? viralVisibleAnalysis(analysisResult?.suggestion?.text || "") : "" : suggestionInfo(field) ? d[suggestionInfo(field)!.key] || "" : "";
     const historicalReference = Boolean(d.analysis.trim() && d.viralAdoptedAnalysis && d.viralAdoptedAnalysis.provenance.source !== viralSource(d));
     const referenceStatus = d.analysis.trim()
         ? adoptedError ? "分析依据已变化" : historicalReference ? `历史借鉴 · ${d.viralAdoptedAnalysis!.provenance.sourceName}` : `已采用当前视频分析 · ${d.viralAdoptedAnalysis?.provenance.modelLabel || "来源未确认"}${d.viralAdoptedAnalysis?.provenance.edited ? "（已编辑）" : ""}`
@@ -670,14 +670,13 @@ function ViralTaskWorkspace() {
                     </Space>
                 </div>
                 <p className="break-words text-xs" style={muted}>{analysisSource(viewedAnalysis)}</p>
-                <Input.TextArea aria-label="历史参考分析" value={viewedAnalysis.text} readOnly style={{ flex: 1, minHeight: 0, resize: "none", fontSize: 16 }} />
+                <Input.TextArea aria-label="历史参考分析" value={viralVisibleAnalysis(viewedAnalysis.text)} readOnly style={{ flex: 1, minHeight: 0, resize: "none", fontSize: 16 }} />
             </div>
         );
         const info = suggestionInfo(field),
             suggested = suggestedValue(field),
             viewingSuggestion = suggestionView && Boolean(suggested),
             value = viewingSuggestion ? suggested : fieldValue(field),
-            uncertain = field === "analysis" ? viralEvidence(value).facts.filter((fact) => fact.status === "uncertain") : [],
             evidenceError = field === "analysis" ? viralEvidenceError(value) : "",
             inputStyle = { height: "100%", fontSize: 16, lineHeight: 1.8, padding: 16, resize: "none" as const },
             disabled = locked || (field === "transcript" && !reference);
@@ -709,8 +708,6 @@ function ViralTaskWorkspace() {
                         }} />
                         {(viewingSuggestion ? analysisResult?.suggestion : editorAnalysis) && <p className="break-words text-xs" style={muted}>{analysisSource((viewingSuggestion ? analysisResult?.suggestion : editorAnalysis)!)}</p>}
                         {evidenceError && <Alert type="warning" title={evidenceError} />}
-                        {uncertain.length > 0 && <Alert type="warning" title={`${uncertain.length} 项内容待核对`} description={<div className="break-words">{uncertain.map((fact) => `${fact.time} ${fact.subject}：${fact.description}`).join("；")}</div>} />}
-                        {!viewingSuggestion && editorAnalysis?.text.trim() && editorAnalysis.provenance.source === viralSource(d) && editorAnalysis.provenance.mode === analysisMode && editorAnalysis.provenance.inputKey === viralAnalysisInputKey(d, analysisMode) && <Button size="small" icon={<RefreshCw size={14} />} disabled={locked || Boolean(analysisBlocked)} onClick={() => { setShowCurrentAnalysis(false); void wb.run("analyze", editorAnalysis); }}>复核分析</Button>}
                         {showCurrentAnalysis && adoptedError && <Alert type="warning" title={adoptedError} />}
                         {showCurrentAnalysis && historicalReference && !adoptedError && <Alert type="warning" title="正在借鉴其他视频的历史分析" description={`原视频：${d.viralAdoptedAnalysis!.provenance.sourceName}。这份内容不是当前视频的分析结果。`} />}
                         {showCurrentAnalysis && d.viralAdoptedAnalysis && !adoptedError && d.viralAdoptedAnalysis.inputKey !== d.viralAdoptedAnalysis.provenance.inputKey && <p className="text-xs" style={muted}>已确认沿用原分析，未重新分析当前输入</p>}
@@ -1359,7 +1356,7 @@ function ViralTaskWorkspace() {
                                             ) : result ? (
                                                 result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史关键画面" className="max-h-[55vh] w-full object-contain" /> : <video ref={comparisonResult} controls src={result.url} className="max-h-[55vh] w-full rounded object-contain" onTimeUpdate={(e) => { const player = e.currentTarget; if (Number.isFinite(player.duration) && player.duration > 0) setComparisonProgress(player.currentTime / player.duration * 100); }} onError={() => setPreviewError(true)} />
                                             ) : viewed?.text ? (
-                                                <Input.TextArea aria-label="历史文案" rows={12} value={viewed.text} readOnly />
+                                                <Input.TextArea aria-label="历史文案" rows={12} value={viewed.stage === "analyze" ? viralVisibleAnalysis(viewed.text || "") : viewed.text} readOnly />
                                             ) : (
                                                 <div className="flex min-h-52 items-center justify-center">
                                                     <Empty description="生成后在这里对照预览" />
@@ -1564,7 +1561,7 @@ function ViralTaskWorkspace() {
                     </div> : <p className="mb-3 shrink-0 text-xs" style={muted}>对比已采用的改编脚本与本次新建议；新建议尚未替换已采用稿。</p>}
                     {comparison.kind === "source" && !d.analysis.trim() ? <div className="flex min-h-0 flex-1 items-center justify-center"><Empty description="分析原视频后，可在这里对照改编脚本" /></div> : <ViralScriptComparison
                         key={`${comparison.kind}-${comparison.target}`}
-                        before={comparison.kind === "source" ? d.analysis : d.script}
+                        before={comparison.kind === "source" ? viralVisibleAnalysis(d.analysis) : d.script}
                         after={comparison.target === "suggestion" ? d.viralScriptSuggestion || "" : d.script}
                         beforeLabel={comparison.kind === "revision" ? "已采用脚本" : `${historicalReference ? "历史视频" : "原片"}内容（${!currentAnalysis.provenance.model ? "已采用分析" : currentAnalysis.provenance.edited ? "AI 还原·已校对" : "AI 还原"}）`}
                         afterLabel={comparison.target === "suggestion" ? "新建议（待采用）" : "改编脚本"}
@@ -1587,7 +1584,7 @@ function ViralTaskWorkspace() {
             <Modal title="从已采用分析添加要点" width={760} open={effectSourceOpen} onCancel={() => setEffectSourceOpen(false)} footer={<Space><Button onClick={() => setEffectSourceOpen(false)}>取消</Button><Button type="primary" disabled={locked || !effectSelection.trim() || Boolean(adoptedError)} onClick={() => { addEffect(effectSelection.trim()); setEffectSourceOpen(false); }}>添加要点</Button></Space>}>
                 <div className="space-y-3">
                     <p className="text-sm" style={muted}>参考原分析填写需要保留的动作或效果，也可选中原文后修改。</p>
-                    <Input.TextArea aria-label="选择分析中的复刻要点" readOnly value={d.analysis} rows={14} onSelect={(e) => captureEffectSelection(e.target as HTMLTextAreaElement)} onMouseUp={(e) => captureEffectSelection(e.currentTarget)} onKeyUp={(e) => captureEffectSelection(e.currentTarget)} />
+                    <Input.TextArea aria-label="选择分析中的复刻要点" readOnly value={viralVisibleAnalysis(d.analysis)} rows={14} onSelect={(e) => captureEffectSelection(e.target as HTMLTextAreaElement)} onMouseUp={(e) => captureEffectSelection(e.currentTarget)} onKeyUp={(e) => captureEffectSelection(e.currentTarget)} />
                     <label className="block space-y-2 text-sm"><span>要点内容</span><Input.TextArea aria-label="待添加的复刻要点" value={effectSelection} autoSize={{ minRows: 2, maxRows: 6 }} placeholder="需要保留或改编的内容、镜头或表现特点" onChange={(e) => setEffectSelection(e.target.value)} /></label>
                 </div>
             </Modal>

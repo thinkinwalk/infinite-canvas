@@ -17,6 +17,13 @@ import (
 func managedOperation(path string, body []byte) string {
 	switch path {
 	case "/video-understanding":
+		var input struct {
+			Recreation bool   `json:"recreation"`
+			Mode       string `json:"mode"`
+		}
+		if json.Unmarshal(body, &input) == nil && input.Recreation && input.Mode == "frames" {
+			return "text"
+		}
 		return "video-understand"
 	case "/videos":
 		return "video"

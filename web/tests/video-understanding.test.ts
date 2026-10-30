@@ -11,7 +11,7 @@ if (!globalThis.localStorage) {
 }
 const { configForFeature, defaultConfig, managedEffectiveConfig, useConfigStore } = await import("../src/stores/use-config-store");
 const { useUserStore } = await import("../src/stores/use-user-store");
-const { requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
+const { requestViralAnalysis, requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
 const { viralAnalysisMode, viralInput, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
 const { emptyVideoDraft } = await import("../src/types/video-workbench");
@@ -72,7 +72,7 @@ test("video bytes, signed quote and feature go to native analysis without a work
         expect(submitted).toBe(true);
         const headers = init?.headers as Record<string, string>;
         expect(headers).toMatchObject({ "X-Model-Feature": VIDEO_ANALYSIS_FEATURE, "X-Model-Revision": "41", "X-Model-Quote": "native-proof", "X-Expected-Credits": "7", Authorization: "Bearer native-test" });
-        expect(JSON.parse(String(init?.body))).toEqual({ model: "model_native", prompt: "分析声音和动作", video: { mimeType: "video/mp4", data: "dmlkZW8=" } });
+        expect(JSON.parse(String(init?.body))).toEqual({ model: "model_native", prompt: "分析声音和动作", recreation: true, mode: "video", frameCount: 1, frameTimes: [], transcript: "", video: { mimeType: "video/mp4", data: "dmlkZW8=" } });
         return new Response(JSON.stringify({ code: 0, data: { text: "00:00 人物转身" } }));
     };
     const text = await requestVideoUnderstanding(config, { url: "data:video/mp4;base64,dmlkZW8=", storageKey: "", mimeType: "video/mp4", bytes: 5, width: 100, height: 100 }, "分析声音和动作", new AbortController().signal, () => { submitted = true; });
@@ -98,6 +98,38 @@ const referenceDraft = () => {
     draft.transcript = "商品介绍";
     return draft;
 };
+
+test("frame requests use the task snapshot and only its explicitly selected same-source transcript", async () => {
+    globalThis.FileReader = class {
+        result = "data:video/mp4;base64,dmlkZW8=";
+        onload?: () => void;
+        readAsDataURL() { this.onload?.(); }
+    } as unknown as typeof FileReader;
+    useUserStore.setState({ token: "frames-test", hydrateUser: async () => {} });
+    const d = referenceDraft();
+    d.media[0] = { ...d.media[0], storageKey: "", url: "data:video/mp4;base64,dmlkZW8=" };
+    d.viralFrameSource = d.viralTranscriptSource = viralSource(d);
+    d.viralFrameTimes = [0.5, 1.5];
+    d.frameCount = 2;
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = async (url, init) => {
+        const path = String(url);
+        if (path === "/api/v1/models/quote") {
+            expect((init?.headers as Record<string, string>)["X-Model-Feature"]).toBe("viral-recreate.analyze");
+            return new Response(JSON.stringify({ code: 0, data: { credits: 3, quoteToken: "frames-proof" } }));
+        }
+        if (path.startsWith("data:")) return new Response("video", { headers: { "Content-Type": "video/mp4" } });
+        expect(path).toBe("/api/v1/video-understanding");
+        expect((init?.headers as Record<string, string>)["X-Model-Feature"]).toBe("viral-recreate.analyze");
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ code: 0, data: { text: "裙摆展开" } }));
+    };
+    for (const snapshot of [d, { ...d, viralUseTranscript: true }, { ...d, viralUseTranscript: true, viralTranscriptSource: "other" }]) {
+        await requestViralAnalysis(config, d.media[0], "分析", "frames", 2, new AbortController().signal, undefined, snapshot);
+    }
+    expect(bodies.map((b) => b.transcript)).toEqual(["", "商品介绍", ""]);
+    expect(bodies.every((b) => b.model === "model_script" && JSON.stringify(b.frameTimes) === "[0.5,1.5]")).toBe(true);
+});
 
 test("native analysis depends only on its source, not sampling, transcription, product or generation settings", () => {
     const draft = referenceDraft(), key = viralAnalysisInputKey(draft, "video");

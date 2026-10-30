@@ -16,7 +16,7 @@ const nonempty = (value: unknown): value is string => typeof value === "string" 
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 function analysisBlocks(text: string) {
-    return [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].flatMap((match) => {
+    return [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].flatMap<{ raw: string; data: Record<string, unknown> | null }>((match) => {
         try {
             const data: unknown = JSON.parse(match[1]);
             return object(data) && ("analysisFacts" in data || "recreationEffects" in data) ? [{ raw: match[0], data }] : [];
@@ -54,6 +54,8 @@ export function viralAnalysisBody(text: string) {
     return analysisBlocks(text).reduce((body, block) => body.replace(block.raw, ""), text).trim();
 }
 
+export const viralVisibleAnalysis = viralAnalysisBody;
+
 export function viralAnalysisEditText(previous: string, next: string) {
     // Editing prose invalidates an unchanged appendix instead of retaining a conflicting hidden authority.
     if (viralAnalysisBody(previous) === viralAnalysisBody(next)) return next;
@@ -70,9 +72,9 @@ export function viralExecutionAnalysis(d: VideoDraft) {
     const evidence = viralEvidence(d.analysis);
     if (evidence.state === "none") return viralAnalysisBody(d.analysis);
     const facts = viralSupportedFacts(d);
-    return `模型观察记录，尚未经独立视觉核验；用户明确修改要求优先：\n${facts.map((fact) =>
-        `${fact.id}｜${fact.time}｜${fact.subject}：${fact.description}${fact.surface ? `；文字承载物与位置：${fact.surface}` : ""}；依据：${fact.evidence.join("、")}；来源：${fact.source}`
-    ).join("\n") || "没有可采用的观察记录，不补写未知细节。"}\n不确定或缺少本模式依据的记录未作为生成要求；不能据此新增道具、物体变形、文字或声音。`;
+    return `原视频可复刻要点：\n${facts.map((fact) =>
+        `${fact.time}｜${fact.subject}：${fact.description}${fact.surface ? `；文字承载物与位置：${fact.surface}` : ""}`
+    ).join("\n") || "没有可采用的观察记录，不补写未知细节。"}\n${d.instructions.trim() ? `用户改编要求：${d.instructions.trim()}` : ""}\n只按可复刻要点组织画面，不新增无依据的独立道具、形态变化、文字位置或声音。`;
 }
 
 export function viralAnalysisReviewPrompt(version: ViralAnalysisVersion) {

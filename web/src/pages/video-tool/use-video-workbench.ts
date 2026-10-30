@@ -20,9 +20,9 @@ import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMater
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
-import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
-import { viralAnalysisReviewPrompt, viralFrameLabel } from "./viral-evidence";
-import { requestVideoUnderstanding, videoAnalysisConfig } from "@/services/api/video-understanding";
+import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisContent, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
+import { viralFrameLabel } from "./viral-evidence";
+import { requestViralAnalysis, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
 import { contentReplacementPrompt } from "./content-replace-prompt";
@@ -781,30 +781,32 @@ export function useVideoWorkbench(tool: VideoTool) {
                 viralOutputStale: true,
             };
         }
-        if (tool === "viral-recreate" && ["analyze", "product-analyze", "script"].includes(stage)) {
-            if (stage === "analyze" && viralAnalysisMode(d, config) === "video") {
-                const scoped = videoAnalysisConfig(config);
-                const provenance = viralAnalysisProvenance(d, "video", config);
+        if (tool === "viral-recreate" && stage === "analyze") {
+                const mode = viralAnalysisMode(d, config);
+                const scoped = viralAnalysisConfig(config, mode);
+                const provenance = viralAnalysisProvenance(d, mode, config);
+                if (mode === "frames" && scoped.channelMode === "local") {
+                    const value = await text(ctx, `分析原视频的抽样画面。${viralAnalysisSections} 静态画面之间的过程只按可见依据描述，不声称听到声音。${d.viralUseTranscript && d.viralTranscriptSource === viralSource(d) ? `同源转写（仅作transcript依据）：${d.transcript}` : "没有采用转写，不输出audio或transcript来源的记录。"}`, d.frames, true, d.frames.map((_, i) => viralFrameLabel(d, i)));
+                    return viralAnalysisResultPatch(d, { text: value, provenance });
+                }
                 const quote = await quoteTextModel(scoped, scoped.textModel, ctx.signal);
-                await confirmStorePrice(quote, ctx.analysisReview ? "复核参考分析" : "参考视频分析", ctx.signal, ctx.analysisReview ? "将完整参考视频、音轨与待核验分析发送到所选模型；复核单独计费，结果作为建议保留" : "将参考视频及其音轨发送到所选模型渠道，按当前分析模型单独计费");
+                await confirmStorePrice(quote, ctx.analysisReview ? "复核参考分析" : "参考视频分析", ctx.signal, "将参考视频发送至所选模型，按当前分析模型单独计费");
                 ctx.signal.throwIfAborted();
-                store().patchRecord(ctx.recordId, { step: "正在分析视频与音轨" });
-                const value = await requestVideoUnderstanding(config, required(viralReference(d), "上传参考视频"),
-                    `分析参考视频，输出中文复刻参考。${viralAnalysisSections} 时间可用 MM:SS.s 表达短暂变化，均为估计，不能声称逐帧检测、精确镜头边界或音乐节拍。区分画面可见事实、实际听辨内容和推断；没有声音或听不清时明确说明。${ctx.analysisReview ? `\n${viralAnalysisReviewPrompt(ctx.analysisReview)}` : ""}`,
-                    ctx.signal, () => store().patchRecord(ctx.recordId, { nativeAnalysisSubmitted: true }));
+                store().patchRecord(ctx.recordId, { step: "正在分析参考视频" });
+                const value = await requestViralAnalysis(scoped, required(viralReference(d), "上传参考视频"),
+                    `分析参考视频，提取可直接用于复刻的镜头与画面，不向用户展示内部核对过程。${viralAnalysisContent} 时间可用 MM:SS.s 表达短暂变化，均为估计。不得声称逐帧检测、精确镜头边界或音乐节拍。`,
+                    mode, mode === "video" ? emptyVideoDraft(tool).frameCount : d.frameCount, ctx.signal,
+                    () => store().patchRecord(ctx.recordId, { nativeAnalysisSubmitted: true }), d);
                 return viralAnalysisResultPatch(d, { text: value, provenance: { ...provenance, ...(ctx.analysisReview ? { reviewOf: ctx.analysisReview.provenance.createdAt } : {}) } }, ctx.analysisReview);
-            }
+        }
+        if (tool === "viral-recreate" && ["product-analyze", "script"].includes(stage)) {
             const cfg = viralVideoConfig(d, config);
-            const images = stage === "analyze" ? d.frames : stage === "product-analyze" ? viralReferenceImages(d) : d.media.filter((m) => viralKeyframeMaterials(d).some((input) => input.id === m.id) || m.id === d.viralFirstFrameId || (d.viralClimaxUse !== "preview" && d.viralClimaxUse && m.id === d.viralClimaxId));
+            const images = stage === "product-analyze" ? viralReferenceImages(d) : d.media.filter((m) => viralKeyframeMaterials(d).some((input) => input.id === m.id) || m.id === d.viralFirstFrameId || (d.viralClimaxUse !== "preview" && d.viralClimaxUse && m.id === d.viralClimaxId));
             const instruction =
-                stage === "analyze"
-                    ? `分析原视频的均匀抽样画面。${viralAnalysisSections} 每张图片前标有对应编号与预计采样位置，观察依据引用该编号，不把时间估计称为实际帧时码或镜头边界。不推测精确转场或音乐节拍，静态画面之间缺失的过程标为不确定，不能从首尾形态直接断定真实变形。所有视觉记录source为visual。${d.viralUseTranscript && d.transcript && d.viralTranscriptSource === viralSource(d) ? `用户确认/转写的音轨文字（只作文字依据，不代表实际听到声音，相关记录source为transcript）：${d.transcript}` : "没有采用音轨转写，只能按画面分析，不输出audio或transcript来源的观察记录，不声称听到了口播或音乐。"} 只描述可见事实。${ctx.analysisReview ? `\n${viralAnalysisReviewPrompt(ctx.analysisReview)}` : ""}`
-                    : stage === "product-analyze"
+                stage === "product-analyze"
                       ? `分析参考图片的可见内容与可用于视频改编的特征，按每张图的实际内容区分主体、环境或视觉风格，不默认都是商品或背景。编号与用途：${images.map((m) => `${viralMaterialLabels(d).find((l) => l.id === m.id)?.label}=${viralVisualRole(m.role)}`).join("；")}。用户真实资料：${viralTargetFacts(d)}。只写可见事实，不编造身份、价格、优惠、功效或承诺；不能辨认时说明。`
                       : viralScriptPrompt(d, cfg);
-            const provenance = stage === "analyze" ? viralAnalysisProvenance(d, "frames", config) : undefined;
-            const value = await text(ctx, instruction, images, stage !== "script", stage === "analyze" ? images.map((_, index) => viralFrameLabel(d, index)) : undefined);
-            if (stage === "analyze") return viralAnalysisResultPatch(d, { text: value, provenance: { ...provenance!, ...(ctx.analysisReview ? { reviewOf: ctx.analysisReview.provenance.createdAt } : {}) } }, ctx.analysisReview);
+            const value = await text(ctx, instruction, images, stage !== "script");
             if (stage === "product-analyze") return { ...(d.viralProductAnalysis ? { viralProductSuggestion: value } : { viralProductAnalysis: value, viralProductStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
             return d.script ? { viralScriptSuggestion: value } : { script: value, viralScriptStale: false, viralOutputStale: true };
         }

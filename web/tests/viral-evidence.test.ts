@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ViralAnalysisFact } from "../src/pages/video-tool/viral-evidence";
-import { viralAnalysisBody, viralAnalysisEditText, viralEvidence, viralExecutionAnalysis, viralFrameLabel, viralSupportedFacts } from "../src/pages/video-tool/viral-evidence";
+import { viralAnalysisBody, viralAnalysisEditText, viralEvidence, viralExecutionAnalysis, viralFrameLabel, viralSupportedFacts, viralVisibleAnalysis } from "../src/pages/video-tool/viral-evidence";
 import { emptyVideoDraft } from "../src/types/video-workbench";
 
 if (!globalThis.localStorage) {
@@ -33,7 +33,8 @@ test("uncertain identity changes never become keep effects or execution facts, b
     expect(viralEffectCandidates(text).map((e) => e.description)).toEqual(["裙摆向上展开，仍与裙身连续连接"]);
     expect(viralPlanEffects(d)).toHaveLength(1);
     expect(viralExecutionAnalysis(d)).not.toContain("独立折扇");
-    expect(viralExecutionAnalysis(d)).toContain("尚未经独立视觉核验");
+    expect(viralExecutionAnalysis(d)).not.toContain("analysisFacts");
+    expect(viralExecutionAnalysis(d)).not.toContain("uncertain");
     const real = document(fact("real", { description: "画面中布裙确实变为金属道具" }));
     expect(viralEffectCandidates(real)[0].description).toContain("变为金属道具");
 });
@@ -132,4 +133,12 @@ test("frame labels distinguish estimated sample positions from unavailable times
     expect(viralFrameLabel(d, 1)).toContain("1.25 秒");
     expect(viralFrameLabel(d, 2)).toContain("时间未返回");
     expect(viralFrameLabel(d, 3)).toContain("时间未返回");
+});
+
+test("long analyses retain all scene details for generation while the appendix stays invisible", () => {
+    const facts = Array.from({ length: 32 }, (_, i) => fact(`scene-${i}`, { description: `镜头${i}的动作与环境`, kind: "structure" }));
+    const text = document(...facts);
+    expect(viralExecutionAnalysis({ ...draft(), analysis: text })).toContain("镜头31");
+    expect(viralVisibleAnalysis(text)).not.toContain("analysisFacts");
+    expect(viralVisibleAnalysis(text)).not.toContain("scene-31");
 });
