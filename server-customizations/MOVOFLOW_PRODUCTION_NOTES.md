@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.118
-- Current production source: tag v0.19.118, commit f5ea7a06728106f61bc6e360f60f35ccd7ecdbce
+- Current production image: infinite-canvas:v0.19.119
+- Current production source: tag v0.19.119, commit 98e6a470d4417f0722d9a1766b2164fdcb629b41
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.119 deployment
+
+- Source tag `v0.19.119`, commit `98e6a470d4417f0722d9a1766b2164fdcb629b41`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.119`, ID `sha256:24ba5228f2055fd88d8612f62c42cc273c10dd21b73dab3bca5c4976d622067a`, matches the tag. Evaluation media/account artifacts and concurrent unfinished analysis-evidence changes are excluded.
+- Viral recreation opens a blank task on fresh entry, archives prior content, keeps the current task on reload, defaults optional images to collapsed, groups history by task and offers new/continue/continue-from-step actions. History preview preserves current input. Analysis buttons, comparison replay and reference-account verification fixes are included.
+- Development passed 7 task unit tests/29 assertions and 7 isolated browser groups, 17 reference-account tests/60 assertions, 9 analysis-entry mocked browser groups and 6 actual comparison playback scenarios. Release repeated no local tests/builds or browser interactions. Server Docker build, 170 resource markers, internal/external health, 11 pages, default/VIP Worker gateways, permissions, complete catalogs and signed quotes passed. Independent workstation HTTPS verified `/assets/index-BA7F98CB.js`.
+- The initial deployment guard stopped before switching because the historical template required the old Gemini default. Current management revision 15 has 39 models / 66 routes / 657 bindings and native-analysis default `model__e2chdzTRPu8ghBE0OjHM` at 20 credits for both groups. The corrected verifier compares the complete current baseline before/after; configuration, defaults and prices remain unchanged. Image edit/try-on stay 10 credits and enhancement remains free. No inference was submitted.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.119-20261030-035121/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.119-prebuild-20261030-034636/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 11,064 existing file hashes matched. Only app was replaced; Worker identity, image, start time and mounts are unchanged.
+- No cloud task was active at switching. The existing replacement planning record is effectively paused with its linked Worker completed; records remain intact without cancellation/resubmission. Try-on schema version 5/12 fields and existing image concurrency controls remain. Real browser history, cloud recovery, expired media, account ownership and output quality await user acceptance.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.119-deployment.json`, `v0.19.119-public-verification.json` and workstation `.codex_tmp/v0.19.119-*.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.118 image. No protocol or generation-quality improvement is claimed.
 
 ## v0.19.118 deployment
 
