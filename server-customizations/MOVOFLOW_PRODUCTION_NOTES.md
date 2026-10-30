@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.119
-- Current production source: tag v0.19.119, commit 98e6a470d4417f0722d9a1766b2164fdcb629b41
+- Current production image: infinite-canvas:v0.19.120
+- Current production source: tag v0.19.120, commit 435ee73c02d6ed3403d138d261fa5960b1acdf6d
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.120 deployment
+
+- Source tag `v0.19.120`, commit `435ee73c02d6ed3403d138d261fa5960b1acdf6d`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.120`, ID `sha256:cadce728d3ba9c17e0b10e9f1ba2e6d99b7c2442bb9ff6e314add9bcfdcf94ea`, matches the tag. Unrelated local evaluation media/account artifacts are excluded.
+- Native-video and sampled-frame analysis share object identity, continuity and text-carrier rules. Structured observations distinguish observed facts from uncertainty; downstream scripts/frames/video share supported observations. Optional review is separately quoted and remains a suggestion. Editing analysis clears unchanged stale appendices and requires updating or explicitly retaining the old script.
+- Development passed 50 targeted tests/282 assertions and six isolated mocked browser groups. Release repeated no local tests/builds. Server Docker build, 185 resource markers, internal/external health, 11 pages, default/VIP Worker gateways, permissions, complete catalogs and signed quotes passed. Independent workstation HTTPS verified `/assets/index-DUV9kgL-.js`.
+- Final SQLite/Compose/private environment backup: `/opt/infinite-canvas/backups/v0.19.120-20261030-043219/`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.120-prebuild-20261030-042943/`. Quick checks, 13 table counts, settings, balances/roles/groups/status and 11,070 existing file hashes matched. Only app was replaced; Worker identity, image, start time and mounts are unchanged.
+- Management revision 15, 39 models / 66 routes / 657 bindings, defaults and pricing are unchanged. Native-analysis default is `model__e2chdzTRPu8ghBE0OjHM`, 20 credits for both groups. No active cloud tasks were present; the paused planning record and completed linked Worker remain intact. No task was cancelled or resubmitted.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.120-deployment.json` and workstation `.codex_tmp/v0.19.120-deployment.json`, `v0.19.120-public-verification.json`. Rollback restores final-backup Compose and recreates only app, retaining the current database and available v0.19.119 image. No real paid inference was submitted; adaptive sampling, independent visual verification, text tracking and protocol repair are not implemented by this release.
+- At the user's request, post-deployment browser verification used BitBrowser window 464 via current CDP port 51360 and an isolated context with a saved draft/reference copy. Seven groups passed: live 20-credit native quote cancellation, mocked review/adoption, prose/appendix synchronization, stale-script retention, failure preservation, sampled-frame labels and 1440/390/320px layout. No page errors or horizontal overflow; full-page screenshots were inspected. Original tabs were neither reloaded nor navigated and the original workbench hash matched. Inference was intercepted, so this is not real model-quality acceptance. Report: workstation `.codex_tmp/release-v0.19.120/browser-verification.json`, server `/opt/infinite-canvas/releases/v0.19.120-browser-verification.json`.
 
 ## v0.19.119 deployment
 
