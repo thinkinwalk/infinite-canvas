@@ -244,6 +244,7 @@ export type VideoDraft = {
     viralProductSuggestion?: string;
     viralScriptSuggestion?: string;
     viralRevision?: number;
+    viralTaskId?: string;
     viralStep?: number;
     viralKeyframePrompt?: string;
     viralKeyframeReferenceId?: string;
@@ -310,6 +311,8 @@ export type VideoRecord = {
     };
     storeExploreInput?: StoreExploreInput;
     viralInput?: ViralRecreateInput;
+    viralTaskId?: string;
+    viralDraft?: VideoDraft;
     digitalHumanInput?: DigitalHumanInput;
     digitalHumanQuote?: import("@/services/api/replicate").ReplicateQuote;
     upscaleInput?: UpscaleInput;

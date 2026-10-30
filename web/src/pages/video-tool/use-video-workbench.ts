@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { isLegacyMaskedPersonRecord } from "@/lib/content-replacement-state";
+import { archiveViralTask } from "@/lib/viral-task";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { importVideoURL } from "@/services/api/video-import";
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
@@ -1230,7 +1231,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     baseUrl: resolveModelRequestConfig(config, storeVideoConfig(d, config).videoModel).baseUrl,
                 },
             });
-        if (tool === "viral-recreate") store().patchRecord(id, { viralInput: viralInput(d, viralVideoConfig(d, config)) });
+        if (tool === "viral-recreate") store().patchRecord(id, { viralTaskId: d.viralTaskId, viralInput: viralInput(d, viralVideoConfig(d, config)) });
         patch({ activeRecord: id });
         try {
             const value = await execute(stage, { signal, recordId: id, worker });
@@ -1415,7 +1416,16 @@ export function useVideoWorkbench(tool: VideoTool) {
                     const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     const frames = await Promise.all(input.frames.map(restoreWorkbenchFile));
                     signal.throwIfAborted();
-                    patch({ ...input, ...viralPlanState(input), viralAnalyses: input.viralAnalyses, viralAdoptedAnalysis: input.viralAdoptedAnalysis, viralUseTranscript: input.viralUseTranscript, media, frames, activeRecord: record.id, video: null, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "" });
+                    const current = read(tool);
+                    await useVideoWorkbenchStore.setState((state) => ({
+                        records: archiveViralTask(current, state.records),
+                        drafts: { ...state.drafts, [tool]: {
+                            ...emptyVideoDraft(tool), ...input, ...viralPlanState(input), media, frames,
+                            viralTaskId: record.viralTaskId || record.id, viralStep: record.stage === "video" ? 2 : 0,
+                            viralRevision: (current.viralRevision || 0) + 1, activeRecord: record.id,
+                        } },
+                    }));
+                    if (store().storageError) throw new Error("任务保存失败，请检查浏览器存储后恢复查询");
                 } else if (tool === "store-explore" && record.storeExploreInput) {
                     if (record.storeExploreInput.channelMode !== config.channelMode) throw new Error("请切换回该任务原来的平台 / 自定义渠道后恢复查询");
                     if (config.channelMode === "local" && record.storeExploreInput.baseUrl !== resolveModelRequestConfig(config, record.storeExploreInput.storeSettings?.videoModel || record.modelTask?.model || "").baseUrl)

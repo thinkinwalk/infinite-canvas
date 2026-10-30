@@ -1,4 +1,5 @@
 import localforage from "localforage";
+import { fetchCurrentUser } from "@/services/api/auth";
 import { collectMediaStorageKeys, deleteStoredMedia, type UploadedFile } from "@/services/file-storage";
 import { useUserStore } from "@/stores/use-user-store";
 import { canCleanVideoReference, clearExpiredReferenceURLs, referenceExpiresAt, type TemporaryVideoReference } from "@/lib/video-reference-retention";
@@ -14,10 +15,37 @@ const lockName = (id: string) => `infinite-canvas:reference:${id}`;
 
 export const readVideoReferenceRetention = (id: string) => storage.getItem<TemporaryVideoReference>(id);
 
+async function referenceSession(ownerId = "", signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    const { token, user, isReady } = useUserStore.getState();
+    if (!token) {
+        if (ownerId) throw new Error("请先登录后使用这条参考视频，原素材已保留");
+        return { token, userId: "" };
+    }
+    let currentUser = user;
+    if (!isReady || !currentUser?.id || currentUser.role === "guest" || (ownerId && ownerId !== currentUser.id)) {
+        try {
+            currentUser = await fetchCurrentUser(token);
+        } catch {
+            signal?.throwIfAborted();
+            if (useUserStore.getState().token !== token) throw new Error("登录状态已变化，请重新操作");
+            throw new Error("暂时无法核实当前账号，请稍后重试，原素材已保留");
+        }
+        signal?.throwIfAborted();
+        if (useUserStore.getState().token !== token) throw new Error("登录状态已变化，请重新操作");
+        if (!currentUser?.id || currentUser.role === "guest") throw new Error("登录已失效，请重新登录后继续，原素材已保留");
+        useUserStore.setState({ user: currentUser, isReady: true });
+    }
+    if (ownerId && ownerId !== currentUser.id) throw new Error("当前账号与导入这条参考视频的账号不一致，请切换原账号，或在当前账号重新导入原视频");
+    return { token, userId: currentUser.id };
+}
+
 export async function trackTemporaryVideo(media: UploadedFile, name: string, source?: VideoImportSource): Promise<UploadedFile> {
+    const session = await referenceSession();
+    if (useUserStore.getState().token !== session.token) throw new Error("登录状态已变化，请重新导入参考视频");
     const id = crypto.randomUUID();
     const reference: TemporaryVideoReference = {
-        id, userId: useUserStore.getState().user?.id || "", name, source, storageKey: media.storageKey,
+        id, userId: session.userId, name, source, storageKey: media.storageKey,
         keys: [media.storageKey], lastUsedAt: Date.now(), keep: false,
     };
     await storage.setItem(id, reference);
@@ -25,8 +53,9 @@ export async function trackTemporaryVideo(media: UploadedFile, name: string, sou
     return { ...media, referenceId: id };
 }
 
-async function syncRetention(id: string, action: "use" | "review" | "keep" | "temporary", signal?: AbortSignal) {
-    const token = useUserStore.getState().token;
+async function syncRetention(id: string, action: "use" | "review" | "keep" | "temporary", token: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (useUserStore.getState().token !== token) throw new Error("登录状态已变化，请重新操作");
     if (!token) return;
     const response = await fetch("/api/v1/video/reference-retention", {
         method: "POST", signal, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -42,9 +71,10 @@ export async function updateVideoReferenceRetention(id: string, action: "use" | 
         const saved = await readVideoReferenceRetention(id);
         if (!saved) throw new Error("参考素材记录不存在，请重新导入");
         if (saved.cleanedAt) throw new Error("参考视频已清理，请重新导入");
-        const userId = useUserStore.getState().user?.id || "";
-        if (saved.userId && saved.userId !== userId) throw new Error("请登录导入该参考素材的账号后继续");
-        await syncRetention(id, action, signal);
+        const session = await referenceSession(saved.userId, signal);
+        await syncRetention(id, action, session.token, signal);
+        signal?.throwIfAborted();
+        if (useUserStore.getState().token !== session.token) throw new Error("登录状态已变化，请重新操作");
         const next = {
             ...saved,
             ...(action === "use" || action === "temporary" ? { lastUsedAt: Date.now(), reviewedAt: undefined } : {}),

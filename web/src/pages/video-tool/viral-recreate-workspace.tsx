@@ -11,6 +11,7 @@ import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { formatBytes } from "@/lib/image-utils";
+import { hasViralTaskContent, viralTaskDraft, viralTaskGroups } from "@/lib/viral-task";
 import { materialMentionError, supportedVideoInputModes, videoInputMode, videoProfile } from "@/lib/video-capabilities";
 import { VideoModelOption } from "@/components/video-model-option";
 import { publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel, reconcileReplicateTask } from "@/services/api/replicate";
@@ -25,10 +26,10 @@ import type { StoreVideoSettings, VideoRecord, ViralAnalysisMode, ViralAnalysisV
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
-import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralAnalysisResultPatch, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
+import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
-import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanState, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
+import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
 import ViralScriptComparison from "./viral-script-comparison";
 
 type Role = "reference" | "visual-reference" | "product" | "background" | "model" | "first-frame";
@@ -40,8 +41,29 @@ const suggestionFields = {
 } as const;
 const suggestionInfo = (field: Editor) => (field === "viralProductAnalysis" || field === "script" ? suggestionFields[field] : undefined);
 const states = { running: "处理中", completed: "已完成", interrupted: "查询暂停", failed: "失败" };
+let resumeReloadedTask = window.location.pathname === "/video/viral-recreate" && (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload";
 
 export default function ViralRecreateWorkspace() {
+    const hydrated = useVideoWorkbenchStore((state) => state.hydrated);
+    const taskId = useVideoWorkbenchStore((state) => state.drafts["viral-recreate"]?.viralTaskId);
+    const initialized = useRef(false), [ready, setReady] = useState(false);
+    const { message } = App.useApp();
+    useEffect(() => {
+        if (!hydrated || initialized.current) return;
+        initialized.current = true;
+        const state = useVideoWorkbenchStore.getState(), resume = resumeReloadedTask;
+        resumeReloadedTask = false;
+        if (state.storageError || state.busyTools["viral-recreate"] || resume) {
+            if (!state.storageError && !state.drafts["viral-recreate"]?.viralTaskId) state.patchDraft("viral-recreate", { viralTaskId: crypto.randomUUID() });
+            setReady(true);
+            return;
+        }
+        void state.openViralTask().catch((error) => message.error(error instanceof Error ? error.message : "任务初始化失败")).finally(() => setReady(true));
+    }, [hydrated]);
+    return ready ? <ViralTaskWorkspace key={taskId} /> : <div className="p-12 text-center"><Spin /></div>;
+}
+
+function ViralTaskWorkspace() {
     const wb = useVideoWorkbench("viral-recreate"),
         { draft: d, busy } = wb;
     const config = useVideoCreationConfig(),
@@ -59,6 +81,7 @@ export default function ViralRecreateWorkspace() {
         uploadLock = useRef(false),
         [errors, setErrors] = useState<Partial<Record<Role, string>>>({});
     const [expandedRoles, setExpandedRoles] = useState<Partial<Record<Role, boolean>>>({});
+    const [imagesOpen, setImagesOpen] = useState(false);
     const [assetRole, setAssetRole] = useState<Role | null>(null),
         [editor, setEditor] = useState<Editor | null>(null),
         [editingField, setEditingField] = useState<Editor>("script"),
@@ -121,6 +144,7 @@ export default function ViralRecreateWorkspace() {
     const sourceRatio = reference?.width && reference?.height ? inferVideoRatio(`${reference.width}x${reference.height}`) : "";
     const sourceEffectsChanged = Boolean(d.viralEffects?.length && d.viralEffectsSource !== viralEffectsSource(d));
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
+    const taskGroups = viralTaskGroups(wb.records);
     const active = wb.records.find((r) => r.id === d.activeRecord),
         blocked = viralVideoError(d, cfg) || (pending ? "已有任务可恢复，请先查询或确认原任务状态" : "");
     const modelBlocked = (featureId: string, name: string) => {
@@ -179,7 +203,7 @@ export default function ViralRecreateWorkspace() {
     ]);
     const quote = price?.key === priceKey ? price.value : null,
         result = viewed ? viewed.result : d.video;
-    const original = viewed ? viralReference({ ...d, media: viewed.viralInput?.media || [] }) : reference;
+    const original = viewed ? viralReference({ ...d, media: viewed.viralDraft?.media || viewed.viralInput?.media || [] }) : reference;
     const muted = { color: token.colorTextSecondary },
         surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
     useEffect(() => {
@@ -216,7 +240,7 @@ export default function ViralRecreateWorkspace() {
         });
         setShowCurrentAnalysis(Boolean(recovery.patch.analysis?.trim() || recovery.patch.viralAdoptedAnalysis));
         if (foreign && recovery.patch.analysis === "" && step === 1) { setEditingField("script"); setTab("editor"); }
-        if (versions.length) message.info(foreign ? "其他视频的分析已归入本浏览器作品，请分析当前视频" : "旧参考分析已归入本浏览器作品");
+        if (versions.length) message.info(foreign ? "其他视频的分析已归入历史任务，请分析当前视频" : "旧参考分析已归入历史任务");
     }, [wb.hydrated, wb.storageError, locked, d.analysis, d.viralAdoptedAnalysis, d.viralAnalyses, reference?.id, reference?.storageKey]);
     useEffect(() => {
         quoteController.current?.abort();
@@ -277,10 +301,13 @@ export default function ViralRecreateWorkspace() {
     };
     const playComparison = async () => {
         const source = comparisonOriginal.current, target = comparisonResult.current;
-        if (!source || !target || !Number.isFinite(source.duration) || !Number.isFinite(target.duration) || target.duration <= 0) { message.info("请等待两段视频加载后再对照"); return; }
+        if (!source || !target || !Number.isFinite(source.duration) || !Number.isFinite(target.duration) || source.duration <= 0 || target.duration <= 0) { message.info("请等待两段视频加载后再对照"); return; }
         try {
+            // 先处理成片重播，避免按旧的结尾进度把原片也定位到结尾。
+            if (target.ended || target.currentTime >= target.duration) target.currentTime = 0;
             source.currentTime = source.duration * target.currentTime / target.duration;
             source.playbackRate = source.duration / target.duration;
+            setComparisonProgress(target.currentTime / target.duration * 100);
             await Promise.all([source.play(), target.play()]);
         } catch {
             source.pause(); target.pause(); source.playbackRate = 1;
@@ -324,7 +351,7 @@ export default function ViralRecreateWorkspace() {
             })) continue;
             store.addRecord({
                 id: crypto.randomUUID(), tool: "viral-recreate", stage: "analyze", status: "completed", createdAt: Date.now(),
-                step: "编辑稿备份", text: version.text, viralInput: viralInput(d, cfg),
+                step: "编辑稿备份", text: version.text, viralTaskId: d.viralTaskId, viralInput: viralInput(d, cfg),
                 draftPatch: { viralAnalysisMode: version.provenance.mode, viralAnalyses: { [version.provenance.mode]: { text: version.text, provenance: version.provenance } } },
             });
         }
@@ -774,44 +801,57 @@ export default function ViralRecreateWorkspace() {
     };
     const showRecord = async (r: VideoRecord) => {
         if (viralRecordAnalysis(r)) {
-            if (step !== 0) goStep(0);
             setViewed(r);
             setEditingField("analysis");
             setTab("editor");
             return;
         }
         try {
-            const media = await Promise.all((r.viralInput?.media || []).map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
-            setViewed({ ...r, ...(r.viralInput ? { viralInput: { ...r.viralInput, media } } : {}), ...(r.result ? { result: await restoreWorkbenchFile(r.result) } : {}) });
+            const media = await Promise.all((r.viralDraft?.media || r.viralInput?.media || []).map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
+            setViewed({ ...r, ...(r.viralInput ? { viralInput: { ...r.viralInput, media } } : {}), ...(r.viralDraft ? { viralDraft: { ...r.viralDraft, media } } : {}), ...(r.result ? { result: await restoreWorkbenchFile(r.result) } : {}) });
             setTab("current");
         } catch (e) {
             message.error(e instanceof Error ? e.message : "作品读取失败");
         }
     };
     const restoreInput = (r: VideoRecord) => {
-        if (!r.viralInput) return;
-        modal.confirm({
-            title: "恢复这次制作的输入",
-            content: "将替换当前素材、分析与脚本；不会创建新收费任务。",
-            okText: "恢复输入",
-            cancelText: "取消",
-            onOk: async () => {
-                const { channelMode: _mode, baseUrl: _url, ...input } = r.viralInput!;
+        const input = viralTaskDraft(r);
+        if (!input) return;
+        const restore = async () => {
+            try {
                 const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) }))),
                     frames = await Promise.all(input.frames.map(restoreWorkbenchFile));
+                const outputs = input.video ? { video: await restoreWorkbenchFile(input.video) } : {};
                 const state = useVideoWorkbenchStore.getState();
                 if (state.busyTools["viral-recreate"] || state.drafts["viral-recreate"]?.viralRevision !== d.viralRevision) {
                     message.warning("草稿已变化，请重新选择历史记录");
                     return;
                 }
-                saveAnalysisDrafts([viralAnalysisNeedsProtection(d) ? currentAnalysis : undefined, ...Object.values(d.viralAnalyses || {}).filter((v) => v?.provenance.edited)]);
-                const restored = { ...d, ...input, ...viralPlanState(input), media, frames };
-                const analysis = viralRecordAnalysis(r);
-                wb.patch({ ...input, ...viralPlanState(input), viralAnalyses: input.viralAnalyses, viralAdoptedAnalysis: input.viralAdoptedAnalysis, viralUseTranscript: input.viralUseTranscript, media, frames, ...(analysis ? viralAnalysisResultPatch(restored, analysis) : {}), viralOutputStale: true, viralAnalysisSuggestion: "", viralProductSuggestion: "", viralScriptSuggestion: "", viralRevision: (d.viralRevision || 0) + 1 });
+                await state.openViralTask({ ...input, ...outputs, media, frames });
                 setViewed(null);
-                setTab("current");
-            },
+                setTab(input.viralStep === 1 ? "editor" : "current");
+                setEditingField("script");
+                setShowCurrentAnalysis(Boolean(input.analysis.trim()));
+                setSuggestionView(false);
+                setImagesOpen(false);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "任务恢复失败");
+            }
+        };
+        if (hasViralTaskContent(d)) modal.confirm({
+            title: "继续这条历史任务？",
+            content: "当前内容会先保存到历史任务，再恢复所选任务的素材、脚本与进度。",
+            okText: "继续任务", cancelText: "取消", onOk: restore,
         });
+        else void restore();
+    };
+    const newTask = () => {
+        const create = () => useVideoWorkbenchStore.getState().openViralTask();
+        if (hasViralTaskContent(d)) modal.confirm({
+            title: "新建任务？", content: "当前内容会保存到历史任务，可随时继续。",
+            okText: "新建任务", cancelText: "取消", onOk: create,
+        });
+        else void create().catch((error) => message.error(error instanceof Error ? error.message : "新建任务失败"));
     };
     const spec = `${cloud ? "跟随首帧 / 平台默认" : inferVideoRatio(cfg.size)} · ${wan ? "约 " : ""}${cfg.videoSeconds}秒 · ${cfg.vquality}p`;
     const intentFields = <div className="space-y-3">
@@ -894,10 +934,12 @@ export default function ViralRecreateWorkspace() {
         showPanel("editor");
         void wb.run("analyze");
     };
+    const analyzing = busy && active?.stage === "analyze";
+    const preparationBusyLabel = analyzing ? "正在解析视频…" : busy && active?.stage === "frames" ? "正在抽取画面…" : busy && active?.stage === "transcribe" ? "正在转写音轨…" : "";
     const preparationAction = reference && (adoptedError || analysisResult?.suggestion || (!d.analysis.trim() && analysisResult?.text.trim())) ? {
         label: "查看并确认原片分析", disabled: false, run: openAnalysis,
     } : reference && !d.analysis.trim() ? {
-        label: failedAnalysis ? "重新解析原视频" : "解析原视频", disabled: Boolean(analysisBlocked), run: analyzeReference,
+        label: failedAnalysis ? "重新解析视频" : "开始解析视频", disabled: Boolean(analysisBlocked), run: analyzeReference,
     } : {
         label: "下一步：改编脚本",
         disabled: Boolean(intentError) || (!reference && !d.script.trim() && !viralRequirements(d).trim()),
@@ -908,16 +950,16 @@ export default function ViralRecreateWorkspace() {
             <strong className="font-medium">原视频解析</strong>
             {d.analysis.trim() && <Button type="link" size="small" disabled={locked} onClick={openAnalysis}>查看分析</Button>}
         </div>
-        <p className="text-sm" style={adoptedError ? { color: token.colorWarning } : muted}>
-            {!reference ? "添加原视频后开始解析" : busy && ["analyze", "frames", "transcribe"].includes(active?.stage || "") ? active?.step || "正在解析原视频" : adoptedError || (analysisResult?.suggestion ? "新分析待确认，原分析已保留" : d.analysis.trim() ? referenceStatus : failedAnalysis ? "解析未完成" : "尚未解析")}
+        <p className="text-sm" role="status" aria-live="polite" style={adoptedError ? { color: token.colorWarning } : muted}>
+            {!reference ? "添加原视频后开始解析" : preparationBusyLabel ? active?.step || preparationBusyLabel : adoptedError || (analysisResult?.suggestion ? "新分析待确认，原分析已保留" : d.analysis.trim() ? referenceStatus : failedAnalysis ? "解析未完成" : analysisMode === "frames" && frames.length ? `抽样完成 · ${frames.length} 张画面，尚未解析` : "尚未解析")}
         </p>
+        {d.analysis.trim() && <Button block size="large" loading={analyzing} disabled={locked || !reference || Boolean(analysisBlocked)} icon={<RefreshCw size={16} />} onClick={analyzeReference}>{analyzing ? "正在解析视频…" : "重新解析视频"}</Button>}
         {reference && <p className="break-words text-xs" style={muted}>{viralAnalysisNames[analysisMode]} · {modelOptionLabel(analysisConfig, analysisConfig.textModel) || "未配置分析模型"}</p>}
         {failedAnalysis && <Alert type="warning" showIcon title={d.analysis.trim() ? "本次解析未完成，原分析已保留" : "原视频解析未完成"} description={<div className="space-y-2">
             <p className="break-words">{publicServiceText(active?.error || "请核对分析模型和渠道后再试")}</p>
             {analysisMode === "video" && <Button size="small" disabled={locked} onClick={() => { changeAnalysisMode("frames"); openEditor("analysis"); showPanel("editor"); }}>改用抽样画面分析</Button>}
         </div>} />}
         {analysisBlocked && <p role="alert" className="text-xs" style={{ color: token.colorWarning }}>{analysisBlocked}</p>}
-        {d.analysis.trim() && <Button size="small" disabled={locked || !reference || Boolean(analysisBlocked)} icon={<RefreshCw size={14} />} onClick={analyzeReference}>重新解析原视频</Button>}
         <Collapse size="small" items={[{ key: "analysis-options", label: "解析设置", children: analysisOptions }]} />
         {reference && !d.analysis.trim() && <Button type="link" size="small" className="!px-0" disabled={locked} onClick={() => openEditor("script")}>直接编写脚本</Button>}
     </section>;
@@ -957,8 +999,8 @@ export default function ViralRecreateWorkspace() {
     ) : step !== 2 ? (
         <div className="flex items-center gap-2">
             {step > 0 && <Button aria-label="上一步" icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => goStep(step - 1)} />}
-            <Button type="primary" block disabled={locked || (step === 0 ? preparationAction.disabled : nextAction.disabled)} icon={step === 0 && reference && !d.analysis.trim() ? <Sparkles size={15} /> : <ArrowRight size={15} />} onClick={() => step === 0 ? preparationAction.run() : nextAction.run()}>
-                {step === 0 ? preparationAction.label : nextAction.label}
+            <Button type="primary" block size={step === 0 ? "large" : "middle"} loading={step === 0 && Boolean(preparationBusyLabel)} disabled={locked || (step === 0 ? preparationAction.disabled : nextAction.disabled)} icon={step === 0 && reference && !d.analysis.trim() ? <Sparkles size={16} /> : <ArrowRight size={15} />} onClick={() => step === 0 ? preparationAction.run() : nextAction.run()}>
+                {step === 0 ? preparationBusyLabel || preparationAction.label : nextAction.label}
             </Button>
         </div>
     ) : (
@@ -1089,9 +1131,10 @@ export default function ViralRecreateWorkspace() {
                     <h1 className="text-lg font-semibold">爆款复刻</h1>
                 </div>
                 <div className="flex items-center gap-1">
+                <Button type="text" size="small" disabled={locked || Boolean(wb.storageError)} icon={<Plus size={14} />} onClick={newTask}>新建任务</Button>
                 {step === 0 && <Button type="text" size="small" icon={<Play size={14} />} onClick={() => showPanel("current")}>预览素材</Button>}
                 {step !== 1 && <Dropdown trigger={["click"]} menu={{ items: [
-                    { key: "history", label: "本浏览器作品" },
+                    { key: "history", label: "历史任务" },
                     { key: "guide", label: "使用说明" },
                     { type: "divider" },
                     { key: "options", label: "高级设置" },
@@ -1114,7 +1157,7 @@ export default function ViralRecreateWorkspace() {
                                 {textPreview("instructions", "想改什么、保留什么？也可写名称、准确文字或其他资料；留空参考原片。")}
                                 {intentError && <p role="alert" className="text-xs" style={{ color: token.colorWarning }}>{intentError}</p>}
                             </section>
-                            <Collapse defaultActiveKey={targetImages.length ? ["images"] : []} items={[{ key: "images", forceRender: true, label: <span className="flex items-center justify-between gap-2"><span>补充图片（可选）</span>{targetImages.length > 0 && <span className="shrink-0 text-xs" style={muted}>{targetImages.length} 张</span>}</span>, children: <div className="space-y-4">
+                            <Collapse activeKey={imagesOpen ? ["images"] : []} onChange={(keys) => setImagesOpen(keys.includes("images"))} items={[{ key: "images", forceRender: true, label: <span className="flex items-center justify-between gap-2"><span>补充图片（可选）</span>{targetImages.length > 0 && <span className="shrink-0 text-xs" style={muted}>{targetImages.length} 张</span>}</span>, children: <div className="space-y-4">
                                 {materialField("visual-reference", "参考图片", "商品、场景、主体或风格参考")}
                                 {materialField("model", "人物图片", "需要指定人物时添加")}
                                 {(referenceImages.length > 0 || d.viralProductAnalysis || d.viralProductSuggestion) && <Collapse items={[{ key: "product", label: "参考图片分析（可选）", children: <div className="space-y-3">
@@ -1203,7 +1246,7 @@ export default function ViralRecreateWorkspace() {
                                 { key: "plan", label: "复刻细节（可选）" },
                                 { key: "instructions", label: "修改复刻要求" },
                                 { type: "divider" },
-                                { key: "history", label: "本浏览器作品" },
+                                { key: "history", label: "历史任务" },
                                 { key: "guide", label: "使用说明" },
                                 { key: "options", label: "高级设置" },
                             ], onClick: ({ key }) => key === "options" ? setOptionsOpen(true) : key === "analysis" || key === "instructions" ? openEditor(key) : showPanel(key) }}>
@@ -1265,7 +1308,7 @@ export default function ViralRecreateWorkspace() {
                             items={[
                                 { key: "current", label: step === 0 ? "素材预览" : "视频对照" },
                                 { key: "editor", label: step === 0 ? editingField === "transcript" ? "音轨文字" : editingField === "viralProductAnalysis" ? "参考图片分析" : "原片分析" : "改编脚本" },
-                                { key: "history", label: "本浏览器作品" },
+                                { key: "history", label: "历史任务" },
                             ]}
                         />}
                         <div className={`min-h-0 flex-1 ${step === 1 ? tab === "editor" ? `h-[60vh] ${editingField === "analysis" ? "min-h-[700px]" : "min-h-[460px]"}` : "" : tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "lg:overflow-y-auto"}`}>
@@ -1277,7 +1320,7 @@ export default function ViralRecreateWorkspace() {
                                     {viewed && (
                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                             <span className="text-sm">
-                                                查看历史 · {stageLabels[viewed.stage]} · {new Date(viewed.createdAt).toLocaleString()}
+                                                查看历史 · {viewed.stage === "draft" ? "任务草稿" : stageLabels[viewed.stage]} · {new Date(viewed.createdAt).toLocaleString()}
                                             </span>
                                             <Button size="small" onClick={() => setViewed(null)}>
                                                 返回当前制作
@@ -1352,10 +1395,22 @@ export default function ViralRecreateWorkspace() {
                             {tab === "history" && (
                                 <div className="space-y-3">
                                     <p className="text-xs" style={muted}>记录与草稿仅保存在当前浏览器，不会同步到其他设备。清理浏览器数据前请下载需要保留的作品。</p>
-                                    {!wb.records.length && <Empty description="暂无本浏览器制作记录" />}
-                                    {wb.records.map((r) => (
-                                        <div key={r.id} className="space-y-2 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }}>
-                                            <div className="flex justify-between gap-2">
+                                    {!taskGroups.length && <Empty description="暂无历史任务" />}
+                                    {taskGroups.map((group) => (
+                                        <div key={group.id} className="min-w-0 space-y-3 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }} data-testid="viral-history-task">
+                                            <div className="grid min-w-0 gap-1 sm:flex sm:items-start sm:justify-between sm:gap-2">
+                                                <strong className="min-w-0 flex-1 break-words font-medium [overflow-wrap:anywhere]">{group.title}</strong>
+                                                <span className="shrink-0 text-xs" style={muted}>{new Date(group.updatedAt).toLocaleString()}</span>
+                                            </div>
+                                            <p className="text-xs" style={muted}>{group.current.stage === "draft" ? "草稿已保存" : `${stageLabels[group.current.stage] || group.current.stage} · ${states[group.current.status]}`}{group.records.length > 0 ? ` · ${group.records.length} 条步骤记录` : ""}</p>
+                                            <Space wrap>
+                                                <Button size="small" disabled={locked || !group.result} onClick={() => group.result && void showRecord(group.result)}>查看结果</Button>
+                                                {(group.current.viralDraft || group.current.viralInput) && <Button size="small" disabled={locked || Boolean(wb.storageError)} onClick={() => restoreInput(group.current)}>继续任务</Button>}
+                                            </Space>
+                                            {group.records.length > 0 && <Collapse ghost size="small" items={[{ key: "steps", label: "步骤记录", children: <div className="space-y-3">
+                                    {group.records.map((r) => (
+                                        <div key={r.id} className="space-y-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
+                                            <div className="flex flex-wrap justify-between gap-2">
                                                 <strong className="font-medium">
                                                     {r.stage === "analyze" ? r.step === "旧稿归档" ? "历史参考分析 · 旧稿" : r.step === "其他视频分析归档" ? "历史参考分析 · 其他视频" : r.step === "编辑稿备份" ? "参考分析编辑稿" : "参考视频分析" : r.stage === "frames" ? "抽取参考画面" : r.stage === "keyframe" && r.viralInput?.viralImageTarget === "climax" ? "补充画面合成" : r.stage === "product-analyze" ? "参考图片分析" : stageLabels[r.stage]} · {states[r.status]}
                                                 </strong>
@@ -1399,7 +1454,7 @@ export default function ViralRecreateWorkspace() {
                                                 }}>使用这张{r.viralInput?.viralImageTarget === "climax" ? "补充画面" : "首帧"}</Button>}
                                                 {r.viralInput && (
                                                     <Button size="small" disabled={locked} onClick={() => restoreInput(r)}>
-                                                        恢复输入
+                                                        从这一步继续
                                                     </Button>
                                                 )}
                                                 {["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask) && (
@@ -1445,6 +1500,9 @@ export default function ViralRecreateWorkspace() {
                                             </Space>
                                         </div>
                                     ))}
+                                            </div> }]} />}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                             {tab === "guide" && (
@@ -1455,7 +1513,7 @@ export default function ViralRecreateWorkspace() {
                                     <p>新分析中的复刻要点自动带入，无需导入或填写脚本位置；完整分析仍用于改编。个别要点可在「细节调整」修改，真实效果需查看成片。</p>
                                     <p>只有当前模型需要首帧时，才必须准备视频画面；支持多素材参考的模型可以直接使用参考图片。补充画面可供预览，或按模型能力明确选为普通参考、结束尾帧，普通参考不能锁定时刻。图片合成与视频分别计费。</p>
                                     <p>第 3 步核对实际输入与费用。首帧驱动只接收已选画面，多素材与原视频参考按当前模型已配置的能力发送；没有发送原视频时，动作依照文字重建，不能保证逐帧复现。</p>
-                                    <p>两种分析分别保存，未人工编辑的新结果自动用于后续改编；人工编辑稿在替换前保留到历史。更换视频后，其他视频的分析归入本浏览器作品；主动借鉴时须核对原视频与当前视频，不代表已分析当前视频。同一视频改变抽样参数后可确认沿用。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
+                                    <p>两种分析分别保存，未人工编辑的新结果自动用于后续改编；人工编辑稿在替换前保留到历史。更换视频后，其他视频的分析归入历史任务；主动借鉴时须核对原视频与当前视频，不代表已分析当前视频。同一视频改变抽样参数后可确认沿用。手写脚本和合规首帧可直接生成，不依赖抽样或Whisper服务。</p>
                                     <p>分析、脚本、关键画面与视频分别确认费用；停止等待不等于取消平台任务。恢复查询只查原任务，不再次提交收费任务。成片验收按制作时的要点快照保存，联动对照按时长比例播放，不代表镜头已自动对齐。</p>
                                     <p>
                                         素材、草稿与作品保存在本浏览器。精准替换原视频主体可使用<Link to="/video/content-replace">内容替换</Link>；多片段剪辑、独立字幕与配音需后续处理。

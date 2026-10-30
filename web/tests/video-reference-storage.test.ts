@@ -17,8 +17,12 @@ const forage = {
 };
 mock.module("localforage", () => ({ default: forage }));
 mock.module("../src/stores/use-config-store", () => ({ withLocalProxy: (url: string) => url }));
-const user = { token: "session", user: { id: "test-user" } };
-mock.module("../src/stores/use-user-store", () => ({ useUserStore: { getState: () => user } }));
+const user: { token: string; user: { id: string; role?: string } | null; isReady: boolean } = { token: "session", user: { id: "test-user" }, isReady: true };
+const fetchCurrentUser = mock(async (_token?: string) => ({ id: "test-user", role: "user" }));
+mock.module("../src/services/api/auth", () => ({ fetchCurrentUser }));
+mock.module("../src/stores/use-user-store", () => ({ useUserStore: {
+    getState: () => user, setState: (patch: Partial<typeof user>) => Object.assign(user, patch),
+} }));
 let workbench: any;
 let assets: unknown[];
 let projects: unknown[];
@@ -39,6 +43,9 @@ const originalFetch = globalThis.fetch;
 const key = "media:reference";
 beforeEach(() => {
     databases.clear();
+    Object.assign(user, { token: "session", user: { id: "test-user" }, isReady: true });
+    fetchCurrentUser.mockClear();
+    fetchCurrentUser.mockImplementation(async () => ({ id: "test-user", role: "user" }));
     assets = [];
     projects = [];
     workbench = { hydrated: true, storageError: "", drafts: {}, records: [], digitalPresets: [], busyTools: {} };
@@ -135,4 +142,112 @@ test("a late worker download cannot resurrect a cleaned reference", async () => 
     database("media_files").set(copy.storageKey, new Blob(["late"]));
     await expect(registerTemporaryReferenceCopy(original.referenceId!, copy)).rejects.toThrow("已清理");
     expect(database("media_files").has(copy.storageKey)).toBe(false);
+});
+
+test("a signed-in reference owner can continue while their profile is still loading", async () => {
+    const media = await expired();
+    user.user = null;
+    user.isReady = false;
+    await updateVideoReferenceRetention(media.referenceId!, "use");
+    expect(fetchCurrentUser).toHaveBeenCalledWith("session");
+    expect(user.user?.id).toBe("test-user");
+    expect(user.isReady).toBe(true);
+    expect((await readVideoReferenceRetention(media.referenceId!))?.lastUsedAt).toBeGreaterThan(Date.now() - 1000);
+});
+
+test("a stale profile is verified against the server before reporting a different owner", async () => {
+    const media = await expired();
+    user.user = { id: "stale-user" };
+    await updateVideoReferenceRetention(media.referenceId!, "keep");
+    expect(user.user?.id).toBe("test-user");
+    expect((await readVideoReferenceRetention(media.referenceId!))?.keep).toBe(true);
+});
+
+test("a confirmed different account cannot update the original reference or its ownership", async () => {
+    const media = await expired();
+    const saved = await readVideoReferenceRetention(media.referenceId!);
+    user.user = { id: "other-user" };
+    fetchCurrentUser.mockImplementation(async () => ({ id: "other-user", role: "user" }));
+    const requests: unknown[] = [];
+    globalThis.fetch = (async (...args: unknown[]) => { requests.push(args); return Response.json({ code: 0 }); }) as typeof fetch;
+    await expect(updateVideoReferenceRetention(media.referenceId!, "keep")).rejects.toThrow("当前账号与导入这条参考视频的账号不一致");
+    expect(requests).toHaveLength(0);
+    expect(await readVideoReferenceRetention(media.referenceId!)).toEqual(saved);
+    expect(database("media_files").has(key)).toBe(true);
+});
+
+test("profile verification failure preserves the session and reference", async () => {
+    const media = await expired();
+    const saved = await readVideoReferenceRetention(media.referenceId!);
+    user.user = null;
+    fetchCurrentUser.mockImplementation(async () => { throw new Error("network failed"); });
+    await expect(updateVideoReferenceRetention(media.referenceId!, "use")).rejects.toThrow("暂时无法核实当前账号");
+    expect(user.token).toBe("session");
+    expect(await readVideoReferenceRetention(media.referenceId!)).toEqual(saved);
+});
+
+test("missing login and an expired session have distinct messages", async () => {
+    const media = await expired();
+    user.token = "";
+    user.user = null;
+    await expect(updateVideoReferenceRetention(media.referenceId!, "use")).rejects.toThrow("请先登录后使用");
+    expect(fetchCurrentUser).not.toHaveBeenCalled();
+    user.token = "expired-session";
+    fetchCurrentUser.mockImplementation(async () => ({ id: "", role: "guest" }));
+    await expect(updateVideoReferenceRetention(media.referenceId!, "use")).rejects.toThrow("登录已失效");
+});
+
+test("switching accounts during verification never overwrites the new session", async () => {
+    const media = await expired();
+    const saved = await readVideoReferenceRetention(media.referenceId!);
+    user.user = null;
+    fetchCurrentUser.mockImplementation(async () => {
+        Object.assign(user, { token: "new-session", user: { id: "new-user" } });
+        return { id: "test-user", role: "user" };
+    });
+    await expect(updateVideoReferenceRetention(media.referenceId!, "use")).rejects.toThrow("登录状态已变化");
+    expect(user.user?.id).toBe("new-user");
+    expect(await readVideoReferenceRetention(media.referenceId!)).toEqual(saved);
+});
+
+test("imports verify a pending profile before recording the owner", async () => {
+    user.user = null;
+    user.isReady = false;
+    const media = await trackTemporaryVideo({ storageKey: key, url: "blob:reference", mimeType: "video/mp4", bytes: 8 }, "对标.mp4");
+    expect((await readVideoReferenceRetention(media.referenceId!))?.userId).toBe("test-user");
+    expect(fetchCurrentUser).toHaveBeenCalledTimes(1);
+});
+
+test("anonymous imports remain usable without authenticating or adopting an existing owner", async () => {
+    user.token = "";
+    user.user = null;
+    const media = await trackTemporaryVideo({ storageKey: key, url: "blob:reference", mimeType: "video/mp4", bytes: 8 }, "对标.mp4");
+    await updateVideoReferenceRetention(media.referenceId!, "keep");
+    expect((await readVideoReferenceRetention(media.referenceId!))?.userId).toBe("");
+    expect(fetchCurrentUser).not.toHaveBeenCalled();
+});
+
+test("account switches during retention sync preserve local reference state", async () => {
+    const media = await expired();
+    const saved = await readVideoReferenceRetention(media.referenceId!);
+    globalThis.fetch = (async () => {
+        Object.assign(user, { token: "new-session", user: { id: "new-user" } });
+        return Response.json({ code: 0 });
+    }) as typeof fetch;
+    await expect(updateVideoReferenceRetention(media.referenceId!, "keep")).rejects.toThrow("登录状态已变化");
+    expect(await readVideoReferenceRetention(media.referenceId!)).toEqual(saved);
+});
+
+test("aborting profile verification preserves the original reference and profile", async () => {
+    const media = await expired();
+    const saved = await readVideoReferenceRetention(media.referenceId!);
+    user.user = null;
+    const controller = new AbortController();
+    fetchCurrentUser.mockImplementation(async () => {
+        controller.abort();
+        return { id: "test-user", role: "user" };
+    });
+    await expect(updateVideoReferenceRetention(media.referenceId!, "use", controller.signal)).rejects.toThrow();
+    expect(user.user).toBeNull();
+    expect(await readVideoReferenceRetention(media.referenceId!)).toEqual(saved);
 });

@@ -1,6 +1,12 @@
 # 爆款复刻 Gemini 视频分析交接
 
-## 当前真实链路问题
+## 新增成功样本与生成偏差
+
+当前用户草稿已有另一条原生 Gemini 分析成功记录，采用来源为 `remote::model_gemini_video_flash` 的 video 模式，后端对应 `/video-understanding` 流水消费 20 点。不能把下节旧 HTTP 400 认定为当前所有分析均失败，也不能仅凭成功返回认定视频/音轨理解准确或中转转换器已整体修复；后续修复需重新核对成功请求路由及实际输入处理。
+
+当前成片偏差已定位到另一生成阶段：`minimax-h3` 成功任务没有开启直接视频参考，仅把建筑图与文字传入；原片 5.619 秒被改写到 10 秒，裙摆翻起开屏变为举独立大扇。Gemini 分析抓到主体创意但连接关系、姿态与轨迹描述不足，不能只通过更换分析模型解决。详见 `viral-recreate-workbench-handoff.md`「真实成片偏差排查」；本轮未重发推理。
+
+## 此前失败链路与待复核的转换缺陷
 
 已核实一条用户实际原生视频分析请求：应用渠道 #23 选择 `gemini-3.8-flash`，发送至 `api.lingzhouai.com/v1beta/models/gemini-3.8-flash:generateContent`；中转渠道 #85 为 OpenAI 类型，第三方地址 `vip-coco.online`，返回 HTTP 400 与通用参数错误。应用流水显示本次扣除的 20 点已全额退回，本轮排查未重发推理。
 
