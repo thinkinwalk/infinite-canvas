@@ -92,6 +92,14 @@ func TestViralAutomaticReviewChargesOnceAndRefundsReviewFailure(t *testing.T) {
 				calls++
 				var payload map[string]any
 				_ = json.NewDecoder(r.Body).Decode(&payload)
+				if calls == 2 {
+					requestJSON, _ := json.Marshal(payload)
+					if strings.Contains(string(requestJSON), "裙摆变成独立折扇") ||
+						!strings.Contains(string(requestJSON), "本次没有提供初稿") ||
+						!strings.Contains(string(requestJSON), "文字的实际承载物与形状分开") {
+						t.Errorf("review is anchored to the draft or missing continuity constraints")
+					}
+				}
 				if calls == 2 && failReview {
 					w.WriteHeader(502)
 					return
