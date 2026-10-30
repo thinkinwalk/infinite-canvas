@@ -27,6 +27,7 @@ import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
 import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
+import { viralEvidence, viralEvidenceError } from "./viral-evidence";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, viralVisualRole } from "./viral-keyframe";
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
@@ -401,7 +402,7 @@ function ViralTaskWorkspace() {
     const analysisSource = (version: ViralAnalysisVersion) => {
         const p = version.provenance;
         if (!p.inputKey) return `历史参考分析 · 来源未确认${p.edited ? "（已编辑）" : ""}`;
-        return `${p.source !== viralSource(d) ? "其他视频 · " : ""}${viralAnalysisNames[p.mode]} · ${p.modelLabel}${p.edited ? "（已编辑）" : ""} · ${p.sourceName}${p.mode === "frames" && p.model ? ` · ${p.frameCount || 0} 张画面 · ${p.usesTranscript ? "采用音轨文字" : "未采用音轨文字"}` : ""}${p.createdAt ? ` · ${new Date(p.createdAt).toLocaleString()}` : ""}`;
+        return `${p.source !== viralSource(d) ? "其他视频 · " : ""}${viralAnalysisNames[p.mode]} · ${p.modelLabel}${p.edited ? "（已编辑）" : ""}${p.reviewOf !== undefined ? " · 模型复核建议" : ""} · ${p.sourceName}${p.mode === "frames" && p.model ? ` · ${p.frameCount || 0} 张画面 · ${p.usesTranscript ? "采用音轨文字" : "未采用音轨文字"}` : ""}${p.createdAt ? ` · ${new Date(p.createdAt).toLocaleString()}` : ""}`;
     };
     const frameGallery = (
         <div className="grid grid-cols-3 gap-2">
@@ -676,6 +677,8 @@ function ViralTaskWorkspace() {
             suggested = suggestedValue(field),
             viewingSuggestion = suggestionView && Boolean(suggested),
             value = viewingSuggestion ? suggested : fieldValue(field),
+            uncertain = field === "analysis" ? viralEvidence(value).facts.filter((fact) => fact.status === "uncertain") : [],
+            evidenceError = field === "analysis" ? viralEvidenceError(value) : "",
             inputStyle = { height: "100%", fontSize: 16, lineHeight: 1.8, padding: 16, resize: "none" as const },
             disabled = locked || (field === "transcript" && !reference);
         return (
@@ -705,6 +708,9 @@ function ViralTaskWorkspace() {
                             else changeAnalysisMode(value as ViralAnalysisMode);
                         }} />
                         {(viewingSuggestion ? analysisResult?.suggestion : editorAnalysis) && <p className="break-words text-xs" style={muted}>{analysisSource((viewingSuggestion ? analysisResult?.suggestion : editorAnalysis)!)}</p>}
+                        {evidenceError && <Alert type="warning" title={evidenceError} />}
+                        {uncertain.length > 0 && <Alert type="warning" title={`${uncertain.length} 项内容待核对`} description={<div className="break-words">{uncertain.map((fact) => `${fact.time} ${fact.subject}：${fact.description}`).join("；")}</div>} />}
+                        {!viewingSuggestion && editorAnalysis?.text.trim() && editorAnalysis.provenance.source === viralSource(d) && editorAnalysis.provenance.mode === analysisMode && editorAnalysis.provenance.inputKey === viralAnalysisInputKey(d, analysisMode) && <Button size="small" icon={<RefreshCw size={14} />} disabled={locked || Boolean(analysisBlocked)} onClick={() => { setShowCurrentAnalysis(false); void wb.run("analyze", editorAnalysis); }}>复核分析</Button>}
                         {showCurrentAnalysis && adoptedError && <Alert type="warning" title={adoptedError} />}
                         {showCurrentAnalysis && historicalReference && !adoptedError && <Alert type="warning" title="正在借鉴其他视频的历史分析" description={`原视频：${d.viralAdoptedAnalysis!.provenance.sourceName}。这份内容不是当前视频的分析结果。`} />}
                         {showCurrentAnalysis && d.viralAdoptedAnalysis && !adoptedError && d.viralAdoptedAnalysis.inputKey !== d.viralAdoptedAnalysis.provenance.inputKey && <p className="text-xs" style={muted}>已确认沿用原分析，未重新分析当前输入</p>}
@@ -721,7 +727,7 @@ function ViralTaskWorkspace() {
                         )}
                     </div>
                 )}
-                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" />}
+                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title="输入已变化，原稿已保留；请核对或更新" action={field === "script" && !viewingSuggestion ? <Button size="small" disabled={locked} onClick={() => wb.edit({ viralScriptStale: false }, "video")}>确认沿用当前脚本</Button> : undefined} />}
                 {suggested && (
                     <div className="shrink-0">
                         <Tabs
@@ -989,6 +995,8 @@ function ViralTaskWorkspace() {
         label: "AI 撰写改编脚本", disabled: Boolean(textBlocked || scriptWritingBlocked), run: () => void wb.run("script"),
     } : d.viralScriptSuggestion ? {
         label: "查看并采用脚本建议", disabled: false, run: () => openEditor("script", true),
+    } : d.viralScriptStale ? {
+        label: "核对或更新当前脚本", disabled: false, run: () => openEditor("script"),
     } : keyframeError || ((d.viralClimaxUse === "reference" || d.viralClimaxUse === "last") && viralKeyframeError(d, "climax")) || (profile.firstFrameRequired && !keyframe) ? {
         label: "准备视频画面", disabled: false, run: () => { wb.patch({ viralImageTarget: keyframeError || !keyframe ? "opening" : "climax" }); showPanel("keyframe"); },
     } : { label: "下一步：生成视频", disabled: Boolean(scriptBlocked), run: () => goStep(2) };

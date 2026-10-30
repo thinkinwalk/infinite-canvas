@@ -105,6 +105,7 @@ export type ViralAnalysisProvenance = {
     frameCount?: number;
     usesTranscript?: boolean;
     edited?: boolean;
+    reviewOf?: number;
 };
 export type ViralAnalysisVersion = { text: string; provenance: ViralAnalysisProvenance };
 export type ViralAnalysisResult = ViralAnalysisVersion & { suggestion?: ViralAnalysisVersion };

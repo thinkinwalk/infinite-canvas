@@ -1,4 +1,5 @@
 import type { VideoDraft, ViralEffect, ViralIntent } from "@/types/video-workbench";
+import { viralEvidence, viralSupportedFacts } from "./viral-evidence";
 
 export const viralPreserveOptions = ["内容结构", "镜头节奏", "关键画面", "视觉风格", "结尾表达"];
 export const viralBriefFields = { subject: "主体名称", person: "人物资料", scene: "场景资料", marks: "准确名称与标识" } as const;
@@ -36,7 +37,7 @@ export function viralIntentError(d: VideoDraft) {
 }
 export const viralEffectsSource = (d: VideoDraft) => JSON.stringify([d.media.filter((m) => m.kind === "video" && m.role === "reference").map((m) => [m.id, m.storageKey || m.url]), d.analysis, d.viralAdoptedAnalysis]);
 export function viralPlanEffects(d: VideoDraft): ViralEffect[] {
-    return d.viralEffectsSource === viralEffectsSource(d) && d.viralEffects ? d.viralEffects : viralEffectCandidates(d.analysis);
+    return d.viralEffectsSource === viralEffectsSource(d) && d.viralEffects ? d.viralEffects : effectCandidates(viralSupportedFacts(d));
 }
 export function viralPlanState(d: Partial<VideoDraft>) {
     return {
@@ -46,14 +47,10 @@ export function viralPlanState(d: Partial<VideoDraft>) {
         viralClimaxReferenceId: d.viralClimaxReferenceId, viralClimaxUse: d.viralClimaxUse, viralImageTarget: d.viralImageTarget,
     };
 }
-// Only parse the explicit JSON appendix; the full analysis is always included in requests.
+const effectCandidates = (facts: ReturnType<typeof viralSupportedFacts>): ViralEffect[] => facts
+    .filter((fact) => fact.status === "observed" && ["event", "structure"].includes(fact.kind))
+    .map((fact) => ({ id: `analysis-effect-${fact.id}`, time: fact.time, description: fact.description, action: "keep", target: "", scriptRange: "" }));
+
 export function viralEffectCandidates(text: string): ViralEffect[] {
-    for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)) {
-        try {
-            const data: unknown = JSON.parse(match[1]);
-            if (!data || typeof data !== "object" || !("recreationEffects" in data) || !Array.isArray(data.recreationEffects)) continue;
-            return data.recreationEffects.filter((item): item is { time: string; description: string } => Boolean(item && typeof item.time === "string" && typeof item.description === "string" && item.description.trim())).map((item, index) => ({ id: `analysis-effect-${index + 1}`, time: item.time, description: item.description, action: "keep", target: "", scriptRange: "" }));
-        } catch { /* An invalid appendix never replaces the adopted analysis. */ }
-    }
-    return [];
+    return effectCandidates(viralEvidence(text).facts);
 }
