@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.126
-- Current production source: tag v0.19.126, commit bd98bf4ff2a8a00b092077e17d2b7b700a6f7b0c
+- Current production image: infinite-canvas:v0.19.127
+- Current production source: tag v0.19.127, commit 23335fe21992c4b71cffa2005a4be7812dc97f4c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.127 deployment
+
+- Tag `v0.19.127`, commit `23335fe21992c4b71cffa2005a4be7812dc97f4c`, is pushed to `release/v0.19.60`. Production runs `infinite-canvas:v0.19.127`, image ID `sha256:4a312452e19a03e4d85af6c9504db10bc89817e2713708919e5030b38883b8ab`.
+- The channel editor now explains which model-directory entries and platform features still reference a channel model that is being removed, provides a route to resolve those references, and preserves the edit when saving is blocked. Deterministic settings validation and revision conflicts return actionable errors without exposing internal storage errors.
+- External and container health checks return `ok`; `/`, `/video/viral-recreate`, `/cases`, `/image`, `/video`, `/assets`, and `/prompts` return HTTP 200. Public JS `/assets/index-BhRhj2tS.js` matches the container at SHA-256 `28d616d165f99b0eb6ad18c24415313a1a267946fa7ec2af17af7c0896ab1e69`; CSS `/assets/index-DCvV-2nO.css` matches at SHA-256 `6ba5735ad9878746e0238cc9db226c95058d69756fcde054eacbe53f21013754`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.127-final-20261031-042623/` contains SQLite, Compose, and the private environment. Backup and live SQLite `quick_check` pass; schema, all 13 table counts, and settings match. The existing video Worker remains `infinite-canvas-video-worker:v0.19.87`, with the same container identity, mounts, and start time `2026-10-23T05:13:03.450801566Z`.
+- Admin browser acceptance remains pending: remove a referenced model, follow the dependency path, resolve references, save, and verify a conflicting edit keeps the draft with a readable message. No production model/channel settings were changed during deployment verification.
+- The Git tag and branch are pushed, but a formal GitHub Release page was not created: GitHub CLI reports that this workstation is not authenticated. The release should be published after authentication; do not treat the pushed tag alone as a published GitHub Release.
 
 ## v0.19.126 deployment
 
