@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.129
-- Current production source: tag v0.19.129, commit fb958cf891198569b2d73467e3375dc5681877c8
+- Current production image: infinite-canvas:v0.19.130
+- Current production source: tag v0.19.130, commit 6e15f81cb2573d7185be4924f1278640ed671570
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.130 deployment
+
+- Tag `v0.19.130`, commit `6e15f81cb2573d7185be4924f1278640ed671570`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.130`, ID `sha256:d75fe4b02526f44bb8bdb3f5ebfe8fcfcc03656719bc6743f23a8532360aafb1`.
+- Image menus use independent columns: common/image processing on the left and fashion/marketing on the right. Each group gap is 16px, column bottoms align, and the extra blank row is removed. Model cleanup permits terminal tasks and billing history while protecting active, uncertain and caption-processing tasks; no production configuration was removed.
+- Server Docker build passed; release repeated no local tests, type checking or build. Existing five unrelated TypeScript errors remain. Internal/external health, ten routes and public JS/CSS hashes passed. Public JS `/assets/index-C0bV_fUY.js` SHA-256 `4ebe3f28ce178203fd9cfac4bf12defedbaa6f7cdf1004156fd89e3bbb1dd6dc`; CSS `/assets/index-DmUglXcO.css` SHA-256 `99d18568864496fc183beab13dfd5ae975864db9668900d2ba30aa43b705edd2`. Workstation HTTPS independently matched both.
+- Isolated Chrome on the actual production `/image` passed both themes at 1440px: 16 links, 16px gaps, equal column bottoms, Escape dismissal and tool navigation, with no overflow, page errors or API writes. Screenshots inspected. Evidence `.codex_tmp/release-v0.19.130/public-verification.json`; real admin removal remains pending.
+- Final backup `/opt/infinite-canvas/backups/v0.19.130-final-20261031-061336/`, prebuild `/opt/infinite-canvas/backups/v0.19.130-prebuild-20261031-061209/`. SQLite quick checks, schema, 13 table counts, settings/protected account fields, environment and mounts preserved. Worker v0.19.87 identity/start time unchanged. Backend changed as expected and matches the release image.
+- Reports `/opt/infinite-canvas/releases/v0.19.130-deployment.json` and `/opt/infinite-canvas/releases/v0.19.130-public-verification.json`; local `.codex_tmp/v0.19.130-deployment.json`. Rollback restores final-backup Compose and recreates app only, keeping the current database and v0.19.129 image. No paid inference submitted.
 
 ## v0.19.129 deployment
 
