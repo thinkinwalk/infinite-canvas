@@ -3,7 +3,7 @@ import { inferVideoRatio } from "@/lib/media-size";
 import { isReplicateVideoModel, REPLICATE_VIDEO_MODEL } from "@/services/api/replicate";
 import { resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import type { VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
+import type { StoreVideoSettings, VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
 import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
 import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
@@ -22,6 +22,9 @@ export function viralMaterialLabels(d: VideoDraft) {
 }
 export function viralVideoConfig(d: VideoDraft, config: AiConfig): AiConfig {
     return storeVideoConfig({...d,storeSettings:d.viralSettings},config);
+}
+export function viralSettingsRequireScriptReview(before: StoreVideoSettings, after: StoreVideoSettings) {
+    return before.videoSeconds !== after.videoSeconds || inferVideoRatio(before.size) !== inferVideoRatio(after.size);
 }
 const viralContinuityRules = `复刻内容约束：先依据已采用分析理解本片的类型、主题、内容结构和创意特点，再按目标资料与用户要求改编。以用户明确的修改或删除要求为准；替换主体不等于删除原片有依据的关键过程与表现方式。只承接原片实际存在的内容，不套用固定的商品展示、人物动作或特殊效果模板。关键内容按时间写具体，不以“展示、结束”等泛泛描述抹掉信息。
 除用户明确要求的改编外，保持有依据的物体身份、材质、连接和运动关系；形状比喻不能升级成独立道具或真实变形，也不能删掉有证据的真实变形。文字始终绑定对应承载物，只修改用户指定的对应字样、位置和时段，未指定的其他同字标识不连带替换。不得把听到的歌词自动变成画面字幕。分析疑点、缺失的中间过程及旧稿猜测不作为生成要求。

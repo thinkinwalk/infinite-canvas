@@ -17,7 +17,7 @@ import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
 import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
-import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
+import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { applyViralScriptEdits, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
@@ -222,10 +222,13 @@ export function useVideoWorkbench(tool: VideoTool) {
                     : {};
             const analysisOnly = Object.keys(value).every((key) => ["viralAnalysisMode", "viralAnalyses", "frameCount", "transcript", "viralTranscriptSource", "viralUseTranscript"].includes(key));
             const imageSelectionOnly = Object.keys(value).every((key) => ["media", "viralFirstFrameId", "viralLastFrameId", "viralKeyframe", "viralKeyframePrompt", "viralKeyframeReferenceId", "viralClimaxId", "viralClimax", "viralClimaxPrompt", "viralClimaxReferenceId", "viralClimaxUse", "viralImageTarget", "viralUseVideo"].includes(key)) && (!value.media || JSON.stringify(current.media.filter((m) => m.role !== "first-frame")) === JSON.stringify(next.media.filter((m) => m.role !== "first-frame")));
+            const settingsOnly = Object.keys(value).every((key) => key === "viralSettings");
+            const settingsRequireScriptReview = settingsOnly && value.viralSettings && viralSettingsRequireScriptReview(current.viralSettings || storeVideoSettings(config), value.viralSettings);
+            const preserveScript = imageSelectionOnly || (settingsOnly && !settingsRequireScriptReview);
             const selectedFrameChanged = countChanged && [current.viralFirstFrameId, current.viralLastFrameId, current.viralClimaxId].some((id) => id?.startsWith("frame:"));
             patch({
                 viralRevision: (current.viralRevision || 0) + 1,
-                ...(invalidate && (!analysisOnly || selectedFrameChanged) ? { viralOutputStale: true, ...(!imageSelectionOnly ? { viralScriptStale: true, viralScriptSuggestion: "" } : {}) } : {}),
+                ...(invalidate && (!analysisOnly || selectedFrameChanged) ? { viralOutputStale: true, ...(!preserveScript ? { viralScriptStale: true, viralScriptSuggestion: "" } : {}) } : {}),
                 ...(sourceChanged || countChanged ? { frames: [], viralFrameSource: "", viralFrameTimes: [] } : {}),
                 ...(sourceChanged ? { transcript: "", viralTranscriptSource: "" } : {}),
                 ...(productChanged ? { viralProductStale: true, viralProductSuggestion: "" } : {}),

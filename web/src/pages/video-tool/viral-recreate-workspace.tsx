@@ -25,7 +25,7 @@ import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { StoreVideoSettings, VideoRecord, ViralAnalysisMode, ViralAnalysisVersion, ViralEffect, ViralIntent } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
-import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
+import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
 import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { viralEvidence, viralEvidenceError, viralVisibleAnalysis } from "./viral-evidence";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
@@ -119,11 +119,12 @@ function ViralTaskWorkspace() {
         if (!window.matchMedia("(min-width: 1024px)").matches) requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
     };
     const step = d.viralStep || 0;
-    const goStep = (value: number) => {
-        if (value === 2 && (d.viralScriptSuggestion || d.viralScriptStale || !d.script.trim())) {
+    const goStep = (value: number, confirmCurrentScript = false) => {
+        if (value === 2 && (d.viralScriptSuggestion || (d.viralScriptStale && !confirmCurrentScript) || !d.script.trim())) {
             message.warning(d.viralScriptSuggestion ? "请先采用或保留当前脚本建议" : d.viralScriptStale ? "请先更新或确认沿用当前脚本" : "请先填写或生成脚本");
             return;
         }
+        if (value === 2 && confirmCurrentScript && d.viralScriptStale) wb.edit({ viralScriptStale: false }, "video");
         wb.patch({ viralStep: value });
         setViewed(null);
         setTab(value === 1 ? "editor" : "current");
@@ -305,8 +306,12 @@ function ViralTaskWorkspace() {
         };
     }, [result?.url, original?.url, tab]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => {
-        wb.edit({ viralSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "video");
-        if (d.script.trim()) message.info("规格已更新，原脚本已保留，请重新核对节奏与关键画面");
+        const next = normalizeStoreSettings({ ...settings, ...value }, config),
+            modelOnly = Object.keys(value).length === 1 && "videoModel" in value;
+        wb.edit({ viralSettings: next }, "video");
+        if (d.script.trim()) message.info(modelOnly
+            ? viralSettingsRequireScriptReview(settings, next) ? "模型已切换，脚本已保留；目标时长或画幅发生变化，请核对脚本。" : "模型已切换，脚本已保留；新模型的生成能力与素材会单独校验。"
+            : "生成规格已更新，脚本已保留；请核对内容是否仍合适。");
     };
     const changeIntent = (value: Partial<ViralIntent>) => wb.edit({ viralIntent: { ...intent, ...value } }, "script");
     const changeEffect = (id: string, value: Partial<ViralEffect>) => wb.edit({ viralEffects: effects.map((effect) => effect.id === id ? { ...effect, ...value } : effect), viralEffectsSource: viralEffectsSource(d) }, "script");
@@ -755,7 +760,7 @@ function ViralTaskWorkspace() {
                         )}
                     </div>
                 )}
-                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title={field === "script" && d.viralScriptSeeded && d.script === viralVisibleAnalysis(d.analysis) ? "已带入原片提取内容，请改编或确认沿用" : "输入已变化，原稿已保留；请核对或更新"} action={field === "script" && !viewingSuggestion ? <Button size="small" disabled={locked} onClick={() => wb.edit({ viralScriptStale: false }, "video")}>确认沿用当前脚本</Button> : undefined} />}
+                {info && d[info.stale] && fieldValue(field) && <Alert type="warning" title={field === "script" && d.viralScriptSeeded && d.script === viralVisibleAnalysis(d.analysis) ? "已带入原片提取内容，请改编或确认沿用" : "输入已变化，原稿已保留；请核对或更新"} />}
                 {suggested && (
                     <div className="shrink-0">
                         <Tabs
@@ -1031,9 +1036,9 @@ function ViralTaskWorkspace() {
     } : !d.script.trim() ? {
         label: "AI 撰写改编脚本", disabled: Boolean(textBlocked || scriptWritingBlocked), run: () => void wb.run("script"),
     } : d.viralScriptSuggestion ? {
-        label: "查看并采用脚本建议", disabled: false, run: () => openEditor("script", true),
+        label: "查看待采用脚本建议", disabled: false, run: () => openEditor("script", true),
     } : d.viralScriptStale ? {
-        label: "AI 根据要求修改脚本", disabled: Boolean(textBlocked || scriptWritingBlocked), run: () => void wb.run("script"),
+        label: "确认沿用当前脚本并继续", disabled: false, run: () => goStep(2, true),
     } : keyframeError || ((d.viralClimaxUse === "reference" || d.viralClimaxUse === "last") && viralKeyframeError(d, "climax")) || (profile.firstFrameRequired && !keyframe) ? {
         label: "准备视频画面", disabled: false, run: () => { wb.patch({ viralImageTarget: keyframeError || !keyframe ? "opening" : "climax" }); showPanel("keyframe"); },
     } : { label: "确认脚本，下一步", disabled: Boolean(scriptBlocked), run: () => goStep(2) };

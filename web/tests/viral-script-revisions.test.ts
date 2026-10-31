@@ -11,14 +11,23 @@ if (!globalThis.localStorage) {
 }
 const { applyViralScriptEdits, viralInitialScript, viralScriptProposal, viralResolveScript, viralRestoreScript, viralScriptRequestError, viralScriptChangeSummary } = await import("../src/pages/video-tool/viral-script-revisions");
 const { viralScriptPrompt, viralInput } = await import("../src/pages/video-tool/viral-recreate-request");
-const { viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
+const { viralSettingsRequireScriptReview, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralKeyframePrompt } = await import("../src/pages/video-tool/viral-keyframe");
 const { defaultConfig } = await import("../src/stores/use-config-store");
+const { storeVideoSettings } = await import("../src/pages/video-tool/store-explore-request");
 const { viralAdoptAnalysis, viralAnalysisProvenance } = await import("../src/pages/video-tool/viral-analysis");
 const draft = () => {
     const d = { ...emptyVideoDraft("viral-recreate"), viralTaskId: "script-task" };
     return { ...d, ...viralAdoptAnalysis(d, { text: "0–3 秒：原片开头。\n3–6 秒：原片结尾。", provenance: viralAnalysisProvenance(d, "video") }) };
 };
+
+test("changing only the video model keeps the script; timing and aspect-ratio changes require review", () => {
+    const settings = storeVideoSettings(defaultConfig);
+    expect(viralSettingsRequireScriptReview(settings, { ...settings, videoModel: "another-model" })).toBe(false);
+    expect(viralSettingsRequireScriptReview(settings, { ...settings, vquality: "1080" })).toBe(false);
+    expect(viralSettingsRequireScriptReview(settings, { ...settings, videoSeconds: settings.videoSeconds + 1 })).toBe(true);
+    expect(viralSettingsRequireScriptReview(settings, { ...settings, size: "720x1280" })).toBe(true);
+});
 
 test("initial extracted text is visible without billing and never replaces manual or deliberately cleared text", () => {
     const d = draft(), initial = viralInitialScript(d);
