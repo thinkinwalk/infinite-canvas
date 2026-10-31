@@ -333,6 +333,7 @@ export type AdminReplicatePricing = {
 };
 
 export type AdminPublicSettings = {
+    showOnlineRecharge: boolean;
     modelChannel: AdminPublicModelChannelSettings;
     adminContact: {
         qq: string;

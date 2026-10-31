@@ -97,9 +97,10 @@ type PublicChannelModel struct {
 
 // PublicSetting 公开配置。
 type PublicSetting struct {
-	ModelChannel PublicModelChannelSetting `json:"modelChannel"`
-	Auth         PublicAuthSetting         `json:"auth"`
-	AdminContact AdminContactSetting       `json:"adminContact"`
+	ShowOnlineRecharge *bool                     `json:"showOnlineRecharge"`
+	ModelChannel       PublicModelChannelSetting `json:"modelChannel"`
+	Auth               PublicAuthSetting         `json:"auth"`
+	AdminContact       AdminContactSetting       `json:"adminContact"`
 }
 
 type AdminContactSetting struct {

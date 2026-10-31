@@ -135,6 +135,10 @@ func normalizePublicSetting(setting model.PublicSetting) model.PublicSetting {
 }
 
 func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []model.ModelChannel) model.PublicSetting {
+	if setting.ShowOnlineRecharge == nil {
+		enabled := true
+		setting.ShowOnlineRecharge = &enabled
+	}
 	if setting.ModelChannel.AvailableModels == nil {
 		setting.ModelChannel.AvailableModels = []string{}
 	}

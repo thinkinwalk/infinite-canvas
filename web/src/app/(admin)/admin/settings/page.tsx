@@ -32,6 +32,7 @@ const jsonEditorTheme = EditorView.theme({
 
 const emptySettings: AdminSettings = {
     public: {
+        showOnlineRecharge: true,
         modelChannel: {
             availableModels: [],
             modelCosts: [],
@@ -544,6 +545,11 @@ export default function AdminSettingsPage() {
                                     </Col>
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "allowCustomChannel"]} label="是否允许用户自定义渠道" extra="开启后，前端可提供走后端渠道和用户自定义 baseUrl 直连两种模式" valuePropName="checked">
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Form.Item name={["public", "showOnlineRecharge"]} label="显示在线充值" valuePropName="checked">
                                             <Switch />
                                         </Form.Item>
                                     </Col>
@@ -1290,6 +1296,7 @@ function normalizeSettings(settings: Partial<AdminSettings> = {}): AdminSettings
 function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}): AdminSettings["public"] {
     return {
         ...emptySettings.public,
+        showOnlineRecharge: setting.showOnlineRecharge !== false,
         modelChannel: {
             ...emptySettings.public.modelChannel,
             ...(setting.modelChannel || {}),

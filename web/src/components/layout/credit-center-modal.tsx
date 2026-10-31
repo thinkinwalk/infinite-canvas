@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Empty, Input, Modal, Space, Table, Tabs, Tag, Typography, type TableProps } from "antd";
 import { ExternalLink } from "lucide-react";
 import dayjs from "dayjs";
 
 import { fetchUserCreditLogs, redeemCode, type CreditLog } from "@/services/api/auth";
+import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type CreditCenterModalProps = {
@@ -36,9 +37,16 @@ export function CreditCenterModal({ open, onOpenChange }: CreditCenterModalProps
     const token = useUserStore((state) => state.token);
     const user = useUserStore((state) => state.user);
     const setSession = useUserStore((state) => state.setSession);
+    const showOnlineRecharge = useConfigStore((state) => state.publicSettings?.showOnlineRecharge === true);
+    const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
+    const [activeTab, setActiveTab] = useState("logs");
     const [code, setCode] = useState("");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
+
+    useEffect(() => {
+        if (open) void loadPublicSettings();
+    }, [open, loadPublicSettings]);
 
     const logsQuery = useQuery({
         queryKey: ["credit-center", "logs", token, page, pageSize],
@@ -118,6 +126,8 @@ export function CreditCenterModal({ open, onOpenChange }: CreditCenterModalProps
                     </Typography.Text>
                 </div>
                 <Tabs
+                    activeKey={!showOnlineRecharge && activeTab === "recharge" ? "logs" : activeTab}
+                    onChange={setActiveTab}
                     items={[
                         {
                             key: "logs",
@@ -182,7 +192,7 @@ export function CreditCenterModal({ open, onOpenChange }: CreditCenterModalProps
                                 </Space.Compact>
                             ),
                         },
-                    ]}
+                    ].filter((item) => item.key !== "recharge" || showOnlineRecharge)}
                 />
             </Space>
         </Modal>
