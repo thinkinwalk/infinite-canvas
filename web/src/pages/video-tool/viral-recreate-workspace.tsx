@@ -263,6 +263,9 @@ function ViralTaskWorkspace() {
         if (comparison?.target === "suggestion" && !d.viralScriptSuggestion) setComparison(null);
     }, [comparison?.target, d.viralScriptSuggestion]);
     useEffect(() => {
+        if (d.viralScriptSuggestion) setSuggestionView(true);
+    }, [d.viralScriptSuggestion]);
+    useEffect(() => {
         inputScroll.current?.scrollTo(0, 0);
         workspaceScroll.current?.scrollTo(0, 0);
     }, [step]);
@@ -712,6 +715,7 @@ function ViralTaskWorkspace() {
                     <h2 className="text-base font-medium">{editorNames[field]}</h2>
                     <Space wrap>
                         {field === "script" && <Button size="small" icon={<Columns2 size={14} />} onClick={() => setComparison({ kind: "source", target: viewingSuggestion ? "suggestion" : "script" })}>对照原片</Button>}
+                        {field === "script" && viewingSuggestion && <Button size="small" icon={<Columns2 size={14} />} onClick={() => setComparison({ kind: "revision", target: "suggestion" })}>并排对照</Button>}
                         {field === "transcript" && <Button size="small" disabled={locked || !reference} onClick={() => void wb.run("transcribe")}>转写参考音轨</Button>}
                         {field === "script" && <Tooltip title="脚本版本"><Button type="text" aria-label="脚本版本" icon={<History size={15} />} onClick={() => setVersionsOpen(true)} /></Tooltip>}
                         {field === "script" && !fullscreen && <Tooltip title="对话调整"><Button className="xl:!hidden" type="text" aria-label="前往对话调整" icon={<MessageSquare size={15} />} onClick={() => document.getElementById("viral-script-chat")?.scrollIntoView({ block: "start", behavior: "smooth" })} /></Tooltip>}
@@ -763,14 +767,20 @@ function ViralTaskWorkspace() {
                                 { key: "suggestion", label: "新建议（待采用）" },
                             ]}
                         />
-                        {field === "script" && <div className="flex flex-wrap items-center gap-2">
-                            <Button type="link" size="small" className="!px-0" icon={<Columns2 size={14} />} onClick={() => setComparison({ kind: "revision", target: "suggestion" })}>查看本次修改</Button>
+                        {field === "script" && !viewingSuggestion && <div className="flex flex-wrap items-center gap-2">
+                            <Button type="link" size="small" className="!px-0" icon={<Columns2 size={14} />} onClick={() => setSuggestionView(true)}>查看修改标记</Button>
                             <span className="text-xs" style={muted} data-testid="viral-suggestion-summary">{viralScriptChangeSummary(d.script, suggested)}</span>
                         </div>}
                     </div>
                 )}
                 <div className="min-h-0 flex-1">
-                    {!viewingSuggestion && (field === "script" || field === "instructions") ? (
+                    {viewingSuggestion && field === "script" ? <ViralScriptComparison
+                        before={d.script}
+                        after={suggested}
+                        beforeLabel="已采用脚本"
+                        afterLabel="新建议（待采用）"
+                        layout="inline"
+                    /> : !viewingSuggestion && (field === "script" || field === "instructions") ? (
                         <Mentions
                             aria-label={`编辑${editorNames[field]}`}
                             value={value}
@@ -1210,14 +1220,14 @@ function ViralTaskWorkspace() {
                 <p className="text-xs" style={muted}>AI · {turn.status === "pending" ? "修改建议待确认" : turn.status === "accepted" ? "已采用" : turn.status === "reverted" ? "已撤销" : "未采用"}</p>
                 <p className="text-xs" style={muted}>{viralScriptChangeSummary(turn.before, turn.after)}</p>
                 <Button type="link" size="small" className="!px-0" onClick={() => {
-                    if (turn.status === "pending" && d.viralScriptSuggestion) { setComparison({ kind: "revision", target: "suggestion" }); return; }
+                    if (turn.status === "pending" && d.viralScriptSuggestion) { openEditor("script", true); requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" })); return; }
                     setVersionsOpen(true);
                 }}>{turn.status === "pending" ? "查看本次修改" : "查看版本"}</Button>
             </section>)}
             {busy && active?.stage === "script" && <p className="flex items-center gap-2 text-sm"><Spin size="small" />正在调整脚本…</p>}
         </div>
         {d.viralScriptSuggestion && <div className="mb-3 shrink-0 space-y-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
-            <Button block icon={<Columns2 size={14} />} onClick={() => { openEditor("script", true); setComparison({ kind: "revision", target: "suggestion" }); }}>对照本次修改</Button>
+            <Button block icon={<Columns2 size={14} />} onClick={() => { openEditor("script", true); requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" })); }}>查看修改标记</Button>
             <span className="text-xs" style={muted}>采用或保留当前稿后继续对话</span>
         </div>}
         <div className="shrink-0 space-y-3 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
