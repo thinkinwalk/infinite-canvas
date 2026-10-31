@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.132
-- Current production source: tag v0.19.132, commit 4f08c9b105417cf5b1da023c7bfe62181bbd07be
+- Current production image: infinite-canvas:v0.19.133
+- Current production source: tag v0.19.133, commit ee1f799b729b60453b1b17775cf8387a6c3817ba
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.133 deployment
+
+- Tag `v0.19.133`, commit `ee1f799b729b60453b1b17775cf8387a6c3817ba`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.133`, ID `sha256:93c25cc78720cab3281348f9f73cad236179d139f03b29ad7b6e7a31fc7c8550`, replaces v0.19.132.
+- Script decline/apply actions now sit directly below pending content, aligned to the script area, with apply on the right. Word count and pending status share the action bar; long text scrolls independently and mobile wraps naturally. Page footer retains step navigation; next remains disabled until pending changes are resolved. Fullscreen and comparison use the same button order.
+- Development passed ten isolated Chrome layout checks across 1768/1440/1024/390/320px in both themes, with desktop/mobile screenshots inspected. Apply/undo, decline/history, markup/tabs and fullscreen apply passed; no page errors, horizontal overflow or button occlusion. Evidence `.codex_tmp/viral-review-placement-qa/`. Release repeated no local tests, type checking, build or browser interactions; server Docker build passed. Existing production drafts and real model effects remain pending, with no paid inference submitted.
+- Internal/external health, ten routes, public asset markers and container hashes passed. JS `/assets/index-3J1RwSjV.js` SHA-256 `ba70e4c4b6b00cd887b6ec55958d838661bfdebad0ed4f62f05555689d5367e4`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Independent workstation HTTPS matched both and verified the release version and action-bar marker. This is resource verification, not production browser-interaction acceptance.
+- Final backup `/opt/infinite-canvas/backups/v0.19.133-final-20261031-091619/`; prebuild `/opt/infinite-canvas/backups/v0.19.133-prebuild-20261031-091526/`. SQLite quick checks, schema, 13 table counts, settings/protected account fields, environment, mounts, backend binary and all 100 job JSON records are preserved. No cloud/Worker task was active; historical planning with a completed linked plan Worker remains intact.
+- Worker v0.19.87 retains its identity, start time and mounts. Compose changed only the app image. Reports `/opt/infinite-canvas/releases/v0.19.133-deployment.json` and `v0.19.133-public-verification.json`, local `.codex_tmp/` copies; verifier `/opt/infinite-canvas/releases/deploy-v0.19.133.py`. Rollback restores final-backup Compose and recreates app only, preserving current database and v0.19.132 image. No channel settings changed or tasks cancelled/resubmitted.
 
 ## v0.19.132 deployment
 
