@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.130
-- Current production source: tag v0.19.130, commit 6e15f81cb2573d7185be4924f1278640ed671570
+- Current production image: infinite-canvas:v0.19.132
+- Current production source: tag v0.19.132, commit 4f08c9b105417cf5b1da023c7bfe62181bbd07be
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.132 deployment
+
+- Tag `v0.19.132`, commit `4f08c9b105417cf5b1da023c7bfe62181bbd07be`, is pushed to `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.132`, ID `sha256:6bdbbe2655a6bfafeb162e2b21a8567a133055111809529c26765fab492237ba`, replaces verified production v0.19.131 (`d9f12ee`).
+- Script confirmation uses current script / pending modifications and explicit apply / decline. The default shows exact final text, with optional markup and comparison; further conversation edits the pending result. Footer actions remain visible on mobile. Manual overwrite confirmation, undo, history recovery and failed-task pending-input recovery are preserved.
+- Development passed 58 focused tests / 332 assertions and eight isolated mocked Chrome check groups, with 1440/1024/390/320px light/dark screenshots inspected. Release repeated no local tests, type checking, build or browser interactions. Required server Docker build passed. Real existing drafts, paid-model semantics and final video quality remain pending; no paid inference was submitted.
+- Internal/external health, ten public routes and JS/CSS hashes passed. Public JS `/assets/index-7xNzcyIM.js` SHA-256 `352075286979d946e7e53214c25eb15143f7bd7d45cec2ad224a0091a97b6cf0`; CSS `/assets/index-DmUglXcO.css` SHA-256 `99d18568864496fc183beab13dfd5ae975864db9668900d2ba30aa43b705edd2`. Independent workstation HTTPS matched both and confirmed the release version and script-flow markers. Production browser interaction was not repeated.
+- Final backup `/opt/infinite-canvas/backups/v0.19.132-final-20261031-085450/`; prebuild `/opt/infinite-canvas/backups/v0.19.132-prebuild-20261031-085400/`. SQLite quick checks, schema, 13 table counts, full settings/protected account fields, environment and mounts passed. Backend binary is unchanged from v0.19.131 and matches the release image. All 100 replacement/Worker job JSON records are unchanged. No cloud or Worker task was active; the historical planning record has a completed linked plan Worker and was preserved.
+- Worker v0.19.87 container identity, startup time and mounts are unchanged. Only the app image line in Compose changed. No production channel settings were changed and no task was cancelled or resubmitted.
+- Reports `/opt/infinite-canvas/releases/v0.19.132-deployment.json` and `/opt/infinite-canvas/releases/v0.19.132-public-verification.json`, with local `.codex_tmp/` copies; verifier `/opt/infinite-canvas/releases/deploy-v0.19.132.py`. Rollback restores final-backup Compose and recreates app only, preserving the current database and v0.19.131 image.
 
 ## v0.19.130 deployment
 
