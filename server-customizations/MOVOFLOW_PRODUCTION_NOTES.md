@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.134
-- Current production source: tag v0.19.134, commit 316370b4d956af153872dc9eea5930c3f80b0b5b
+- Current production image: infinite-canvas:v0.19.135
+- Current production source: tag v0.19.135, commit 1f8548e4939099003c92a512004ca00dd7b5e08a
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.135 deployment
+
+- Tag `v0.19.135`, commit `1f8548e4939099003c92a512004ca00dd7b5e08a`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.135`, ID `sha256:54ae8097263d1d67ead8096d295b5d2993fe1e291369ea06facc31e268f64b73`, replaces v0.19.134.
+- Final viral-recreation video, opening-frame and supplemental-frame generation uses the current confirmed script and actual reference materials. Superseded source analysis, recreation plans, earlier requirements and image descriptions are no longer appended as independent generation instructions. Source evidence remains available during script adaptation; script history, snapshots, material selection and configuration are preserved.
+- Development passed 72 focused tests / 463 assertions. Release repeated no local tests, build or browser interactions. Server Docker build, internal/external health, ten routes, final prompt markers, removal of the obsolete source-analysis fallback and container/public hashes passed. Backend binary is unchanged. This verifies deployed resources, not final model compliance.
+- Public JS `/assets/index-BNwAcOxg.js` SHA-256 `941395dda761d83177dca73188cd4f26bb956351dcd01273bd30a845ed8d1a0d`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Independent workstation HTTPS matched both and confirmed health, release version and updated prompt markers.
+- Final backup `/opt/infinite-canvas/backups/v0.19.135-final-20261031-123243/`; prebuild `/opt/infinite-canvas/backups/v0.19.135-prebuild-20261031-123149/`. SQLite quick check, schema, all 13 table counts, full settings/protected account fields, environment, mounts and all 100 job records are preserved. Worker v0.19.87 retains identity, startup time and mounts.
+- Reports `/opt/infinite-canvas/releases/v0.19.135-deployment.json` and `v0.19.135-public-verification.json`, local `.codex_tmp/` copies; verifier `/opt/infinite-canvas/releases/deploy-v0.19.135.py`. Rollback restores final-backup Compose and recreates app only, preserving the current database and v0.19.134 image. No channel configuration changed or paid inference submitted during release. The earlier authorized real attempt passed the correct office-building reference image but failed upstream with `insufficient_credits`; actual post-fix request and final background/text/watermark quality remain pending. Existing script contradictions require script editing, not automatic keyword replacement.
 
 ## v0.19.134 deployment
 
