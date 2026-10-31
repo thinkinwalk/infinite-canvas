@@ -76,7 +76,7 @@ export function ModelRemovalWizard({ open, channelId, channelName, model, manage
                         type="warning"
                         showIcon
                         message="确认解除下列目录引用"
-                        description="确认后会移除该渠道接入及其目录引用；仍有其他接入的平台模型会保留。失去全部接入的平台模型会保留记录但自动停用，无接入的功能绑定也会自动停用。历史任务或计费记录仍可能阻止保存。"
+                        description="确认后会移除该渠道接入及其目录引用；仍有其他接入的平台模型会保留。失去全部接入的平台模型会保留记录但自动停用，无接入的功能绑定也会自动停用。未完成或状态不确定的任务仍会阻止移除；已结束任务和计费记录会保留，不影响清理配置。"
                     />
                 )}
 

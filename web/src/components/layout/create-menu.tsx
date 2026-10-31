@@ -25,7 +25,8 @@ function WorkbenchMenu({ label, href, icon: Icon, groups = [], active = false }:
     const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hasMenu = groups.length > 0;
     const currentHref = `${location.pathname}${location.search}`;
-    const columns = [groups.filter((_, index) => index % 2 === 0), groups.filter((_, index) => index % 2 === 1)];
+    const splitIndex = Math.ceil(groups.length / 2);
+    const columns = [groups.slice(0, splitIndex), groups.slice(splitIndex)];
 
     const cancelClose = () => {
         if (closeTimerRef.current) {
@@ -128,11 +129,11 @@ function WorkbenchMenu({ label, href, icon: Icon, groups = [], active = false }:
                     <div className="border-b border-[#e3ebe7] bg-[#f5faf8] px-4 py-3 dark:border-stone-700 dark:bg-[#202e2b]">
                         <h2 className="px-2 text-xs font-semibold text-[#176854] dark:text-[#a3e2cc]">{label}工具</h2>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-3 p-4 sm:gap-x-5">
+                    <div className="grid grid-cols-2 items-start gap-x-3 p-4 sm:gap-x-5">
                         {columns.map((column, index) => (
-                            <div key={index} className="space-y-4">
+                            <div key={index} className="min-w-0 space-y-4">
                                 {column.map((group) => (
-                                    <div key={group.label} className={group.label === "服装电商" ? "pt-2" : undefined}>
+                                    <div key={group.label}>
                                         <h3 className="mb-1 px-2 text-xs font-semibold text-[#176854] dark:text-[#a3e2cc]">{group.label}</h3>
                                         {group.items.map((item) => entry(item))}
                                     </div>

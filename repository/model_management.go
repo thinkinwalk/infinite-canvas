@@ -15,6 +15,8 @@ type catalogReference struct {
 	PlatformModelID string `json:"platformModelId"`
 	Model           string `json:"model"`
 	ChannelID       int    `json:"channelId"`
+	Status          string `json:"status"`
+	CaptionStatus   string `json:"captionStatus"`
 }
 
 type catalogDeletion struct {
@@ -137,19 +139,33 @@ func validateCatalogDeletions(tx *gorm.DB, saved, next model.PrivateSetting) err
 		return nil
 	}
 	for _, table := range []struct {
-		record          any
-		label           string
-		legacyChannelID int
-	}{{&model.VideoTask{}, "视频任务", 0}, {&model.ReplicateTask{}, "云模型任务", saved.Replicate.LegacyChannelID}} {
-		rows, err := tx.Model(table.record).Select("platform_model_id", "model", "channel_id").Rows()
+		record           any
+		label            string
+		legacyChannelID  int
+		terminalStatuses []string
+	}{
+		{&model.VideoTask{}, "视频任务", 0, []string{"completed", "failed", "cancelled", "expired"}},
+		{&model.ReplicateTask{}, "云模型任务", saved.Replicate.LegacyChannelID, []string{"completed", "failed", "cancelled"}},
+	} {
+		rows, err := tx.Model(table.record).Select("platform_model_id", "model", "channel_id", "status").Rows()
 		if err != nil {
 			return err
 		}
 		for rows.Next() {
 			var ref catalogReference
-			if err := tx.ScanRows(rows, &ref); err != nil {
+			if err := rows.Scan(&ref.PlatformModelID, &ref.Model, &ref.ChannelID, &ref.Status); err != nil {
 				rows.Close()
 				return err
+			}
+			terminal := false
+			for _, status := range table.terminalStatuses {
+				if ref.Status == status {
+					terminal = true
+					break
+				}
+			}
+			if terminal {
+				continue
 			}
 			if ref.ChannelID == 0 && table.legacyChannelID != 0 {
 				ref.ChannelID = table.legacyChannelID
@@ -164,33 +180,6 @@ func validateCatalogDeletions(tx *gorm.DB, saved, next model.PrivateSetting) err
 		if err != nil {
 			return err
 		}
-	}
-	rows, err := tx.Model(&model.CreditLog{}).Select("extra").Where("type IN ?", []model.CreditLogType{model.CreditLogTypeAIConsume, model.CreditLogTypeAIRefund}).Rows()
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var extra string
-		if err := rows.Scan(&extra); err != nil {
-			rows.Close()
-			return err
-		}
-		var ref catalogReference
-		if extra != "" {
-			if err := json.Unmarshal([]byte(extra), &ref); err != nil {
-				rows.Close()
-				return fmt.Errorf("计费记录格式异常，无法确认模型引用，请先修复记录")
-			}
-		}
-		if err := check(ref, "计费记录"); err != nil {
-			rows.Close()
-			return err
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
 	}
 	directory := filepath.Join(config.DataDir(), "replacement-jobs")
 	files, err := os.ReadDir(directory)
@@ -211,6 +200,15 @@ func validateCatalogDeletions(tx *gorm.DB, saved, next model.PrivateSetting) err
 		var ref catalogReference
 		if err := json.Unmarshal(data, &ref); err != nil {
 			return fmt.Errorf("整片替换任务格式异常，无法确认模型引用，请先修复记录")
+		}
+		if ref.CaptionStatus == "recognizing" || ref.CaptionStatus == "rendering" {
+			if err := check(ref, "整片替换任务"); err != nil {
+				return err
+			}
+			continue
+		}
+		if ref.Status == "completed" || ref.Status == "failed" || ref.Status == "cancelled" || ref.Status == "expired" {
+			continue
 		}
 		if err := check(ref, "整片替换任务"); err != nil {
 			return err
