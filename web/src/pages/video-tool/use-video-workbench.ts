@@ -18,7 +18,7 @@ import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
-import { viralScriptProposal } from "./viral-script-revisions";
+import { applyViralScriptEdits, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisContent, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
@@ -140,7 +140,7 @@ export async function restoreWorkbenchFile(file: UploadedFile): Promise<Uploaded
     return { ...file, url: await (file.mimeType.startsWith("image/") ? resolveImageUrl(file.storageKey, file.url) : resolveMediaUrl(file.storageKey, file.url)) };
 }
 
-type Context = { signal: AbortSignal; recordId: string; worker: WorkerConfig; analysisReview?: ViralAnalysisVersion; scriptRequest?: string };
+type Context = { signal: AbortSignal; recordId: string; worker: WorkerConfig; analysisReview?: ViralAnalysisVersion; scriptRequest?: string; scriptEditMode?: ViralScriptEditMode };
 type Invalidation = "materials" | "brief" | "learning" | "preview" | "script" | "speech" | "video" | "finish" | "cover";
 export function useVideoWorkbench(tool: VideoTool) {
     const { message, modal } = App.useApp();
@@ -384,7 +384,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (cfg.channelMode !== "remote" && !isReplicateVideoModel(cfg.videoModel)) throw new Error("自定义渠道费用以该服务账单为准");
         return quoteVideoModel(cfg, cfg.videoModel, signal);
     };
-    const text = async (ctx: Context, instruction: string, imageFiles: (UploadedFile & { name?: string })[] = [], analyze = false, imageLabels?: string[]) => {
+    const text = async (ctx: Context, instruction: string, imageFiles: (UploadedFile & { name?: string })[] = [], analyze = false, imageLabels?: string[], structured = false) => {
         const cfg = analyze && ["store-explore","viral-recreate"].includes(tool) ? configForFeature(config,`${tool}.analyze`,"text") : modelConfig("text");
         const content: Exclude<AiTextMessage["content"], string> = [{ type: "text", text: instruction }];
         for (const [index, image] of imageFiles.entries()) {
@@ -404,7 +404,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             await confirmStorePrice(quote, ctx.analysisReview ? "复核参考分析" : "文案处理", ctx.signal, ctx.analysisReview ? "将当前抽样画面与待核验分析发送到所选模型；复核单独计费，结果作为建议保留" : "分析 / 撰写按当前文字模型单独计费");
             ctx.signal.throwIfAborted();
         }
-        const value = await requestImageQuestion({...cfg,model:cfg.textModel}, [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, { text: value }), { signal: ctx.signal });
+        const value = await requestImageQuestion({...cfg,model:cfg.textModel}, [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, structured ? { step: "正在整理脚本修改建议" } : { text: value }), { signal: ctx.signal });
         if (!value.trim()) throw new Error("模型没有返回内容");
         return value;
     };
@@ -811,10 +811,11 @@ export function useVideoWorkbench(tool: VideoTool) {
             const instruction =
                 stage === "product-analyze"
                       ? `分析参考图片的可见内容与可用于视频改编的特征，按每张图的实际内容区分主体、环境或视觉风格，不默认都是商品或背景。编号与用途：${images.map((m) => `${viralMaterialLabels(d).find((l) => l.id === m.id)?.label}=${viralVisualRole(m.role)}`).join("；")}。用户真实资料：${viralTargetFacts(d)}。只写可见事实，不编造身份、价格、优惠、功效或承诺；不能辨认时说明。`
-                      : viralScriptPrompt(d, cfg, ctx.scriptRequest);
-            const value = await text(ctx, instruction, images, stage !== "script");
+                      : viralScriptPrompt(d, cfg, ctx.scriptRequest, ctx.scriptEditMode);
+            const value = await text(ctx, instruction, images, stage !== "script", undefined, stage === "script" && Boolean(ctx.scriptRequest && d.script.trim()) && ctx.scriptEditMode !== "rewrite");
             if (stage === "product-analyze") return { ...(d.viralProductAnalysis ? { viralProductSuggestion: value } : { viralProductAnalysis: value, viralProductStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
-            return viralScriptProposal(d, value, ctx.scriptRequest);
+            const script = ctx.scriptRequest && d.script.trim() && ctx.scriptEditMode !== "rewrite" ? applyViralScriptEdits(d.script, value) : value;
+            return viralScriptProposal(d, script, ctx.scriptRequest);
         }
         if (tool === "viral-recreate" && stage === "video") {
             const cfg = viralVideoConfig(d, config),
@@ -1131,7 +1132,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (["compose", "metadata", "upscale", "subtitle-remove", "compatibility"].includes(stage)) return { cover: null };
         return {};
     };
-    const perform = async (stage: string, signal: AbortSignal, analysisReview?: ViralAnalysisVersion, scriptRequest?: string) => {
+    const perform = async (stage: string, signal: AbortSignal, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode) => {
         for (const record of store().records.filter((r) => r.tool === tool && r.stage === stage && r.replicateTask && r.status !== "completed")) {
             const existing = await readReplicateTask(record.replicateTask!.id, signal);
             if (existing.status !== "failed" && existing.status !== "cancelled") throw new Error("该步骤已有云任务，请从任务记录恢复查询，避免重复付费");
@@ -1245,7 +1246,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (tool === "viral-recreate") store().patchRecord(id, { viralTaskId: d.viralTaskId, viralInput: viralInput(d, viralVideoConfig(d, config)) });
         patch({ activeRecord: id });
         try {
-            const value = await execute(stage, { signal, recordId: id, worker, analysisReview, scriptRequest });
+            const value = await execute(stage, { signal, recordId: id, worker, analysisReview, scriptRequest, scriptEditMode });
             signal.throwIfAborted();
             if (tool === "upscale" && stage === "upscale") Object.assign(value, { upscaleOutputInput: upscaleInput(d), upscaleOutputStale: false });
             if ((tool !== "viral-recreate" || (read(tool).viralRevision || 0) === (d.viralRevision || 0)) && (!digital || (read(tool).digitalRevision || 0) === (d.digitalRevision || 0))) {
@@ -1314,7 +1315,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             store().setBusy(tool, false);
         }
     };
-    const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string) =>
+    const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode) =>
         guard(async (signal) => {
             if (analysisReview) {
                 const current = read(tool), p = analysisReview.provenance;
@@ -1354,14 +1355,19 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
             if (tool === "viral-recreate" && stage === "script") {
-                if (read(tool).viralScriptSuggestion) throw new Error("请先采用或保留当前脚本建议，再继续修改");
-                const intentError = viralIntentError(read(tool));
+                const current = read(tool);
+                if (current.viralScriptSuggestion) throw new Error("请先采用或保留当前脚本建议，再继续修改");
+                if (scriptRequest) {
+                    const requestError = viralScriptRequestError(current, scriptRequest);
+                    if (requestError) throw new Error(requestError);
+                }
+                const intentError = viralIntentError(current);
                 if (intentError) throw new Error(intentError);
-                const error = viralAdoptedAnalysisError(read(tool));
+                const error = viralAdoptedAnalysisError(current);
                 if (error) throw new Error(error);
-                if (viralReference(read(tool)) && !read(tool).analysis.trim())
+                if (viralReference(current) && !current.analysis.trim())
                     throw new Error("请先分析当前视频，再由 AI 撰写改编脚本；也可直接手写脚本");
-                if (!read(tool).analysis.trim() && Object.values(read(tool).viralAnalyses || {}).some((result) => result?.text.trim() && result.provenance.source === viralSource(read(tool))))
+                if (!current.analysis.trim() && Object.values(current.viralAnalyses || {}).some((result) => result?.text.trim() && result.provenance.source === viralSource(current)))
                     throw new Error("请先采用一份当前视频的分析，再撰写改编脚本");
             }
             if (tool === "viral-recreate" && stage === "analyze" && viralAnalysisMode(read(tool), config) === "frames") {
@@ -1375,7 +1381,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             if (stage === "analyze" && !(tool === "viral-recreate" && viralAnalysisMode(read(tool), config) === "video") && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
                 await perform("frames", signal);
-            await perform(stage, signal, analysisReview, scriptRequest);
+            await perform(stage, signal, analysisReview, scriptRequest, scriptEditMode);
         });
     const automatic = () =>
         guard(async (signal) => {
@@ -1589,7 +1595,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         importLink,
         removeMedia,
         run,
-        reviseScript: (request: string) => request.trim() ? run("script", undefined, request.trim()) : Promise.resolve(),
+        reviseScript: (request: string, mode: ViralScriptEditMode = "local") => request.trim() ? run("script", undefined, request.trim(), mode) : Promise.resolve(),
         quoteReplacement,
         quoteDigitalHuman,
         quoteUpscale,

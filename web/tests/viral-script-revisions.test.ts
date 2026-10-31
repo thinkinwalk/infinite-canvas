@@ -9,7 +9,7 @@ if (!globalThis.localStorage) {
         removeItem: (key: string) => values.delete(key),
     } });
 }
-const { viralInitialScript, viralScriptProposal, viralResolveScript, viralRestoreScript } = await import("../src/pages/video-tool/viral-script-revisions");
+const { applyViralScriptEdits, viralInitialScript, viralScriptProposal, viralResolveScript, viralRestoreScript, viralScriptRequestError, viralScriptChangeSummary } = await import("../src/pages/video-tool/viral-script-revisions");
 const { viralScriptPrompt, viralInput } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralKeyframePrompt } = await import("../src/pages/video-tool/viral-keyframe");
@@ -80,13 +80,64 @@ test("multi-turn prompts use latest manual text and only adopted versions from t
     const prompt = viralScriptPrompt(kept, defaultConfig, "再短一些，只改第二段");
     expect(prompt).toContain("最新人工编辑");
     expect(prompt).toContain("加强开头");
-    expect(prompt).toContain("第一版已采用稿");
     expect(prompt).toContain("再短一些，只改第二段");
-    expect(prompt).toContain("未要求修改的镜头、台词和顺序保持");
+    expect(prompt).toContain("未修改的段落必须由应用原样保留");
+    expect(prompt).toContain('"segment":1');
+    expect(prompt).not.toContain("按此规格重排内容与节奏");
+    expect(prompt).not.toContain("第一版已采用稿");
     expect(prompt).not.toContain("不应生效的要求");
     expect(prompt).not.toContain("不应带回的建议");
     const otherVideo = { ...kept, analysis: "", media: [{ id: "other", kind: "video" as const, role: "reference" as const, storageKey: "other", url: "blob:other", name: "另一原片.mp4", mimeType: "video/mp4", bytes: 1 }] };
     expect(viralScriptPrompt(otherVideo, defaultConfig, "改开头")).not.toContain("第一版已采用稿");
+});
+
+test("scoped edits preserve every untouched character and reject full-script rewrites", () => {
+    const opening = "甲".repeat(450);
+    const ending = "保留结尾台词。" + "乙".repeat(540);
+    const source = `${opening}\n\n${ending}`;
+    expect(Array.from(source).length).toBe(999);
+    const edited = applyViralScriptEdits(source, JSON.stringify({ edits: [{ segment: 2, before: "结尾台词", after: "最后一句" }] }));
+    expect(edited).toBe(source.replace("结尾台词", "最后一句"));
+    expect(() => applyViralScriptEdits(source, "重写后的整份短脚本")).toThrow("原稿未改动");
+    expect(() => applyViralScriptEdits(source, JSON.stringify({ edits: [{ segment: 9, before: "结尾台词", after: "越界段落" }] }))).toThrow("未能对应");
+    expect(() => applyViralScriptEdits(source, JSON.stringify({ edits: [{ segment: 1, text: "旧格式整段替换" }] }))).toThrow("未能对应");
+});
+
+test("exact patches handle deletions, repeated phrases, overlapping edits and CRLF without changing surrounding text", () => {
+    const source = "00:00｜人物转身，左上角有水印。镜头保持。\r\n\r\n00:03｜保留声音。";
+    expect(applyViralScriptEdits(source, JSON.stringify({ edits: [{ segment: 1, before: "左上角有水印。", after: "" }] })))
+        .toBe("00:00｜人物转身，镜头保持。\r\n\r\n00:03｜保留声音。");
+    expect(() => applyViralScriptEdits("转身转身", JSON.stringify({ edits: [{ segment: 1, before: "转身", after: "站立" }] }))).toThrow("唯一对应");
+    expect(() => applyViralScriptEdits(source, JSON.stringify({ edits: [
+        { segment: 1, before: "人物转身", after: "人物站立" }, { segment: 1, before: "转身，", after: "抬手，" },
+    ] }))).toThrow("重叠");
+    expect(() => applyViralScriptEdits(source, '{"edits":[]}')).toThrow("没有提出");
+    expect(() => applyViralScriptEdits("完整脚本", '{"edits":[{"segment":1,"before":"完整脚本","after":""}]}')).toThrow("清空");
+    expect(applyViralScriptEdits("原句。", '```json\n{"edits":[{"segment":1,"before":"原句。","after":"原句。不要新增水印。"}]}\n```')).toBe("原句。不要新增水印。");
+});
+
+test("watermark guidance distinguishes existing-frame removal from generation and script edits", () => {
+    const current = { ...draft(), script: "人物转身，裙摆展开。" };
+    expect(viralScriptRequestError(current, "去掉左上角和右下角的水印")).toContain("不能擦除视频画面中的水印");
+    expect(viralScriptRequestError({ ...current, script: "甲".repeat(999) }, "去掉左上角和右下角的水印")).toContain("不能擦除");
+    expect(viralScriptRequestError(current, "删除脚本中的水印描述")).toContain("没有水印描述");
+    expect(viralScriptRequestError({ ...current, script: "右上角显示水印。" }, "删除水印描述")).toBe("");
+    expect(viralScriptRequestError(current, "脚本中补充生成时不要水印")).toBe("");
+    expect(viralScriptRequestError(current, "不要新增水印")).toBe("");
+    expect(viralScriptRequestError(current, "只改开头")).toBe("");
+});
+
+test("whole-script rewriting is explicitly selected and character summaries include Unicode", () => {
+    const d = { ...draft(), script: "当前脚本" };
+    const local = viralScriptPrompt(d, defaultConfig, "全文不要变，只改开头");
+    expect(local).toContain('"before"');
+    expect(local).toContain("最小原文片段");
+    const rewrite = viralScriptPrompt(d, defaultConfig, "重新调整节奏", "rewrite");
+    expect(rewrite).toContain("用户已明确选择整稿改写");
+    expect(rewrite).not.toContain("只返回 JSON");
+    expect(viralScriptPrompt(d, defaultConfig)).toContain("按此规格重排内容与节奏");
+    expect(viralScriptChangeSummary("甲".repeat(999), "乙".repeat(481))).toBe("999 → 481 字（减少 518 字，52%）");
+    expect(viralScriptChangeSummary("😀甲", "甲")).toBe("2 → 1 字（减少 1 字，50%）");
 });
 
 test("task input snapshots retain conversation and unfinished composer text", () => {

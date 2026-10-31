@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Button, Empty, Segmented, Tooltip, theme } from "antd";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { diffArrays, diffLines } from "diff";
+import { viralScriptChangeSummary } from "./viral-script-revisions";
 
 export function scriptComparisonRows(before: string, after: string) {
     const rows: { before: string; after: string; changed: boolean }[] = [];
@@ -48,7 +49,10 @@ export default function ViralScriptComparison({ before, after, beforeLabel, afte
     return <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="viral-script-comparison">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
             <Segmented aria-label="差异显示范围" value={onlyChanges ? "changes" : "all"} onChange={(value) => setOnlyChanges(value === "changes")} options={[{ value: "all", label: "全部内容" }, { value: "changes", label: "仅看差异" }]} />
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-2 min-w-0 text-xs" style={{ color: after.length < before.length ? token.colorWarningText : token.colorTextSecondary }} data-testid="viral-script-length-change">
+                    {viralScriptChangeSummary(before, after)}
+                </span>
                 <span className="mr-1 text-xs" style={{ color: token.colorTextSecondary }}>{active >= 0 ? `${active + 1} / ` : ""}{changed.length} 处文字差异</span>
                 <Tooltip title="上一处差异"><Button aria-label="上一处差异" size="small" disabled={!changed.length} icon={<ArrowUp size={14} />} onClick={() => goChange(-1)} /></Tooltip>
                 <Tooltip title="下一处差异"><Button aria-label="下一处差异" size="small" disabled={!changed.length} icon={<ArrowDown size={14} />} onClick={() => goChange(1)} /></Tooltip>
