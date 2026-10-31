@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.127
-- Current production source: tag v0.19.127, commit 23335fe21992c4b71cffa2005a4be7812dc97f4c
+- Current production image: infinite-canvas:v0.19.129
+- Current production source: tag v0.19.129, commit fb958cf891198569b2d73467e3375dc5681877c8
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.129 deployment
+
+- Tag `v0.19.129`, commit `fb958cf891198569b2d73467e3375dc5681877c8`, is pushed to `release/v0.19.60`. Production runs `infinite-canvas:v0.19.129`, image ID `sha256:fd7ea7cc4365688644e4fe5809a8a4f0479d6a06db017d48ada622af351ad7c9`. This release retains the deployed v0.19.128 script-preservation changes.
+- Channel removal dependency links now carry `intent=remove` and open a dedicated removal wizard. It saves route disablement first, then confirms and removes route references. Models/prices remain; models and bindings without remaining routes are disabled and lose their default binding. Other channel routes remain. Historical-reference rejection is retained; after removing a directory route, return to channel settings to remove its upstream model ID.
+- Two focused tests / ten assertions passed. Full TypeScript checking remains blocked by five pre-existing errors outside this change; local Vite build still fails on the existing Windows absolute-path issue. Server Docker build succeeded. Backend source/binary is unchanged.
+- Isolated Chrome checks against the deployed public assets used mocked API responses and a synthetic admin session. Removal intent, cancellation, save conflict, single/alternate routes, historical-reference rejection, refresh persistence and the separate connection entry passed with no page errors or production API writes. Desktop/390/320px layouts in both themes had no page or drawer overflow; desktop/mobile screenshots were inspected. Evidence: local `.codex_tmp/model-removal-qa/report.json`. Actual production admin data mutations remain untested.
+- Internal/external health and five routes including both admin pages passed. Public JS `/assets/index-C41BAjjd.js` SHA-256 is `b5a5a912c3b6214b92e91faf5be536ec689d84c178473bf7c7919d3d7a2ca5d3`; CSS `/assets/index-DmUglXcO.css` SHA-256 is `99d18568864496fc183beab13dfd5ae975864db9668900d2ba30aa43b705edd2`. Public files match container files; workstation HTTPS independently verified the JS.
+- Final backup `/opt/infinite-canvas/backups/v0.19.129-final-20261031-035233/`; prebuild `/opt/infinite-canvas/backups/v0.19.129-prebuild-20261031-035145/`. Backup/live SQLite quick checks, schema, 13 table counts, settings/protected account values, environment and mounts match. Worker v0.19.87 retains its container and start time `2026-10-23T05:13:03.450801566Z`. Only app was replaced; no model/channel settings or paid inference were submitted.
+- Evidence `/opt/infinite-canvas/releases/v0.19.129-deployment.json`, local `.codex_tmp/v0.19.129-deployment.json`; verifier `/opt/infinite-canvas/releases/deploy-v0.19.129.py`. Rollback restores final-backup Compose and recreates app only, preserving current data and the v0.19.128 image. A formal GitHub Release page remains uncreated because GitHub CLI is unauthenticated.
 
 ## v0.19.127 deployment
 
