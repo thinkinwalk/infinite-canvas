@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.125
-- Current production source: tag v0.19.125, commit 2f6132bf89e2ce498f9dea051182d31ce9e5e17f
+- Current production image: infinite-canvas:v0.19.126
+- Current production source: tag v0.19.126, commit bd98bf4ff2a8a00b092077e17d2b7b700a6f7b0c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.126 deployment
+
+- Tag `v0.19.126`, commit `bd98bf4ff2a8a00b092077e17d2b7b700a6f7b0c`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.126`, config ID `sha256:73842662b1619c54109b4296222b0a4d2a50dd943baffaf847f806883a9a4f8d`, serves `/assets/index-D8ZSI8k2.js`. User evaluation artifacts remain untracked.
+- Pending script suggestions show deletions and additions directly in the main editor, select the pending suggestion and locate its first change automatically, including after refresh. Full marks, changes only, previous/next navigation and optional side-by-side comparison are available. Mobile scrolling is constrained, with resize repositioning. Adoption stores only final text.
+- Development passed five isolated mocked browser groups and inspected 1440/390/320px screenshots in both themes, without page errors. Release repeated no local tests/builds/typecheck. Required server Docker build passed. Production browser interactions, existing real drafts and paid model quality remain pending; no original BitBrowser tabs/drafts were changed and no paid inference was submitted.
+- Internal/external health, seven public routes and JS/CSS hashes passed. Workstation HTTPS independently matched JS SHA-256 `b541a8f3b096502df86891322ade9af33074481a8511b27d59afee5442f7201b` and CSS SHA-256 `6ba5735ad9878746e0238cc9db226c95058d69756fcde054eacbe53f21013754`. SQLite quick checks, schema, all 13 table counts, full settings, selected protected account fields, environment values, mounts and backend binary are preserved. Worker v0.19.87 retains its identity and start time `2026-10-23T05:13:03.450801566Z`.
+- Two initial deployments automatically rolled back on ordered environment/mount array comparisons. Candidate environment values matched the current baseline; repeated read-only Docker inspections demonstrated varying mount order with identical full values and worker identity. The verifier now normalizes environments by name and mounts by destination, preserving strict value checks. Fresh backups and deployment then passed without product-source changes.
+- Final validated SQLite/Compose/private-environment backup `/opt/infinite-canvas/backups/v0.19.126-20261031-021022/`; prebuild `/opt/infinite-canvas/backups/v0.19.126-prebuild-20261031-021020/`. No full media backup is claimed. Evidence `/opt/infinite-canvas/releases/v0.19.126-deployment.json`, local `.codex_tmp/v0.19.126-deployment.json`. Rollback restores final-backup Compose and recreates app only, preserving the current database and v0.19.125 image.
 
 ## v0.19.125 deployment
 
