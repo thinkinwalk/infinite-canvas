@@ -114,6 +114,41 @@ func TestManagedDeletionAllowsTerminalTaskHistoryAndBilling(t *testing.T) {
 	}
 }
 
+func TestManagedDeletionHandlesNullLegacyTaskFields(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		record any
+		table  string
+		id     string
+	}{
+		{"video", &model.VideoTask{ID: "legacy-video", PlatformModelID: "model_unused", Model: "private-video", ChannelID: 81, Status: "completed"}, "video_tasks", "legacy-video"},
+		{"cloud", &model.ReplicateTask{ID: "legacy-cloud", PlatformModelID: "model_unused", Model: "private-video", ChannelID: 81, Status: "completed"}, "replicate_tasks", "legacy-cloud"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setupRedemptionTestDB(t)
+			saved := deletionSettings()
+			if _, err := SaveSettings(saved, "before"); err != nil {
+				t.Fatal(err)
+			}
+			db, _ := DB()
+			if err := db.Create(test.record).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Table(test.table).Where("id = ?", test.id).Updates(map[string]any{
+				"platform_model_id": nil,
+				"model":             nil,
+				"channel_id":        nil,
+				"status":            nil,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := SaveSettingsChecked(removeCatalogEntries(saved), saved.Private.ModelManagement, "after"); err != nil {
+				t.Fatalf("nullable legacy history blocked deletion: %v", err)
+			}
+		})
+	}
+}
+
 func TestManagedDeletionAllowsTerminalReplacementHistory(t *testing.T) {
 	for _, data := range []string{
 		`{"platformModelId":"model_unused","model":"private-video","channelId":81,"status":"completed"}`,

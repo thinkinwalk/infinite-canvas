@@ -147,7 +147,9 @@ func validateCatalogDeletions(tx *gorm.DB, saved, next model.PrivateSetting) err
 		{&model.VideoTask{}, "视频任务", 0, []string{"completed", "failed", "cancelled", "expired"}},
 		{&model.ReplicateTask{}, "云模型任务", saved.Replicate.LegacyChannelID, []string{"completed", "failed", "cancelled"}},
 	} {
-		rows, err := tx.Model(table.record).Select("platform_model_id", "model", "channel_id", "status").Rows()
+		rows, err := tx.Model(table.record).
+			Select("COALESCE(platform_model_id, '') AS platform_model_id, COALESCE(model, '') AS model, COALESCE(channel_id, 0) AS channel_id, COALESCE(status, '') AS status").
+			Rows()
 		if err != nil {
 			return err
 		}
