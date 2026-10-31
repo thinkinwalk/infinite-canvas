@@ -641,8 +641,14 @@ function ViralTaskWorkspace() {
         }
         const info = suggestionInfo(field);
         if (!info || !d[info.key]) return null;
+        const decline = <Button disabled={locked} onClick={() => {
+            wb.patch(field === "script" ? viralResolveScript(d, false) : { [info.key]: "" });
+            setSuggestionView(false);
+            if (field === "script") message.info("本次修改未应用，可从脚本版本中找回");
+        }}>{field === "script" ? "不应用修改" : "保留原稿"}</Button>;
         return (
             <Space wrap>
+                {field === "script" && decline}
                 <Button
                     type={field === "script" ? "primary" : "default"}
                     icon={field === "script" ? <Check size={14} /> : undefined}
@@ -665,16 +671,7 @@ function ViralTaskWorkspace() {
                 >
                     {field === "script" ? "应用修改" : "采用新分析"}
                 </Button>
-                <Button
-                    disabled={locked}
-                    onClick={() => {
-                        wb.patch(field === "script" ? viralResolveScript(d, false) : { [info.key]: "" });
-                        setSuggestionView(false);
-                        if (field === "script") message.info("本次修改未应用，可从脚本版本中找回");
-                    }}
-                >
-                    {field === "script" ? "不应用修改" : "保留原稿"}
-                </Button>
+                {field !== "script" && decline}
             </Space>
         );
     };
@@ -813,8 +810,7 @@ function ViralTaskWorkspace() {
                         />
                     )}
                 </div>
-                {viewingSuggestion && field !== "analysis" && (field !== "script" || fullscreen) && <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
-                    {field === "script" && <span className="text-xs" style={muted}>本次修改尚未应用，当前脚本保持不变。</span>}
+                {viewingSuggestion && field !== "analysis" && field !== "script" && <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
                     {suggestionActions(field)}
                 </div>}
                 {!viewingSuggestion && (field === "script" || field === "instructions") && invalidMentions && (
@@ -822,9 +818,12 @@ function ViralTaskWorkspace() {
                         {invalidMentions}
                     </div>
                 )}
-                <div className="flex shrink-0 flex-wrap justify-between gap-2 text-xs" style={muted}>
-                    <span>{Array.from(value).length.toLocaleString()} 字</span>
-                    <span>{wb.storageError ? "本地保存异常，请先复制文案备份" : viewingSuggestion ? field === "script" ? "本次修改尚未应用，当前脚本保持不变。" : "新建议尚未替换原稿，采用后可编辑" : "修改自动保存到本浏览器草稿"}</span>
+                <div className={`flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs ${viewingSuggestion && field === "script" ? "border-t pt-3" : ""}`} style={{ ...muted, borderColor: token.colorBorderSecondary }}>
+                    <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 sm:w-auto sm:flex-1">
+                        <span>{Array.from(value).length.toLocaleString()} 字</span>
+                        <span>{wb.storageError ? "本地保存异常，请先复制文案备份" : viewingSuggestion ? field === "script" ? "本次修改尚未应用，当前脚本保持不变。" : "新建议尚未替换原稿，采用后可编辑" : "修改自动保存到本浏览器草稿"}</span>
+                    </div>
+                    {viewingSuggestion && field === "script" && <div className="ml-auto" data-testid="viral-script-review-actions">{suggestionActions("script")}</div>}
                 </div>
             </div>
         );
@@ -1054,11 +1053,6 @@ function ViralTaskWorkspace() {
     const actionHint = !busy && !(step === 1 && d.viralScriptSuggestion) && (step === 0 && preparationAction.disabled || step === 1 && scriptPanel && nextAction.disabled) ? <p className="mb-2 text-xs" style={{ color: token.colorWarning }}>{step === 0 ? analysisBlocked : scriptBlocked || textBlocked || scriptWritingBlocked}</p> : null;
     const controls = step === 1 && !scriptPanel ? (
         <Button type="primary" block icon={<ArrowLeft size={15} />} onClick={() => openEditor("script", Boolean(d.viralScriptSuggestion))}>返回改编脚本</Button>
-    ) : step === 1 && d.viralScriptSuggestion ? (
-        <div className="flex items-center justify-between gap-2">
-            <Button aria-label="上一步" icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => goStep(step - 1)} />
-            {suggestionActions("script")}
-        </div>
     ) : step !== 2 ? (
         <div className="flex items-center gap-2">
             {step > 0 && <Button aria-label="上一步" icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => goStep(step - 1)} />}
