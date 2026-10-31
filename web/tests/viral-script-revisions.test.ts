@@ -9,7 +9,7 @@ if (!globalThis.localStorage) {
         removeItem: (key: string) => values.delete(key),
     } });
 }
-const { applyViralScriptEdits, viralInitialScript, viralScriptProposal, viralResolveScript, viralRestoreScript, viralScriptRequestError, viralScriptChangeSummary } = await import("../src/pages/video-tool/viral-script-revisions");
+const { applyViralScriptEdits, viralInitialScript, viralScriptEditDraft, viralScriptProposal, viralResolveScript, viralRestoreScript, viralScriptRequestError, viralScriptChangeSummary } = await import("../src/pages/video-tool/viral-script-revisions");
 const { viralScriptPrompt, viralInput } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralSettingsRequireScriptReview, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralKeyframePrompt } = await import("../src/pages/video-tool/viral-keyframe");
@@ -61,6 +61,57 @@ test("keeping the current draft rejects the proposal and retains manual changes"
     expect(kept.script).toBe("建议返回后的人工编辑");
     expect(kept.viralScriptSuggestion).toBe("");
     expect(kept.viralScriptTurns?.[0].status).toBe("rejected");
+});
+
+test("continued edits use the pending result and apply the accumulated changes only once", () => {
+    const d = { ...draft(), script: "旧开头。\n\n保留中段。\n\n旧结尾。" };
+    const first = { ...d, ...viralScriptProposal(d, d.script.replace("旧开头", "新开头"), "只改开头") };
+    const prompt = viralScriptPrompt(first, defaultConfig, "再改结尾");
+    expect(prompt).toContain("新开头");
+    expect(prompt).not.toContain("旧开头");
+    expect(prompt).toContain("尚未应用");
+    expect(prompt).toContain("只改开头");
+    const finalText = applyViralScriptEdits(viralScriptEditDraft(first).script, '{"edits":[{"segment":3,"before":"旧结尾","after":"新结尾"}]}');
+    const second = { ...first, ...viralScriptProposal(first, finalText, "再改结尾") };
+    expect(second.script).toBe(d.script);
+    expect(second.viralScriptSuggestion).toBe("新开头。\n\n保留中段。\n\n新结尾。");
+    expect(second.viralScriptSuggestionBase).toBe(d.script);
+    expect(second.viralScriptTurns?.map((turn) => turn.status)).toEqual(["superseded", "pending"]);
+    expect(second.viralScriptTurns?.[1].before).toBe(first.viralScriptSuggestion);
+    const accepted = { ...second, ...viralResolveScript(second, true) };
+    expect(accepted.script).toBe(finalText);
+    expect(accepted.viralScriptSuggestion).toBe("");
+    expect(accepted.viralScriptTurns?.[1].before).toBe(d.script);
+    expect(accepted.viralScriptTurns?.[1].status).toBe("accepted");
+});
+
+test("continuing after manual edits retains the original comparison base and restores the overwritten text", () => {
+    const d = { ...draft(), script: "最初底稿" };
+    const first = { ...d, ...viralScriptProposal(d, "第一次修改", "第一轮要求"), script: "期间手写稿" };
+    const second = { ...first, ...viralScriptProposal(first, "第二次修改", "第二轮要求") };
+    expect(second.viralScriptSuggestionBase).toBe("最初底稿");
+    expect(viralScriptEditDraft(second).script).toBe("第二次修改");
+    const accepted = { ...second, ...viralResolveScript(second, true) };
+    expect(accepted.viralScriptTurns?.at(-1)?.before).toBe("期间手写稿");
+    const rejected = { ...second, ...viralResolveScript(second, false) };
+    expect(rejected.script).toBe("期间手写稿");
+    expect(rejected.viralScriptTurns?.at(-1)?.after).toBe("第二次修改");
+    const prompt = viralScriptPrompt(rejected, defaultConfig, "重新改写");
+    expect(prompt).toContain("期间手写稿");
+    expect(prompt).not.toContain("第一次修改");
+    expect(prompt).not.toContain("第二轮要求");
+});
+
+test("watermark edits validate the pending result and a cleared current draft can still be refined", () => {
+    const d = { ...draft(), script: "人物转身。" };
+    const first = { ...d, ...viralScriptProposal(d, "人物转身。左上角显示水印。", "加入画面说明") };
+    expect(viralScriptRequestError(first, "删除水印描述")).toBe("");
+    const cleared = { ...first, script: "" };
+    const refined = { ...cleared, ...viralScriptProposal(cleared, "人物站立。", "改为站立") };
+    expect(refined.script).toBe("");
+    expect(refined.viralScriptSuggestion).toBe("人物站立。");
+    expect(refined.viralScriptTurns?.at(-1)?.status).toBe("pending");
+    expect(viralScriptPrompt(cleared, defaultConfig, "改为站立")).toContain("人物转身。左上角显示水印。");
 });
 
 test("adopting after further manual edits backs up the actual overwritten draft", () => {
@@ -149,9 +200,13 @@ test("whole-script rewriting is explicitly selected and character summaries incl
     expect(viralScriptChangeSummary("😀甲", "甲")).toBe("2 → 1 字（减少 1 字，50%）");
 });
 
-test("task input snapshots retain conversation and unfinished composer text", () => {
-    const d = { ...draft(), ...viralScriptProposal(draft(), "首版稿", "撰写脚本"), viralScriptChatInput: "未发送的要求" };
+test("task input snapshots retain pending edits, comparison base, conversation and unfinished composer text", () => {
+    const current = { ...draft(), script: "当前脚本" };
+    const d = { ...current, ...viralScriptProposal(current, "尚未应用的修改", "修改开头"), viralScriptChatInput: "未发送的要求" };
     const input = viralInput(d, defaultConfig);
+    expect(input.script).toBe("当前脚本");
+    expect(input.viralScriptSuggestion).toBe("尚未应用的修改");
+    expect(input.viralScriptSuggestionBase).toBe("当前脚本");
     expect(input.viralScriptTurns).toEqual(d.viralScriptTurns);
     expect(input.viralScriptChatInput).toBe("未发送的要求");
 });

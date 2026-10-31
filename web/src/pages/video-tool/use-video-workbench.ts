@@ -18,7 +18,7 @@ import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
-import { applyViralScriptEdits, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
+import { applyViralScriptEdits, viralScriptEditDraft, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisContent, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
@@ -810,14 +810,16 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
         if (tool === "viral-recreate" && ["product-analyze", "script"].includes(stage)) {
             const cfg = viralVideoConfig(d, config);
+            const scriptDraft = ctx.scriptRequest ? viralScriptEditDraft(d) : d;
+            const localScriptEdit = stage === "script" && Boolean(ctx.scriptRequest && scriptDraft.script.trim()) && ctx.scriptEditMode !== "rewrite";
             const images = stage === "product-analyze" ? viralReferenceImages(d) : d.media.filter((m) => viralKeyframeMaterials(d).some((input) => input.id === m.id) || m.id === d.viralFirstFrameId || (d.viralClimaxUse !== "preview" && d.viralClimaxUse && m.id === d.viralClimaxId));
             const instruction =
                 stage === "product-analyze"
                       ? `分析参考图片的可见内容与可用于视频改编的特征，按每张图的实际内容区分主体、环境或视觉风格，不默认都是商品或背景。编号与用途：${images.map((m) => `${viralMaterialLabels(d).find((l) => l.id === m.id)?.label}=${viralVisualRole(m.role)}`).join("；")}。用户真实资料：${viralTargetFacts(d)}。只写可见事实，不编造身份、价格、优惠、功效或承诺；不能辨认时说明。`
                       : viralScriptPrompt(d, cfg, ctx.scriptRequest, ctx.scriptEditMode);
-            const value = await text(ctx, instruction, images, stage !== "script", undefined, stage === "script" && Boolean(ctx.scriptRequest && d.script.trim()) && ctx.scriptEditMode !== "rewrite");
+            const value = await text(ctx, instruction, images, stage !== "script", undefined, localScriptEdit);
             if (stage === "product-analyze") return { ...(d.viralProductAnalysis ? { viralProductSuggestion: value } : { viralProductAnalysis: value, viralProductStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
-            const script = ctx.scriptRequest && d.script.trim() && ctx.scriptEditMode !== "rewrite" ? applyViralScriptEdits(d.script, value) : value;
+            const script = localScriptEdit ? applyViralScriptEdits(scriptDraft.script, value) : value;
             return viralScriptProposal(d, script, ctx.scriptRequest);
         }
         if (tool === "viral-recreate" && stage === "video") {
@@ -1359,7 +1361,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");
             if (tool === "viral-recreate" && stage === "script") {
                 const current = read(tool);
-                if (current.viralScriptSuggestion) throw new Error("请先采用或保留当前脚本建议，再继续修改");
+                if (current.viralScriptSuggestion && !scriptRequest) throw new Error("本次修改尚未应用，请通过对话继续调整，或先选择应用修改或不应用修改");
                 if (scriptRequest) {
                     const requestError = viralScriptRequestError(current, scriptRequest);
                     if (requestError) throw new Error(requestError);

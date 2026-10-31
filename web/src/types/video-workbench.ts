@@ -13,6 +13,8 @@ export type ViralRecreateInput = Pick<
     | "analysis"
     | "instructions"
     | "script"
+    | "viralScriptSuggestion"
+    | "viralScriptSuggestionBase"
     | "viralScriptTurns"
     | "viralScriptChatInput"
     | "viralScriptSeeded"
@@ -119,7 +121,7 @@ export type ViralScriptTurn = {
     before: string;
     beforeStale: boolean;
     after: string;
-    status: "pending" | "accepted" | "rejected" | "reverted";
+    status: "pending" | "accepted" | "rejected" | "reverted" | "superseded";
     createdAt: number;
 };
 export type ViralEffect = {

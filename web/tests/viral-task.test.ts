@@ -56,10 +56,12 @@ test("continuing a completed step includes its result and starts from empty defa
 test("failed steps restore original input, without applying partial results", () => {
     const saved = record({
         id: "failed", status: "failed",
-        viralInput: { ...emptyVideoDraft("viral-recreate"), script: "Protected script", channelMode: "remote", baseUrl: "" },
+        viralInput: { ...emptyVideoDraft("viral-recreate"), script: "Protected script", viralScriptSuggestion: "Previous pending result", viralScriptSuggestionBase: "Original comparison base", channelMode: "remote", baseUrl: "" },
         draftPatch: { script: "Incomplete result" },
     });
     expect(viralTaskDraft(saved)?.script).toBe("Protected script");
+    expect(viralTaskDraft(saved)?.viralScriptSuggestion).toBe("Previous pending result");
+    expect(viralTaskDraft(saved)?.viralScriptSuggestionBase).toBe("Original comparison base");
     expect(viralTaskDraft(saved)?.viralTaskId).toBe("failed");
 });
 
