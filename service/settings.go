@@ -77,15 +77,19 @@ func SaveSettings(settings model.Settings) (model.Settings, error) {
 	keepPrivateAPIKeys(&settings, saved)
 	keepPrivateAuthSecrets(&settings, saved)
 	if err := validateReplicateChannels(settings.Private.Channels, saved.Private); err != nil {
-		return model.Settings{}, err
-	}
-	if err := ValidateModelManagement(settings); err != nil {
-		return model.Settings{}, err
+		return model.Settings{}, safeMessageError{message: err.Error()}
 	}
 	if err := validateManagedReferences(saved, settings); err != nil {
-		return model.Settings{}, err
+		return model.Settings{}, safeMessageError{message: err.Error()}
+	}
+	if err := ValidateModelManagement(settings); err != nil {
+		return model.Settings{}, safeMessageError{message: err.Error()}
 	}
 	result, err := repository.SaveSettingsChecked(settings, saved.Private.ModelManagement, now())
+	var conflict repository.SettingsConflictError
+	if errors.As(err, &conflict) {
+		return model.Settings{}, safeMessageError{message: err.Error()}
+	}
 	if err == nil {
 		RefreshPromptSyncScheduler()
 	}

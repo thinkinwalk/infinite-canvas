@@ -170,6 +170,37 @@ func validateManagedReferences(saved, next model.Settings) error {
 		}
 	}
 	// Credentials remain on channels; replacing a URL/key can invalidate existing jobs.
+	if next.Private.ModelManagement != nil {
+		for _, route := range next.Private.ModelManagement.Routes {
+			channelExists, modelExists := false, false
+			for _, channel := range next.Private.Channels {
+				if channel.ID != route.ChannelID {
+					continue
+				}
+				channelExists = true
+				for _, name := range channel.Models {
+					if name == route.Model {
+						modelExists = true
+						break
+					}
+				}
+				break
+			}
+			if channelExists && !modelExists {
+				for _, entry := range next.Private.ModelManagement.Models {
+					if containsString(entry.RouteIDs, route.ID) {
+						return fmt.Errorf("渠道模型 %s 仍被平台模型 %s 引用，请先在模型管理中停用并解除接入", route.Model, entry.DisplayName)
+					}
+				}
+				for _, binding := range next.Private.ModelManagement.Bindings {
+					if containsString(binding.RouteIDs, route.ID) {
+						return fmt.Errorf("渠道模型 %s 仍被功能 %s 引用，请先在模型管理中解除绑定", route.Model, binding.FeatureID)
+					}
+				}
+				return fmt.Errorf("渠道模型 %s 仍有模型目录接入，请先在模型管理中停用并删除接入", route.Model)
+			}
+		}
+	}
 	for _, old := range saved.Private.Channels {
 		if next.Private.ModelManagement == nil {
 			continue

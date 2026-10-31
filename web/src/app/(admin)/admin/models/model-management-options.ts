@@ -1,5 +1,19 @@
 import type { AdminModelChannel, VideoModelProfile } from "@/services/api/admin";
-import type { FeatureBinding, ManagedModel, ManagedRoute } from "@/services/api/model-management";
+import type { FeatureBinding, ManagedModel, ManagedRoute, ModelManagement } from "@/services/api/model-management";
+
+export type ChannelModelDependency = { routeId: string; enabled: boolean; platformModels: string[]; features: string[] };
+
+export function channelModelDependencies(management: ModelManagement | undefined, channelId: number, modelName: string): ChannelModelDependency[] {
+    if (!management) return [];
+    return management.routes
+        .filter((route) => route.channelId === channelId && route.model === modelName)
+        .map((route) => ({
+            routeId: route.id,
+            enabled: route.enabled,
+            platformModels: management.models.filter((entry) => entry.routeIds.includes(route.id)).map((entry) => entry.displayName),
+            features: management.bindings.filter((binding) => binding.routeIds.includes(route.id)).map((binding) => binding.featureId),
+        }));
+}
 
 export const modelAdapterOptions = [
     ["text.openai", "文字 · OpenAI"],

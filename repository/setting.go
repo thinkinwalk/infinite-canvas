@@ -9,6 +9,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type SettingsConflictError struct {
+	message string
+}
+
+func (err SettingsConflictError) Error() string {
+	return err.message
+}
+
 // GetSettings 返回 public 和 private 两行配置。
 func GetSettings() (model.Settings, error) {
 	db, err := DB()
@@ -61,13 +69,13 @@ func SaveSettingsChecked(settings model.Settings, previous *model.ModelManagemen
 			current = stored.ModelManagement.Revision
 		}
 		if expected != current || incoming != current {
-			return errors.New("配置已被其他管理员修改，请重新加载后保存")
+			return SettingsConflictError{message: "配置已被其他管理员修改，请重新加载后保存"}
 		}
 		if stored.ModelManagement != nil && settings.Private.ModelManagement == nil {
-			return errors.New("已有模型目录不能清除，请在模型管理中停用")
+			return SettingsConflictError{message: "已有模型目录不能清除，请在模型管理中停用"}
 		}
 		if err := validateCatalogDeletions(tx, stored, settings.Private); err != nil {
-			return err
+			return SettingsConflictError{message: err.Error()}
 		}
 		if settings.Private.ModelManagement != nil && stored.ModelManagement == nil {
 			var publicRow model.Setting

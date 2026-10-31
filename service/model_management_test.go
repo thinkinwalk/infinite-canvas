@@ -80,6 +80,26 @@ func TestManagedConfigurationValidationRevisionAndBackup(t *testing.T) {
 	}
 }
 
+func TestValidateManagedReferencesExplainsRemovedChannelModelDependency(t *testing.T) {
+	saved := model.Settings{
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{{ID: 714, Name: "grok", Protocol: "openai", BaseURL: "https://example.invalid/v1", Enabled: true, Models: []string{"grok-imagine-video"}}},
+			ModelManagement: &model.ModelManagement{
+				Routes:   []model.ManagedRoute{{ID: "route_grok", ChannelID: 714, Model: "grok-imagine-video", Adapter: "video.relay", Capability: "video", Operations: []string{"video"}, Enabled: true}},
+				Models:   []model.ManagedModel{{ID: "model_grok", DisplayName: "Grok 视频", RouteIDs: []string{"route_grok"}}},
+				Bindings: []model.FeatureBinding{{FeatureID: "video.generate", ModelID: "model_grok", RouteIDs: []string{"route_grok"}, Enabled: true}},
+			},
+		},
+	}
+	next := saved
+	next.Private.Channels = []model.ModelChannel{{ID: 714, Name: "grok", Protocol: "openai", BaseURL: "https://example.invalid/v1", Enabled: true, Models: []string{}}}
+
+	err := validateManagedReferences(saved, next)
+	if err == nil || !strings.Contains(err.Error(), "渠道模型 grok-imagine-video 仍被平台模型 Grok 视频 引用") {
+		t.Fatalf("expected actionable model dependency error, got %v", err)
+	}
+}
+
 func TestManagedPinnedRouteKeepsCommonSpecifications(t *testing.T) {
 	saved, err := repository.GetSettings()
 	if err != nil {

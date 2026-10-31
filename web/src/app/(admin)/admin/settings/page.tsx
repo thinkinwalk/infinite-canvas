@@ -2,13 +2,14 @@
 
 import { CheckCircleOutlined, DeleteOutlined, EditOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
-import { App, Button, Card, Checkbox, Col, Collapse, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, Col, Collapse, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { EditorView } from "@uiw/react-codemirror";
 
 import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminReplicatePricing, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
+import { channelModelDependencies } from "@/app/(admin)/admin/models/model-management-options";
 import { REPLICATE_FEATURES, REPLICATE_IMAGE_MODELS, REPLICATE_SUPPORTED_MODELS, replicateFeatureUrl } from "@/services/api/replicate";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -90,6 +91,14 @@ export default function AdminSettingsPage() {
     const cloudProtocol = channelProtocol === "replicate" || channelProtocol === "wavespeed";
     const channelUsesEnvironment = Form.useWatch("useEnvironmentKey", channelForm);
     const channelSelectedModels = (Form.useWatch("models", channelForm) || []) as string[];
+    const originalChannelModels = editingChannelIndex === null ? [] : channels[editingChannelIndex]?.models || [];
+    const channelRemovalDependencies = useMemo(
+        () =>
+            originalChannelModels
+                .filter((model) => !channelSelectedModels.includes(model))
+                .flatMap((model) => channelModelDependencies(form.getFieldValue(["private", "modelManagement"]), channels[editingChannelIndex!]?.id || 0, model).map((dependency) => ({ model, dependency }))),
+        [channels, channelSelectedModels, editingChannelIndex, form, originalChannelModels],
+    );
     const replicatePrices = Form.useWatch("replicatePricing", { form: channelForm, preserve: true }) || {};
     const channelVideoProfiles = Form.useWatch("videoModels", { form: channelForm, preserve: true }) || {};
     const channelVideoModels = (cloudProtocol ? [] : channelSelectedModels).filter((name) => !!channelVideoProfiles[name]?.interface || isMiniMaxH3Name(name) || /video|seedance|seedace|sora|veo|kling|wan|hailuo|tejiasd/i.test(name));
@@ -213,6 +222,16 @@ export default function AdminSettingsPage() {
 
     const saveChannel = async () => {
         try {
+            if (channelRemovalDependencies.length > 0) {
+                const first = channelRemovalDependencies[0];
+                const dependency = first.dependency;
+                const details = [
+                    ...dependency.platformModels.map((name) => `平台模型「${name}」`),
+                    ...dependency.features.map((name) => `功能「${name}」`),
+                ];
+                message.error(`模型 ${first.model} 仍被渠道接入 ${dependency.routeId}${details.length ? `（${details.join("、")}）` : ""} 引用。请先在模型管理中停用并解除接入，再保存渠道。`);
+                return;
+            }
             await channelForm.validateFields();
             const draft = channelForm.getFieldsValue(true);
             const channel = normalizeChannel(draft);
@@ -830,6 +849,41 @@ export default function AdminSettingsPage() {
                                     </Form.Item>
                                 </Col>
                             )}
+                            <Col span={24}>
+                                {channelRemovalDependencies.length > 0 && (
+                                    <Alert
+                                        type="warning"
+                                        showIcon
+                                        message="移除模型前需要先处理模型目录引用"
+                                        description={
+                                            <Space direction="vertical" size={4}>
+                                                {channelRemovalDependencies.map(({ model, dependency }) => {
+                                                    const details = [
+                                                        ...dependency.platformModels.map((name) => `平台模型：${name}`),
+                                                        ...dependency.features.map((name) => `功能：${name}`),
+                                                    ];
+                                                    return (
+                                                        <Typography.Text key={`${model}:${dependency.routeId}`}>
+                                                            {model} · 接入 {dependency.routeId}{dependency.enabled ? "（启用中）" : "（已停用）"}
+                                                            {details.length ? ` · ${details.join("、")}` : ""}
+                                                        </Typography.Text>
+                                                    );
+                                                })}
+                                                <Button
+                                                    size="small"
+                                                    onClick={() => {
+                                                        const { model } = channelRemovalDependencies[0];
+                                                        const channelId = editingChannelIndex === null ? 0 : channels[editingChannelIndex]?.id || 0;
+                                                        navigate(`/admin/models?channelId=${channelId}&model=${encodeURIComponent(model)}`);
+                                                    }}
+                                                >
+                                                    前往模型管理处理
+                                                </Button>
+                                            </Space>
+                                        }
+                                    />
+                                )}
+                            </Col>
                             <Col span={24}>
                                 <Form.Item label="渠道可用模型">
                                     <Space.Compact style={{ width: "100%" }}>
