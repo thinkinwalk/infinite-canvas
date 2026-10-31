@@ -15,6 +15,30 @@ export function channelModelDependencies(management: ModelManagement | undefined
         }));
 }
 
+export function removeChannelModelRoutes(management: ModelManagement, routeIds: string[]): ModelManagement {
+    const removed = new Set(routeIds);
+    if (!removed.size) return management;
+    return {
+        ...management,
+        routes: management.routes.filter((route) => !removed.has(route.id)),
+        models: management.models.map((entry) => {
+            const nextRouteIds = entry.routeIds.filter((id) => !removed.has(id));
+            return nextRouteIds.length === entry.routeIds.length ? entry : { ...entry, routeIds: nextRouteIds, enabled: nextRouteIds.length ? entry.enabled : false };
+        }),
+        bindings: management.bindings.map((binding) => {
+            const nextRouteIds = binding.routeIds.filter((id) => !removed.has(id));
+            return nextRouteIds.length === binding.routeIds.length
+                ? binding
+                : {
+                      ...binding,
+                      routeIds: nextRouteIds,
+                      enabled: nextRouteIds.length ? binding.enabled : false,
+                      default: nextRouteIds.length ? binding.default : false,
+                  };
+        }),
+    };
+}
+
 export const modelAdapterOptions = [
     ["text.openai", "文字 · OpenAI"],
     ["text.gemini-video", "视频理解 · Gemini 原生"],

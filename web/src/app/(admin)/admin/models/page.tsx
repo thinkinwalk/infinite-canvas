@@ -12,7 +12,18 @@ import { useConfigStore } from "@/stores/use-config-store";
 import { JsonInput, jsonObjectRules } from "./json-input";
 import { FeatureBindingsDrawer } from "./components/feature-bindings-drawer";
 import { ModelConnectionWizard, type ConnectionWizardDraft, type ConnectionWizardSeed } from "./components/model-connection-wizard";
-import { adapterRouteDefaults, modelAdapterOptions, modelAdapterOptionsForChannel, modelMatchesSearch, modelSetupState, unregisteredChannelModels, videoProfileCanActivate, videoProfileWithoutLegacyPricing } from "./model-management-options";
+import { ModelRemovalWizard } from "./components/model-removal-wizard";
+import {
+    adapterRouteDefaults,
+    modelAdapterOptions,
+    modelAdapterOptionsForChannel,
+    modelMatchesSearch,
+    modelSetupState,
+    removeChannelModelRoutes,
+    unregisteredChannelModels,
+    videoProfileCanActivate,
+    videoProfileWithoutLegacyPricing,
+} from "./model-management-options";
 
 const empty: ModelManagement = { enabled: false, revision: 0, routes: [], models: [], bindings: [] };
 const capabilityOptions = [{ value: "all", label: "全部" }, { value: "text", label: "文字" }, { value: "image", label: "图片" }, { value: "video", label: "视频" }, { value: "audio", label: "音频" },
@@ -53,6 +64,7 @@ export default function ModelManagementPage() {
     const [priceStatus, setPriceStatus] = useState<"unconfigured" | "free" | "fixed">("unconfigured");
     const [wizardOpen, setWizardOpen] = useState(false);
     const [wizardSeed, setWizardSeed] = useState<ConnectionWizardSeed>();
+    const [removalTarget, setRemovalTarget] = useState<{ channelId: number; model: string }>();
     const [guidedQuery, setGuidedQuery] = useState("");
     const routeLabel = (route: ManagedRoute) => `${channels.find((c) => c.id === route.channelId)?.name || route.channelId} / ${route.model}`;
     const load = async () => {
@@ -85,8 +97,14 @@ export default function ModelManagementPage() {
         setChannelFilter(channelId);
         setActiveView("models");
         setKeyword(model);
-        setWizardSeed({ channelId, model });
-        setWizardOpen(true);
+        if (searchParams.get("intent") === "remove") {
+            setRemovalTarget({ channelId, model });
+            setWizardOpen(false);
+            setWizardSeed(undefined);
+        } else {
+            setWizardSeed({ channelId, model });
+            setWizardOpen(true);
+        }
         setGuidedQuery(queryKey);
         setSearchParams({}, { replace: true });
     }, [guidedQuery, loaded, searchParams, setSearchParams]);
@@ -183,14 +201,14 @@ export default function ModelManagementPage() {
             else bindings.push(next);
             return { ...current, bindings };
         });
-    const save = () => {
+    const save = (nextValue: ModelManagement = value, onSaved?: () => void) => {
         if (!loaded || loading) return;
-        const changedModels = value.models.filter((entry) => JSON.stringify(entry) !== JSON.stringify(baseline.models.find((old) => old.id === entry.id)));
-        const changedRoutes = value.routes.filter((route) => JSON.stringify(route) !== JSON.stringify(baseline.routes.find((old) => old.id === route.id)));
-        const deletedModels = baseline.models.filter((entry) => !value.models.some((model) => model.id === entry.id));
-        const deletedRoutes = baseline.routes.filter((route) => !value.routes.some((entry) => entry.id === route.id));
+        const changedModels = nextValue.models.filter((entry) => JSON.stringify(entry) !== JSON.stringify(baseline.models.find((old) => old.id === entry.id)));
+        const changedRoutes = nextValue.routes.filter((route) => JSON.stringify(route) !== JSON.stringify(baseline.routes.find((old) => old.id === route.id)));
+        const deletedModels = baseline.models.filter((entry) => !nextValue.models.some((model) => model.id === entry.id));
+        const deletedRoutes = baseline.routes.filter((route) => !nextValue.routes.some((entry) => entry.id === route.id));
         const affected = new Set(
-            value.bindings
+            nextValue.bindings
                 .filter(
                     (b) =>
                         JSON.stringify(b) !== JSON.stringify(baseline.bindings.find((old) => old.featureId === b.featureId && old.modelId === b.modelId)) ||
@@ -199,10 +217,10 @@ export default function ModelManagementPage() {
                 )
                 .map((b) => b.featureId),
         );
-        for (const binding of baseline.bindings) if (!value.bindings.some((entry) => entry.featureId === binding.featureId && entry.modelId === binding.modelId)) affected.add(binding.featureId);
+        for (const binding of baseline.bindings) if (!nextValue.bindings.some((entry) => entry.featureId === binding.featureId && entry.modelId === binding.modelId)) affected.add(binding.featureId);
         const priceChanges = changedModels.filter((entry) => JSON.stringify(entry.pricing) !== JSON.stringify(baseline.models.find((old) => old.id === entry.id)?.pricing));
-        const defaults = [...affected].filter((id) => value.bindings.find((b) => b.featureId === id && b.default)?.modelId !== baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId);
-        const modelName = (id?: string) => value.models.find((m) => m.id === id)?.displayName || baseline.models.find((m) => m.id === id)?.displayName || "无";
+        const defaults = [...affected].filter((id) => nextValue.bindings.find((b) => b.featureId === id && b.default)?.modelId !== baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId);
+        const modelName = (id?: string) => nextValue.models.find((m) => m.id === id)?.displayName || baseline.models.find((m) => m.id === id)?.displayName || "无";
         modal.confirm({
             title: "保存模型配置",
             width: 640,
@@ -217,7 +235,7 @@ export default function ModelManagementPage() {
                     {deletedRoutes.map((route) => (
                         <div key={`delete-${route.id}`}>删除渠道模型：{routeLabel(route)}</div>
                     ))}
-                    <span>{value.enabled ? "保存后新报价与新生成使用此配置；未提交报价需重新确认。" : "统一模型目录尚未启用，现有入口继续使用原配置。"}</span>
+                    <span>{nextValue.enabled ? "保存后新报价与新生成使用此配置；未提交报价需重新确认。" : "统一模型目录尚未启用，现有入口继续使用原配置。"}</span>
                     <Typography.Text type="secondary">
                         {[...affected]
                             .map((id) => {
@@ -228,7 +246,7 @@ export default function ModelManagementPage() {
                     </Typography.Text>
                     {defaults.map((id) => (
                         <div key={id}>
-                            默认模型：{features.find((f) => f.id === id)?.label}，{modelName(baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId)} → {modelName(value.bindings.find((b) => b.featureId === id && b.default)?.modelId)}
+                            默认模型：{features.find((f) => f.id === id)?.label}，{modelName(baseline.bindings.find((b) => b.featureId === id && b.default)?.modelId)} → {modelName(nextValue.bindings.find((b) => b.featureId === id && b.default)?.modelId)}
                         </div>
                     ))}
                     {changedModels
@@ -237,7 +255,7 @@ export default function ModelManagementPage() {
                             <div key={`routes-${entry.id}`}>
                                 {entry.displayName} · 允许接入：
                                 {entry.routeIds
-                                    .map((id) => value.routes.find((r) => r.id === id))
+                                    .map((id) => nextValue.routes.find((r) => r.id === id))
                                     .filter((r): r is ManagedRoute => !!r)
                                     .map(routeLabel)
                                     .join("；") || "无"}
@@ -257,17 +275,36 @@ export default function ModelManagementPage() {
             ),
             onOk: async () => {
                 try {
-                    const saved = await saveModelManagement(token, value);
+                    const saved = await saveModelManagement(token, nextValue);
                     setValue(saved);
                     setBaseline(saved);
                     message.success("模型配置已保存");
                     window.localStorage.setItem("platform-model-catalog-revision", String(saved.revision));
                     window.dispatchEvent(new Event("platform-model-catalog-changed"));
                     void useConfigStore.getState().loadPublicSettings();
+                    onSaved?.();
                 } catch (e) {
                     message.error(e instanceof Error ? e.message : "保存失败");
                 }
             },
+        });
+    };
+    const targetRemovalRoutes = (target: { channelId: number; model: string }) => value.routes.filter((route) => route.channelId === target.channelId && route.model === target.model);
+    const disableRemovalRoutes = () => {
+        if (!removalTarget) return;
+        const routeIds = new Set(targetRemovalRoutes(removalTarget).map((route) => route.id));
+        const nextValue = {
+            ...value,
+            routes: value.routes.map((route) => (routeIds.has(route.id) ? { ...route, enabled: false } : route)),
+        };
+        save(nextValue);
+    };
+    const removeTargetRoutes = () => {
+        if (!removalTarget) return;
+        const routeIds = targetRemovalRoutes(removalTarget).map((route) => route.id);
+        save(removeChannelModelRoutes(value, routeIds), () => {
+            setRemovalTarget(undefined);
+            message.info("目录接入已移除。请返回渠道编辑器，再保存移除上游模型 ID。");
         });
     };
     const availableFeatures = features.filter((entry) => !capabilityFilter || entry.capability === capabilityFilter);
@@ -482,7 +519,7 @@ export default function ModelManagementPage() {
                     >
                         转换现有配置预览
                     </Button>
-                    <Button disabled={!loaded || loading} type="primary" icon={<SaveOutlined />} onClick={save}>
+                    <Button disabled={!loaded || loading} type="primary" icon={<SaveOutlined />} onClick={() => save()}>
                         保存配置
                     </Button>
                 </Space>
@@ -1093,6 +1130,20 @@ export default function ModelManagementPage() {
                         }}
                         onApply={applyConnectionWizard}
                     />
+                    {removalTarget && (
+                        <ModelRemovalWizard
+                            open
+                            channelId={removalTarget.channelId}
+                            channelName={channels.find((channel) => channel.id === removalTarget.channelId)?.name || `渠道 ${removalTarget.channelId}`}
+                            model={removalTarget.model}
+                            management={value}
+                            baseline={baseline}
+                            features={features}
+                            onCancel={() => setRemovalTarget(undefined)}
+                            onDisableAndSave={disableRemovalRoutes}
+                            onRemoveAndSave={removeTargetRoutes}
+                        />
+                    )}
                     <Drawer
                         forceRender
                         width="min(640px, 100vw)"

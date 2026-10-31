@@ -874,7 +874,7 @@ export default function AdminSettingsPage() {
                                                     onClick={() => {
                                                         const { model } = channelRemovalDependencies[0];
                                                         const channelId = editingChannelIndex === null ? 0 : channels[editingChannelIndex]?.id || 0;
-                                                        navigate(`/admin/models?channelId=${channelId}&model=${encodeURIComponent(model)}`);
+                                                        navigate(`/admin/models?intent=remove&channelId=${channelId}&model=${encodeURIComponent(model)}`);
                                                     }}
                                                 >
                                                     前往模型管理处理
