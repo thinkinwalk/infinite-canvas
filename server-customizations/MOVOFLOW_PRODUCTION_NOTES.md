@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.124
-- Current production source: tag v0.19.124, commit c41445d25cb60c5906f238b25f7b5809b35a5aa0
+- Current production image: infinite-canvas:v0.19.125
+- Current production source: tag v0.19.125, commit 2f6132bf89e2ce498f9dea051182d31ce9e5e17f
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.125 deployment
+
+- Tag `v0.19.125`, commit `2f6132bf89e2ce498f9dea051182d31ce9e5e17f`, is pushed on `release/v0.19.60` with a published GitHub Release. Server-built image `infinite-canvas:v0.19.125` serves `/assets/index-DyBTGKx9.js`. Unrelated local evaluation directories remain untracked.
+- Script conversations default to exact source-fragment edits. Only unique, nonoverlapping matches are merged; invalid responses preserve the draft. Whole-script rewriting requires explicit selection. Suggestions, conversations and comparisons show character changes. Frame watermark removal is distinguished from script descriptions and future-generation constraints.
+- Development passed 35 targeted tests/190 assertions and six isolated mocked browser groups. Release additionally ran 12 script-version tests/67 assertions and the server Docker build. No full typecheck, production browser interaction or paid inference was submitted; real edit-format compliance, semantic scope, existing drafts and final-video quality remain pending.
+- Internal/external health, seven public routes and public JS/CSS hashes passed. Independent workstation HTTPS verified the main JS SHA-256 `0d0c0925c46ed6199346280cca7806ef0e27f71cae0cb61700fd880adaef7b0e`. SQLite quick checks, schema, all 13 table counts, full settings and the backend binary match the predeployment backup. Worker v0.19.87 retains its prior start time.
+- Backup `/opt/infinite-canvas/backups/v0.19.125-20261031-013337/` contains a validated SQLite backup, Compose and private environment. The full media archive returned a tar warning because active files changed; it is not accepted as a consistent backup. Backup permissions are restricted. Rollback restores backup Compose and recreates app only, preserving current database and the v0.19.124 image.
+- Evidence `/opt/infinite-canvas/releases/v0.19.125-deployment.json`, local `.codex_tmp/v0.19.125-deployment.json`. The initial report writer expected JSON from the plain-text health endpoint; correcting the report did not require another application deployment.
 
 ## v0.19.124 deployment
 

@@ -14,7 +14,8 @@ description: Implemented changes that still need manual verification
 - 六组隔离浏览器模拟检查通过：无匹配水印描述时不报价/不推理并保留输入、取消费用、片段合并与建议采用/撤销、无效响应关闭且不重试、显式整稿模式、无水印生成约束、刷新保留版本。1440/390/320px 深浅主题下新增摘要及对照无横向溢出，截图已目视复核，页面运行错误为零；证据 `.codex_tmp/viral-scoped-edits-qa/report.json`。使用已有 Vite `3000` 的完全模拟 API，与真实用户标签页、生产草稿和费用隔离。
 - 本地 Vite `3001` 已运行且代理 Go `8083`，`/api/health` 返回 200；Worker `8767` 健康接口可用，抽帧/裁剪可用，自动分段和本地语音转写不可用。该本地地址只供本轮脚本 UI 开发验收，不代表生产地址或真实推理通过；生产已按精确 tag 构建部署，内外健康均返回 `ok`，证据 `/opt/infinite-canvas/releases/v0.19.125-deployment.json`。
 
-- v0.19.125 生产发布：提交 `2f6132bf89e2ce498f9dea051182d31ce9e5e17f`、App 镜像 `infinite-canvas:v0.19.125`、Worker `infinite-canvas-video-worker:v0.19.87`，公网资源 `/assets/index-DyBTGKx9.js`；最终备份 `/opt/infinite-canvas/backups/v0.19.125-20261031-013337/`，SQLite `quick_check` 通过，未修改数据库、Worker 或模型配置。
+- v0.19.125 生产发布：提交 `2f6132bf89e2ce498f9dea051182d31ce9e5e17f`、tag 和正式 GitHub Release 已发布；App 镜像 `infinite-canvas:v0.19.125`、Worker `infinite-canvas-video-worker:v0.19.87`，公网资源 `/assets/index-DyBTGKx9.js`。服务器构建、内外健康、7 个公开页面及 JS/CSS 哈希通过，本机 HTTPS 复核 JS 哈希一致；数据库结构、13 张表数量、完整设置和后端二进制保持，Worker 启动时间未变。发布额外重跑脚本版本测试 12 项/67 断言通过，未执行全量类型检查、生产浏览器交互或真实收费推理。
+- 备份 `/opt/infinite-canvas/backups/v0.19.125-20261031-013337/` 包含 SQLite、Compose 和私有环境，SQLite `quick_check` 通过；全量媒体压缩因活动文件变化退出，不作为一致性备份。回滚恢复备份 Compose，仅重建 app，保留当前数据库及 v0.19.124 镜像。证据 `/opt/infinite-canvas/releases/v0.19.125-deployment.json`，本机副本 `.codex_tmp/v0.19.125-deployment.json`。
 
 ## v0.19.124 发布验收
 
