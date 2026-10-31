@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.133
-- Current production source: tag v0.19.133, commit ee1f799b729b60453b1b17775cf8387a6c3817ba
+- Current production image: infinite-canvas:v0.19.134
+- Current production source: tag v0.19.134, commit 316370b4d956af153872dc9eea5930c3f80b0b5b
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.134 deployment
+
+- Tag `v0.19.134`, commit `316370b4d956af153872dc9eea5930c3f80b0b5b`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.134`, ID `sha256:356322eef26a44cf60dc721e8eae1f90e870c27c5967833d0750c50f390786d7`, replaces v0.19.133.
+- Admin public settings now include the online recharge visibility switch, default enabled. Credit center reads it from public settings, refreshes on open and hides recharge while configuration is unavailable; logs and redemption remain available. If recharge is selected when disabled, logs are displayed.
+- Release ran no local tests, build or browser interactions. Server frontend/backend Docker build passed; internal/external health, ten routes, public setting `showOnlineRecharge: true` and deployed resource markers passed. Backend changed as expected and matches the new image. Actual administrator save/persistence, JSON editing, user tab updates and redemption interactions remain pending; no production settings were mutated.
+- Public JS `/assets/index-uFXUHtf_.js` SHA-256 `0abef65ca2c3bbe8f95e61cef736e33e6ca43745c694225b5719266b79c4084c`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Server public hashes match container files. Independent workstation HTTPS matched both hashes and confirmed health, release version, recharge markers and the new public configuration field.
+- Final backup `/opt/infinite-canvas/backups/v0.19.134-final-20261031-093519/`; prebuild `/opt/infinite-canvas/backups/v0.19.134-prebuild-20261031-093342/`. SQLite quick check, schema, all 13 table counts, full settings/protected account fields, environment, mounts and all 100 job records are preserved. Worker v0.19.87 retains identity, startup time and mounts; no active cloud/Worker job was interrupted or resubmitted.
+- Reports `/opt/infinite-canvas/releases/v0.19.134-deployment.json` and `v0.19.134-public-verification.json`, local `.codex_tmp/` copies; verifier `/opt/infinite-canvas/releases/deploy-v0.19.134.py`. Rollback restores final-backup Compose and recreates app only, preserving current database and the v0.19.133 image. No paid inference submitted.
 
 ## v0.19.133 deployment
 

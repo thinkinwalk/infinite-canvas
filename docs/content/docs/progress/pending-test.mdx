@@ -9,7 +9,8 @@ description: Implemented changes that still need manual verification
 
 - 后台「系统设置 → 公开配置」新增「显示在线充值」开关，默认开启，支持可视化和 JSON 编辑保存；设置通过公开接口下发，算力中心按配置显示在线充值页签。
 - 关闭后保留使用日志和兑换码；正在查看在线充值时收到关闭配置，切回使用日志。打开算力中心会重新读取配置，已有页面沿用窗口聚焦及可见性变化刷新机制；配置未加载或加载失败时不显示充值入口。
-- 尚未发布生产，未执行构建或自动化测试。待验收开关保存及重启保留、JSON 与可视化切换、普通用户新开/已打开页面更新，以及关闭充值页签后的兑换和日志。
+- 已随 `v0.19.134`（`316370b`）提交、推送发布分支及 tag、发布正式 GitHub Release 并部署生产。发布未执行本地测试、构建或浏览器交互；服务器前后端构建、内外健康、10 路由、公开接口 `showOnlineRecharge: true` 和公网 JS/CSS 容器哈希核对通过，资源 `/assets/index-uFXUHtf_.js`。数据库结构、13 表数量、既有设置、账号字段及 100 份任务记录保持，Worker 未重启。
+- 最终备份 `/opt/infinite-canvas/backups/v0.19.134-final-20261031-093519/`，证据 `/opt/infinite-canvas/releases/v0.19.134-deployment.json` 与 `v0.19.134-public-verification.json`。未修改生产开关；待在真实后台验收开关保存及重启保留、JSON 与可视化切换、普通用户新开/已打开页面更新，以及关闭充值页签后的兑换和日志。
 
 ## 脚本修改操作紧贴正文
 
