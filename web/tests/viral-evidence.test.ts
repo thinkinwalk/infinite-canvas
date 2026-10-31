@@ -114,15 +114,20 @@ test("model review always remains a suggestion and malformed primary analysis ne
     expect(viralAdoptedAnalysisError({ ...d, ...viralAdoptAnalysis(d, invalid) })).toContain("观察记录不完整");
 });
 
-test("script, generation and keyframe prompts share observed identity and carrier without raw narrative guesses", () => {
+test("script adaptation receives observed identity and carrier; final generation uses only the resulting script", () => {
     const d = draft(), version = { text: document(fact("cloth"), fact("text", { kind: "text", description: "金色西安", surface: "裙摆A上部" }),
         fact("guess", { description: "独立折扇", status: "uncertain" })), provenance: viralAnalysisProvenance(d, "video") };
     const adopted = { ...d, ...viralAdoptAnalysis(d, version), instructions: "只将裙摆上的字换成辉科胜邦", script: "裙摆开屏，字样随布面运动" };
-    for (const prompt of [viralScriptPrompt(adopted, defaultConfig), viralVideoPrompt(adopted, defaultConfig), viralKeyframePrompt(adopted)]) {
-        expect(prompt).toContain("裙摆A");
-        expect(prompt).toContain("裙摆A上部");
+    const scriptPrompt = viralScriptPrompt(adopted, defaultConfig);
+    expect(scriptPrompt).toContain("裙摆A");
+    expect(scriptPrompt).toContain("裙摆A上部");
+    for (const prompt of [scriptPrompt, viralVideoPrompt(adopted, defaultConfig), viralKeyframePrompt(adopted)]) {
         expect(prompt).not.toContain("原始说明");
         expect(prompt).not.toContain("独立折扇");
+    }
+    for (const prompt of [viralVideoPrompt(adopted, defaultConfig), viralKeyframePrompt(adopted)]) {
+        expect(prompt).toContain(adopted.script);
+        expect(prompt).not.toContain("金色西安");
     }
     expect(viralSource(adopted)).toBe(viralSource(d));
 });

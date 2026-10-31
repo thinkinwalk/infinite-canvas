@@ -111,6 +111,10 @@ export function viralRestoreScript(draft: VideoDraft, script: string, request: s
     };
 }
 
+export function viralGenerationScript(draft: VideoDraft) {
+    return `视频脚本（本次生成的最终依据）：\n${draft.script}\n最终画面、台词与顺序以当前脚本为准。不得按旧分析或要点把当前稿中已删除、替换的内容自动补回；脚本未要求的原场景、文字、标识及水印不自动添加。脚本中的核对清单和待确认说明不是画面字幕。`;
+}
+
 export function viralScriptAuthority(draft: VideoDraft) {
     return draft.viralScriptTurns?.some((turn) => turn.source === viralSource(draft) && (turn.status === "accepted" || turn.status === "reverted"))
         ? "当前脚本已经用户通过对话采用、手动调整或恢复版本，最终画面、台词与顺序以当前脚本为准。原片分析只用于解释保留下来的内容，不得按旧分析或要点把当前稿中已删除、替换的内容自动补回；未采用、已拒绝或撤销的建议不执行。"

@@ -8,7 +8,7 @@ import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
 import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanPrompt, viralRequirements, viralTargetFacts } from "./viral-plan";
-import { splitViralScript, viralScriptAuthority, viralScriptEditDraft, type ViralScriptEditMode } from "./viral-script-revisions";
+import { splitViralScript, viralGenerationScript, viralScriptAuthority, viralScriptEditDraft, type ViralScriptEditMode } from "./viral-script-revisions";
 
 export { viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 export const viralImageCandidates = (d: VideoDraft) => [...d.media.filter((m) => m.kind === "image"), ...viralFrameMaterials(d)];
@@ -106,9 +106,11 @@ export function viralVideoError(d: VideoDraft, cfg: AiConfig) {
     return videoReferenceError(cfg, model, materials.filter((m) => m.kind === "image").length, materials.filter((m) => m.kind === "video").length, 0);
 }
 export function viralVideoPrompt(d: VideoDraft, cfg: AiConfig) {
+    const analysisError = viralAdoptedAnalysisError(d);
+    if (analysisError) throw new Error(analysisError);
     const labels = viralMaterialLabels(d),
         materials = viralVideoMaterials(d, cfg);
-    return `${d.script}\n${viralContinuityRules}\n${viralPlanPrompt(d)}\n${viralScriptAuthority(d) || "脚本遗漏的关键内容与表现特点按已采用分析补齐，用户明确修改或删除的内容除外"}；脚本中的核对清单和待确认说明不是画面字幕。\n用户复刻要求与资料：${viralTargetFacts(d)}\n参考结构：${viralAdoptedAnalysisText(d)}\n参考图片分析：${d.viralProductStale ? "素材已变化，以用户资料及实际输入为准" : d.viralProductAnalysis || "未分析"}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}${m.id === d.viralClimaxId ? "，已确认的补充画面" : ""}）`).join("；") || "纯文字"}。通用参考图按可见内容及用户要求提供主体、环境或风格；场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${d.viralUseVideo ? "参考视频用于内容结构、镜头与节奏参考，实际一致性以成片为准。" : "没有向视频模型发送原视频，内容依照文字脚本重建，不声称逐帧复制。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
+    return `${viralGenerationScript(d)}\n本次实际视觉输入：${materials.map((m, i) => `${labels.find((l) => l.id === m.id)?.label || m.name}=${m.kind === "video" ? "参考视频" : videoInputMode(cfg, cfg.videoModel) === "reference" ? `参考图${i + 1}` : i === 0 ? "首帧" : "尾帧"}（${viralVisualRole(m.role)}${m.id === d.viralFirstFrameId ? "，已确认的开场画面" : ""}${m.id === d.viralClimaxId ? "，已确认的补充画面" : ""}）`).join("；") || "纯文字"}。通用参考图按可见内容及当前脚本提供主体、环境或风格；场景图提供环境与建筑，人物图提供身份与服饰，商品图提供商品外观；不要把未发送的素材当作视觉输入。${materials.some((m) => m.kind === "video") ? "参考视频仅用于当前脚本保留的内容结构、镜头与节奏，不恢复脚本已改动的主体、背景或文字，实际一致性以成片为准。" : "没有向视频模型发送原视频，内容依照文字脚本重建，不声称逐帧复制。"}生成${cfg.videoSeconds}秒单条片段；口播、字幕及配乐建议不代表已完成独立后期。`;
 }
 export function viralInput(d: VideoDraft, cfg: AiConfig): ViralRecreateInput {
     const {

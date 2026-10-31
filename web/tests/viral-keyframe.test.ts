@@ -79,6 +79,40 @@ test("first-frame mode sends only the selected composed frame and optional tail"
     expect(viralVideoPrompt(d, cfg)).toContain("不要把未发送的素材当作视觉输入");
 });
 
+test("actual reference images and opt-in source video stay aligned with the generation prompt", () => {
+    const d = draft();
+    d.media = [
+        { ...file("source", "reference"), kind: "video", mimeType: "video/mp4" },
+        file("building", "visual-reference"),
+        file("unused", "first-frame"),
+    ];
+    d.viralFirstFrameId = undefined;
+    const cfg = { ...defaultConfig, channelMode: "remote" as const, videoModel: "qa", videoInputMode: "reference", videoModels: { qa: { interface: "relay" as const, maxImages: 9, maxVideos: 1, maxAudios: 0, inputModes: ["reference" as const], resolutions: ["720"], seconds: ["5"] } } };
+    expect(viralVideoMaterials(d, cfg).map((m) => m.id)).toEqual(["building"]);
+    expect(viralVideoPrompt(d, cfg)).toContain("图片1=参考图1（参考图片）");
+    expect(viralVideoPrompt(d, cfg)).not.toContain("图片2=");
+    expect(viralVideoPrompt(d, cfg)).toContain("没有向视频模型发送原视频");
+    d.viralUseVideo = true;
+    expect(viralVideoMaterials(d, cfg).map((m) => m.id)).toEqual(["building", "source"]);
+    expect(viralVideoPrompt(d, cfg)).toContain("视频1=参考视频");
+    expect(viralVideoPrompt(d, cfg)).not.toContain("没有向视频模型发送原视频");
+});
+
+test("first and last frame numbering and per-image composition requirements remain explicit", () => {
+    const d = draft();
+    d.media.push(file("tail", "first-frame"));
+    d.viralLastFrameId = "tail";
+    const cfg = { ...defaultConfig, channelMode: "remote" as const, videoModel: "qa", videoInputMode: "first_last", videoModels: { qa: { interface: "relay" as const, maxImages: 2, maxVideos: 0, maxAudios: 0, inputModes: ["first_last" as const], firstFrameField: "image", lastFrameField: "last_image", resolutions: ["720"], seconds: ["5"] } } };
+    expect(viralVideoMaterials(d, cfg).map((m) => m.id)).toEqual(["candidate", "tail"]);
+    expect(viralVideoPrompt(d, cfg)).toContain("图片4=首帧");
+    expect(viralVideoPrompt(d, cfg)).toContain("图片5=尾帧");
+    d.viralKeyframePrompt = "开场保留全身";
+    d.viralClimaxPrompt = "结尾保留招牌";
+    expect(viralKeyframePrompt(d)).toContain(d.viralKeyframePrompt);
+    expect(viralKeyframePrompt(d)).not.toContain(d.viralClimaxPrompt);
+    expect(viralKeyframePrompt(d, "climax")).toContain(d.viralClimaxPrompt);
+});
+
 test("history snapshots retain composition prompt, pose and explicit confirmation", () => {
     const d = draft();
     d.viralKeyframePrompt = "人物全身入镜";

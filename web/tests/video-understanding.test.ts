@@ -12,7 +12,7 @@ if (!globalThis.localStorage) {
 const { configForFeature, defaultConfig, managedEffectiveConfig, useConfigStore } = await import("../src/stores/use-config-store");
 const { useUserStore } = await import("../src/stores/use-user-store");
 const { requestViralAnalysis, requestVideoUnderstanding, videoAnalysisAvailable, videoAnalysisConfig, VIDEO_ANALYSIS_FEATURE } = await import("../src/services/api/video-understanding");
-const { viralAnalysisMode, viralInput, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
+const { viralAnalysisMode, viralInput, viralScriptPrompt, viralVideoPrompt } = await import("../src/pages/video-tool/viral-recreate-request");
 const { viralSource, viralAnalysisInputKey, viralAnalysisProvenance, viralAnalysisResultPatch, viralAdoptAnalysis, viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } = await import("../src/pages/video-tool/viral-analysis");
 const { emptyVideoDraft } = await import("../src/types/video-workbench");
 
@@ -242,16 +242,20 @@ test("reanalyzing protects the editable draft and adopted version while storing 
     expect(viralAdoptedAnalysisText(updated)).not.toContain(next.text);
 });
 
-test("changing the viewed mode never switches the adopted analysis used by prompts", () => {
+test("changing the viewed mode never switches script adaptation evidence or adds analysis to final generation", () => {
     const draft = referenceDraft();
     const video = { text: "采用的视频分析", provenance: viralAnalysisProvenance(draft, "video", config) };
     const frames = { text: "未采用的抽样分析", provenance: viralAnalysisProvenance(draft, "frames", config) };
     const adopted = { ...draft, viralAnalyses: { video, frames }, ...viralAdoptAnalysis(draft, video), viralAnalysisMode: "frames" as const };
     expect(viralAdoptedAnalysisError(adopted)).toBe("");
-    const prompt = viralVideoPrompt(adopted, defaultConfig);
+    const prompt = viralScriptPrompt(adopted, defaultConfig);
     expect(prompt).toContain(video.text);
     expect(prompt).not.toContain(frames.text);
     expect(prompt).toContain("视频与音轨");
+    const finalPrompt = viralVideoPrompt({ ...adopted, script: "已确认脚本" }, defaultConfig);
+    expect(finalPrompt).toContain("已确认脚本");
+    expect(finalPrompt).not.toContain(video.text);
+    expect(finalPrompt).not.toContain(frames.text);
 });
 
 test("new source blocks adopted analysis until explicit reuse, without rewriting its original source", () => {

@@ -221,3 +221,45 @@ test("video and keyframe generation honor the confirmed script instead of restor
         expect(prompt).toContain("确认稿：仅保留产品特写，不要口播");
     }
 });
+
+test("final generation excludes superseded analysis, plans, image descriptions and earlier requirements", () => {
+    const base = draft();
+    const current = {
+        ...base,
+        ...viralAdoptAnalysis(base, {
+            text: "原场景为西安火车站。楼顶显示西安。左上角水印AI生成，右下角水印剪映AI。",
+            provenance: viralAnalysisProvenance(base, "video"),
+        }),
+        script: "人物在原场景前站立。",
+        instructions: "此前要求：保留旧广告语",
+        viralProductAnalysis: "过时图片分析：车站建筑",
+        viralIntent: { preserve: ["旧方案：原场景标识"], replacements: [], textMode: "keep" as const, text: "", textSurface: "" },
+    };
+    const finalScript = "人物在辉科胜邦办公楼前转身，背景使用图片1的办公楼，招牌为辉科胜邦，不要水印。";
+    const proposal = { ...current, ...viralScriptProposal(current, finalScript, "使用办公楼背景并删除旧标识") };
+    const accepted = { ...proposal, ...viralResolveScript(proposal, true) };
+    for (const d of [accepted, { ...current, script: finalScript, viralScriptTurns: undefined }]) {
+        const before = JSON.stringify(d);
+        for (const prompt of [viralVideoPrompt(d, defaultConfig), viralKeyframePrompt(d), viralKeyframePrompt(d, "climax")]) {
+            expect(prompt).toContain(finalScript);
+            for (const obsolete of ["西安", "AI生成", "剪映AI", "此前要求", "旧方案", "过时图片分析"])
+                expect(prompt).not.toContain(obsolete);
+        }
+        expect(JSON.stringify(d)).toBe(before);
+        expect(viralInput(d, defaultConfig).analysis).toBe(current.analysis);
+    }
+});
+
+test("script adaptation still receives source evidence, plans and image information before confirmation", () => {
+    const base = draft();
+    const d = {
+        ...base,
+        ...viralAdoptAnalysis(base, { text: "原片场景与镜头节奏", provenance: viralAnalysisProvenance(base, "video") }),
+        instructions: "改为办公楼背景",
+        viralProductAnalysis: "参考图可见办公楼正面",
+        viralIntent: { preserve: ["原片摇镜"], replacements: [], textMode: "none" as const, text: "", textSurface: "" },
+    };
+    const prompt = viralScriptPrompt(d, defaultConfig);
+    for (const source of [d.analysis, d.instructions, d.viralProductAnalysis, "原片摇镜"])
+        expect(prompt).toContain(source);
+});
