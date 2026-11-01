@@ -68,7 +68,7 @@ func ReplicateCatalog(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, operation := range binding.Operations {
 				for _, spec := range service.ReplicateModels() {
-					if spec.Operation != operation {
+					if spec.Retired() || spec.Operation != operation {
 						continue
 					}
 					selected, err := service.ResolveManagedModel(binding.FeatureID, binding.ModelID, user.Group, 0)
@@ -89,6 +89,9 @@ func ReplicateCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, spec := range service.ReplicateModels() {
+		if spec.Retired() {
+			continue
+		}
 		quote, err := service.QuoteReplicate(user, spec, nil)
 		if err != nil {
 			FailError(w, err)
@@ -407,6 +410,9 @@ func ownedReplicateTask(w http.ResponseWriter, r *http.Request, id string) (mode
 // Provider request shapes differ: Replicate wraps input in a versioned
 // prediction, WaveSpeed posts the model's own flat input to /{model}.
 func createProviderTask(ctx context.Context, spec service.ReplicateModel, token string, input map[string]any) (cloudPrediction, int, error) {
+	if spec.Retired() {
+		return cloudPrediction{}, http.StatusBadRequest, fmt.Errorf("%s", service.RetiredHeadSwapMessage)
+	}
 	if spec.ProviderName() == "wavespeed" {
 		payload, _ := json.Marshal(input)
 		return callWaveSpeed(ctx, token, http.MethodPost, "/"+spec.Model, payload)

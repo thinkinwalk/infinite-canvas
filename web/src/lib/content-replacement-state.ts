@@ -1,5 +1,12 @@
 import { emptyVideoDraft, type VideoDraft, type VideoRecord } from "@/types/video-workbench";
 
+export const RETIRED_HEAD_SWAP_MODEL = "wavespeed-ai/video-head-swap";
+export const RETIRED_HEAD_SWAP_MESSAGE = "独立换脸功能已下线，历史任务仍可查看和恢复结果；新任务请使用人物替换。";
+
+export function isRetiredHeadSwapModel(model: string, operations: string[] = []): boolean {
+    return model === RETIRED_HEAD_SWAP_MODEL || operations.includes("head-swap");
+}
+
 export function hasContentReplacementDraft(draft: VideoDraft | undefined): draft is VideoDraft {
     return Boolean(draft && (
         draft.media.length || draft.frames.length || draft.activeRecord || draft.replacementJobId ||

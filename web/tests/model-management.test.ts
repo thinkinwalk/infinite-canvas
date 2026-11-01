@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { configForFeature, defaultConfig, managedEffectiveConfig, modelAdapter, modelMatchesCapability, modelOptionLabel, modelRequestHeaders, selectableModelsByCapability, useConfigStore } from "../src/stores/use-config-store";
 import { useUserStore } from "../src/stores/use-user-store";
 import { modelFeatureForPath } from "../src/lib/model-feature";
-import { videoProfile } from "../src/lib/video-capabilities";
-import { createReplicateTask, quoteReplicate } from "../src/services/api/replicate";
+import { contentReplacementModels, videoProfile } from "../src/lib/video-capabilities";
+import { createReplicateTask, getReplicateModels, quoteReplicate, readReplicateTask, REPLICATE_FEATURES } from "../src/services/api/replicate";
 import type { PublicManagedCatalog } from "../src/services/api/model-management";
 import { managedFixedHeaders, quoteManagedFixed } from "../src/services/api/model-management";
 import { requestAudioGeneration } from "../src/services/api/audio";
@@ -28,6 +28,48 @@ const originalFetch = globalThis.fetch;
 const originalConfig = useConfigStore.getState();
 const originalUser = useUserStore.getState();
 afterEach(() => { globalThis.fetch=originalFetch;useConfigStore.setState(originalConfig);useUserStore.setState(originalUser); });
+
+test("person replacement keeps the Wan30 default while excluding head swap even in an old catalog", () => {
+    const personCatalog: PublicManagedCatalog = {
+        ...catalog,
+        models: [...catalog.models, { id: "model_wan30", label: "wan30-720p", description: "", capability: "video" }, { id: "model_face", label: "换脸", description: "", capability: "video" }],
+        bindings: [
+            { ...catalog.bindings[1], default: false },
+            { ...catalog.bindings[0], featureId: "replace.person", modelId: "model_wan30", adapter: "video.wan30", default: true },
+            { ...catalog.bindings[1], modelId: "model_face", adapter: "cloud:head-swap", operations: ["head-swap"], default: false },
+        ],
+    };
+    const config = managedEffectiveConfig({ ...defaultConfig, channelMode: "remote" }, personCatalog, { video: "replace.person" });
+    expect(config.videoModel).toBe("remote::model_wan30");
+    expect(modelAdapter(config.videoModel, config)).toBe("video.wan30");
+    expect(contentReplacementModels(config)).toEqual(["remote::model_wan30", "remote::model_wan"]);
+    expect(personCatalog.bindings[2].available).toBe(true);
+});
+
+test("head swap cannot quote or submit, but existing tasks can still be read", async () => {
+    useUserStore.setState({ token: "retired-head-test" });
+    const paths: string[] = [];
+    globalThis.fetch = async (url, options) => {
+        paths.push(`${options?.method || "GET"} ${url}`);
+        return new Response(JSON.stringify({ code: 0, data: { id: "paid-head", operation: "head-swap", status: "completed", credits: 1120 } }));
+    };
+    await expect(quoteReplicate("head-swap", {})).rejects.toThrow("独立换脸功能已下线");
+    await expect(createReplicateTask("new-head", "head-swap", {}, 1120)).rejects.toThrow("独立换脸功能已下线");
+    expect(paths).toEqual([]);
+    expect(await readReplicateTask("paid-head")).toMatchObject({ id: "paid-head", status: "completed", credits: 1120 });
+    expect(paths).toEqual(["GET /api/v1/replicate/tasks/paid-head"]);
+    expect(REPLICATE_FEATURES.some((feature) => feature.operation === "head-swap")).toBe(false);
+});
+
+test("cloud model lists filter retired entries returned by an older server", async () => {
+    useUserStore.setState({ token: "catalog-head-test" });
+    useConfigStore.setState({ publicSettings: null });
+    globalThis.fetch = async () => new Response(JSON.stringify({ code: 0, data: [
+        { operation: "head-swap", model: "wavespeed-ai/video-head-swap", available: true },
+        { operation: "replace-person", model: "wan-video/wan-2.2-animate-replace", available: true },
+    ] }));
+    expect((await getReplicateModels()).map((item) => item.operation)).toEqual(["replace-person"]);
+});
 
 test("feature bindings isolate defaults and reject a retired model selection", () => {
     const generation = managedEffectiveConfig({...defaultConfig,channelMode:"remote"},catalog,{video:"video.generate"},{"video.generate":"remote::model_h3","replace.person":"remote::model_h3"});

@@ -12,7 +12,7 @@ import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { hasContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
+import { hasContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement, RETIRED_HEAD_SWAP_MESSAGE } from "@/lib/content-replacement-state";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { isWan30, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
@@ -84,10 +84,10 @@ export default function ContentReplaceWorkspace() {
     const person = d.replacement === "person";
     const cloud = d.route === "replicate";
     const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
-    // 换脸只在平台智能处理链路生效；其他处理方式仍按各自模型执行。
-    const headSwap = person && cloud && d.replacementModel === "headswap";
+    // 旧换脸草稿只用于查看和恢复，不再提供新生成入口。
+    const headSwap = person && d.replacementModel === "headswap";
     const longVideo = Boolean(reference?.durationMs && reference.durationMs > longVideoPreviewThresholdMs);
-    // All full-person edits share one durable flow; short face swaps keep their direct request.
+    // 人物替换统一走持久化分段流程，旧换脸记录保留原结果入口。
     const wholeVideo = person && cloud && (!headSwap || longVideo);
     const showSegmentHint = wholeVideo && longVideo;
     const showBatchWorkspace = wholeVideo && Boolean(d.replacementJobId) && !historyPreview;
@@ -170,7 +170,7 @@ export default function ContentReplaceWorkspace() {
         appliedSearch.current = location.search;
         const query = new URLSearchParams(location.search);
         const replacement = query.get("replacement");
-        if (replacement === "person" || replacement === "product" || replacement === "background") wb.edit({ replacement, route: "replicate", maskedEdit: query.get("masked") === "1", ...(replacement === "person" ? { replacementModel: query.get("model") === "headswap" ? "headswap" as const : "wan" as const } : {}) }, "video");
+        if (replacement === "person" || replacement === "product" || replacement === "background") wb.edit({ replacement, route: "replicate", maskedEdit: query.get("masked") === "1", ...(replacement === "person" ? { replacementModel: "wan" as const } : {}) }, "video");
     }, [wb.hydrated, location.search]);
     useEffect(() => {
         if (!wb.hydrated || administrator || d.route === "replicate") return;
@@ -313,7 +313,7 @@ export default function ContentReplaceWorkspace() {
                     : "";
     const regionMissing = d.route === "worker" && !person && !d.media.some((m) => m.role === "mask") && d.regions.length !== 1
         ? d.replacement === "product" ? "请在高级设置中暂停视频并框选一个目标商品，系统将自动跟踪" : "请框选需要替换的背景区域" : "";
-    const blocked = (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable;
+    const blocked = (headSwap ? RETIRED_HEAD_SWAP_MESSAGE : "") || (trimming ? "参考视频正在裁剪，请稍候" : "") || unavailable || missing || regionMissing || subtitleUnavailable;
     const prepareQuote = async () => {
         if (blocked || busy || quoteController.current) return;
         const key = inputKey;
@@ -550,7 +550,7 @@ export default function ContentReplaceWorkspace() {
         const bounds = event.currentTarget.getBoundingClientRect();
         return { x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)), y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)) };
     };
-    const submit = (
+    const submit = headSwap ? null : (
         <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 text-xs" style={muted}>
                 <span>{cloud ? (currentQuote ? `预计 ${currentQuote.credits.toLocaleString()} 算力点` : "准备素材后查看本次费用") : d.route === "worker" ? "使用当前处理服务" : "按所选模型渠道计费"}</span>
@@ -629,20 +629,7 @@ export default function ContentReplaceWorkspace() {
                                 options={Object.entries(replacementNames).map(([value, label]) => ({ value, label: `换${label}` }))}
                                 onChange={(replacement) => wb.edit({ replacement: replacement as VideoDraft["replacement"], regions: [], replacementSeedTime: undefined }, "video")}
                             />
-                            {person && <label className="block space-y-2">
-                                <span className="text-sm font-medium">替换方式</span>
-                                <Select
-                                    className="w-full"
-                                    aria-label="替换方式"
-                                    disabled={locked}
-                                    value={d.replacementModel}
-                                    options={[
-                                        { value: "wan", label: "整个人 · 保留动作" },
-                                        { value: "headswap", label: "只换脸 · 保留口型" },
-                                    ]}
-                                    onChange={(replacementModel) => wb.edit({ replacementModel }, "video")}
-                                />
-                            </label>}
+                            {person && (headSwap || new URLSearchParams(location.search).get("model") === "headswap") && <Alert type="info" showIcon title={RETIRED_HEAD_SWAP_MESSAGE} />}
                             {materialField("reference", "video/*", "原视频（必填）", cloud && !person && !d.maskedEdit ? "当前模型支持 2–10 秒原视频" : "保留动作与镜头，上传后可预览")}
                             {materialField(imageRole, "image/*", `${replacementNames[d.replacement]}参考图（必填）`, person ? "人物清晰，尽量匹配原片景别" : d.replacement === "product" ? "上传清晰、完整的商品图片" : "上传希望替换成的背景图片")}
                             <div className="space-y-2 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>

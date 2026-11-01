@@ -18,7 +18,7 @@ func ModelFeatures() ([]model.ModelFeature, error) {
 	add("video.generate", "视频创作", "视频生成", "video", "video", "text-to-video", "image-to-video", "hailuo-video")
 	add("video.script", "视频创作", "脚本与分析", "text", "text")
 	add("replace.person", "内容替换", "整个人物替换", "video", "video", "replace-person")
-	add("replace.head", "内容替换", "人物换脸", "video", "head-swap")
+	add("replace.head", "内容替换", "历史人物换脸（已下线）", "video", "head-swap")
 	add("replace.product", "内容替换", "商品替换", "video", "video", "video-edit")
 	add("replace.background", "内容替换", "背景替换", "video", "video", "video-edit")
 	add("replace.masked", "内容替换", "局部编辑", "video", "masked-edit")

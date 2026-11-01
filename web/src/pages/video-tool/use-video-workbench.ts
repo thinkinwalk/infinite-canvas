@@ -6,7 +6,7 @@ import { saveAs } from "file-saver";
 import { useNavigate } from "react-router-dom";
 
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
-import { isCurrentReplacementRecord, isLegacyMaskedPersonRecord } from "@/lib/content-replacement-state";
+import { isCurrentReplacementRecord, isLegacyMaskedPersonRecord, RETIRED_HEAD_SWAP_MESSAGE } from "@/lib/content-replacement-state";
 import { archiveViralTask } from "@/lib/viral-task";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { importVideoURL } from "@/services/api/video-import";
@@ -542,6 +542,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         };
     };
     const quoteReplacement = async (signal?: AbortSignal) => {
+        if (read(tool).replacement === "person" && read(tool).replacementModel === "headswap") throw new Error(RETIRED_HEAD_SWAP_MESSAGE);
         const d = read(tool);
         const { operation, fields, materials } = replacementRequest(d);
         return quoteReplicate(operation, await cloudInput(fields, materials, signal), signal);
@@ -1374,6 +1375,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (store().records.some((r) => r.tool === tool && r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask))) throw new Error("已有视频任务，请恢复查询原任务，避免重复付费");
             }
             if (tool === "content-replace" && stage === "video") {
+                if (read(tool).replacement === "person" && read(tool).replacementModel === "headswap") throw new Error(RETIRED_HEAD_SWAP_MESSAGE);
                 if (read(tool).route === "replicate") replacementRequest(read(tool));
             }
             if (tool === "viral-recreate" && stage === "analyze" && !viralSource(read(tool))) throw new Error("请先上传参考视频，或手动填写参考结构");

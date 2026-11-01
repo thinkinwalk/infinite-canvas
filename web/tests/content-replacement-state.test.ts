@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { archiveContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement, newContentReplacementDraft, normalizeContentReplacementDraft } from "../src/lib/content-replacement-state";
+import { archiveContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement, isRetiredHeadSwapModel, newContentReplacementDraft, normalizeContentReplacementDraft, RETIRED_HEAD_SWAP_MODEL } from "../src/lib/content-replacement-state";
 import { emptyVideoDraft, type VideoRecord, type WorkbenchMedia } from "../src/types/video-workbench";
 
 const source: WorkbenchMedia = { id: "source", role: "reference", kind: "video", name: "source.mp4", url: "blob:source", storageKey: "source", mimeType: "video/mp4", bytes: 100, durationMs: 5000 };
@@ -15,6 +15,20 @@ const record = (): VideoRecord => ({
     id: "paid", tool: "content-replace", stage: "video", createdAt: 1, status: "interrupted",
     replacementInput: legacyDraft(),
     maskedReplacement: { phase: "generate", workerUrl: "/api/v1/video-worker", mask },
+});
+
+test("only independent head swap is retired and historical inputs remain recoverable", () => {
+    expect(isRetiredHeadSwapModel(RETIRED_HEAD_SWAP_MODEL)).toBe(true);
+    expect(isRetiredHeadSwapModel("managed-face", ["head-swap"])).toBe(true);
+    expect(isRetiredHeadSwapModel("wan30-720p", ["video"])).toBe(false);
+    expect(isRetiredHeadSwapModel("wan-video/wan-2.2-animate-replace", ["replace-person"])).toBe(false);
+    expect(newContentReplacementDraft().replacementModel).toBe("wan");
+    const draft = { ...newContentReplacementDraft(), replacementModel: "headswap" as const, media: [source, image], final: source };
+    const archived = archiveContentReplacementDraft(draft, []);
+    expect(archived[0].replacementDraft?.replacementModel).toBe("headswap");
+    expect(archived[0].result).toBe(source);
+    expect(normalizeContentReplacementDraft(draft).replacementModel).toBe("headswap");
+    expect(hasReplacementRecovery({ ...record(), replacementInput: draft, maskedReplacement: undefined, replicateTask: { id: "paid-face", operation: "head-swap" } })).toBe(true);
 });
 
 test("old browser drafts converge without losing sources, outputs or current task", () => {

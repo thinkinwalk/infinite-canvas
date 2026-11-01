@@ -6,11 +6,12 @@ import { useConfigStore, useEffectiveConfig, configForFeature, managedModelBindi
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { emptyVideoDraft } from "@/types/video-workbench";
+import { isRetiredHeadSwapModel, RETIRED_HEAD_SWAP_MESSAGE } from "@/lib/content-replacement-state";
 import { contentReplacementModels, isWan30, videoProfile } from "@/lib/video-capabilities";
 import { publicServiceText, uploadReplicateReference } from "@/services/api/replicate";
 import { storeWorkerResult, uploadWorkerMedia } from "@/services/api/video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "@/services/api/video";
-import { archiveReplacementJob, createReplacementJob, generateReplacementParts, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, setReplacementAspectRatio, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
+import { archiveReplacementJob, createReplacementJob, generateReplacementParts, isRetiredReplacementJob, listReplacementJobs, pauseReplacementJob, quoteReplacementPart, repriceReplacementJob, retryReplacementPart, reviewReplacementJob, setReplacementAspectRatio, startReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
 import { contentReplacementPrompt } from "./content-replace-prompt";
 import { replacementDurationSummary } from "./replacement-summary";
 import { nearestReplacementAspect, replacementAspectRatios } from "./replacement-aspect";
@@ -25,7 +26,7 @@ const worker = { url: "/api/v1/video-worker", token: "" };
 const wanReplace = "wan-video/wan-2.2-animate-replace";
 const headSwapModel = "wavespeed-ai/video-head-swap";
 const labels = { planning: "分析中", ready: "待确认费用", preview: "预览待确认", running: "处理中", paused: "已暂停", completed: "已合成" };
-const modelLabel = (name: string) => name === headSwapModel ? "智能换脸" : name === wanReplace ? "Wan 2.2 整人替换" : modelOptionName(name);
+const modelLabel = (name: string) => name === headSwapModel ? "历史换脸（已下线）" : name === wanReplace ? "Wan 2.2 整人替换" : modelOptionName(name);
 const jobStep = (job: ReplacementJob) => job.planned && job.status === "ready" && !job.parts?.some((part) => part.submitted || part.input)
     ? "分段计划已就绪，尚未切出视频或开始生成" : job.step;
 
@@ -37,7 +38,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const token = useUserStore((s) => s.token);
     const hydrated = useVideoWorkbenchStore((s) => s.hydrated);
     const baseConfig = useEffectiveConfig();
-    const config = configForFeature({ ...baseConfig,channelMode:"remote" },headSwap ? "replace.head" : "replace.person","video");
+    const config = configForFeature({ ...baseConfig,channelMode:"remote" },"replace.person","video");
     const { token: colors } = theme.useToken();
     const { modal, message } = App.useApp();
     const checkSubmission = (job?: ReplacementJob) => {
@@ -81,8 +82,9 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const currentJob = jobs.find((job) => job.id === d.replacementJobId && !job.archived);
     const label = (name: string) => currentJob?.model === name && currentJob.modelLabel ? currentJob.modelLabel : config.managed?.enabled ? modelOptionLabel(config,name) : name === wanReplace || name === headSwapModel ? modelLabel(name) : videoProfile(config, name).displayName || modelLabel(name);
     const selectedModel = currentJob ? candidates.find((name) => modelOptionName(name) === currentJob.model) || currentJob.model : model;
-    const selected = config.managed?.enabled ? currentJob ? selectedModel : candidates.includes(model) ? model : config.videoModel || candidates[0] || "" : headSwap ? headSwapModel : currentJob || candidates.includes(selectedModel) || selectedModel === wanReplace ? selectedModel : candidates[0] || wanReplace;
+    const selected = currentJob ? selectedModel : headSwap ? headSwapModel : config.managed?.enabled ? candidates.includes(model) ? model : candidates.includes(config.videoModel) ? config.videoModel : candidates[0] || "" : candidates.includes(selectedModel) || selectedModel === wanReplace ? selectedModel : candidates[0] || wanReplace;
     const operation = managedModelBinding(config,selected,"video")?.operations[0];
+    const retired = headSwap || (currentJob ? isRetiredReplacementJob(currentJob) : isRetiredHeadSwapModel(selected, operation ? [operation] : []));
     const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? headSwap ? "当前换脸模型不能同时去除原字幕，请关闭「去除原字幕」后继续。" : "当前模型不能同时换人和去除原字幕。请在「高级设置」中选择 Wan 3.0（wan30-720p），或关闭「去除原字幕」后继续。" : "");
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
     const durations = selected === headSwapModel || operation === "head-swap" ? ["15"] : selected === wanReplace || operation === "replace-person" ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
@@ -134,7 +136,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const needsPreviewApproval = Boolean(currentJob?.previewRequired && currentJob.previewReady && !currentJob.previewApproved);
     const selectedPart = currentJob?.parts?.[segment];
     const hasPartResult = (job: ReplacementJob, index: number) => Boolean(job.parts?.[index]?.result || (index === 0 && job.previewRequired && job.previewReady && job.previewResult));
-    const selectableParts = currentJob?.parts?.map((part, index) => index).filter((index) => !hasPartResult(currentJob, index)) || [];
+    const selectableParts = currentJob?.parts?.flatMap((part, index) => !hasPartResult(currentJob, index) && (!retired || part.submitted && part.taskId) ? [index] : []) || [];
     const selectedCredits = currentJob?.parts?.reduce((sum, part, index) => selectedParts.includes(index) && !part.submitted && !part.validated && !hasPartResult(currentJob, index) ? sum + part.credits : sum, 0) || 0;
     const selectedPending = currentJob?.parts?.some((part, index) => selectedParts.includes(index) && (!part.validated || !hasPartResult(currentJob, index))) || false;
     useEffect(() => {
@@ -143,10 +145,10 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         if (selectionLoaded.current === currentJob?.id) return;
         selectionLoaded.current = currentJob?.id || "";
         setSelectedParts(currentJob?.selectionMode
-            ? (currentJob.selectedParts || []).filter((index) => !hasPartResult(currentJob, index))
-            : currentJob?.parts?.map((part, index) => !hasPartResult(currentJob, index) ? index : -1).filter((index) => index >= 0).slice(0, 1) || []);
+            ? (currentJob.selectedParts || []).filter((index) => selectableParts.includes(index))
+            : selectableParts.slice(0, 1));
     }, [currentJob?.id]);
-    useEffect(() => { setSelectedParts((items) => items.filter((index) => currentJob ? !hasPartResult(currentJob, index) : false)); }, [currentJob?.parts, currentJob?.previewReady, currentJob?.previewResult]);
+    useEffect(() => { setSelectedParts((items) => items.filter((index) => selectableParts.includes(index))); }, [currentJob?.parts, currentJob?.previewReady, currentJob?.previewResult]);
     useEffect(() => { if (selectedResult) setView("full"); }, [selectedResult]);
     useEffect(() => {
         let cancelled = false;
@@ -213,6 +215,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     };
     const canArchive = (job: ReplacementJob) => !["planning", "running"].includes(job.status) && !["recognizing", "rendering"].includes(job.captionStatus || "");
     const prepare = async () => {
+        if (retired) { message.warning(RETIRED_HEAD_SWAP_MESSAGE); return; }
         if (submitting.current || subtitleError || !canPrepare || !checkSubmission()) return;
         submitting.current = true; setBusy(true); setError("");
         try {
@@ -243,6 +246,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         finally { submitting.current = false; setBusy(false); }
     };
     const start = (job: ReplacementJob) => {
+        if (isRetiredReplacementJob(job)) { message.warning(RETIRED_HEAD_SWAP_MESSAGE); return; }
         if (!checkSubmission(job)) return;
         const approvePreview = job.previewRequired && job.previewReady && !job.previewApproved;
         const previewCredits = job.parts?.[0]?.credits || 0;
@@ -260,6 +264,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         });
     };
     const retryPart = async (job: ReplacementJob, part: number) => {
+        if (isRetiredReplacementJob(job)) { message.warning(RETIRED_HEAD_SWAP_MESSAGE); return; }
         if (!checkSubmission()) return;
         try {
         const { credits } = await quoteReplacementPart(job.id, part);
@@ -272,11 +277,13 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         } catch (e) { message.error(e instanceof Error ? e.message : "报价失败"); }
     };
     const generateSelected = async (job: ReplacementJob) => {
+        const recoveryOnly = isRetiredReplacementJob(job);
+        if (recoveryOnly && selectedParts.some((index) => !job.parts?.[index]?.submitted || !job.parts?.[index]?.taskId)) { message.warning(RETIRED_HEAD_SWAP_MESSAGE); return; }
         if (!selectedParts.length || (selectedCredits <= 0 && !selectedPending) || !checkSubmission(job)) return;
         modal.confirm({
-            title: `生成所选 ${selectedParts.length} 段`,
-            content: `本次预计扣除 ${selectedCredits} 点。只处理勾选的片段，其他片段保持不变；已生成的片段不会重复收费。`,
-            okText: "确认生成",
+            title: recoveryOnly ? "恢复已提交的换脸任务" : `生成所选 ${selectedParts.length} 段`,
+            content: recoveryOnly ? "仅查询已提交的云任务并整理已有结果，未提交的片段不会开始生成。" : `本次预计扣除 ${selectedCredits} 点。只处理勾选的片段，其他片段保持不变；已生成的片段不会重复收费。`,
+            okText: recoveryOnly ? "恢复结果" : "确认生成",
             onOk: async () => { if (!checkSubmission(job)) throw new Error("当前任务参数已变化或操作尚未结束"); try { await generateReplacementParts(job, selectedParts, selectedCredits); await refresh(); } catch (e) { message.error(e instanceof Error ? e.message : "生成失败"); throw e; } },
         });
     };
@@ -298,6 +305,8 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         finally { if (revision === previewRevision.current) setBusy(false); }
     };
     return <div className="space-y-3" aria-label="人物替换生成">
+        {retired && !headSwap && <Alert type="info" showIcon title={RETIRED_HEAD_SWAP_MESSAGE} />}
+        {!retired && <>
         {requiresPreview && (source?.durationMs || 0) <= 15_000 && <Alert showIcon type="info" title={`视频超过当前模型的单段 ${segmentLimit} 秒范围，需要分段。`} description="先查看整片费用，再生成第一段预览。确认效果后才处理其余片段并合并。" />}
         <label className="block space-y-1 text-sm">
             <span>清晰度</span>
@@ -318,12 +327,13 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <span>生成模型</span>
             <Select showSearch optionFilterProp="label" className="w-full" aria-label="生成模型" value={selected} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"}
                 options={config.managed?.enabled ? candidates.map((v) => ({ value:v,label:label(v) })) : [...candidates.map((v) => ({ value: v, label: `${label(v)} · ${modelOptionName(v)}` })), { value: wanReplace, label: modelLabel(wanReplace) }]}
-                onChange={(v) => { setModel(v); if (config.managed?.enabled) useConfigStore.setState((s) => ({featureModels:{...s.featureModels,[headSwap ? "replace.head" : "replace.person"]:v}})); setResolution(""); selectJob(); }} />
+                onChange={(v) => { setModel(v); if (config.managed?.enabled) useConfigStore.setState((s) => ({featureModels:{...s.featureModels,"replace.person":v}})); setResolution(""); selectJob(); }} />
             <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>只调用所选模型，系统根据其支持的时长自动分段。</span>
         </label> }]} />}
         {subtitleError && <Alert type="warning" showIcon title={subtitleError} />}
         {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={wb.busy || !hydrated || !canPrepare || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{needsReplan ? "应用画幅并重新分析" : requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
         {!needsReplan && (!source || !image ? <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{!source ? "请先上传原视频" : "请上传人物参考图"}</p> : (!duration || !size) && <Alert type="warning" title="当前模型尚未配置可用的时长或清晰度，请在高级设置中切换模型。" />)}
+        </>}
         {error && <Alert type="warning" showIcon title={publicServiceText(error)} closable onClose={() => setError("")} />}
         {workspace && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
             <div className="min-w-0">
@@ -341,29 +351,29 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             {job.status === "planning" && <div className="order-2"><ReplacementProgress job={job} /></div>}
             {job.planned && <>
                 <div className="order-1 text-sm">整片模型预算 {job.credits} 点 · {job.resolution.replace(/p$/i, "")}p{job.aspectRatio ? ` · ${job.aspectRatio}` : ""}</div>
-                <p className="order-1 m-0 text-xs" style={{ color: colors.colorTextSecondary }}>点片段名称试看原片；勾选框决定生成范围。可只生成一段，也可一次勾选多段。生成时才按需切出文件，不会自动处理未勾选片段。</p>
+                <p className="order-1 m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{retired ? "仅能勾选已提交的片段恢复结果，未提交的片段不再生成；已有作品可继续查看和下载。" : "点片段名称试看原片；勾选框决定生成范围。可只生成一段，也可一次勾选多段。生成时才按需切出文件，不会自动处理未勾选片段。"}</p>
                 <Collapse className="order-1" size="small" items={[{ key: "duration", label: "时长与费用说明", children: <div className="space-y-2 text-xs"><div>{replacementDurationSummary(job)}</div><div>原片片段时长与模型输入时长可能不同：不足输入档位的片段会补齐，最终合并时移除补齐部分。请按每段报价确认费用。</div></div> }]} />
             </>}
             {job.parts && job.parts.length > 0 && <>
-                <div className="order-3 flex items-center justify-between gap-2"><div className="text-sm font-medium">分段列表 · {job.parts.length} 段</div><div className="flex gap-1"><Button size="small" type="link" onClick={() => setSelectedParts(selectableParts)}>全选未生成</Button><Button size="small" type="link" onClick={() => setSelectedParts([])}>清空</Button></div></div>
+                <div className="order-3 flex items-center justify-between gap-2"><div className="text-sm font-medium">分段列表 · {job.parts.length} 段</div><div className="flex gap-1"><Button size="small" type="link" onClick={() => setSelectedParts(selectableParts)}>{retired ? "全选可恢复" : "全选未生成"}</Button><Button size="small" type="link" onClick={() => setSelectedParts([])}>清空</Button></div></div>
                 <div className="order-3 grid max-h-56 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 2xl:grid-cols-4" aria-label="选择原片片段">
                     {job.parts.map((part, index) => {
                         const status = replacementPartStatus(job, index);
                         return <div key={index} className="space-y-1 rounded-lg border p-3 text-left text-xs"
                         style={{ borderColor: segment === index && view === "segments" ? colors.colorPrimary : colors.colorBorderSecondary, background: segment === index && view === "segments" ? colors.colorPrimaryBg : colors.colorBgContainer }}
-                        ><div className="flex items-start gap-2"><Checkbox checked={selectedParts.includes(index)} disabled={hasPartResult(job, index) || job.status === "running"} onChange={(event) => setSelectedParts((items) => event.target.checked ? [...items, index] : items.filter((item) => item !== index))} /><button type="button" className="min-w-0 flex-1 text-left" onClick={() => { setSegment(index); setView("segments"); }}><div className="text-sm font-medium">第 {index + 1} 段 · {(part.end - part.start).toFixed(2)} 秒{hasPartResult(job, index) ? " · 已完成" : ""}</div>
+                        ><div className="flex items-start gap-2"><Checkbox checked={selectedParts.includes(index)} disabled={hasPartResult(job, index) || job.status === "running" || retired && !selectableParts.includes(index)} onChange={(event) => setSelectedParts((items) => event.target.checked ? [...items, index] : items.filter((item) => item !== index))} /><button type="button" className="min-w-0 flex-1 text-left" onClick={() => { setSegment(index); setView("segments"); }}><div className="text-sm font-medium">第 {index + 1} 段 · {(part.end - part.start).toFixed(2)} 秒{hasPartResult(job, index) ? " · 已完成" : ""}</div>
                         <div>{part.start.toFixed(2)}–{part.end.toFixed(2)} 秒</div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1" style={{ color: status.active ? colors.colorPrimary : status.completed ? colors.colorSuccessText : colors.colorTextSecondary }}>
                             <span className="inline-flex max-w-full items-center gap-1.5">
                                 {status.active ? <LoaderCircle size={13} className="shrink-0 animate-spin motion-reduce:animate-none" aria-hidden /> : status.completed ? <Check size={13} className="shrink-0" aria-hidden /> : job.status === "paused" && part.submitted ? <Pause size={13} className="shrink-0" aria-hidden /> : null}
-                                <span>{status.label}</span>
+                                <span>{retired && !part.submitted && !hasPartResult(job, index) ? "未提交，已停用" : status.label}</span>
                             </span>
-                            <span className="whitespace-nowrap">{part.credits} 点</span>
+                            <span className="whitespace-nowrap">{retired ? "原报价 " : ""}{part.credits} 点</span>
                         </div>
                         </button></div></div>;
                     })}
                 </div>
-                <div className="order-3 flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}><div className="text-sm">已选 {selectedParts.length} 段 · 预计 {selectedCredits} 点</div><Button type="primary" disabled={!job.planned || aspectChanged || !selectedParts.length || (selectedCredits <= 0 && !selectedPending) || job.status === "running" || job.status === "planning"} onClick={() => void generateSelected(job)}>{selectedPending && selectedCredits === 0 ? "继续处理所选片段" : "生成所选片段"}</Button></div>
+                <div className="order-3 flex flex-wrap items-center justify-between gap-2 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}><div className="text-sm">已选 {selectedParts.length} 段 · {retired ? "仅恢复已提交结果" : `预计 ${selectedCredits} 点`}</div><Button type="primary" disabled={!job.planned || aspectChanged || !selectedParts.length || (selectedCredits <= 0 && !selectedPending) || job.status === "running" || job.status === "planning"} onClick={() => void generateSelected(job)}>{retired ? "恢复所选结果" : selectedPending && selectedCredits === 0 ? "继续处理所选片段" : "生成所选片段"}</Button></div>
                 {fullResult && <div className="order-2"><Segmented value={view} onChange={setView} options={[{ value: "segments", label: "分段对照" }, { value: "full", label: "完整视频" }]} /></div>}
                 <div className="order-2 grid gap-4 xl:grid-cols-2">
                     <div className="min-w-0 space-y-3 rounded-lg p-3" style={{ background: colors.colorFillQuaternary }}>
@@ -379,13 +389,13 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
                             : segment === 0 && previewMedia && selectedPart ? <ReplacementSegmentPlayer key={previewMedia.url} url={previewMedia.url} start={selectedPart.start - selectedPart.inputStart} end={selectedPart.end - selectedPart.inputStart} label="第一段替换预览" />
                             : segment === 0 && previewPath ? previewLoadError ? <Alert type="warning" title={previewLoadError} action={<Button size="small" onClick={() => setPreviewReload((value) => value + 1)}>重新载入预览</Button>} /> : previewMedia ? <><ReplacementSegmentPlayer key={previewMedia.url} url={previewMedia.url} start={selectedPart ? selectedPart.start - selectedPart.inputStart : 0} end={selectedPart ? selectedPart.end - selectedPart.inputStart : previewMedia.durationMs ? previewMedia.durationMs / 1000 : 15} label="第一段替换预览" /><Button size="small" onClick={() => void wb.download(previewMedia)}>下载当前片段</Button></> : <div className="py-12 text-center text-sm">正在载入预览…</div>
                             : replacementProgress(job).processing && (replacementProgress(job).activeIndex === segment || replacementProgress(job).activeIndex < 0) ? <ReplacementProgress job={job} />
-                            : <div className="flex min-h-64 flex-1 items-center justify-center"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={job.status === "paused" ? "任务已暂停，可继续处理或恢复查询" : job.status === "running" ? "此片段尚未生成，正在处理其他片段" : selectedPart?.validated ? "片段已生成，待继续整理结果" : "此片段尚未生成，勾选后确认费用并生成"} /></div>}
+                            : <div className="flex min-h-64 flex-1 items-center justify-center"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={retired ? selectedPart?.submitted ? "已提交的片段可恢复查询结果" : "此片段未提交，独立换脸已下线" : job.status === "paused" ? "任务已暂停，可继续处理或恢复查询" : job.status === "running" ? "此片段尚未生成，正在处理其他片段" : selectedPart?.validated ? "片段已生成，待继续整理结果" : "此片段尚未生成，勾选后确认费用并生成"} /></div>}
                     </div>
                 </div>
                 {view === "segments" && selectedPart && <div className="order-2 text-xs" style={{ color: colors.colorTextSecondary }}>第 {segment + 1} 段原片 {(selectedPart.end - selectedPart.start).toFixed(2)} 秒 · 模型输入 {selectedPart.seconds} 秒 · 该段报价 {selectedPart.credits} 点。播放器只展示有效片段，合并时去除重叠与补齐部分。</div>}
             </>}
             {job.result && <div className="order-4"><Alert type={job.reviewed ? "success" : "info"} title={job.reviewed ? "已人工验收" : "合成完成，效果待验收"} description={job.subtitleOutput === "editable" ? job.regenerateSubtitles ? "无字幕版已保留，请检查人物、口型与接缝；识别稿需校对后再生成带字幕版。" : "无字幕版已保留，请检查人物、口型与接缝；如需字幕，可手动识别后校对。" : "请检查第一帧、转场后人物、无人镜头、口型、字幕与接缝。时间轴校验通过不代表人物或文字正确。"} /></div>}
-            {needsPreviewApproval && !job.selectionMode && <div className="order-4 space-y-2">
+            {!retired && needsPreviewApproval && !job.selectionMode && <div className="order-4 space-y-2">
                 <Alert type="info" showIcon title="第一段预览已完成" description="在上方选择第 1 段，对照原片检查替换效果。确认后才会生成其余片段；不满意时可调整参考图或要求后重新开始。" />
                 <Button disabled={busy} onClick={() => selectJob()}>不满意，调整素材或要求</Button>
             </div>}
@@ -400,14 +410,14 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             </div>}
             {job.error && <div className="order-4"><Alert type="warning" title={publicServiceText(job.error)} /></div>}
             <div className="order-4 flex flex-wrap gap-2">
-                {(!job.planned || !job.parts?.length) && (job.status === "ready" || job.status === "preview" || job.status === "paused") && <Button size="small" type={needsPreviewApproval ? "primary" : "default"} disabled={needsPreviewApproval && !previewMedia} onClick={() => start(job)}>{needsPreviewApproval ? "效果满意，继续处理" : job.previewRequired && !job.previewReady ? "确认费用并生成预览" : job.status === "ready" ? "确认费用并开始" : "恢复处理"}</Button>}
-                {job.status === "paused" && job.planned && <Button size="small" onClick={() => void repriceReplacementJob(job.id).then(refresh).catch((e) => message.error(e.message))}>刷新剩余费用</Button>}
+                {!retired && (!job.planned || !job.parts?.length) && (job.status === "ready" || job.status === "preview" || job.status === "paused") && <Button size="small" type={needsPreviewApproval ? "primary" : "default"} disabled={needsPreviewApproval && !previewMedia} onClick={() => start(job)}>{needsPreviewApproval ? "效果满意，继续处理" : job.previewRequired && !job.previewReady ? "确认费用并生成预览" : job.status === "ready" ? "确认费用并开始" : "恢复处理"}</Button>}
+                {!retired && job.status === "paused" && job.planned && <Button size="small" onClick={() => void repriceReplacementJob(job.id).then(refresh).catch((e) => message.error(e.message))}>刷新剩余费用</Button>}
                 {job.status === "running" && <Button size="small" onClick={() => void pauseReplacementJob(job.id).then((v) => message.info(v.message)).catch((e) => message.error(e.message))}>暂停后续处理</Button>}
-                {job.status === "paused" && job.parts?.some((p) => !p.validated && p.submitted && !!p.taskId) && <Button size="small" onClick={() => retryPart(job, job.parts!.findIndex((p) => !p.validated && p.submitted && !!p.taskId))}>重做问题片段</Button>}
+                {!retired && job.status === "paused" && job.parts?.some((p) => !p.validated && p.submitted && !!p.taskId) && <Button size="small" onClick={() => retryPart(job, job.parts!.findIndex((p) => !p.validated && p.submitted && !!p.taskId))}>重做问题片段</Button>}
                 {job.result && job.subtitleOutput !== "editable" && <Button size="small" disabled={busy} onClick={() => void showResult(job)}>查看完整视频</Button>}
                 {job.previousResults?.map((result, index) => <Button key={result} size="small" disabled={busy} onClick={() => void showResult(job, false, result)}>查看历史版本 {index + 1}</Button>)}
                 {job.result && !job.reviewed && <Button size="small" onClick={() => modal.confirm({ title: "确认效果验收通过", content: `已对照检查开头与转场人物、无人镜头、口型和接缝${job.subtitleOutput === "editable" ? "；如需带字幕版，也已校对其文案、样式与时间轴" : "、字幕"}？此操作不会生成或收费。`, onOk: async () => { await reviewReplacementJob(job.id); await refresh(); } })}>标记验收通过</Button>}
-                {(job.status === "completed" || job.status === "preview" || job.status === "paused") && job.parts?.some((p) => p.taskId) && <Select<number> aria-label={`重做片段 ${job.id}`} placeholder="重做不满意的片段（另计费）" value={undefined} className="w-full" options={job.parts.flatMap((p, i) => p.taskId ? [{value:i,label:`第 ${i+1} 段 · ${p.start.toFixed(2)}–${p.end.toFixed(2)} 秒`}] : [])} onChange={(index) => void retryPart(job, index)} />}
+                {!retired && (job.status === "completed" || job.status === "preview" || job.status === "paused") && job.parts?.some((p) => p.taskId) && <Select<number> aria-label={`重做片段 ${job.id}`} placeholder="重做不满意的片段（另计费）" value={undefined} className="w-full" options={job.parts.flatMap((p, i) => p.taskId ? [{value:i,label:`第 ${i+1} 段 · ${p.start.toFixed(2)}–${p.end.toFixed(2)} 秒`}] : [])} onChange={(index) => void retryPart(job, index)} />}
             </div>
         </div>), workspace)}
         {workspace && d.replacementJobId && !currentJob && createPortal(<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={error ? "任务读取失败，请从历史任务重新打开" : "正在读取分段任务…"} />, workspace)}

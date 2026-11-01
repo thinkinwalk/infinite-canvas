@@ -1,5 +1,6 @@
 import type { VideoModelProfile } from "@/services/api/admin";
 import { isMiniMaxH3Name, miniMaxH3Profile } from "@/lib/minimax-h3";
+import { isRetiredHeadSwapModel } from "@/lib/content-replacement-state";
 import { managedModelBinding, modelAdapter, modelOptionLabel, modelOptionName, resolveModelRequestConfig, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 
 export const VIDEO_INPUT_MODES = [
@@ -69,8 +70,9 @@ export function videoReferenceDurationError(model: string, videos: { durationMs?
 }
 
 export function contentReplacementModels(config: AiConfig) {
-    if (config.managed?.enabled && config.channelMode === "remote") return selectableModelsByCapability(config,"video");
+    if (config.managed?.enabled && config.channelMode === "remote") return selectableModelsByCapability(config,"video").filter((model) => !isRetiredHeadSwapModel(modelOptionName(model), managedModelBinding(config, model, "video")?.operations));
     return selectableModelsByCapability(config, "video").filter((model) => {
+        if (isRetiredHeadSwapModel(modelOptionName(model))) return false;
         const profile = config.videoModels?.[modelOptionName(model)] ?? videoProfile(config, model);
         return model.startsWith("remote::") && profile.contentReplacement === true &&
             ["relay", "ark", "sparkcine_h3"].includes(profile.interface) && profile.maxImages > 0 && profile.maxVideos > 0 &&

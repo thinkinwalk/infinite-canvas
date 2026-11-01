@@ -16,6 +16,8 @@ import (
 //go:embed replicate-models.json
 var replicateModelsJSON []byte
 
+const RetiredHeadSwapMessage = "独立换脸功能已下线，历史任务仍可查看和恢复结果；新任务请使用人物替换。"
+
 type ReplicateModel struct {
 	Operation   string `json:"operation"`
 	Label       string `json:"label"`
@@ -35,6 +37,10 @@ func (spec ReplicateModel) ProviderName() string {
 		return "replicate"
 	}
 	return spec.Provider
+}
+
+func (spec ReplicateModel) Retired() bool {
+	return spec.Operation == "head-swap" || spec.Model == "wavespeed-ai/video-head-swap"
 }
 
 type ReplicateQuote struct {
@@ -91,6 +97,9 @@ func QuoteManagedReplicate(user model.AuthUser, spec ReplicateModel, input map[s
 }
 
 func quoteReplicate(user model.AuthUser, spec ReplicateModel, input map[string]any, selected *ManagedSelection) (ReplicateQuote, error) {
+	if spec.Retired() {
+		return ReplicateQuote{Operation: spec.Operation, Model: spec.Model, Label: spec.Label, Description: RetiredHeadSwapMessage, Reason: RetiredHeadSwapMessage, SubmissionBlocked: RetiredHeadSwapMessage}, nil
+	}
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return ReplicateQuote{}, err
@@ -226,7 +235,7 @@ func replicateDescription(operation string) string {
 	case "replace-person":
 		return "将视频中的人物替换为指定角色并保留动作"
 	case "head-swap":
-		return "用参考照片替换整颗头部（五官、发型、轮廓），保留身体动作、背景和口型"
+		return RetiredHeadSwapMessage
 	case "track-mask":
 		return "根据一次点选在云端跟踪人物或商品，生成逐帧编辑掩膜"
 	case "upscale":
@@ -615,6 +624,9 @@ func ValidateReplicateQuoteInput(userID string, spec ReplicateModel, input map[s
 }
 
 func validateReplicateInput(userID string, spec ReplicateModel, input map[string]any, submitting bool) error {
+	if spec.Retired() {
+		return fmt.Errorf("%s", RetiredHeadSwapMessage)
+	}
 	for _, key := range spec.InputSchema.Required {
 		value, exists := input[key]
 		if !exists || value == nil || strings.TrimSpace(fmt.Sprint(value)) == "" {

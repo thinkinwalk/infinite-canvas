@@ -953,6 +953,9 @@ func selectReplacementParts(job *replacementJob, indices []int, expected int) er
 		if part.Validated && part.Result != "" {
 			continue
 		}
+		if replacementCloudOperation(job.Model) == "head-swap" && part.Generated == "" && (!part.Submitted || part.TaskID == "") {
+			return fmt.Errorf("%s", service.RetiredHeadSwapMessage)
+		}
 		if !part.Submitted && !part.Validated {
 			credits += part.Credits
 		}
@@ -982,6 +985,9 @@ func selectReplacementParts(job *replacementJob, indices []int, expected int) er
 }
 
 func validateReplacementRequest(ctx context.Context, job *replacementJob) error {
+	if replacementCloudOperation(job.Model) == "head-swap" {
+		return fmt.Errorf("%s", service.RetiredHeadSwapMessage)
+	}
 	var err error
 	ctx, err = replacementManagedContext(ctx, job)
 	if err != nil {
@@ -1477,6 +1483,9 @@ func resetFailedReplacementCaptionWorker(ctx context.Context, job *replacementJo
 	return nil
 }
 func quoteReplacementPart(ctx context.Context, job *replacementJob, part *replacementPart) (int, error) {
+	if replacementCloudOperation(job.Model) == "head-swap" {
+		return 0, fmt.Errorf("%s", service.RetiredHeadSwapMessage)
+	}
 	var err error
 	ctx, err = replacementManagedContext(ctx, job)
 	if err != nil {
@@ -1534,6 +1543,9 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 		return err
 	}
 	part := &job.Parts[index]
+	if replacementCloudOperation(job.Model) == "head-swap" && !part.Submitted && part.Generated == "" {
+		return fmt.Errorf("%s", service.RetiredHeadSwapMessage)
+	}
 	prefix := strconv.Itoa(index) + ":"
 	if part.Input == "" {
 		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": replacementSource(job)}, part)

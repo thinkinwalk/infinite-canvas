@@ -472,6 +472,9 @@ func ManagedPublicCatalog(settings model.Settings, group string) (*model.Managed
 			item.Reason = "该模型暂不可用或当前分组无权限"
 		} else {
 			item.Available, item.Adapter, item.Operations, item.Video, item.Credits = true, selected.Route.Adapter, sharedStrings(selected.Route.Operations, selected.Feature.Operations), selected.Profile, selected.Model.Pricing.Credits
+			if (ReplicateModel{Model: selected.Route.Model}).Retired() || selected.Route.Adapter == "cloud:head-swap" {
+				item.Available, item.Reason = false, RetiredHeadSwapMessage
+			}
 			if item.Video != nil {
 				copy := *item.Video
 				copy.DisplayName, copy.Description = ManagedLabel(selected.Model, management.Routes), selected.Model.Description

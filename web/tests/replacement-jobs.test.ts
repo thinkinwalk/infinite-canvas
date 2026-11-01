@@ -7,9 +7,31 @@ Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
     removeItem: (key: string) => memory.delete(key),
 } });
 const { useUserStore } = await import("../src/stores/use-user-store");
-const { createReplacementJob, setReplacementAspectRatio, startReplacementJob, retryReplacementPart, listReplacementJobs } = await import("../src/services/api/replacement-jobs");
+const { createReplacementJob, generateReplacementParts, isRetiredReplacementJob, setReplacementAspectRatio, startReplacementJob, retryReplacementPart, listReplacementJobs } = await import("../src/services/api/replacement-jobs");
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; useUserStore.setState({ token: "" }); });
+
+test("retired head jobs reject new work including managed aliases but allow submitted-only recovery", async () => {
+    useUserStore.setState({ token: "test" });
+    const calls: unknown[] = [];
+    globalThis.fetch = async (url, options) => {
+        calls.push([String(url), JSON.parse(String(options?.body))]);
+        return new Response(JSON.stringify({ code: 0, data: {} }));
+    };
+    const job = { id: "historical-head", model: "model_face", featureId: "replace.head", parts: [
+        { submitted: true, taskId: "paid-face" }, { submitted: false },
+    ] } as Parameters<typeof startReplacementJob>[0];
+    expect(isRetiredReplacementJob(job)).toBe(true);
+    expect(isRetiredReplacementJob({ model: "model_face", modelAdapter: "cloud:head-swap" })).toBe(true);
+    expect(isRetiredReplacementJob({ model: "wan30-720p", featureId: "replace.person" })).toBe(false);
+    await expect(createReplacementJob({ ...job } as Parameters<typeof createReplacementJob>[0])).rejects.toThrow("独立换脸功能已下线");
+    await expect(startReplacementJob(job)).rejects.toThrow("独立换脸功能已下线");
+    await expect(retryReplacementPart(job, 0, 1120)).rejects.toThrow("独立换脸功能已下线");
+    await expect(generateReplacementParts(job, [0, 1], 1120)).rejects.toThrow("独立换脸功能已下线");
+    expect(calls).toEqual([]);
+    await generateReplacementParts(job, [0], 0);
+    expect(calls).toEqual([["/api/v1/replacement-jobs/historical-head/generate-parts", { parts: [0], expectedCredits: 0 }]]);
+});
 
 test("planning never starts paid execution and failed requests are not retried", async () => {
     useUserStore.setState({ token: "test" });

@@ -5,6 +5,7 @@ import { currentFeature, modelAdapter, modelOptionName, useConfigStore, type AiC
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { workbenchMediaBlob } from "./video-worker";
 import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "./video";
+import { RETIRED_HEAD_SWAP_MESSAGE, RETIRED_HEAD_SWAP_MODEL } from "@/lib/content-replacement-state";
 
 export type ReplicateOperation = "transcribe" | "speech" | "digital-human" | "lipsync" | "replace-person" | "head-swap" | "track-mask" | "upscale" | "image-to-video" | "text-to-video" | "hailuo-video" | "video-edit" | "masked-edit" | "subtitle-remove";
 export const REPLICATE_VIDEO_MODEL = "replicate::wan-video/wan-2.2-i2v-fast";
@@ -45,7 +46,6 @@ export const REPLICATE_FEATURES: { operation: ReplicateOperation; label: string;
     { operation: "digital-human", label: "照片数字人", model: "wan-video/wan-2.2-s2v", description: "上传人物照片和语音，生成会说话的数字人视频。", billingMode: "output_seconds" },
     { operation: "lipsync", label: "视频对口型", model: "sync/lipsync-2", description: "让已有视频中的人物口型与新音频同步。", billingMode: "output_seconds" },
     { operation: "replace-person", label: "视频人物替换", model: "wan-video/wan-2.2-animate-replace", description: "把视频中的人物替换为指定角色，同时保留动作。", billingMode: "duration_resolution", tierKeys: ["480", "720"] },
-    { operation: "head-swap", label: "视频人物换脸", model: "wavespeed-ai/video-head-swap", description: "用参考照片替换整颗头部（五官、发型、轮廓），保留身体动作、背景和口型。按视频秒数与输出分辨率计费，不足 3 秒按 3 秒计算。参考照片请使用清晰的真实正面照。", billingMode: "duration_resolution", tierKeys: ["480p", "720p"] },
     { operation: "track-mask", label: "视频目标跟踪", model: "meta/sam-2-video", description: "根据一次点选在云端生成逐帧目标掩膜，不生成替换画面。", billingMode: "runtime_seconds" },
     {
         operation: "upscale",
@@ -70,7 +70,7 @@ export const REPLICATE_IMAGE_MODELS = [
     { model: "men1scus/birefnet", label: "图像抠图", description: "用于案例中的图片背景去除，费用沿用对应案例的价格。" },
     { model: "nightmareai/real-esrgan", label: "图像超分", description: "用于案例中的图片放大，费用沿用对应案例的价格。" },
 ];
-export const REPLICATE_SUPPORTED_MODELS = [...REPLICATE_FEATURES, ...REPLICATE_IMAGE_MODELS];
+export const REPLICATE_SUPPORTED_MODELS = [...REPLICATE_FEATURES, ...REPLICATE_IMAGE_MODELS, { model: RETIRED_HEAD_SWAP_MODEL, label: "历史人物换脸（已下线）", description: RETIRED_HEAD_SWAP_MESSAGE }];
 export type ReplicateTask = {
     channelId?: number;
     channelName?: string;
@@ -152,9 +152,9 @@ async function cloudRequest<T>(path: string, body?: unknown, signal?: AbortSigna
     return payload.data as T;
 }
 export async function getReplicateModels(signal?: AbortSignal) {
-    const items = await cloudRequest<ReplicateQuote[]>("models", undefined, signal);
+    const items = (await cloudRequest<ReplicateQuote[]>("models", undefined, signal)).filter((item) => item.operation !== "head-swap");
     if (!useConfigStore.getState().publicSettings?.modelChannel.managed?.enabled) return items;
-    return [...new Set([...Object.keys(REPLICATE_MODEL_NAMES) as ReplicateOperation[],...items.map((item) => item.operation)])].map((operation) => {
+    return [...new Set([...Object.keys(REPLICATE_MODEL_NAMES) as ReplicateOperation[],...items.map((item) => item.operation)])].filter((operation) => operation !== "head-swap").map((operation) => {
         try {
             const selected = cloudFeature(operation);
             return items.find((item) => item.operation === operation && item.featureId === selected.featureId && item.model === selected.modelId)
@@ -209,6 +209,7 @@ export async function uploadReplicateReference(media: UploadedFile & { name?: st
     return payload.data.url;
 }
 export async function quoteReplicate(operation: ReplicateOperation, input: Record<string, unknown>, signal?: AbortSignal, options?: ManagedCloudOptions) {
+    if (operation === "head-swap") throw new Error(RETIRED_HEAD_SWAP_MESSAGE);
     const selection = cloudFeature(operation,options);
     const quote = await cloudRequest<ReplicateQuote>("quote", { operation, input, ...selection }, signal);
     if (quote.quoteToken && selection.modelId && selection.featureId) cloudQuotes.set(JSON.stringify([useUserStore.getState().token,operation,selection.featureId,selection.modelId,input]),{token:quote.quoteToken,modelId:selection.modelId,featureId:selection.featureId});
@@ -224,6 +225,7 @@ async function refreshCloudBalance() {
     }
 }
 export async function createReplicateTask(id: string, operation: ReplicateOperation, input: Record<string, unknown>, expectedCredits: number, signal?: AbortSignal, options?: ManagedCloudOptions) {
+    if (operation === "head-swap") throw new Error(RETIRED_HEAD_SWAP_MESSAGE);
     const chosen = cloudFeature(operation,options);
     const cached = cloudQuotes.get(JSON.stringify([useUserStore.getState().token,operation,chosen.featureId,chosen.modelId,input]));
     const selection = cached ? {modelId:cached.modelId,featureId:cached.featureId,quoteToken:cached.token} : {...chosen,quoteToken:options?.quoteToken};
