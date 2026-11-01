@@ -18,7 +18,9 @@ description: Implemented changes that still need manual verification
 - 正常重新进入或刷新内容替换时，当前草稿自动归档并打开空白任务；存储异常及当前页面内正在运行的任务仍受保护。顶部「新建任务」会先归档当前内容。
 - 历史页单独列出已归档草稿，可恢复原替换模式、素材、设置、进度和结果；草稿归档不计入生成作品数量，也不替代既有任务记录。
 - 内容替换状态及相邻批处理流程定向回归通过：4 个测试文件、17 项 / 70 个断言，覆盖归档快照保留素材/结果、已有作品记录不变及重复归档去重；本机 Vite 构建在 Rollup 处理 Windows 映射路径 `I:/.../web/index.html` 时失败，待服务器按发布 tag 构建。
-- 尚待浏览器交互验收，确认首次进入、强制刷新后空白、显式新建确认、历史草稿恢复与未完成任务记录保持。
+- 已随 `v0.19.138`（`75a6dff`）提交并推送发布分支及 tag，生产 App 已按该 tag 构建、切换并核对线上 `/assets/index-Ie_z9qCD.js` 与 `/assets/index-B3_nLdbx.css`；JS 含新建任务归档调用且不再含刷新恢复分支，健康接口返回 `ok`。GitHub CLI 未登录且 Release API 返回 404，因此仅确认 tag 推送和生产部署，尚未创建 GitHub Release 页面。
+- 发布 helper 首次执行虽报告成功，但镜像替换规则未匹配实际 Compose 中的简写镜像名，且备份到了 0 字节旧占位 `db.sqlite`；发现后已手动将生产 Compose App 指向新镜像并仅重建 App，Worker 未重启。另用 SQLite 在线备份 API 建立真实业务库备份 `/opt/infinite-canvas/backups/v0.19.138-final-20261101.sqlite`；`quick_check=ok`，13 张表、19,380 行，备份与线上库 schema 及逐表行数一致。远端 `/opt/infinite-canvas-repo/quick-deploy.sh` 的镜像替换和数据库路径仍需修正，后续部署前勿依赖其成功提示。
+- 尚待浏览器交互验收，确认首次进入、强制刷新后空白、顶部新建确认、历史草稿恢复与未完成任务记录保持；开发预览 `http://127.0.0.1:3001/video/content-replace` 可用于本地检查。
 
 ## 爆款复刻失败提示可关闭
 
