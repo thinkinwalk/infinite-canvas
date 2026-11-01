@@ -10,6 +10,7 @@ import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoSettingsPanel } from "@/components/video-settings-panel";
 import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { VideoLinkImport } from "@/components/video-link-import";
+import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { hasContentReplacementDraft, hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
@@ -60,6 +61,8 @@ export default function ContentReplaceWorkspace() {
     const [batchWorkspace, setBatchWorkspace] = useState<HTMLDivElement | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [assetRole, setAssetRole] = useState<{ role: MediaRole; accept: string } | null>(null);
+    const [referenceImportOpen, setReferenceImportOpen] = useState(false);
+    const [referenceImportTab, setReferenceImportTab] = useState("upload");
     const [uploading, setUploading] = useState(false);
     const [trimming, setTrimming] = useState(false);
     const uploadingRef = useRef(false);
@@ -251,6 +254,10 @@ export default function ContentReplaceWorkspace() {
         if (d.replacementJobId || d.replacementResultKey) { setHistoryPreview(null); setTab("current"); }
     }, [d.replacementJobId, d.replacementResultKey, d.final?.storageKey]);
     useEffect(() => setSourcePreviewError(false), [reference?.storageKey, reference?.url]);
+    useEffect(() => {
+        setReferenceImportOpen(false);
+        if (!reference?.id) setReferenceImportTab("upload");
+    }, [reference?.id]);
     useEffect(() => setProcessingHelpOpen(showSegmentHint), [reference?.id, showSegmentHint]);
     useEffect(() => {
         if (!platformToken || active?.status !== "failed" || !active.replicateTask || active.replicateBilling) return;
@@ -394,6 +401,7 @@ export default function ContentReplaceWorkspace() {
     };
     const materialField = (role: MediaRole, accept: string, label: string, hint: string) => {
         const media = d.media.find((m) => m.role === role);
+        const videoInput = role === "reference" && accept === "video/*";
         const uploadProps: UploadProps = {
             accept,
             multiple: false,
@@ -405,6 +413,24 @@ export default function ContentReplaceWorkspace() {
                 return Upload.LIST_IGNORE;
             },
         };
+        const upload = <div className="space-y-1">
+            {(videoInput || !media) && <Upload.Dragger
+                {...uploadProps}
+                height={112}
+                style={{ background: token.colorFillQuaternary }}
+            >
+                <div className="flex items-center justify-center gap-2 px-2 text-sm" style={muted}>
+                    {uploading ? <Spin size="small" /> : accept === "image/*" ? <ImageIcon size={19} /> : <Video size={19} />}
+                    <span>{uploading ? "正在检查并处理素材" : videoInput ? "点击或拖拽上传视频" : "点击或拖拽上传"}</span>
+                </div>
+                <div className="mt-1 px-3 text-xs" style={muted}>{hint}</div>
+            </Upload.Dragger>}
+            <Button type="text" size="small" disabled={locked} onClick={() => setAssetRole({ role, accept })}>
+                {media ? "从我的素材更换" : "从我的素材选择"}
+            </Button>
+            {videoInput && <div className="text-xs" style={muted}>原视频上限 300MB；生成时按模型要求准备参考片段。</div>}
+            {uploadErrors[role] && <div role="alert" className="text-xs" style={{ color: token.colorError }}>{uploadErrors[role]}</div>}
+        </div>;
         return (
             <section className="min-w-0" data-material-role={role}>
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -436,19 +462,21 @@ export default function ContentReplaceWorkspace() {
                         </span>
                     </div>
                 </div>
-                {media ? (
+                {media && (
                     <div className="space-y-3 rounded-lg border p-3" style={surface}>
                         <div className="flex min-w-0 flex-wrap items-start gap-2">
                             <div className="min-w-0 flex-1 basis-28">
                                 <div className="truncate text-xs font-medium" title={media.name}>{media.name}</div>
                                 <div className="mt-1 text-xs" style={muted}>
-                                    已上传 · {[formatBytes(media.bytes), media.width && media.height ? `${media.width}×${media.height}` : "", media.durationMs ? formatDuration(media.durationMs) : ""].filter(Boolean).join(" · ")}
+                                    {videoInput ? "已导入" : "已上传"} · {[formatBytes(media.bytes), media.width && media.height ? `${media.width}×${media.height}` : "", media.durationMs ? formatDuration(media.durationMs) : ""].filter(Boolean).join(" · ")}
                                 </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
-                                <Upload {...uploadProps}>
+                                {videoInput ? <Button type="text" size="small" disabled={locked} icon={<RefreshCw size={13} />} aria-expanded={referenceImportOpen} onClick={() => setReferenceImportOpen((value) => !value)}>
+                                    {referenceImportOpen ? "收起导入入口" : "更换原视频"}
+                                </Button> : <Upload {...uploadProps}>
                                     <Button size="small" disabled={locked} icon={<RefreshCw size={13} />} aria-label={`更换${label}`}>更换</Button>
-                                </Upload>
+                                </Upload>}
                                 <Button type="text" danger size="small" disabled={locked} icon={<X size={13} />} aria-label={`移除${label}`} onClick={() => {
                                     wb.removeMedia(media.id);
                                     setUploadErrors((errors) => ({ ...errors, [role]: "" }));
@@ -459,28 +487,23 @@ export default function ContentReplaceWorkspace() {
                         {uploading && <div role="status" className="flex items-center gap-2 text-xs" style={muted}><Spin size="small" />正在检查并处理素材</div>}
                         {media.kind === "video" && !(person && wholeVideo) && d.route === "model" && isWan30(config.videoModel) && <VideoReferenceTrimmer media={media} disabled={locked} onBusyChange={setTrimming} onApply={(file) => wb.edit({ media: (useVideoWorkbenchStore.getState().drafts["content-replace"]?.media || []).map((item) => item.id === media.id ? { ...item, ...file } : item) }, "materials")} />}
                     </div>
-                ) : <Upload.Dragger
-                    {...uploadProps}
-                    height={112}
-                    style={{ background: token.colorFillQuaternary }}
-                >
-                    <div className="flex items-center justify-center gap-2 px-2 text-sm" style={muted}>
-                        {uploading ? <Spin size="small" /> : accept === "image/*" ? <ImageIcon size={19} /> : <Video size={19} />}
-                        <span>{uploading ? "正在检查并处理素材" : "点击或拖拽上传"}</span>
-                    </div>
-                    <div className="mt-1 px-3 text-xs" style={muted}>
-                        {hint}
-                    </div>
-                </Upload.Dragger>}
-                <Button type="text" className="mt-1" size="small" disabled={locked} onClick={() => setAssetRole({ role, accept })}>
-                    {media ? "从我的素材更换" : "从我的素材选择"}
-                </Button>
-                {accept === "video/*" && <VideoLinkImport disabled={locked} media={media} completed={Boolean(d.final || d.edited || d.video)} source={media?.source} onImport={(text, signal) => wb.importLink(text, role, signal)} />}
-                {uploadErrors[role] && (
-                    <div role="alert" className="mt-1 text-xs" style={{ color: token.colorError }}>
-                        {uploadErrors[role]}
-                    </div>
                 )}
+                {videoInput ? <>
+                    <div hidden={Boolean(media) && !referenceImportOpen}>
+                        <Tabs
+                            size="small"
+                            activeKey={referenceImportTab}
+                            onChange={setReferenceImportTab}
+                            destroyOnHidden={false}
+                            aria-label="原视频导入方式"
+                            items={[
+                                { key: "upload", label: "上传视频", disabled: locked, children: upload },
+                                { key: "link", label: "链接提取", disabled: locked, children: <VideoLinkImport disabled={locked} source={media?.source} showRetention={false} onImport={(text, signal) => wb.importLink(text, role, signal)} /> },
+                            ]}
+                        />
+                    </div>
+                    <VideoReferenceRetention key={media?.id} media={media} completed={Boolean(d.final || d.edited || d.video)} disabled={locked} onReimport={(text, signal) => wb.importLink(text, role, signal)} />
+                </> : upload}
             </section>
         );
     };
