@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.141
-- Current production source: tag v0.19.141, commit 128d62055da993368ce87e950c293f2121d5d4c8
+- Current production image: infinite-canvas:v0.19.142
+- Current production source: tag v0.19.142, commit 08a8b610a8a31ea2f3d7cb9fd0e9921eee3430b9
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.142-worker/
+
+## v0.19.142 deployment
+
+- Tag `v0.19.142`, commit `08a8b610a8a31ea2f3d7cb9fd0e9921eee3430b9`, is pushed to `release/v0.19.60` and published as the formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.142. Production app image `infinite-canvas:v0.19.142`, ID `sha256:983532d49bb926517687708ad28b939d52db24cc71a3b5fb9f5c7b0dadf69728`, is running.
+- Wan Animate Replace now submits and charges each source segment by its actual duration. A 5-second segment is no longer fixed to 10/15 seconds; the Worker applies `tpad/apad` only when the requested target duration is longer than the source segment. The frontend long-video segment limit remains 15 seconds.
+- The existing Worker image `infinite-canvas-video-worker:v0.19.87`, ID `sha256:ba384be7a93c55bf66198efa50065cb5a1bdc62542a616908533a5e528777f66`, remains in use. Its source mounts now point to `/opt/infinite-canvas/releases/v0.19.142-worker/`; no paid generation or real work validation was submitted.
+- Public `https://studio.lingzhouai.com/api/health` returns `ok`. Public assets are `/assets/index-CuC9f9jf.js` SHA-256 `6a1f6946ad633879c87990fe6a890e43013779359bf4c66a0d1e9b06bb61929f` and `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`; the JS contains the actual-duration and no-fixed-10-second markers.
+- Final root-only backup `/opt/infinite-canvas/backups/v0.19.142-final-20261102-004137/`; prebuild backup `/opt/infinite-canvas/backups/v0.19.142-prebuild-20261101-233011/`. The final SQLite online backup and live database both pass `PRAGMA quick_check`; the final backup includes SQLite, Compose and the private environment file, not a full media copy.
+- Deployment report `/opt/infinite-canvas/releases/v0.19.142-deployment.json`, with workstation copy `.codex_tmp/v0.19.142-deployment.json`. Rollback restores the final-backup Compose and recreates the app only, retaining the existing Worker image and data volume. Production channel settings were unchanged.
 
 ## v0.19.141 deployment
 
