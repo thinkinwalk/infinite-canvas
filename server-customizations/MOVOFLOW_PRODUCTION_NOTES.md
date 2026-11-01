@@ -15,10 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.136
-- Current production source: tag v0.19.136, commit 23968b339ff5240bad36eafa72707f581c3f6628
+- Current production image: infinite-canvas:v0.19.137
+- Current production source: tag v0.19.137, commit f88cf1af3370fbb863506c852fa213b88a2fb3a4
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.137 deployment
+
+- Tag `v0.19.137`, commit `f88cf1af3370fbb863506c852fa213b88a2fb3a4`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.137`, ID `sha256:1fe657aa78035dc7efc4902858f8da91e0d61a96afc6c0b1014e545acd2b9955`, replaces v0.19.136.
+- New viral-recreation tasks enable source video reference by default. Users can disable it; saved draft choices are preserved. Development passed 15 focused tests / 74 assertions. Release repeated no local tests or build; server Docker build, internal/external health, eleven routes, deployed default-value marker and resource hashes passed. Independent workstation HTTPS matched both public hashes and the enabled default.
+- Public JS `/assets/index-Bk8Fs5s8.js` SHA-256 `ae3f6e5a118998ddfecd2aae29525ba5fa3fb97ee95a01464f6ed70bef3c8521`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.137-final-20261101-032837/`; prebuild `/opt/infinite-canvas/backups/v0.19.137-prebuild-20261101-032740/`. SQLite quick check, schema, all 13 table counts, settings/protected account fields, environment, mounts, backend binary and 100 existing job records are preserved. Worker v0.19.87 identity, startup time and mounts remain unchanged.
+- Reports `/opt/infinite-canvas/releases/v0.19.137-deployment.json` and `v0.19.137-public-verification.json`, with local `.codex_tmp/` copies; verifier `/opt/infinite-canvas/releases/deploy-v0.19.137.py`. Rollback restores final-backup Compose and recreates app only, preserving the database and v0.19.136 image. Production browser interaction, existing drafts, disabling/reload and real model effects remain pending. No channel settings changed or paid inference submitted.
 
 ## v0.19.136 deployment
 
