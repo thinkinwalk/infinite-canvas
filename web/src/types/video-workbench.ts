@@ -352,6 +352,7 @@ export type WorkerJob = {
 
 export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     media: [],
+    viralUseVideo: tool === "viral-recreate",
     instructions: "",
     analysis: "",
     frames: [],

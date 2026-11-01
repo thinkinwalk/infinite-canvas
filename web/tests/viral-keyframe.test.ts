@@ -79,8 +79,9 @@ test("first-frame mode sends only the selected composed frame and optional tail"
     expect(viralVideoPrompt(d, cfg)).toContain("不要把未发送的素材当作视觉输入");
 });
 
-test("actual reference images and opt-in source video stay aligned with the generation prompt", () => {
+test("source video is enabled by default and can be disabled with matching materials and prompt", () => {
     const d = draft();
+    expect(d.viralUseVideo).toBe(true);
     d.media = [
         { ...file("source", "reference"), kind: "video", mimeType: "video/mp4" },
         file("building", "visual-reference"),
@@ -88,14 +89,14 @@ test("actual reference images and opt-in source video stay aligned with the gene
     ];
     d.viralFirstFrameId = undefined;
     const cfg = { ...defaultConfig, channelMode: "remote" as const, videoModel: "qa", videoInputMode: "reference", videoModels: { qa: { interface: "relay" as const, maxImages: 9, maxVideos: 1, maxAudios: 0, inputModes: ["reference" as const], resolutions: ["720"], seconds: ["5"] } } };
+    expect(viralVideoMaterials(d, cfg).map((m) => m.id)).toEqual(["building", "source"]);
+    expect(viralVideoPrompt(d, cfg)).toContain("视频1=参考视频");
+    expect(viralVideoPrompt(d, cfg)).not.toContain("没有向视频模型发送原视频");
+    d.viralUseVideo = false;
     expect(viralVideoMaterials(d, cfg).map((m) => m.id)).toEqual(["building"]);
     expect(viralVideoPrompt(d, cfg)).toContain("图片1=参考图1（参考图片）");
     expect(viralVideoPrompt(d, cfg)).not.toContain("图片2=");
     expect(viralVideoPrompt(d, cfg)).toContain("没有向视频模型发送原视频");
-    d.viralUseVideo = true;
-    expect(viralVideoMaterials(d, cfg).map((m) => m.id)).toEqual(["building", "source"]);
-    expect(viralVideoPrompt(d, cfg)).toContain("视频1=参考视频");
-    expect(viralVideoPrompt(d, cfg)).not.toContain("没有向视频模型发送原视频");
 });
 
 test("first and last frame numbering and per-image composition requirements remain explicit", () => {
