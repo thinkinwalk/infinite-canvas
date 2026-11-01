@@ -10,7 +10,11 @@ description: Implemented changes that still need manual verification
 - 原视频导入参照爆款复刻调整为「上传视频 / 链接提取」两个页签，默认上传；素材库选择保留在上传页签，链接输入、提取进度、取消与错误只在链接页签展示，切换保留未提交输入。
 - 上传、素材库选择与链接提取共用已导入视频预览和信息。导入成功或恢复已有素材后默认收起入口，点击「更换原视频」可展开两个页签，移除后重新显示上传入口；素材保留设置独立展示一次。参考图片与生成处理流程保持不变。
 - 本地 `3001` 开发页完成 10 项隔离浏览器检查：真实本地视频上传、素材库选取、模拟链接提取成功/失败/取消、忙碌禁用、切换保留输入、展开更换、移除重置、新建及历史草稿恢复、保留开关均通过；1440/390/320px 深浅主题两个页签共 12 张截图，抽查手机和电脑画面，无横向溢出或页面运行错误。证据 `.codex_tmp/content-import-tabs-qa/report.json`，脚本 `.codex_tmp/check-content-import-tabs.cjs`。
-- 本轮检查使用独立浏览器数据与模拟 API，未触碰用户原草稿或发起收费生成；按仓库约定未执行构建或独立语法检查，未发布部署。真实解析服务、处理服务及生产交互仍待验收。已检查 todo，无对应的原视频导入页签待办需要迁移。
+- 开发检查使用独立浏览器数据与模拟 API，未触碰用户原草稿或发起收费生成；按仓库约定未执行本地构建或独立语法检查。真实解析服务、处理服务及生产交互仍待验收。
+- 已随 `v0.19.139`（`bb96c35`）提交、推送发布分支和 tag、发布正式 GitHub Release 并部署，使用 `https://studio.lingzhouai.com/video/content-replace`，刷新加载 `/assets/index-hzSVgfuy.js`。发布阶段未重复本地测试或构建；服务器按精确 tag 构建、内外健康、11 页面、导入页签标记及公网 JS/CSS 与容器哈希核对通过。
+- 最终备份 `/opt/infinite-canvas/backups/v0.19.139-final-20261101-055748/`，预构建备份 `/opt/infinite-canvas/backups/v0.19.139-prebuild-20261101-055516/`，含 SQLite、Compose 与私有环境。数据库完整性、结构、表数量、完整设置、账号受保护字段、环境、挂载、后端二进制与 100 份任务记录保持，Worker `v0.19.87` 未重启；证据 `/opt/infinite-canvas/releases/v0.19.139-deployment.json`。未改生产渠道或提交收费生成。
+
+- 本机独立 HTTPS 已复核健康、版本、原视频导入页签标记及 JS/CSS 哈希，均与运行容器一致；证据 `/opt/infinite-canvas/releases/v0.19.139-public-verification.json`，本机两份部署报告位于 `.codex_tmp/`。生产浏览器交互未重复验收。
 
 ## 爆款复刻默认开启视频参考
 

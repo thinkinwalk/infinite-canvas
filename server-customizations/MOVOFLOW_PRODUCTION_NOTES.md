@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.137
-- Current production source: tag v0.19.137, commit f88cf1af3370fbb863506c852fa213b88a2fb3a4
+- Current production image: infinite-canvas:v0.19.139
+- Current production source: tag v0.19.139, commit bb96c35b7005947dd872ef5fff117f7bf9cbb815
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.139 deployment
+
+- Tag `v0.19.139`, commit `bb96c35b7005947dd872ef5fff117f7bf9cbb815`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.139`, ID `sha256:a800759a4959f4ce957b584fb1313ede58aca785f7bc8799b0c0accd1c1dbdf9`, replaces `ghcr.io/thinkinwalk/infinite-canvas:v0.19.138`.
+- Content replacement source-video imports now use upload/link tabs. Local uploads, asset selection and extracted links share the preview; import controls collapse after success and expand for replacement. Retention controls are shown once outside the tabs. Image inputs, generation settings, channels and billing are unchanged.
+- Development passed ten isolated browser checks and twelve desktop/mobile light/dark screenshots across 1440/390/320px, including local uploads, asset selection, mocked link success/failure/cancellation and archived draft restoration. Release repeated no local tests or build. Server build, internal/external health, eleven routes, import-control markers and container/public hashes passed. Production browser interactions and actual upstream extraction remain pending; no paid inference was submitted.
+- Public JS `/assets/index-hzSVgfuy.js` SHA-256 `b4d3a443e54dc054b35d80c5a010d5b0e5a9db908793889678ff74816a88120c`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.139-final-20261101-055748/`; prebuild `/opt/infinite-canvas/backups/v0.19.139-prebuild-20261101-055516/`. SQLite quick check, schema, all table counts, settings/protected account fields, environment, mounts, backend binary and 100 existing job records are preserved. Worker v0.19.87 identity, startup time and mounts are unchanged.
+- Report `/opt/infinite-canvas/releases/v0.19.139-deployment.json`, with a local `.codex_tmp/` copy; verifier `/opt/infinite-canvas/releases/deploy-v0.19.139.py`. Rollback restores final-backup Compose and recreates app only, preserving the database and previous image. The old untracked remote `quick-deploy.sh` remains unsuitable for controlled deployments because its SQLite backup path targets the obsolete placeholder `data/db.sqlite`.
+
+- Independent workstation HTTPS verification passed health, release version, source-video import markers and both public asset hashes against the deployed container. Report `/opt/infinite-canvas/releases/v0.19.139-public-verification.json`, with a local `.codex_tmp/` copy. No production browser interaction or paid inference was performed.
 
 ## v0.19.137 deployment
 
