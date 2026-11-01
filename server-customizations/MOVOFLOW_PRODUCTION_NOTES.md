@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.135
-- Current production source: tag v0.19.135, commit 1f8548e4939099003c92a512004ca00dd7b5e08a
+- Current production image: infinite-canvas:v0.19.136
+- Current production source: tag v0.19.136, commit 23968b339ff5240bad36eafa72707f581c3f6628
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.136 deployment
+
+- Tag `v0.19.136`, commit `23968b339ff5240bad36eafa72707f581c3f6628`, is pushed to `release/v0.19.60` with a published GitHub Release. Production image `infinite-canvas:v0.19.136`, ID `sha256:d37967f18c628948438b4833268d542ed812649c91e0cde15f27cd72707ac9b4`, replaces v0.19.135.
+- Content replacement now archives the previous draft and opens a blank task on normal re-entry; reload preserves the current task, and archived drafts can be restored from history. Viral recreation failed notices can be dismissed while the underlying task record remains in history.
+- Release repeated no local tests or browser interactions. Server Docker build passed; internal/external health, eleven routes, feature markers, and public/container resource hashes passed. Browser interaction, existing user drafts and historical draft restore remain pending. No paid inference was submitted.
+- Public JS `/assets/index-mqeAJPk4.js` SHA-256 `d02659b1f4934f0ab2ecd1b6d610451e886d07dd7639e9b7eb286fc7e4bafecd`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.136-final-20261101-032454/`; prebuild `/opt/infinite-canvas/backups/v0.19.136-prebuild-20261101-032354/`. SQLite quick check, schema, all 13 table counts, settings/protected account values, environment, mounts and 100 existing job records are preserved. Worker v0.19.87 identity, startup time and mounts are unchanged; the linked planning job and completed Worker record were preserved.
+- Report `/opt/infinite-canvas/releases/v0.19.136-deployment.json`; verifier `/opt/infinite-canvas/releases/deploy-v0.19.136.py`. Rollback restores final-backup Compose and recreates app only, preserving the database and v0.19.135 image. No production channel settings changed.
 
 ## v0.19.135 deployment
 
