@@ -1145,6 +1145,15 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		if len(job.Parts) == 0 {
 			return fmt.Errorf("没有可处理的片段")
 		}
+		if replacementCloudOperation(job.Model) == "replace-person" {
+			for i := range job.Parts {
+				part := &job.Parts[i]
+				part.Seconds = part.InputEnd - part.InputStart
+				if math.IsNaN(part.Seconds) || math.IsInf(part.Seconds, 0) || part.Seconds <= 0 {
+					return fmt.Errorf("人物替换分段时长不正确")
+				}
+			}
+		}
 		job.PreviewRequired = job.PreviewRequired || len(job.Parts) > 1 || replacementDuration(job) > 15
 		job.Credits = 0
 		if replacementCloudOperation(job.Model) == "" {

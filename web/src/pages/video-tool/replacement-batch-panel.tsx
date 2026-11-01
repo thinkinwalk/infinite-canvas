@@ -87,7 +87,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     const retired = headSwap || (currentJob ? isRetiredReplacementJob(currentJob) : isRetiredHeadSwapModel(selected, operation ? [operation] : []));
     const subtitleError = subtitleBlocked || (d.replaceSubtitles && !isWan30(selected) ? headSwap ? "当前换脸模型不能同时去除原字幕，请关闭「去除原字幕」后继续。" : "当前模型不能同时换人和去除原字幕。请在「高级设置」中选择 Wan 3.0（wan30-720p），或关闭「去除原字幕」后继续。" : "");
     const profile = videoProfile({ ...config, channelMode: "remote" }, selected);
-    const durations = selected === headSwapModel || operation === "head-swap" ? ["15"] : selected === wanReplace || operation === "replace-person" ? ["10"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
+    const durations = selected === headSwapModel || operation === "head-swap" ? ["15"] : selected === wanReplace || operation === "replace-person" ? ["15"] : profile.seconds.filter((v) => Number(v) > 0.5 && (!profile.referenceVideoMaxSeconds || Number(v) <= profile.referenceVideoMaxSeconds) && (!isWan30(selected) || Number(v) <= 30)).sort((a, b) => Number(b) - Number(a));
     const sizes = selected === wanReplace || headSwap || operation === "replace-person" ? ["720", "480"] : profile.resolutions;
     const duration = durations[0];
     const size = currentJob?.resolution || (sizes.includes(resolution) ? resolution : sizes[0]);
@@ -328,7 +328,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             <Select showSearch optionFilterProp="label" className="w-full" aria-label="生成模型" value={selected} disabled={busy || currentJob?.status === "running" || currentJob?.status === "planning"}
                 options={config.managed?.enabled ? candidates.map((v) => ({ value:v,label:label(v) })) : [...candidates.map((v) => ({ value: v, label: `${label(v)} · ${modelOptionName(v)}` })), { value: wanReplace, label: modelLabel(wanReplace) }]}
                 onChange={(v) => { setModel(v); if (config.managed?.enabled) useConfigStore.setState((s) => ({featureModels:{...s.featureModels,"replace.person":v}})); setResolution(""); selectJob(); }} />
-            <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>只调用所选模型，系统根据其支持的时长自动分段。</span>
+            <span className="block text-xs" style={{ color: colors.colorTextSecondary }}>{selected === wanReplace || operation === "replace-person" ? "按实际片段时长发送；长视频最多按 15 秒分段，不再固定补齐到 10 秒。" : "只调用所选模型，系统根据其支持的时长自动分段。"}</span>
         </label> }]} />}
         {subtitleError && <Alert type="warning" showIcon title={subtitleError} />}
         {!token ? <div className="flex items-center justify-between gap-2 text-sm"><span>登录后查看费用并生成</span><UserStatusActions accountOnly /></div> : <Button block type="primary" loading={busy || currentJob?.status === "planning"} disabled={wb.busy || !hydrated || !canPrepare || Boolean(subtitleError) || currentJob?.status === "running" || currentJob?.status === "planning"} onClick={() => void prepare()}>{needsReplan ? "应用画幅并重新分析" : requiresPreview ? "分析分段并查看费用" : "查看费用并生成"}</Button>}
@@ -352,7 +352,7 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
             {job.planned && <>
                 <div className="order-1 text-sm">整片模型预算 {job.credits} 点 · {job.resolution.replace(/p$/i, "")}p{job.aspectRatio ? ` · ${job.aspectRatio}` : ""}</div>
                 <p className="order-1 m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{retired ? "仅能勾选已提交的片段恢复结果，未提交的片段不再生成；已有作品可继续查看和下载。" : "点片段名称试看原片；勾选框决定生成范围。可只生成一段，也可一次勾选多段。生成时才按需切出文件，不会自动处理未勾选片段。"}</p>
-                <Collapse className="order-1" size="small" items={[{ key: "duration", label: "时长与费用说明", children: <div className="space-y-2 text-xs"><div>{replacementDurationSummary(job)}</div><div>原片片段时长与模型输入时长可能不同：不足输入档位的片段会补齐，最终合并时移除补齐部分。请按每段报价确认费用。</div></div> }]} />
+                <Collapse className="order-1" size="small" items={[{ key: "duration", label: "时长与费用说明", children: <div className="space-y-2 text-xs"><div>{replacementDurationSummary(job)}</div><div>模型输入时长按实际片段计算；只有模型明确要求固定时长时才会补齐，最终合并时移除补齐部分。请按每段报价确认费用。</div></div> }]} />
             </>}
             {job.parts && job.parts.length > 0 && <>
                 <div className="order-3 flex items-center justify-between gap-2"><div className="text-sm font-medium">分段列表 · {job.parts.length} 段</div><div className="flex gap-1"><Button size="small" type="link" onClick={() => setSelectedParts(selectableParts)}>{retired ? "全选可恢复" : "全选未生成"}</Button><Button size="small" type="link" onClick={() => setSelectedParts([])}>清空</Button></div></div>

@@ -9,3 +9,10 @@ test("quote separates original time, overlap and padding from generation time", 
     ] } as ReplacementJob;
     expect(replacementDurationSummary(job)).toBe("原片 15.00 秒 · 2 段 · 重叠 0.50 秒 · 补齐 0.50 秒 · 本轮生成 16.00 秒");
 });
+
+test("actual five-second Wan segment has no padding in the quote summary", () => {
+    const job = { parts: [
+        { start: 0, end: 5, inputStart: 0, inputEnd: 5, seconds: 5 },
+    ] } as ReplacementJob;
+    expect(replacementDurationSummary(job)).toBe("原片 5.00 秒 · 1 段 · 重叠 0.00 秒 · 补齐 0.00 秒 · 本轮生成 5.00 秒");
+});

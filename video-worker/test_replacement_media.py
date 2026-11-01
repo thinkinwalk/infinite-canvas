@@ -125,6 +125,18 @@ class ReplacementMediaTests(unittest.IsolatedAsyncioTestCase):
         final = await self.operation("replacement-assemble", {"video": source, "parts": [clip["file"]]}, {"parts": [part]})
         self.assertEqual((await self.probe_video("test", final["file"]))["duration"], 0.12)
 
+    async def test_exact_short_segment_is_not_padded_and_keeps_audio(self):
+        source = self.root / "exact-short.mp4"
+        await self.ffmpeg("test", "-f", "lavfi", "-i", "color=c=blue:s=160x96:r=25:d=5",
+                          "-f", "lavfi", "-i", "sine=frequency=440:duration=5",
+                          "-c:v", "libx264", "-c:a", "aac", source)
+        clip = await self.operation("replacement-extract", {"video": source}, {
+            "inputStart": 0, "inputEnd": 5, "seconds": 5,
+        })
+        info = await self.probe_video("test", clip["file"])
+        self.assertAlmostEqual(info["duration"], 5, delta=1 / info["fps"])
+        self.assertTrue(info["audio"])
+
 
 if __name__ == "__main__":
     unittest.main()

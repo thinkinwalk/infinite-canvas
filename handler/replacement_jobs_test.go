@@ -102,6 +102,61 @@ func TestReplacementPlanQuotesShortestSupportedSegmentsOnPinnedChannel(t *testin
 	}
 }
 
+func TestReplacementPlanQuotesWanAnimateUsingActualSegmentDuration(t *testing.T) {
+	replacementTestStorage(t)
+	config.Cfg.DatabaseDSN = ":memory:"
+	saved, err := repository.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = repository.SaveSettings(saved, "test") })
+	spec, err := service.FindReplicateModel("replace-person")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := model.Settings{Private: model.PrivateSetting{
+		Replicate: model.ReplicateSetting{
+			ChannelsInitialized: true,
+			Pricing: map[string]model.ReplicatePricing{spec.Model: {
+				Model: spec.Model, Version: spec.Version, BillingMode: "duration_resolution",
+				UnitCredits: 10, DefaultUnits: 10, BlockSeconds: 1,
+				Tiers: map[string]int{"480": 5, "720": 10}, Enabled: true,
+			}},
+		},
+		Channels: []model.ModelChannel{{
+			ID: 711, Name: "replicate", Protocol: "replicate", APIKey: "test-token",
+			Enabled: true, Models: []string{spec.Model}, Weight: 1,
+		}},
+	}}
+	if _, err := repository.SaveSettings(settings, "test"); err != nil {
+		t.Fatal(err)
+	}
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatalf("planning called a paid provider: %s", r.URL)
+		}
+		return &http.Response{
+			StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(
+				`{"status":"completed","result":{"metadata":{"size":[1920,1080],"parts":[{"start":0,"end":5,"inputStart":0,"inputEnd":5,"seconds":15},{"start":5,"end":20,"inputStart":5,"inputEnd":20,"seconds":15}]}}}`,
+			)),
+		}, nil
+	})}
+	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
+	ctx := service.WithUser(context.Background(), model.AuthUser{ID: "owner", Group: "default"})
+	job := replacementJob{
+		ID: uuid.NewString(), UserID: "owner", Source: "source.mp4", Image: "person.png",
+		Model: spec.Model, ChannelID: 711, Seconds: "15", Resolution: "720",
+	}
+	if err := executeReplacement(ctx, &job, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(job.Parts) != 2 || job.Parts[0].Seconds != 5 || job.Parts[1].Seconds != 15 || job.Credits != 200 {
+		t.Fatalf("Wan Animate quote used the wrong durations: %+v", job)
+	}
+}
+
 func TestReplacementPreviewStopsBeforeSecondPartAndResumesWithoutRegeneratingFirst(t *testing.T) {
 	replacementTestStorage(t)
 	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")

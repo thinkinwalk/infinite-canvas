@@ -141,20 +141,23 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
             raise ValueError("分段范围不正确")
         output = work / "input.mp4"
         # Snap the sampling rate to an integer frame count for the selected
-        # duration (29.97 fps at 10 s would otherwise become 10.01 s and be
-        # billed as 11 seconds). This samples frames without changing speed.
+        # duration without changing playback speed.
         frame_count = max(1, round(seconds * info["fps"]))
         input_fps = frame_count / seconds
-        # Pad only the input tail when the API requires a fixed output duration.
-        # That padding is explicitly excluded by the final assembly manifest.
+        actual_duration = end - start
+        needs_padding = seconds > actual_duration + max(1 / info["fps"], 1e-3)
         clipped = work / "clipped.mp4"
-        # Materialize the cut first: trim -> tpad in one filter graph does not
-        # consistently propagate EOF/padding in supported FFmpeg builds.
+        # Materialize the cut first so optional padding never stretches source audio.
         await ffmpeg(identifier, "-ss", start, "-i", source, "-t", end - start,
                      "-map", "0:v:0", "-map", "0:a?", "-r", input_fps, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", clipped)
-        await ffmpeg(identifier, "-i", clipped, "-vf", f"tpad=stop_mode=clone:stop_duration={seconds}", "-af", "apad",
-                     "-t", seconds, "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                     "-r", input_fps, "-frames:v", frame_count, "-c:a", "aac", "-movflags", "+faststart", output)
+        if needs_padding:
+            await ffmpeg(identifier, "-i", clipped, "-vf", f"tpad=stop_mode=clone:stop_duration={seconds - actual_duration}", "-af", "apad",
+                         "-t", seconds, "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                         "-r", input_fps, "-frames:v", frame_count, "-c:a", "aac", "-movflags", "+faststart", output)
+        else:
+            await ffmpeg(identifier, "-i", clipped, "-t", seconds, "-map", "0:v:0", "-map", "0:a?",
+                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", input_fps, "-frames:v", frame_count,
+                         "-c:a", "aac", "-movflags", "+faststart", output)
         return {"file": publish(output)}
     if operation == "replacement-validate":
         original = await probe_video(identifier, inputs["source"])

@@ -1,9 +1,11 @@
+import tempfile
 import unittest
+from pathlib import Path
 
-from replacement import fit_frame_count, plan_segments, validate_generated_timeline, validate_masked_generation, validate_timeline
+from replacement import fit_frame_count, plan_segments, process, validate_generated_timeline, validate_masked_generation, validate_timeline
 
 
-class ReplacementTimelineTests(unittest.TestCase):
+class ReplacementTimelineTests(unittest.IsolatedAsyncioTestCase):
     def test_preview_threshold_respects_model_capacity_without_cutting_short_video(self):
         self.assertEqual(len(plan_segments(15, 15, preserve_scenes=False)), 1)
         self.assertEqual(len(plan_segments(15.01, 15, preserve_scenes=False)), 2)
@@ -81,6 +83,48 @@ class ReplacementTimelineTests(unittest.TestCase):
         for frames in (range(140), []):
             with self.assertRaises(ValueError):
                 fit_frame_count(frames, 150, 7)
+
+    async def test_exact_segment_does_not_add_video_or_audio_padding(self):
+        calls = []
+
+        async def fake_ffmpeg(identifier, *args):
+            calls.append(args)
+
+        async def fake_probe(identifier, path):
+            return {"duration": 5, "fps": 25, "size": (160, 96), "audio": True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            await process(
+                "replacement-extract", "test", {"video": "source.mp4"},
+                {"inputStart": 0, "inputEnd": 5, "seconds": 5},
+                Path(directory), ffmpeg=fake_ffmpeg, probe_video=fake_probe,
+                publish=lambda path: path,
+            )
+        self.assertEqual(len(calls), 2)
+        output_command = " ".join(map(str, calls[1]))
+        self.assertNotIn("tpad", output_command)
+        self.assertNotIn("apad", output_command)
+
+    async def test_fixed_duration_segment_keeps_padding_filters(self):
+        calls = []
+
+        async def fake_ffmpeg(identifier, *args):
+            calls.append(args)
+
+        async def fake_probe(identifier, path):
+            return {"duration": 5, "fps": 25, "size": (160, 96), "audio": True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            await process(
+                "replacement-extract", "test", {"video": "source.mp4"},
+                {"inputStart": 0, "inputEnd": 5, "seconds": 10},
+                Path(directory), ffmpeg=fake_ffmpeg, probe_video=fake_probe,
+                publish=lambda path: path,
+            )
+        self.assertEqual(len(calls), 2)
+        output_command = " ".join(map(str, calls[1]))
+        self.assertIn("tpad=stop_mode=clone:stop_duration=5.0", output_command)
+        self.assertIn("apad", output_command)
 
 
 if __name__ == "__main__":
