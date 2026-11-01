@@ -12,7 +12,7 @@ import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { hasContentReplacementDraft, hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
+import { hasContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { isWan30, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
@@ -97,7 +97,7 @@ export default function ContentReplaceWorkspace() {
     const operation: ReplicateOperation = person ? (headSwap ? "head-swap" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
-    const pending = wb.records.find(isPendingReplacement);
+    const pending = wb.records.find((record) => isPendingReplacement(record) && isCurrentReplacementRecord(record, d)) || wb.records.find(isPendingReplacement);
     const archivedDrafts = wb.records.filter((record) => record.replacementDraft).sort((a, b) => b.createdAt - a.createdAt);
     const workRecords = wb.records.filter((record) => !record.replacementDraft);
     const inputKey = JSON.stringify([
@@ -921,6 +921,11 @@ export default function ContentReplaceWorkspace() {
                                     description={
                                         <Space wrap>
                                             <span>{publicServiceText(active.error)}</span>
+                                            {isPendingReplacement(active) && (!pending || pending.id !== active.id || pending.id === dismissedPendingId) && (
+                                                <Button size="small" onClick={() => { setHistoryPreview(null); setTab("current"); void wb.resume(active); }}>
+                                                    {active.replacementPipeline || isLegacyMaskedPersonRecord(active) ? "继续处理旧任务" : "恢复任务结果"}
+                                                </Button>
+                                            )}
                                             {active.status === "failed" && active.replicateBilling && (
                                                 <Tag color={active.replicateBilling.refunded ? "success" : "warning"}>
                                                     {active.replicateBilling.refunded

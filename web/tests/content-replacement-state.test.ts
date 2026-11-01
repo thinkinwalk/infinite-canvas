@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { archiveContentReplacementDraft, hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement, newContentReplacementDraft, normalizeContentReplacementDraft } from "../src/lib/content-replacement-state";
+import { archiveContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement, newContentReplacementDraft, normalizeContentReplacementDraft } from "../src/lib/content-replacement-state";
 import { emptyVideoDraft, type VideoRecord, type WorkbenchMedia } from "../src/types/video-workbench";
 
 const source: WorkbenchMedia = { id: "source", role: "reference", kind: "video", name: "source.mp4", url: "blob:source", storageKey: "source", mimeType: "video/mp4", bytes: 100, durationMs: 5000 };
@@ -113,4 +113,36 @@ test("mask-only and composite-only recovery states remain discoverable", () => {
     expect(hasReplacementRecovery({ ...maskOnly, status: "failed" })).toBe(true);
     expect(isLegacyMaskedPersonRecord({ ...record(), maskedReplacement: undefined })).toBe(false);
     expect(isPendingReplacement({ ...maskOnly, tool: "subtitle-remove" })).toBe(false);
+});
+
+test("an independent replacement task is not blocked by historical cloud records", () => {
+    const draft = { ...newContentReplacementDraft(), replacementModel: "headswap" as const, media: [source, image] };
+    const old = {
+        ...record(), replicateTask: { id: "old-edit", operation: "masked-edit" },
+        replacementInput: { ...legacyDraft(), replacementTaskId: "old-task" },
+    };
+    const snapshot = structuredClone(old);
+    expect(isCurrentReplacementRecord(old, draft)).toBe(false);
+    expect(isCurrentReplacementRecord({ ...old, replacementInput: undefined }, draft)).toBe(false);
+    expect(isCurrentReplacementRecord({ ...old, status: "failed" }, draft)).toBe(false);
+    expect(isPendingReplacement(old)).toBe(true);
+    expect(old).toEqual(snapshot);
+});
+
+test("current task cloud records stay protected after editing clears the selected record", () => {
+    const old = { ...record(), replacementInput: { ...legacyDraft(), replacementTaskId: "current-task" } };
+    const draft = { ...newContentReplacementDraft(), replacementTaskId: "current-task", activeRecord: undefined };
+    expect(isCurrentReplacementRecord(old, draft)).toBe(true);
+    expect(isCurrentReplacementRecord(old, { ...draft, instructions: "修改要求" })).toBe(true);
+    expect(isCurrentReplacementRecord(old, { ...draft, replacementTaskId: "another-task" })).toBe(false);
+    expect(isCurrentReplacementRecord({ ...old, tool: "subtitle-remove" }, draft)).toBe(false);
+});
+
+test("explicitly restored records retain their own identity without changing historical input snapshots", () => {
+    const old = record(), draft = newContentReplacementDraft();
+    expect(isCurrentReplacementRecord(old, { ...draft, activeRecord: old.id })).toBe(true);
+    expect(isCurrentReplacementRecord(old, { ...draft, replacementTaskId: old.id })).toBe(true);
+    expect(isCurrentReplacementRecord({ ...old, id: "another-record" }, { ...draft, replacementTaskId: old.id })).toBe(false);
+    expect(old.replacementInput?.replacementTaskId).toBeUndefined();
+    expect(isCurrentReplacementRecord(old, emptyVideoDraft("content-replace"))).toBe(false);
 });

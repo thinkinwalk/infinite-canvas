@@ -312,7 +312,7 @@ export type VideoRecord = {
     text?: string;
     step?: string;
     draftPatch?: Partial<VideoDraft>;
-    replacementInput?: Pick<VideoDraft, "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "regenerateSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementInput?: Pick<VideoDraft, "replacementTaskId" | "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "regenerateSubtitles" | "subtitleSize" | "subtitleColor">;
     replacementDraft?: VideoDraft;
     replacementPipeline?: {
         subtitleMethod?: "audio-after-generation" | "cloud-joint";

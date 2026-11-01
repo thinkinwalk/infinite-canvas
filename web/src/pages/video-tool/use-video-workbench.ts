@@ -6,7 +6,7 @@ import { saveAs } from "file-saver";
 import { useNavigate } from "react-router-dom";
 
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
-import { isLegacyMaskedPersonRecord } from "@/lib/content-replacement-state";
+import { isCurrentReplacementRecord, isLegacyMaskedPersonRecord } from "@/lib/content-replacement-state";
 import { archiveViralTask } from "@/lib/viral-task";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { importVideoURL } from "@/services/api/video-import";
@@ -1138,13 +1138,30 @@ export function useVideoWorkbench(tool: VideoTool) {
         return {};
     };
     const perform = async (stage: string, signal: AbortSignal, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode) => {
-        for (const record of store().records.filter((r) => r.tool === tool && r.stage === stage && r.replicateTask && r.status !== "completed")) {
+        const d = read(tool);
+        for (const record of store().records.filter((r) => r.tool === tool && r.stage === stage && r.replicateTask && r.status !== "completed" && (tool !== "content-replace" || isCurrentReplacementRecord(r, d)))) {
             const existing = await readReplicateTask(record.replicateTask!.id, signal);
-            if (existing.status !== "failed" && existing.status !== "cancelled") throw new Error("该步骤已有云任务，请从任务记录恢复查询，避免重复付费");
+            if (existing.status !== "failed" && existing.status !== "cancelled") {
+                if (tool !== "content-replace") throw new Error("该步骤已有云任务，请从任务记录恢复查询，避免重复付费");
+                const recoveryLabel = record.replacementPipeline || isLegacyMaskedPersonRecord(record) ? "继续处理旧任务" : "恢复任务结果";
+                const detail = existing.status === "completed"
+                    ? `当前步骤已在云端完成，请点击「${recoveryLabel}」恢复已有结果，避免重复生成付费`
+                    : `当前任务已有云任务，请点击「${recoveryLabel}」核对进度，避免重复付费`;
+                store().patchRecord(record.id, {
+                    status: "interrupted", error: detail,
+                    step: existing.status === "completed" ? "云端已完成，等待恢复结果" : "云任务待恢复查询",
+                    replicateBilling: { credits: existing.credits, refunded: existing.refunded },
+                });
+                patch({ activeRecord: record.id });
+                throw new Error(detail);
+            }
+            if (tool === "content-replace") store().patchRecord(record.id, {
+                status: "failed", error: publicServiceText(existing.error || (existing.status === "cancelled" ? "云任务已取消" : "云任务失败")),
+                replicateBilling: { credits: existing.credits, refunded: existing.refunded },
+            });
         }
         const id = nanoid();
         const worker = { ...store().worker };
-        const d = read(tool);
         store().addRecord({
             id,
             tool,
@@ -1155,6 +1172,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             ...(tool === "content-replace"
                 ? {
                       replacementInput: {
+                          replacementTaskId: d.replacementTaskId,
                           replacement: d.replacement,
                           replacementModel: d.replacementModel,
                           maskedPerson: d.maskedPerson,
@@ -1435,8 +1453,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                 } else if (tool === "content-replace" && record.replacementInput) {
                     const media = await Promise.all(record.replacementInput.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     signal.throwIfAborted();
-                    replacementInput = { ...emptyVideoDraft(tool), ...record.replacementInput, media };
-                    patch({ ...clearAfter("video"), video: null, ...record.replacementInput, media, activeRecord: record.id });
+                    const replacementTaskId = record.replacementInput.replacementTaskId || record.id;
+                    replacementInput = { ...emptyVideoDraft(tool), ...record.replacementInput, replacementTaskId, media };
+                    patch({ ...clearAfter("video"), video: null, ...record.replacementInput, replacementTaskId, media, activeRecord: record.id });
                 } else if (tool === "viral-recreate" && record.viralInput) {
                     if (record.viralInput.channelMode !== config.channelMode) throw new Error("请切换回该任务原来的平台 / 自定义渠道后恢复查询");
                     if (config.channelMode === "local" && record.viralInput.baseUrl !== resolveModelRequestConfig(config, record.viralInput.viralSettings?.videoModel || record.modelTask?.model || "").baseUrl)

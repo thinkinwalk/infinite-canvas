@@ -46,6 +46,13 @@ export function hasReplacementRecovery(record: VideoRecord): boolean {
     return record.tool === "content-replace" && Boolean(record.replicateTask || record.workerJob || record.modelTask || record.replacementPipeline || record.maskedReplacement || record.replacementMaskTask);
 }
 
+export function isCurrentReplacementRecord(record: VideoRecord, draft: VideoDraft): boolean {
+    return record.tool === "content-replace" && (
+        record.id === draft.activeRecord ||
+        Boolean(draft.replacementTaskId && (record.replacementInput?.replacementTaskId || record.id) === draft.replacementTaskId)
+    );
+}
+
 export function isPendingReplacement(record: VideoRecord): boolean {
     return ["running", "interrupted"].includes(record.status) && hasReplacementRecovery(record);
 }
