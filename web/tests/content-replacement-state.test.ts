@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement, normalizeContentReplacementDraft } from "../src/lib/content-replacement-state";
+import { archiveContentReplacementDraft, hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement, newContentReplacementDraft, normalizeContentReplacementDraft } from "../src/lib/content-replacement-state";
 import { emptyVideoDraft, type VideoRecord, type WorkbenchMedia } from "../src/types/video-workbench";
 
 const source: WorkbenchMedia = { id: "source", role: "reference", kind: "video", name: "source.mp4", url: "blob:source", storageKey: "source", mimeType: "video/mp4", bytes: 100, durationMs: 5000 };
@@ -49,6 +49,46 @@ test("product and background masks, seed frames and route are unchanged", () => 
         const draft = { ...legacyDraft(), replacement, route: "worker" as const };
         expect(normalizeContentReplacementDraft(draft)).toBe(draft);
     }
+});
+
+test("archiving a replaced draft preserves its inputs and outputs without changing existing records", () => {
+    const existing = record();
+    const draft = {
+        ...emptyVideoDraft("content-replace"),
+        ...legacyDraft(),
+        instructions: "保留这份任务",
+        replacement: "product" as const,
+        replacementTaskId: "task-1",
+    };
+
+    const archived = archiveContentReplacementDraft(draft, [existing]);
+
+    expect(archived).toHaveLength(2);
+    expect(archived[0]).toMatchObject({
+        id: "content-replace-draft:task-1",
+        tool: "content-replace",
+        stage: "draft",
+        status: "completed",
+        replacementDraft: draft,
+        result: draft.final,
+        text: draft.instructions,
+    });
+    expect(archived[0].replacementDraft?.media).toEqual(draft.media);
+    expect(archived[1]).toBe(existing);
+    expect(newContentReplacementDraft()).toMatchObject({
+        ...emptyVideoDraft("content-replace"),
+        replacementTaskId: expect.any(String),
+    });
+    expect(newContentReplacementDraft().media).toEqual([]);
+});
+
+test("archiving the same task replaces its archived snapshot instead of duplicating it", () => {
+    const draft = { ...emptyVideoDraft("content-replace"), instructions: "初始要求", replacementTaskId: "task-1" };
+    const archived = archiveContentReplacementDraft(draft, []);
+    const updated = archiveContentReplacementDraft({ ...draft, instructions: "更新后的要求" }, archived);
+
+    expect(updated).toHaveLength(1);
+    expect(updated[0].replacementDraft?.instructions).toBe("更新后的要求");
 });
 
 test("restoring a historical snapshot never re-enables the retired UI or mutates recovery inputs", () => {

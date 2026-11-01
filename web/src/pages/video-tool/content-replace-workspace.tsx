@@ -32,7 +32,6 @@ import { ReplacementBatchPanel } from "./replacement-batch-panel";
 const replacementNames = { person: "人物", product: "商品", background: "背景" };
 const recordNames = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
 const longVideoPreviewThresholdMs = 15_000;
-let resumeReloadedTask = window.location.pathname === "/video/content-replace" && (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload";
 
 export default function ContentReplaceWorkspace() {
     const wb = useVideoWorkbench("content-replace");
@@ -126,9 +125,8 @@ export default function ContentReplaceWorkspace() {
     useEffect(() => {
         if (!wb.hydrated || initialized.current) return;
         initialized.current = true;
-        const state = useVideoWorkbenchStore.getState(), resume = resumeReloadedTask;
-        resumeReloadedTask = false;
-        if (state.storageError || state.busyTools["content-replace"] || resume) {
+        const state = useVideoWorkbenchStore.getState();
+        if (state.storageError || state.busyTools["content-replace"]) {
             if (!state.storageError && !state.drafts["content-replace"]?.replacementTaskId)
                 state.patchDraft("content-replace", { replacementTaskId: crypto.randomUUID() });
             setReady(true);
