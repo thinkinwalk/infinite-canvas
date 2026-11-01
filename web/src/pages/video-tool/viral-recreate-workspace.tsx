@@ -1411,7 +1411,7 @@ function ViralTaskWorkspace() {
                                 }
                             />
                         )}
-                        {!busy && active?.error && active.stage !== "analyze" && <Alert className="mb-3" type="warning" title="上次处理未完成" description={publicServiceText(active.error)} />}
+                        {!busy && active?.error && active.stage !== "analyze" && <Alert key={active.id} className="mb-3" type="warning" title="上次处理未完成" description={publicServiceText(active.error)} closable={active.status === "failed" ? { closeIcon: <X size={14} />, onClose: () => wb.patch({ activeRecord: undefined }) } : false} />}
                         {step !== 1 && <Tabs
                             activeKey={tab}
                             onChange={(value) => value === "editor" ? openEditor(step === 0 ? "analysis" : "script") : setTab(value)}

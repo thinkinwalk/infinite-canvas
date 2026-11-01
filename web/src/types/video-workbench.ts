@@ -223,6 +223,7 @@ export type VideoDraft = {
     replaceSubtitles: boolean;
     regenerateSubtitles: boolean;
     replacementJobId?: string;
+    replacementTaskId?: string;
     replacementAspectRatio?: string;
     replacementResultKey?: string;
     replacementSource?: UploadedFile;
@@ -312,6 +313,7 @@ export type VideoRecord = {
     step?: string;
     draftPatch?: Partial<VideoDraft>;
     replacementInput?: Pick<VideoDraft, "replacement" | "replacementModel" | "maskedPerson" | "replacementSeedTime" | "route" | "instructions" | "maskedEdit" | "replicateResolution" | "regions" | "media" | "replaceSubtitles" | "regenerateSubtitles" | "subtitleSize" | "subtitleColor">;
+    replacementDraft?: VideoDraft;
     replacementPipeline?: {
         subtitleMethod?: "audio-after-generation" | "cloud-joint";
         regenerateSubtitles?: boolean;

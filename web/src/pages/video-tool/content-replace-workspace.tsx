@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
-import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, LoaderCircle, RefreshCw, Sparkles, Video, X } from "lucide-react";
+import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -11,7 +11,7 @@ import { VideoSettingsPanel } from "@/components/video-settings-panel";
 import { VideoReferenceTrimmer } from "@/components/video-reference-trimmer";
 import { VideoLinkImport } from "@/components/video-link-import";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
+import { hasContentReplacementDraft, hasReplacementRecovery, isLegacyMaskedPersonRecord, isPendingReplacement } from "@/lib/content-replacement-state";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { isWan30, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
@@ -32,10 +32,12 @@ import { ReplacementBatchPanel } from "./replacement-batch-panel";
 const replacementNames = { person: "人物", product: "商品", background: "背景" };
 const recordNames = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
 const longVideoPreviewThresholdMs = 15_000;
+let resumeReloadedTask = window.location.pathname === "/video/content-replace" && (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload";
 
 export default function ContentReplaceWorkspace() {
     const wb = useVideoWorkbench("content-replace");
     const { draft: d, busy } = wb;
+    const initialized = useRef(false), [ready, setReady] = useState(false);
     const { token } = theme.useToken();
     const { message, modal } = App.useApp();
     const location = useLocation();
@@ -94,6 +96,8 @@ export default function ContentReplaceWorkspace() {
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find(isPendingReplacement);
+    const archivedDrafts = wb.records.filter((record) => record.replacementDraft).sort((a, b) => b.createdAt - a.createdAt);
+    const workRecords = wb.records.filter((record) => !record.replacementDraft);
     const inputKey = JSON.stringify([
         d.route,
         d.replacement,
@@ -118,6 +122,47 @@ export default function ContentReplaceWorkspace() {
     const previewSource = historyPreview ? historyPreview.source : d.replacementSource || reference;
     const surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
     const muted = { color: token.colorTextSecondary };
+
+    useEffect(() => {
+        if (!wb.hydrated || initialized.current) return;
+        initialized.current = true;
+        const state = useVideoWorkbenchStore.getState(), resume = resumeReloadedTask;
+        resumeReloadedTask = false;
+        if (state.storageError || state.busyTools["content-replace"] || resume) {
+            if (!state.storageError && !state.drafts["content-replace"]?.replacementTaskId)
+                state.patchDraft("content-replace", { replacementTaskId: crypto.randomUUID() });
+            setReady(true);
+            return;
+        }
+        void state.openContentReplacementTask().catch((error) => message.error(error instanceof Error ? error.message : "任务初始化失败")).finally(() => setReady(true));
+    }, [wb.hydrated]);
+
+    const createTask = () => {
+        const create = () => useVideoWorkbenchStore.getState().openContentReplacementTask();
+        if (hasContentReplacementDraft(d)) modal.confirm({
+            title: "新建任务？",
+            content: "当前内容会保存到历史任务，可随时继续。",
+            okText: "新建任务",
+            cancelText: "取消",
+            onOk: create,
+        });
+        else void create().catch((error) => message.error(error instanceof Error ? error.message : "新建任务失败"));
+    };
+
+    const restoreDraft = async (record: VideoRecord) => {
+        if (!record.replacementDraft) return;
+        const saved = record.replacementDraft;
+        const media = await Promise.all(saved.media.map(async (item) => ({ ...item, ...(await restoreWorkbenchFile(item)) })));
+        const frames = await Promise.all(saved.frames.map(restoreWorkbenchFile));
+        const outputs: Partial<VideoDraft> = {};
+        for (const key of ["speech", "voicePreview", "video", "edited", "final", "cover", "replacementSource"] as const) {
+            const file = saved[key];
+            if (file) outputs[key] = await restoreWorkbenchFile(file);
+        }
+        await useVideoWorkbenchStore.getState().openContentReplacementTask({ ...saved, ...outputs, media, frames });
+        setHistoryPreview(null);
+        setTab("current");
+    };
 
     useEffect(() => {
         if (!wb.hydrated || appliedSearch.current === location.search) return;
@@ -535,6 +580,8 @@ export default function ContentReplaceWorkspace() {
         </div>
     );
 
+    if (!ready) return <div className="p-12 text-center"><Spin /></div>;
+
     return (
         <main className="flex h-full min-h-0 flex-col" style={{ color: token.colorText }}>
             <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
@@ -545,9 +592,10 @@ export default function ContentReplaceWorkspace() {
                     </Link>
                     <h1 className="text-lg font-semibold">内容替换</h1>
                 </div>
-                <span className="hidden text-sm sm:block" style={muted}>
-                    上传原片与参考图，替换人物、商品或背景
-                </span>
+                <div className="flex items-center gap-2">
+                    <Button type="text" size="small" disabled={locked || Boolean(wb.storageError)} icon={<Plus size={14} />} onClick={createTask}>新建任务</Button>
+                    <span className="hidden text-sm sm:block" style={muted}>上传原片与参考图，替换人物、商品或背景</span>
+                </div>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="replacement-scroll">
                 <div className="mx-auto grid min-h-full max-w-[1800px] gap-5 lg:h-full lg:min-h-0 lg:grid-cols-[380px_minmax(0,1fr)]">
@@ -794,7 +842,7 @@ export default function ContentReplaceWorkspace() {
                                 onChange={setTab}
                                 items={[
                                     { key: "current", label: wholeVideo ? "当前任务" : "当前结果" },
-                                    { key: "history", label: `本地作品${wb.records.length ? ` (${wb.records.length})` : ""}` },
+                                    { key: "history", label: `本地作品${workRecords.length ? ` (${workRecords.length})` : ""}` },
                                     { key: "guide", label: "使用说明" },
                                 ]}
                             />
@@ -936,8 +984,21 @@ export default function ContentReplaceWorkspace() {
                                     <div className="text-sm font-medium">保存在此浏览器的生成作品</div>
                                     <div className="mt-1 text-xs" style={muted}>分段进度和可继续处理的任务，请在“当前任务”中查看。</div>
                                 </div>
-                                {wb.records.length ? (
-                                    wb.records.map((record) => (
+                                {archivedDrafts.length > 0 && <>
+                                    <div className="pt-2 text-sm font-medium">已归档草稿</div>
+                                    {archivedDrafts.map((record) => (
+                                        <article key={record.id} className="flex flex-col gap-2 border-b py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
+                                            <div className="min-w-0 space-y-1">
+                                                <div className="text-sm font-medium">{record.replacementDraft?.replacement ? `换${replacementNames[record.replacementDraft.replacement]}` : "内容替换草稿"}</div>
+                                                <div className="text-xs" style={muted}>{new Date(record.createdAt).toLocaleString()} · {record.replacementDraft?.media.find((media) => media.role === "reference")?.name || "未上传原视频"}</div>
+                                                {record.text && <div className="truncate text-xs" style={muted}>{record.text}</div>}
+                                            </div>
+                                            <Button size="small" disabled={locked || Boolean(wb.storageError)} onClick={() => void restoreDraft(record).catch((error) => message.error(error instanceof Error ? error.message : "草稿恢复失败"))}>继续任务</Button>
+                                        </article>
+                                    ))}
+                                </>}
+                                {workRecords.length ? (
+                                    workRecords.map((record) => (
                                         <article key={record.id} className="flex flex-col gap-2 border-b py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
                                             <div className="min-w-0 space-y-1">
                                                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -958,7 +1019,7 @@ export default function ContentReplaceWorkspace() {
                                             </Space>
                                         </article>
                                     ))
-                                ) : <Empty description="此浏览器还没有保存的作品" />}
+                                ) : !archivedDrafts.length && <Empty description="此浏览器还没有保存的作品" />}
                             </>}
                             {tab === "guide" && (
                                 <div className="space-y-5 text-sm">

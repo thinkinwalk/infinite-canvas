@@ -2,7 +2,7 @@ import localforage from "localforage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { normalizeContentReplacementDraft } from "@/lib/content-replacement-state";
+import { archiveContentReplacementDraft, newContentReplacementDraft, normalizeContentReplacementDraft } from "@/lib/content-replacement-state";
 import { archiveViralTask } from "@/lib/viral-task";
 import { emptyVideoDraft, type DigitalHumanPreset, type VideoDraft, type VideoRecord, type VideoTool, type WorkerConfig } from "@/types/video-workbench";
 
@@ -22,6 +22,7 @@ type WorkbenchState = {
     patchDraft: (tool: VideoTool, patch: Partial<VideoDraft>) => void;
     replaceDraft: (tool: VideoTool, draft: VideoDraft) => Promise<void>;
     openViralTask: (draft?: VideoDraft) => Promise<void>;
+    openContentReplacementTask: (draft?: VideoDraft) => Promise<void>;
     addRecord: (record: VideoRecord) => void;
     patchRecord: (id: string, patch: Partial<VideoRecord>) => void;
     setWorker: (patch: Partial<WorkerConfig>) => void;
@@ -57,6 +58,18 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
                         viralTaskId: draft?.viralTaskId || crypto.randomUUID(),
                         viralRevision: (state.drafts["viral-recreate"]?.viralRevision || 0) + 1,
                     } },
+                }));
+                if (useVideoWorkbenchStore.getState().storageError) throw new Error("任务保存失败，请检查浏览器存储后重试");
+            },
+            openContentReplacementTask: async (draft) => {
+                const current = useVideoWorkbenchStore.getState();
+                if (!current.hydrated || current.storageError || current.busyTools["content-replace"]) throw new Error("当前任务尚未就绪，请稍后重试");
+                await set((state) => ({
+                    records: archiveContentReplacementDraft(state.drafts["content-replace"], state.records),
+                    drafts: {
+                        ...state.drafts,
+                        "content-replace": normalizeContentReplacementDraft(newContentReplacementDraft(draft)),
+                    },
                 }));
                 if (useVideoWorkbenchStore.getState().storageError) throw new Error("任务保存失败，请检查浏览器存储后重试");
             },
