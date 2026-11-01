@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.139
-- Current production source: tag v0.19.139, commit bb96c35b7005947dd872ef5fff117f7bf9cbb815
+- Current production image: infinite-canvas:v0.19.140
+- Current production source: tag v0.19.140, commit 567f4e68a651fd510653c5a6b0fa0b21db380f6a
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.140 deployment
+
+- Tag `v0.19.140`, commit `567f4e68a651fd510653c5a6b0fa0b21db380f6a`, is pushed to `release/v0.19.60` with a published GitHub Release targeting that full commit. Production image `infinite-canvas:v0.19.140`, ID `sha256:02249eaab962ad5dd70cb375c64f592611f5c2f9c5411834145c6d664fa8b917`, replaces `infinite-canvas:v0.19.139`.
+- Content replacement duplicate checks now use the current logical task and selected record. Unrelated historical cloud work no longer blocks a new task; completed current steps point to recovery, while running/uncertain states retain protection against repeat payment. Restoring and editing old records keeps task identity; failed/cancelled states synchronize refund information. No provider, pricing or backend changes.
+- Development passed 21 focused tests / 91 assertions and 14 isolated browser scenarios with mocked APIs; 1440px desktop and 390px mobile recovery screenshots were inspected. Release repeated no local tests, type checking or build. Server build, internal/external health, eleven routes, recovery markers and container/public asset hashes passed. Independent workstation HTTPS verified health, version, markers and both hashes.
+- Public JS `/assets/index-BL871qHb.js` SHA-256 `af5fde4f2c05073f5f0f620f69ee50fd7e24bc973f60edc2fd47ee46cf8381de`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.140-final-20261101-063604/`; prebuild `/opt/infinite-canvas/backups/v0.19.140-prebuild-20261101-063505/`. SQLite quick check, schema, all table counts, settings/protected account values, environment, mounts, backend binary and 100 existing job records are preserved. Worker v0.19.87 identity, startup time and mounts remain unchanged.
+- Reports `/opt/infinite-canvas/releases/v0.19.140-deployment.json` and `/opt/infinite-canvas/releases/v0.19.140-public-verification.json`, with local `.codex_tmp/` copies; verifier `/opt/infinite-canvas/releases/deploy-v0.19.140.py`. Rollback restores final-backup Compose and recreates app only, preserving the current database and v0.19.139 image. Backups contain SQLite, Compose and private environment, not all media files.
+- No paid inference was submitted and no production model/channel settings changed. Production browser interaction and real historical-task recovery remain pending; deployed resource verification does not establish actual model output quality.
 
 ## v0.19.139 deployment
 
