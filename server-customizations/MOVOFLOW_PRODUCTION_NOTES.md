@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.140
-- Current production source: tag v0.19.140, commit 567f4e68a651fd510653c5a6b0fa0b21db380f6a
+- Current production image: infinite-canvas:v0.19.141
+- Current production source: tag v0.19.141, commit 128d62055da993368ce87e950c293f2121d5d4c8
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.87-worker/
+
+## v0.19.141 deployment
+
+- Tag `v0.19.141`, commit `128d62055da993368ce87e950c293f2121d5d4c8`, is pushed to `release/v0.19.60` with a formal GitHub Release targeting that full commit. Production image `infinite-canvas:v0.19.141`, ID `sha256:47fcf578c7b904fd7d04bbf829e1521365e91fe46d0f38a7aeb08648c90294ef`, replaces `infinite-canvas:v0.19.140`.
+- Wan30 person replacement keeps its default model `model_76ae96b859bb458fb9f2f771d502649f`, original channels and prices. The independent face-only option and method selector are removed. New head-swap quotes, submissions, unsubmitted batch segments and paid redo are blocked; historical media, original model identity and already-submitted task recovery remain available. Persisted model management revision 20 is unchanged; the public head binding is now unavailable at runtime.
+- Development passed 34 frontend tests / 165 assertions, 26 backend tests and ten isolated mocked browser scenarios, with 1440/390/320px light/dark layouts inspected. Release repeated no local tests, type checking or build. Server frontend/backend Docker build, internal/external health, eleven routes, retirement/recovery markers, removal of the old option, public catalog behavior and public/container resource hashes passed. The updated backend matches the release image.
+- Public JS `/assets/index-U92DFppd.js` SHA-256 `63be5ad3c467e519552d745fae8c657af16c691f07ffdf513036049c6d9eadf8`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.141-final-20261101-073028/`; prebuild `/opt/infinite-canvas/backups/v0.19.141-prebuild-20261101-072839/`. SQLite quick check, schema, all table counts, full settings/protected account fields, environment, mounts and 100 existing job JSON records are preserved. Sizes and modification times of 28,692 existing non-JSON/database files match; this is metadata preservation verification, not a full media-content hash or media backup. Worker v0.19.87 identity, startup time and mounts are unchanged.
+- Deployment report `/opt/infinite-canvas/releases/v0.19.141-deployment.json`, with local `.codex_tmp/` copy; verifier `/opt/infinite-canvas/releases/deploy-v0.19.141.py`. Rollback restores final-backup Compose and recreates app only, preserving the current database and v0.19.140 image. Backups contain SQLite, Compose and private environment, not all media.
+- Independent workstation HTTPS verification passed health, release version, retirement/recovery markers, removal of the old option, public head-binding unavailability, the Wan30 default identity and both asset hashes against the running container. Report `/opt/infinite-canvas/releases/v0.19.141-public-verification.json`, with local `.codex_tmp/` copy.
+- No paid inference or production model/channel setting changes were submitted. Production browser interaction, actual user historical-task recovery and real model output quality remain pending. Anonymous public settings have the pre-existing Wan30 group restriction; preserving that binding is not an authenticated generation test.
 
 ## v0.19.140 deployment
 
