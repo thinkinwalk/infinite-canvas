@@ -1,5 +1,5 @@
 import type { AdminModelChannel, VideoModelProfile } from "@/services/api/admin";
-import type { FeatureBinding, ManagedModel, ManagedRoute, ModelManagement } from "@/services/api/model-management";
+import type { FeatureBinding, ManagedModel, ManagedRoute, ModelFeature, ModelManagement } from "@/services/api/model-management";
 
 export type ChannelModelDependency = { routeId: string; enabled: boolean; platformModels: string[]; features: string[] };
 
@@ -104,10 +104,33 @@ export function compatiblePlatformModels(models: ManagedModel[], routes: Managed
     );
 }
 
+export function videoInterfaceForAdapter(adapter: string): VideoModelProfile["interface"] {
+    const adapterName = adapter.slice(6);
+    if (adapterName === "wan30" || adapterName === "h3-2k" || adapterName.startsWith("minimax-h3")) return "relay";
+    return ["openai", "relay", "ark", "sparkcine_h3"].includes(adapterName) ? adapterName as VideoModelProfile["interface"] : "unavailable";
+}
+
+export function connectionVideoProfile(profile: VideoModelProfile | undefined, adapter: string, model: string): VideoModelProfile | undefined {
+    if (!adapter.startsWith("video.")) return undefined;
+    return {
+        displayName: model, description: "", maxImages: 0, maxVideos: 0, maxAudios: 0,
+        resolutions: [], seconds: [], generateAudio: false, inputModes: ["reference"],
+        ...videoProfileWithoutLegacyPricing(profile),
+        interface: videoInterfaceForAdapter(adapter),
+    };
+}
+
+export function routeFeatureError(route: Pick<ManagedRoute, "capability" | "operations" | "adapter" | "video">, feature: ModelFeature) {
+    if (route.capability !== feature.capability || !route.operations.some((operation) => feature.operations.includes(operation))) return "能力或操作不匹配";
+    if (feature.id === "replace.person" && !route.adapter.startsWith("cloud:")) {
+        if (!route.video || route.video.maxImages <= 0 || route.video.maxVideos <= 0) return "人物替换需要图片与视频参考能力，请配置最多参考图片和最多参考视频";
+        if (!(route.video.inputModes ?? ["reference"]).includes("reference")) return "人物替换需要多素材参考输入方式";
+    }
+    return "";
+}
+
 export function videoProfileCanActivate(profile: VideoModelProfile | undefined, adapter: string) {
     if (!profile || !adapter.startsWith("video.")) return false;
-    const adapterName = adapter.slice(6);
-    const expectedInterface = adapterName === "wan30" || adapterName === "h3-2k" || adapterName.startsWith("minimax-h3") ? "relay" : adapterName;
     const validField = (value?: string) => {
         const reserved = new Set(["model", "prompt", "seconds", "duration", "resolution", "content", "input_mode", "mode", "reference_image_urls", "reference_videos", "audio_urls"]);
         return !!value && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value) && !reserved.has(value);
@@ -121,7 +144,7 @@ export function videoProfileCanActivate(profile: VideoModelProfile | undefined, 
     );
     const hasValidMode = modes.length > 0 && validModes.length === modes.length && new Set(modes).size === modes.length;
     return (
-        profile.interface === expectedInterface &&
+        profile.interface === videoInterfaceForAdapter(adapter) &&
         profile.resolutions.length > 0 &&
         profile.seconds.length > 0 &&
         profile.seconds.every((seconds) => Number.isFinite(Number(seconds)) && Number(seconds) > 0) &&

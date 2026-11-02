@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AdminModelChannel } from "../src/services/api/admin";
 import type { FeatureBinding, ManagedModel, ManagedRoute } from "../src/services/api/model-management";
-import { compatiblePlatformModels, modelAdapterOptionsForChannel, modelMatchesSearch, modelSetupState, unregisteredChannelModels, videoProfileCanActivate, videoProfileWithoutLegacyPricing } from "../src/app/(admin)/admin/models/model-management-options";
+import { compatiblePlatformModels, connectionVideoProfile, modelAdapterOptionsForChannel, modelMatchesSearch, modelSetupState, routeFeatureError, unregisteredChannelModels, videoProfileCanActivate, videoProfileWithoutLegacyPricing } from "../src/app/(admin)/admin/models/model-management-options";
 
 const channels: AdminModelChannel[] = [
     { id: 2, name: "Gemini", protocol: "openai", baseUrl: "", apiKey: "", models: ["gemini-video", "gemini-video"], weight: 1, enabled: true, remark: "", allowedGroups: [] },
@@ -13,6 +13,31 @@ const binding: FeatureBinding = { featureId: "viral-recreate.video-analyze", mod
 
 test("unregistered channel models are de-duplicated per channel and real model identity", () => {
     expect(unregisteredChannelModels(channels, [route])).toEqual([{ channelId: 3, channelName: "Disabled", model: "text-model", channelEnabled: false }]);
+});
+
+test("connection video specs use the selected protocol without guessing missing capabilities or copying prices", () => {
+    const empty = connectionVideoProfile(undefined, "video.wan30", "wan30-1080p-fast")!;
+    expect(empty.interface).toBe("relay");
+    expect(empty.seconds).toEqual([]);
+    expect(empty.maxVideos).toBe(0);
+    expect(videoProfileCanActivate(empty, "video.wan30")).toBe(false);
+    const configured = connectionVideoProfile({ ...empty, resolutions: ["1080"], seconds: ["5"], maxImages: 1, maxVideos: 1, unitCredits: 999, billingTiers: { "1080": 999 } }, "video.wan30", "wan30-1080p-fast")!;
+    expect(videoProfileCanActivate(configured, "video.wan30")).toBe(true);
+    expect(configured).not.toHaveProperty("unitCredits");
+    expect(configured).not.toHaveProperty("billingTiers");
+    expect(connectionVideoProfile(configured, "text.openai", "other")).toBeUndefined();
+});
+
+test("person replacement needs reference images and video, while ordinary generation remains available", () => {
+    const feature = { id: "replace.person", label: "人物替换", module: "内容替换", capability: "video", operations: ["video", "replace-person"] };
+    const video = connectionVideoProfile(undefined, "video.wan30", "wan30-1080p-fast")!;
+    const candidate = { ...route, adapter: "video.wan30", capability: "video", operations: ["video"], video };
+    expect(routeFeatureError(candidate, feature)).toContain("图片与视频");
+    expect(routeFeatureError({ ...candidate, video: { ...video, maxImages: 1, maxVideos: 1 } }, feature)).toBe("");
+    expect(routeFeatureError({ ...candidate, video: { ...video, maxImages: 1, maxVideos: 1, inputModes: ["first_last"] } }, feature)).toContain("多素材参考");
+    expect(routeFeatureError(candidate, { ...feature, id: "video.generate" })).toBe("");
+    expect(routeFeatureError({ ...candidate, adapter: "cloud:replace-person", operations: ["replace-person"], video: undefined }, feature)).toBe("");
+    expect(routeFeatureError(route, feature)).toContain("不匹配");
 });
 
 test("model status names the first missing setup step", () => {

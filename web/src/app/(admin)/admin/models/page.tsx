@@ -13,13 +13,16 @@ import { JsonInput, jsonObjectRules } from "./json-input";
 import { FeatureBindingsDrawer } from "./components/feature-bindings-drawer";
 import { ModelConnectionWizard, type ConnectionWizardDraft, type ConnectionWizardSeed } from "./components/model-connection-wizard";
 import { ModelRemovalWizard } from "./components/model-removal-wizard";
+import { VideoProfileFields } from "./components/video-profile-fields";
 import {
     adapterRouteDefaults,
+    connectionVideoProfile,
     modelAdapterOptions,
     modelAdapterOptionsForChannel,
     modelMatchesSearch,
     modelSetupState,
     removeChannelModelRoutes,
+    routeFeatureError,
     unregisteredChannelModels,
     videoProfileCanActivate,
     videoProfileWithoutLegacyPricing,
@@ -134,7 +137,7 @@ export default function ModelManagementPage() {
     const editRoute = (route: ManagedRoute) => {
         routeForm.resetFields();
         setEditingRoute(structuredClone(route));
-        routeForm.setFieldsValue(structuredClone(route));
+        routeForm.setFieldsValue({ ...structuredClone(route), video: connectionVideoProfile(route.video || channels.find((channel) => channel.id === route.channelId)?.videoModels?.[route.model], route.adapter, route.model) });
     };
     const modelDeleteReason = (entry: ManagedModel) => (entry.enabled || baseline.models.some((old) => old.id === entry.id && old.enabled) ? "请先停用模型并保存配置" : "");
     const routeDeleteReason = (route: ManagedRoute) => {
@@ -179,11 +182,11 @@ export default function ModelManagementPage() {
             for (const entry of current.models.filter((m) => selectedModels.includes(m.id)))
                 for (const id of bulkFeatures) {
                     const feature = features.find((f) => f.id === id);
-                    const routes = current.routes.filter((r) => entry.routeIds.includes(r.id) && r.capability === feature?.capability && r.operations.some((op) => feature.operations.includes(op)));
+                    const routes = current.routes.filter((r) => entry.routeIds.includes(r.id) && feature && (!enabled || !routeFeatureError(r, feature)) && r.capability === feature.capability && r.operations.some((op) => feature.operations.includes(op)));
                     if (!routes.length) continue;
                     const index = bindings.findIndex((b) => b.featureId === id && b.modelId === entry.id);
                     const old = bindings[index] || { featureId: id, modelId: entry.id, routeIds: routes.map((r) => r.id), order: bindings.length, default: false, enabled: false };
-                    const next = { ...old, enabled, default: enabled && old.default };
+                    const next = { ...old, ...(enabled ? { routeIds: routes.map((route) => route.id) } : {}), enabled, default: enabled && old.default };
                     if (index >= 0) bindings[index] = next;
                     else bindings.push(next);
                 }
@@ -195,6 +198,14 @@ export default function ModelManagementPage() {
             const index = bindings.findIndex((b) => b.featureId === selectedFeature && b.modelId === entry.id);
             const old = index >= 0 ? bindings[index] : { featureId: selectedFeature, modelId: entry.id, routeIds: entry.routeIds, enabled: false, default: false, order: bindings.length };
             const next = { ...old, ...patch };
+            const feature = features.find((item) => item.id === selectedFeature);
+            if (next.enabled && feature) {
+                const invalid = current.routes.find((route) => next.routeIds.includes(route.id) && routeFeatureError(route, feature));
+                if (invalid) {
+                    message.error(`${invalid.model}：${routeFeatureError(invalid, feature)}`);
+                    return current;
+                }
+            }
             if (!next.enabled) next.default = false;
             if (next.default) bindings = bindings.map((b) => (b.featureId === selectedFeature ? { ...b, default: false } : b));
             if (index >= 0) bindings[index] = next;
@@ -203,6 +214,18 @@ export default function ModelManagementPage() {
         });
     const save = (nextValue: ModelManagement = value, onSaved?: () => void) => {
         if (!loaded || loading) return;
+        for (const binding of nextValue.bindings.filter((entry) => entry.enabled)) {
+            const feature = features.find((entry) => entry.id === binding.featureId);
+            if (!feature) continue;
+            for (const id of binding.routeIds) {
+                const route = nextValue.routes.find((entry) => entry.id === id);
+                const error = route && routeFeatureError(route, feature);
+                if (error) {
+                    message.error(`${route?.model}：${error}`);
+                    return;
+                }
+            }
+        }
         const changedModels = nextValue.models.filter((entry) => JSON.stringify(entry) !== JSON.stringify(baseline.models.find((old) => old.id === entry.id)));
         const changedRoutes = nextValue.routes.filter((route) => JSON.stringify(route) !== JSON.stringify(baseline.routes.find((old) => old.id === route.id)));
         const deletedModels = baseline.models.filter((entry) => !nextValue.models.some((model) => model.id === entry.id));
@@ -343,7 +366,7 @@ export default function ModelManagementPage() {
                         ...old,
                         featureId: id,
                         modelId: entry.id,
-                        routeIds: old?.routeIds || current.routes.filter((r) => entry.routeIds.includes(r.id) && r.capability === feature?.capability && r.operations.some((op) => feature.operations.includes(op))).map((r) => r.id),
+                        routeIds: current.routes.filter((r) => entry.routeIds.includes(r.id) && feature && !routeFeatureError(r, feature) && (!old?.routeIds.length || old.routeIds.includes(r.id))).map((r) => r.id),
                         enabled: true,
                         default: old?.default || false,
                         order: old?.order ?? index,
@@ -365,21 +388,30 @@ export default function ModelManagementPage() {
             return;
         }
         const existingRoute = value.routes.find((route) => route.channelId === draft.channelId && route.model === draft.model);
-        const videoProfile = draft.capability === "video" && !draft.adapter.startsWith("cloud:") ? existingRoute?.video || channel.videoModels?.[draft.model] : undefined;
+        const videoProfile = draft.capability === "video" && !draft.adapter.startsWith("cloud:") ? draft.video : undefined;
         const videoProfileReady = videoProfileCanActivate(videoProfile, draft.adapter);
-        const routeVideoProfile = existingRoute ? videoProfile : videoProfileWithoutLegacyPricing(videoProfile);
-        const route = existingRoute || {
-            id: `route_${nanoid().replaceAll("-", "_")}`,
+        const routeVideoProfile = videoProfileWithoutLegacyPricing(videoProfile);
+        const route = {
+            ...existingRoute,
+            id: existingRoute?.id || `route_${nanoid().replaceAll("-", "_")}`,
             channelId: draft.channelId,
             model: draft.model,
             adapter: draft.adapter,
             capability: draft.capability,
             operations: draft.operations,
             version: draft.version || undefined,
-            enabled: channel.enabled && (draft.capability !== "video" || draft.adapter.startsWith("cloud:") || videoProfileReady),
+            enabled: draft.enabled && channel.enabled && (draft.capability !== "video" || draft.adapter.startsWith("cloud:") || videoProfileReady),
             ...(routeVideoProfile ? { video: routeVideoProfile } : {}),
         };
-        const routes = existingRoute ? value.routes : [...value.routes, route];
+        const routes = existingRoute ? value.routes.map((entry) => entry.id === route.id ? route : entry) : [...value.routes, route];
+        for (const id of draft.featureIds) {
+            const feature = features.find((entry) => entry.id === id);
+            const error = feature && routeFeatureError(route, feature);
+            if (error) {
+                message.error(error);
+                return;
+            }
+        }
         const selectedExisting = draft.platformModelId ? value.models.find((entry) => entry.id === draft.platformModelId) : undefined;
         const pricing =
             draft.priceStatus === "unconfigured"
@@ -895,7 +927,7 @@ export default function ModelManagementPage() {
                                                                 maxTagCount={1}
                                                                 style={{ width: 220 }}
                                                                 value={value.bindings.find((b) => b.featureId === selectedFeature && b.modelId === entry.id)?.routeIds || entry.routeIds}
-                                                                options={value.routes.filter((r) => entry.routeIds.includes(r.id)).map((r) => ({ value: r.id, label: routeLabel(r) }))}
+                                                                options={value.routes.filter((r) => entry.routeIds.includes(r.id)).map((r) => ({ value: r.id, label: `${routeLabel(r)}${routeFeatureError(r, feature) ? `（${routeFeatureError(r, feature)}）` : ""}`, disabled: !!routeFeatureError(r, feature) }))}
                                                                 onChange={(routeIds) => patchBinding(entry, { routeIds })}
                                                             />
                                                         ),
@@ -991,7 +1023,7 @@ export default function ModelManagementPage() {
                             key={bindingModel.id}
                             name={bindingModel.displayName}
                             features={features.filter((feature) =>
-                                value.routes.some((route) => bindingModel.routeIds.includes(route.id) && route.capability === feature.capability && route.operations.some((operation) => feature.operations.includes(operation))),
+                                value.routes.some((route) => bindingModel.routeIds.includes(route.id) && !routeFeatureError(route, feature)),
                             )}
                             selectedIds={value.bindings.filter((binding) => binding.modelId === bindingModel.id && binding.enabled).map((binding) => binding.featureId)}
                             onApply={(ids) => {
@@ -1164,6 +1196,10 @@ export default function ModelManagementPage() {
                                 onClick={async () => {
                                     await routeForm.validateFields();
                                     const route = routeForm.getFieldsValue(true);
+                                    if (route.enabled && route.capability === "video" && !route.adapter.startsWith("cloud:") && !videoProfileCanActivate(route.video, route.adapter)) {
+                                        message.error("请完整配置视频输出清晰度、秒数和输入方式后启用");
+                                        return;
+                                    }
                                     setValue({ ...value, routes: [...value.routes.filter((r) => r.id !== route.id), route] });
                                     setEditingRoute(null);
                                 }}
@@ -1213,51 +1249,9 @@ export default function ModelManagementPage() {
                                 {() =>
                                     routeForm.getFieldValue("capability") === "video" &&
                                     !String(routeForm.getFieldValue("adapter")).startsWith("cloud:") && (
-                                        <>
-                                            <Form.Item name={["video", "interface"]} label="视频接口">
-                                                <Select options={["openai", "relay", "ark", "sparkcine_h3"].map((v) => ({ value: v, label: v }))} />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "resolutions"]} label="输出清晰度">
-                                                <Select mode="tags" tokenSeparators={[","]} />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "seconds"]} label="输出秒数">
-                                                <Select mode="tags" tokenSeparators={[","]} />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "inputModes"]} label="输入方式">
-                                                <Select
-                                                    mode="multiple"
-                                                    options={[
-                                                        { value: "reference", label: "多素材参考" },
-                                                        { value: "first_last", label: "首尾帧" },
-                                                        { value: "first_frame_only", label: "文生 / 单首帧" },
-                                                    ]}
-                                                />
-                                            </Form.Item>
-                                            {["maxImages", "maxVideos", "maxAudios", "referenceVideoMinSeconds", "referenceVideoMaxSeconds"].map((field) => (
-                                                <Form.Item
-                                                    key={field}
-                                                    name={["video", field]}
-                                                    label={{ maxImages: "最多参考图片", maxVideos: "最多参考视频", maxAudios: "最多参考音频", referenceVideoMinSeconds: "参考视频最短秒数", referenceVideoMaxSeconds: "参考视频最长秒数" }[field]}
-                                                >
-                                                    <InputNumber min={0} />
-                                                </Form.Item>
-                                            ))}
-                                            <Form.Item name={["video", "firstFrameField"]} label="首帧字段">
-                                                <Input />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "lastFrameField"]} label="尾帧字段">
-                                                <Input />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "firstFrameRequired"]} label="首帧必填" valuePropName="checked">
-                                                <Switch />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "lastFrameOptional"]} label="尾帧可选" valuePropName="checked">
-                                                <Switch />
-                                            </Form.Item>
-                                            <Form.Item name={["video", "generateAudio"]} label="支持生成声音" valuePropName="checked">
-                                                <Switch />
-                                            </Form.Item>
-                                        </>
+                                        <Form.Item name="video" noStyle>
+                                            <VideoProfileFields adapter={String(routeForm.getFieldValue("adapter"))} />
+                                        </Form.Item>
                                     )
                                 }
                             </Form.Item>

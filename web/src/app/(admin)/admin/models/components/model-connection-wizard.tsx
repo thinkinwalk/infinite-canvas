@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Drawer, Empty, Flex, Form, Input, InputNumber, Select, Space, Steps, Tag, Typography } from "antd";
+import { Alert, Button, Drawer, Empty, Flex, Form, Input, InputNumber, Select, Space, Steps, Switch, Tag, Typography } from "antd";
 import { ArrowLeft, ArrowRight, Check, Link2 } from "lucide-react";
-import type { AdminModelChannel } from "@/services/api/admin";
+import type { AdminModelChannel, VideoModelProfile } from "@/services/api/admin";
 import type { FeatureBinding, ManagedModel, ManagedRoute, ModelFeature } from "@/services/api/model-management";
-import { adapterRouteDefaults, compatiblePlatformModels, modelAdapterOptionsForChannel, videoProfileCanActivate } from "../model-management-options";
+import { adapterRouteDefaults, compatiblePlatformModels, connectionVideoProfile, modelAdapterOptionsForChannel, routeFeatureError, videoProfileCanActivate } from "../model-management-options";
+import { VideoProfileFields } from "./video-profile-fields";
 
 export type ConnectionWizardSeed = {
     channelId?: number;
@@ -17,6 +18,8 @@ export type ConnectionWizardDraft = {
     capability: string;
     operations: string[];
     version: string;
+    video?: VideoModelProfile;
+    enabled: boolean;
     platformModelId?: string;
     internalName: string;
     displayName: string;
@@ -56,6 +59,8 @@ function makeDraft(channels: AdminModelChannel[], routes: ManagedRoute[], initia
         capability: route?.capability || defaults.capability,
         operations: route?.operations || defaults.operations,
         version: route?.version || "",
+        video: connectionVideoProfile(route?.video || channels.find((channel) => channel.id === channelId)?.videoModels?.[model], adapter, model),
+        enabled: route?.enabled ?? true,
         internalName: model ? `${channelName(channels, channelId)} / ${model}` : "",
         displayName: model,
         displayMode: "real",
@@ -78,16 +83,19 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
     const compatibleFeatures = features.filter((feature) => feature.capability === draft.capability && draft.operations.some((operation) => feature.operations.includes(operation)));
     const selectedChannel = channels.find((channel) => channel.id === draft.channelId);
     const requiresCloudPricing = draft.adapter.startsWith("cloud:") && !draft.adapter.endsWith("-replicate");
-    const videoProfile = existingRoute?.video || selectedChannel?.videoModels?.[draft.model];
+    const videoProfile = draft.video;
     const videoProfileReady = videoProfileCanActivate(videoProfile, draft.adapter);
-    const routeWillBeEnabled = existingRoute?.enabled ?? Boolean(selectedChannel?.enabled && (draft.capability !== "video" || draft.adapter.startsWith("cloud:") || videoProfileReady));
+    const routeWillBeEnabled = Boolean(draft.enabled && selectedChannel?.enabled && (draft.capability !== "video" || draft.adapter.startsWith("cloud:") || videoProfileReady));
+    const featureError = (feature: ModelFeature) => routeFeatureError(draft, feature);
     const modelCanBeEnabled = selectedExistingModel ? selectedExistingModel.enabled && selectedExistingModel.pricing.configured : draft.priceStatus !== "unconfigured" && !(requiresCloudPricing && draft.priceStatus === "fixed");
     const canSetDefault = (featureId: string) => {
         if (!modelCanBeEnabled) return false;
+        const feature = compatibleFeatures.find((entry) => entry.id === featureId);
+        if (!feature || featureError(feature)) return false;
         const previousBinding = selectedExistingModel && bindings.find((binding) => binding.modelId === selectedExistingModel.id && binding.featureId === featureId);
         const hasActivePreviousRoute = previousBinding?.routeIds.some((id) => {
             const route = routes.find((entry) => entry.id === id);
-            return route?.enabled && channels.some((channel) => channel.id === route.channelId && channel.enabled);
+            return route?.enabled && !routeFeatureError(route, feature) && channels.some((channel) => channel.id === route.channelId && channel.enabled);
         });
         return Boolean(hasActivePreviousRoute || (routeWillBeEnabled && selectedChannel?.enabled));
     };
@@ -113,6 +121,11 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
             capability: route?.capability || defaults.capability,
             operations: route?.operations || defaults.operations,
             version: route?.version || "",
+            video: connectionVideoProfile(route?.video || channels.find((channel) => channel.id === channelId)?.videoModels?.[model], adapter, model),
+            enabled: route?.enabled ?? true,
+            priceStatus: "unconfigured",
+            credits: 0,
+            minimumCredits: 0,
             platformModelId: undefined,
             featureIds: [],
             defaultFeatureIds: [],
@@ -133,29 +146,36 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
             capability: route?.capability || defaults.capability,
             operations: route?.operations || defaults.operations,
             version: route?.version || "",
+            video: connectionVideoProfile(route?.video || selectedChannel?.videoModels?.[model], adapter, model),
+            enabled: route?.enabled ?? true,
+            priceStatus: "unconfigured",
+            credits: 0,
+            minimumCredits: 0,
             platformModelId: undefined,
             featureIds: [],
             defaultFeatureIds: [],
             displayName: nextName,
             internalName: `${channelName(channels, draft.channelId)} / ${model}`,
-            ...(adapter.startsWith("cloud:") && !adapter.endsWith("-replicate") && draft.priceStatus === "fixed" ? { priceStatus: "unconfigured" as const } : {}),
         });
     };
     const chooseAdapter = (adapter: string) => {
         const defaults = adapterRouteDefaults(adapter);
         const requiresCloudPricing = adapter.startsWith("cloud:") && !adapter.endsWith("-replicate");
+        const resetPrice = requiresCloudPricing && draft.priceStatus === "fixed" || draft.priceStatus === "per_second" && (adapter.startsWith("cloud:") || defaults.capability !== "video");
         patch({
             adapter,
             capability: defaults.capability,
             operations: defaults.operations,
             version: "",
+            video: connectionVideoProfile(draft.video || selectedChannel?.videoModels?.[draft.model], adapter, draft.model),
             platformModelId: undefined,
             featureIds: [],
             defaultFeatureIds: [],
-            ...(requiresCloudPricing && draft.priceStatus === "fixed" ? { priceStatus: "unconfigured" as const } : {}),
+            ...(resetPrice ? { priceStatus: "unconfigured" as const, credits: 0, minimumCredits: 0 } : {}),
         });
     };
     const chooseFeatures = (featureIds: string[]) => {
+        featureIds = featureIds.filter((id) => compatibleFeatures.some((feature) => feature.id === id && !featureError(feature)));
         const eligible = featureIds.filter(canSetDefault);
         const previousDefaults = selectedExistingModel ? bindings.filter((binding) => binding.modelId === selectedExistingModel.id && binding.default && featureIds.includes(binding.featureId)).map((binding) => binding.featureId) : [];
         const defaults = [...new Set([...draft.defaultFeatureIds.filter((id) => eligible.includes(id)), ...previousDefaults.filter((id) => eligible.includes(id))])];
@@ -172,6 +192,7 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
         setStep((current) => Math.min(2, current + 1));
     };
     const finish = () => {
+        if (draft.featureIds.some((id) => !compatibleFeatures.some((feature) => feature.id === id && !featureError(feature)))) return;
         if (draft.defaultFeatureIds.some((id) => !draft.featureIds.includes(id) || !canSetDefault(id))) return;
         onApply(draft);
     };
@@ -249,9 +270,15 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
                                 <Tag>操作：{draft.operations.join("、")}</Tag>
                                 {existingRoute && <Tag color="green">渠道模型已登记，将复用该接入</Tag>}
                             </Flex>
-                            {draft.capability === "video" && !draft.adapter.startsWith("cloud:") && !videoProfileReady && (
-                                <Alert type="warning" showIcon message="视频规格尚未配置，接入将保持停用" description="先完成模型草稿，再到“渠道模型”视图编辑接入，配置清晰度、时长和输入方式后启用。" />
-                            )}
+                            {draft.capability === "video" && !draft.adapter.startsWith("cloud:") && <>
+                                <Typography.Title level={5}>视频规格</Typography.Title>
+                                <Typography.Paragraph type="secondary">按当前渠道文档填写；人物替换需要多素材参考，且同时支持图片和视频参考。</Typography.Paragraph>
+                                <VideoProfileFields adapter={draft.adapter} value={videoProfile} onChange={(video) => patch({ video, featureIds: [], defaultFeatureIds: [] })} />
+                                {!videoProfileReady && <Alert type="warning" showIcon message="视频规格尚未完整配置，接入将保持停用" description="请在这里填写输出清晰度、秒数和输入方式；首尾帧模式还需要有效的接口字段名。" />}
+                            </>}
+                            <Form.Item label="启用渠道接入">
+                                <Switch checked={draft.enabled} onChange={(enabled) => patch({ enabled, defaultFeatureIds: [] })} />
+                            </Form.Item>
                         </Form>
                     </Space>
                 )}
@@ -346,7 +373,7 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
                                         optionFilterProp="label"
                                         value={draft.featureIds}
                                         onChange={chooseFeatures}
-                                        options={compatibleFeatures.map((feature) => ({ value: feature.id, label: `${feature.module} · ${feature.label}` }))}
+                                        options={compatibleFeatures.map((feature) => ({ value: feature.id, label: `${feature.module} · ${feature.label}${featureError(feature) ? `（${featureError(feature)}）` : ""}`, disabled: !!featureError(feature) }))}
                                         placeholder="选择功能步骤"
                                     />
                                 </Form.Item>

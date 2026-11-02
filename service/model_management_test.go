@@ -157,6 +157,41 @@ func TestValidateManagedVideoPerSecondPrice(t *testing.T) {
 	}
 }
 
+func TestManagedPersonReplacementReferenceCapabilities(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		enabled bool
+		profile *model.VideoModelProfile
+		want    string
+	}{
+		{name: "disabled draft without profile"},
+		{name: "active binding without profile", enabled: true, want: "图片与视频参考"},
+		{name: "image only", enabled: true, profile: &model.VideoModelProfile{MaxImages: 1}, want: "图片与视频参考"},
+		{name: "video only", enabled: true, profile: &model.VideoModelProfile{MaxVideos: 1}, want: "图片与视频参考"},
+		{name: "frame mode", enabled: true, profile: &model.VideoModelProfile{MaxImages: 1, MaxVideos: 1, InputModes: []string{"first_last"}}, want: "多素材参考"},
+		{name: "reference mode", enabled: true, profile: &model.VideoModelProfile{MaxImages: 1, MaxVideos: 1, InputModes: []string{"reference"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			settings := model.Settings{Private: model.PrivateSetting{
+				Channels: []model.ModelChannel{{ID: 712, Protocol: "openai", Models: []string{"wan30-1080p-fast"}}},
+				ModelManagement: &model.ModelManagement{
+					Routes:   []model.ManagedRoute{{ID: "route_wan", ChannelID: 712, Model: "wan30-1080p-fast", Adapter: "video.wan30", Capability: "video", Operations: []string{"video"}, Video: test.profile}},
+					Models:   []model.ManagedModel{{ID: "model_wan", DisplayName: "Wan fast", DisplayMode: "real", RouteIDs: []string{"route_wan"}}},
+					Bindings: []model.FeatureBinding{{FeatureID: "replace.person", ModelID: "model_wan", RouteIDs: []string{"route_wan"}, Enabled: test.enabled}},
+				},
+			}}
+			err := ValidateModelManagement(settings)
+			if test.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), test.want) || !strings.Contains(err.Error(), "wan30-1080p-fast") {
+				t.Fatalf("expected named capability error %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 func TestManagedPreviewExcludesH3OnlyFromPersonReplacement(t *testing.T) {
 	saved, err := repository.GetSettings()
 	if err != nil {

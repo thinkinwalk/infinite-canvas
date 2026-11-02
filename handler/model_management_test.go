@@ -262,7 +262,7 @@ func TestManagedVideoAdapterUsesConfiguredIdentity(t *testing.T) {
 		db.Where("user_id = ?", user.ID).Delete(&model.VideoTask{})
 		db.Delete(&user)
 	})
-	for _, adapter := range []string{"video.minimax-h3", "video.sparkcine_h3", "video.h3-2k"} {
+	for _, adapter := range []string{"video.minimax-h3", "video.sparkcine_h3", "video.h3-2k", "video.wan30"} {
 		t.Run(adapter, func(t *testing.T) {
 			calls := 0
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

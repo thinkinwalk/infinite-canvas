@@ -420,8 +420,13 @@ func ValidateModelManagement(settings model.Settings) error {
 			if !containsString(entry.RouteIDs, id) || route.Capability != feature.Capability || len(sharedStrings(route.Operations, feature.Operations)) == 0 {
 				return fmt.Errorf("功能 %s 与模型的渠道或操作不匹配", feature.Label)
 			}
-			if binding.FeatureID == "replace.person" && !strings.HasPrefix(route.Adapter, "cloud:") && (route.Video == nil || route.Video.MaxImages == 0 || route.Video.MaxVideos == 0) {
-				return fmt.Errorf("人物替换需要图片与视频参考能力")
+			if binding.Enabled && binding.FeatureID == "replace.person" && !strings.HasPrefix(route.Adapter, "cloud:") {
+				if route.Video == nil || route.Video.MaxImages <= 0 || route.Video.MaxVideos <= 0 {
+					return fmt.Errorf("模型 %s（%s）：人物替换需要图片与视频参考能力，请在渠道模型中配置最多参考图片和最多参考视频", entry.DisplayName, route.Model)
+				}
+				if route.Video.InputModes != nil && !containsString(route.Video.InputModes, "reference") {
+					return fmt.Errorf("模型 %s（%s）：人物替换需要多素材参考输入方式", entry.DisplayName, route.Model)
+				}
 			}
 			if route.Video != nil {
 				if len(sharedStrings(binding.Resolutions, route.Video.Resolutions)) != len(binding.Resolutions) || len(sharedStrings(binding.Seconds, route.Video.Seconds)) != len(binding.Seconds) {
