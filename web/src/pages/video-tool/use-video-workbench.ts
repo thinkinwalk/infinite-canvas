@@ -1577,9 +1577,9 @@ export function useVideoWorkbench(tool: VideoTool) {
             message.error(publicServiceText(error instanceof Error ? error.message : "下载失败"));
         }
     };
-    const saveAsset = async (file?: UploadedFile) => {
+    const saveAsset = async (file?: UploadedFile, metadata?: Pick<VideoDraft, "title" | "cover" | "tags">) => {
         try {
-            const d = read(tool);
+            const d = { ...read(tool), ...metadata };
             const video = await restoreWorkbenchFile(required(file || d.final || d.edited || d.video, "生成视频"));
             useAssetStore.getState().addAsset({ kind: "video", title: d.title || "视频工作台作品", coverUrl: d.cover?.url || "", tags: d.tags.split(/[,，#\s]+/).filter(Boolean), data: { ...video, width: video.width || 0, height: video.height || 0 } });
             if (d.cover) {

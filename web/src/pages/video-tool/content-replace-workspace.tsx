@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
-import { ArrowLeft, ClipboardPaste, Download, FolderPlus, Grid2X2, Image as ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Sparkles, Video, X } from "lucide-react";
+import { ArrowLeft, ClipboardPaste, Download, FileText, FolderPlus, Image as ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -29,6 +29,7 @@ import type { MediaRole, SubtitleRegion, VideoDraft, VideoRecord, WorkerCapabili
 import { restoreWorkbenchFile, useVideoWorkbench } from "./use-video-workbench";
 
 import { ReplacementBatchPanel } from "./replacement-batch-panel";
+import { VideoTaskDetails, videoResultRecord } from "./video-task-details";
 
 const replacementNames = { person: "人物", product: "商品", background: "背景" };
 const recordNames = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
@@ -76,6 +77,7 @@ export default function ContentReplaceWorkspace() {
     const [processingHelpOpen, setProcessingHelpOpen] = useState(false);
     const [repairingSource, setRepairingSource] = useState(false);
     const [historyPreview, setHistoryPreview] = useState<{ record: VideoRecord; result: UploadedFile; source?: UploadedFile } | null>(null);
+    const [detailsOpen, setDetailsOpen] = useState(false);
     const [drawRegions, setDrawRegions] = useState(false);
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
@@ -120,7 +122,8 @@ export default function ContentReplaceWorkspace() {
     const currentInputKey = useRef(inputKey);
     currentInputKey.current = inputKey;
     const currentQuote = quote?.key === inputKey ? quote.value : null;
-    const result = historyPreview?.result || d.final || d.edited || d.video;
+    const result = historyPreview?.result || (showBatchWorkspace ? d.final : d.final || d.edited || d.video);
+    const resultRecord = historyPreview?.record || videoResultRecord(wb.records, result);
     const previewSource = historyPreview ? historyPreview.source : d.replacementSource || reference;
     const surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
     const muted = { color: token.colorTextSecondary };
@@ -705,7 +708,9 @@ export default function ContentReplaceWorkspace() {
                                     {publicServiceText(unavailable || (cloud ? model?.billingDescription || "平台按当前规格计费" : "按当前处理方式执行"))}
                                 </div>
                             </div>}
-                            {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} workspace={batchWorkspace} onOpenWorkspace={() => { setTab("current"); setHistoryPreview(null); }} />}
+                            {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} workspace={batchWorkspace}
+                                detailsOpen={detailsOpen && showBatchWorkspace} onDetailsChange={setDetailsOpen}
+                                onOpenWorkspace={() => { setTab("current"); setHistoryPreview(null); }} />}
                             {!(person && wholeVideo) && <Collapse
                                 size="small"
                                 items={[
@@ -970,21 +975,13 @@ export default function ContentReplaceWorkspace() {
                                     )}
                                     {previewError && <Alert type="warning" showIcon title="当前浏览器无法播放此编码" description="文件仍可下载，请从任务记录核对作品。" />}
                                     {result ? (
-                                        <Space wrap>
+                                        <div role="group" aria-label="成片操作" className="flex flex-wrap gap-2">
                                             <Button icon={<Download size={15} />} onClick={() => void wb.download(result)}>
                                                 下载视频
                                             </Button>
-                                            {!historyPreview && (
-                                                <>
-                                                    <Button icon={<FolderPlus size={15} />} onClick={() => void wb.saveAsset()}>
-                                                        保存素材
-                                                    </Button>
-                                                    <Button icon={<Grid2X2 size={15} />} onClick={() => void wb.toCanvas()}>
-                                                        加入新画布
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </Space>
+                                            <Button icon={<FolderPlus size={15} />} onClick={() => void wb.saveAsset(result, historyPreview ? { title: "内容替换历史作品", cover: null, tags: "" } : undefined)}>保存素材</Button>
+                                            <Button icon={<FileText size={15} />} onClick={() => setDetailsOpen(true)}>任务详情</Button>
+                                        </div>
                                     ) : !showBatchWorkspace && (
                                         <div className="text-xs" style={muted}>
                                             先选替换对象，再上传原视频与对应参考图。作品与草稿保存在当前浏览器。
@@ -1058,6 +1055,7 @@ export default function ContentReplaceWorkspace() {
                 {!(person && wholeVideo) && submit}
             </div>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
+            {result && !showBatchWorkspace && <VideoTaskDetails open={detailsOpen} onClose={() => setDetailsOpen(false)} record={resultRecord} result={result} />}
             <Modal title="视频模型参数" open={settingsOpen} onCancel={() => setSettingsOpen(false)} footer={null}>
                 <VideoSettingsPanel config={config} onConfigChange={updateConfig} theme={canvasThemes[themeMode]} className="space-y-4" />
             </Modal>

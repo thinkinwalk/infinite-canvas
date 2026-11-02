@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Checkbox, Collapse, ConfigProvider, Dropdown, Empty, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Steps, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowLeft, ArrowRight, Check, Columns2, Copy, Download, Expand, FolderPlus, Grid2X2, History, Images, MessageSquare, MoreHorizontal, Pause, Play, Plus, RefreshCw, Send, SlidersHorizontal, Sparkles, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Columns2, Copy, Download, Expand, FileText, FolderPlus, History, Images, MessageSquare, MoreHorizontal, Pause, Play, Plus, RefreshCw, Send, SlidersHorizontal, Sparkles, Undo2, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
 import { FeatureModelPicker } from "@/components/feature-model-picker";
@@ -33,6 +33,7 @@ import { viralKeyframeError, viralKeyframeInputKey, viralKeyframeMaterials, vira
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPreserveOptions, viralReferenceImages, viralRequirements } from "./viral-plan";
 import ViralScriptComparison from "./viral-script-comparison";
 import { viralInitialScript, viralResolveScript, viralRestoreScript, viralScriptChangeSummary, type ViralScriptEditMode } from "./viral-script-revisions";
+import { VideoTaskDetails, videoResultRecord } from "./video-task-details";
 
 type Role = "reference" | "visual-reference" | "product" | "background" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralProductAnalysis" | "instructions" | "script";
@@ -102,6 +103,7 @@ function ViralTaskWorkspace() {
     const [tab, setTab] = useState("current"),
         [viewed, setViewed] = useState<VideoRecord | null>(null),
         [previewError, setPreviewError] = useState(false);
+    const [detailsOpen, setDetailsOpen] = useState(false);
     const [effectSourceOpen, setEffectSourceOpen] = useState(false), [effectSelection, setEffectSelection] = useState("");
     const [comparison, setComparison] = useState<{ kind: "source" | "revision"; target: "script" | "suggestion" } | null>(null);
     const [comparisonProgress, setComparisonProgress] = useState(0);
@@ -214,6 +216,10 @@ function ViralTaskWorkspace() {
     ]);
     const quote = price?.key === priceKey ? price.value : null,
         result = viewed ? viewed.result : d.video;
+    const resultRecord = viewed || videoResultRecord(wb.records, result);
+    const resultTaskId = resultRecord?.viralTaskId || (viewed ? viewed.id : d.viralTaskId);
+    const resultVersions = wb.records.filter((record) => record.stage === "video" && record.result &&
+        (record.viralTaskId || record.id) === resultTaskId).sort((a, b) => b.createdAt - a.createdAt);
     const original = viewed ? viralReference({ ...d, media: viewed.viralDraft?.media || viewed.viralInput?.media || [] }) : reference;
     const muted = { color: token.colorTextSecondary },
         surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
@@ -1477,30 +1483,14 @@ function ViralTaskWorkspace() {
                                     </div>}
                                     {previewError && <Alert type="warning" title="当前浏览器无法播放此编码，仍可下载原文件" />}
                                     {result && (
-                                        <Space wrap>
-                                            {!viewed && step !== 0 && result.mimeType.startsWith("video/") && (
-                                                <Button icon={<ArrowLeft size={15} />} disabled={locked} onClick={() => { goStep(1); openEditor("script"); }}>
-                                                    修改脚本
-                                                </Button>
-                                            )}
+                                        <div role="group" aria-label="成片操作" className="flex flex-wrap gap-2">
                                             <Button icon={<Download size={15} />} onClick={() => void wb.download(result)}>
                                                 下载{result.mimeType.startsWith("image/") ? "图片" : "视频"}
                                             </Button>
-                                            {!viewed && (
-                                                <>
-                                                    <Button icon={<FolderPlus size={15} />} onClick={() => void wb.saveAsset()}>
-                                                        保存素材
-                                                    </Button>
-                                                    <Button icon={<Grid2X2 size={15} />} onClick={() => void wb.toCanvas()}>
-                                                        加入画布
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </Space>
+                                            {result.mimeType.startsWith("video/") && <Button icon={<FolderPlus size={15} />} onClick={() => void wb.saveAsset(result, viewed ? viewed.viralDraft || { title: "爆款复刻历史作品", cover: null, tags: "" } : undefined)}>保存素材</Button>}
+                                            <Button icon={<FileText size={15} />} onClick={() => setDetailsOpen(true)}>任务详情</Button>
+                                        </div>
                                     )}
-                                    <p hidden={!viewed && step === 0} className="text-xs" style={muted}>
-                                        当前输出单条短片。口播、字幕、配乐和多镜头剪辑不会自动完成；人物、商品与动作一致性需真实成片验收。
-                                    </p>
                                 </div>
                             )}
                             {tab === "history" && (
@@ -1817,6 +1807,20 @@ function ViralTaskWorkspace() {
                     </p>
                 </div>
             </Modal>
+            {result && <VideoTaskDetails open={detailsOpen} onClose={() => setDetailsOpen(false)} record={resultRecord} result={result}>
+                {resultVersions.length > 1 && <section className="space-y-2">
+                    <div className="text-sm font-medium">历史版本</div>
+                    <div className="flex flex-wrap gap-2">{resultVersions.map((record, index) => <Button key={record.id} size="small"
+                        disabled={record.id === resultRecord?.id}
+                        onClick={() => { setDetailsOpen(false); void showRecord(record); }}>
+                        {index === 0 ? "最新版本" : `历史版本 ${resultVersions.length - index}`} · {new Date(record.createdAt).toLocaleString()}
+                    </Button>)}</div>
+                </section>}
+                {result.mimeType.startsWith("video/") && <Button icon={<RefreshCw size={15} />} disabled={locked}
+                    onClick={() => { setDetailsOpen(false); if (viewed && (viewed.viralTaskId || viewed.id) !== d.viralTaskId) restoreInput(viewed); else goStep(2); }}>
+                    {viewed && (viewed.viralTaskId || viewed.id) !== d.viralTaskId ? "继续此任务" : "调整设置并重新生成"}
+                </Button>}
+            </VideoTaskDetails>}
             <Modal title="抽样 / 转写服务" open={serviceOpen} onCancel={() => setServiceOpen(false)} footer={<Button onClick={() => setServiceOpen(false)}>完成</Button>}>
                 <div className="space-y-3">
                     <Input aria-label="处理服务地址" value={wb.worker.url} disabled={locked} onChange={(e) => useVideoWorkbenchStore.getState().setWorker({ url: e.target.value })} placeholder="增强处理服务地址" />
