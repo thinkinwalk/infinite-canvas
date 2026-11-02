@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.148
-- Current production source: tag v0.19.148, commit 6bf4e7d7b46fae7c34e18d3453d38686fae532c4
+- Current production image: infinite-canvas:v0.19.149
+- Current production source: tag v0.19.149, commit 2a078c173776a2b9c29b1d8e8cf3cc0204816c76
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
+
+## v0.19.149 deployment
+
+- Tag `v0.19.149`, commit `2a078c173776a2b9c29b1d8e8cf3cc0204816c76`, is pushed to `release/v0.19.60` and published as a formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.149. App image `infinite-canvas:v0.19.149`, ID `sha256:cb7dd6a310a370edab07bc246acc2d1394a971f8dd5243903f845acb9504e70d`, replaces v0.19.148.
+- Viral recreation and content replacement share three result actions: download video, save asset and task details. Versions, subtitles, task metadata and regeneration controls are available in details. Canvas insertion and manual acceptance actions are removed. Result loading has explicit retry feedback and hides stale download actions; historical video saving uses its own metadata.
+- Development passed 14 isolated mocked browser checks, including desktop/mobile 1440/390/320px light/dark layouts, selected-result metadata, downloads/saves, segmented and paused workflows, retry quote cancellation and historical-task restoration cancellation. Release repeated no local tests, type checking, build or production browser interactions. The required server Docker build, internal/public health, eleven routes, feature markers and public/container hashes passed. Independent workstation HTTPS verification also passed and confirmed the published Release targets the deployed commit.
+- Public JS `/assets/index-Bpcof-58.js` SHA-256 `b1dc22d03d082bba5714eb5787543a60d9557965852cb1909d5bb9e5dc9a0b26`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Backend binary matches both release and previous images and is unchanged.
+- App-only deployment retained Worker v0.19.87 identity, source mounts and start time. SQLite quick check, schema/table counts, complete settings, protected account fields, 145 task JSON records and metadata for 29,105 existing media files were preserved. No paid inference, task resubmission or production model-setting change was made. Real historical-task and subtitle interactions remain for user acceptance.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.149-prebuild-20261102-135514/`; final backup `/opt/infinite-canvas/backups/v0.19.149-final-20261102-135616/`. Reports `/opt/infinite-canvas/releases/v0.19.149-deployment.json` and `/opt/infinite-canvas/releases/v0.19.149-public-verification.json`, with local `.codex_tmp/` copies. Backups contain verified SQLite, Compose and private environment, not all media contents. Rollback restores final-backup Compose and recreates App only, preserving current database/media and Worker.
 
 ## v0.19.148 deployment
 
