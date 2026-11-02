@@ -127,6 +127,36 @@ func TestManagedPinnedRouteKeepsCommonSpecifications(t *testing.T) {
 	}
 }
 
+func TestValidateManagedVideoPerSecondPrice(t *testing.T) {
+	profile := model.VideoModelProfile{
+		Interface: "relay", InputModes: []string{"reference"},
+		Resolutions: []string{"720", "1080"}, Seconds: []string{"5", "10"},
+	}
+	settings := model.Settings{Private: model.PrivateSetting{
+		Channels: []model.ModelChannel{{ID: 712, Name: "Wan", Protocol: "openai", BaseURL: "https://example.invalid", APIKey: "fake", Models: []string{"wan30-1080p-fast"}, Enabled: true}},
+		ModelManagement: &model.ModelManagement{
+			Enabled: true,
+			Routes:  []model.ManagedRoute{{ID: "route_wan", ChannelID: 712, Model: "wan30-1080p-fast", Adapter: "video.wan30", Capability: "video", Operations: []string{"video"}, Enabled: true, Video: &profile}},
+			Models: []model.ManagedModel{{ID: "model_wan", DisplayName: "Wan", DisplayMode: "real", Enabled: true, RouteIDs: []string{"route_wan"}, Pricing: model.ManagedPricing{
+				Configured: true, Video: &model.VideoModelProfile{BillingMode: "duration_resolution", UnitCredits: 42, MinimumCredits: 100},
+			}}},
+			Bindings: []model.FeatureBinding{{FeatureID: "video.generate", ModelID: "model_wan", RouteIDs: []string{"route_wan"}, Enabled: true}},
+		},
+	}}
+	if err := ValidateModelManagement(settings); err != nil {
+		t.Fatalf("valid per-second video price rejected: %v", err)
+	}
+	channel := model.ModelChannel{ManagedProfile: true, VideoModels: map[string]model.VideoModelProfile{
+		"wan30-1080p-fast": {Interface: "relay", BillingMode: "duration_resolution", UnitCredits: 42, MinimumCredits: 100},
+	}}
+	if credits, _, ok := VideoQuote(channel, "wan30-1080p-fast", "1080", "5"); !ok || credits != 210 {
+		t.Fatalf("per-second quote mismatch: %d %v", credits, ok)
+	}
+	if credits, _, ok := VideoQuote(channel, "wan30-1080p-fast", "720", "2.1"); !ok || credits != 126 {
+		t.Fatalf("fractional duration should round up: %d %v", credits, ok)
+	}
+}
+
 func TestManagedPreviewExcludesH3OnlyFromPersonReplacement(t *testing.T) {
 	saved, err := repository.GetSettings()
 	if err != nil {

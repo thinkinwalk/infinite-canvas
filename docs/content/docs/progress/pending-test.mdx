@@ -5,6 +5,11 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+## 模型接入向导支持视频按秒计费
+
+- 视频模型接入时可选择按秒计费，设置每秒点数和单次最低点数；时长按整秒向上取整，统一单价适用于各分辨率，仍可后续配置分辨率专属价格。
+- 待验证 Wan30 新建接入、保存配置、不同分辨率及时长报价、最低点数及普通用户目录状态。
+
 ## Wan 人物替换按实际片段时长处理
 
 - Replicate `wan-video/wan-2.2-animate-replace` 的整片流程仍以最长 15 秒作为自动分段上限，但报价和提交使用每段 `inputEnd - inputStart` 的真实输入时长，不再把 5 秒片段按固定 10 秒或 15 秒计费。

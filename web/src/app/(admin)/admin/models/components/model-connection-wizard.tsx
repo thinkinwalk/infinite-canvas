@@ -22,8 +22,9 @@ export type ConnectionWizardDraft = {
     displayName: string;
     displayMode: ManagedModel["displayMode"];
     description: string;
-    priceStatus: "unconfigured" | "free" | "fixed";
+    priceStatus: "unconfigured" | "free" | "fixed" | "per_second";
     credits: number;
+    minimumCredits: number;
     featureIds: string[];
     defaultFeatureIds: string[];
 };
@@ -61,6 +62,7 @@ function makeDraft(channels: AdminModelChannel[], routes: ManagedRoute[], initia
         description: "",
         priceStatus: "unconfigured",
         credits: 0,
+        minimumCredits: 0,
         featureIds: [],
         defaultFeatureIds: [],
     };
@@ -166,7 +168,7 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
         });
     const next = () => {
         if (step === 0 && (!draft.channelId || !draft.model || !draft.adapter)) return;
-        if (step === 1 && !draft.platformModelId && draft.priceStatus === "fixed" && draft.credits <= 0) return;
+        if (step === 1 && !draft.platformModelId && ["fixed", "per_second"].includes(draft.priceStatus) && draft.credits <= 0) return;
         setStep((current) => Math.min(2, current + 1));
     };
     const finish = () => {
@@ -193,7 +195,7 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
                                 type="primary"
                                 icon={<ArrowRight size={15} />}
                                 onClick={next}
-                                disabled={(step === 0 && (!draft.channelId || !draft.model || !draft.adapter)) || (step === 1 && !draft.platformModelId && draft.priceStatus === "fixed" && draft.credits <= 0)}
+                                disabled={(step === 0 && (!draft.channelId || !draft.model || !draft.adapter)) || (step === 1 && !draft.platformModelId && ["fixed", "per_second"].includes(draft.priceStatus) && draft.credits <= 0)}
                             >
                                 下一步
                             </Button>
@@ -303,13 +305,28 @@ export function ModelConnectionWizard({ open, channels, models, routes, bindings
                                         <Select
                                             value={draft.priceStatus}
                                             onChange={choosePriceStatus}
-                                            options={[{ value: "unconfigured", label: "待定价" }, { value: "free", label: "明确免费" }, ...(!requiresCloudPricing ? [{ value: "fixed", label: "固定点数 / 次" }] : [])]}
+                                            options={[
+                                                { value: "unconfigured", label: "待定价" },
+                                                { value: "free", label: "明确免费" },
+                                                ...(!requiresCloudPricing ? [{ value: "fixed", label: "固定点数 / 次" }] : []),
+                                                ...(!requiresCloudPricing && draft.capability === "video" ? [{ value: "per_second", label: "按秒计费" }] : []),
+                                            ]}
                                         />
                                     </Form.Item>
                                     {draft.priceStatus === "fixed" && !requiresCloudPricing && (
                                         <Form.Item label="每次点数" required>
                                             <InputNumber min={1} precision={0} className="w-full" value={draft.credits || undefined} onChange={(credits) => patch({ credits: credits || 0 })} />
                                         </Form.Item>
+                                    )}
+                                    {draft.priceStatus === "per_second" && (
+                                        <>
+                                            <Form.Item label="每秒点数" required extra="按生成时长向上取整计费，分辨率共用此单价。">
+                                                <InputNumber min={0.01} precision={2} className="w-full" value={draft.credits || undefined} onChange={(credits) => patch({ credits: credits || 0 })} />
+                                            </Form.Item>
+                                            <Form.Item label="单次最低点数">
+                                                <InputNumber min={0} precision={0} className="w-full" value={draft.minimumCredits} onChange={(minimumCredits) => patch({ minimumCredits: minimumCredits || 0 })} />
+                                            </Form.Item>
+                                        </>
                                     )}
                                 </Space>
                             )}

@@ -357,7 +357,7 @@ func ValidateModelManagement(settings model.Settings) error {
 			return fmt.Errorf("零点价格请明确勾选免费")
 		}
 		if price := entry.Pricing.Video; price != nil && entry.Enabled {
-			if price.BillingMode != "duration_resolution" || len(price.BillingTiers) == 0 || price.UnitCredits < 0 || price.MinimumCredits < 0 {
+			if price.BillingMode != "duration_resolution" || len(price.BillingTiers) == 0 && price.UnitCredits <= 0 || price.UnitCredits < 0 || price.MinimumCredits < 0 {
 				return fmt.Errorf("请完整配置视频规格报价")
 			}
 			for _, value := range price.BillingTiers {
@@ -374,7 +374,7 @@ func ValidateModelManagement(settings model.Settings) error {
 				for _, id := range entry.RouteIDs {
 					if profile := routes[id].Video; profile != nil {
 						for _, resolution := range profile.Resolutions {
-							if p.BillingTiers[resolution] <= 0 {
+							if p.BillingTiers[resolution] <= 0 && p.UnitCredits <= 0 {
 								return fmt.Errorf("视频规格 %s 必须配置正数价格；免费模型请明确勾选免费", resolution)
 							}
 						}

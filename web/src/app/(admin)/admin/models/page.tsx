@@ -381,7 +381,12 @@ export default function ModelManagementPage() {
         };
         const routes = existingRoute ? value.routes : [...value.routes, route];
         const selectedExisting = draft.platformModelId ? value.models.find((entry) => entry.id === draft.platformModelId) : undefined;
-        const pricing = draft.priceStatus === "unconfigured" ? { configured: false, free: false, credits: 0 } : { configured: true, free: draft.priceStatus === "free", credits: draft.priceStatus === "fixed" ? draft.credits : 0 };
+        const pricing =
+            draft.priceStatus === "unconfigured"
+                ? { configured: false, free: false, credits: 0 }
+                : draft.priceStatus === "per_second"
+                  ? { configured: true, free: false, credits: 0, video: { billingMode: "duration_resolution", unitCredits: draft.credits, minimumCredits: draft.minimumCredits, billingTiers: {} } }
+                  : { configured: true, free: draft.priceStatus === "free", credits: draft.priceStatus === "fixed" ? draft.credits : 0 };
         const platformModel = selectedExisting || {
             id: `model_${nanoid().replaceAll("-", "_")}`,
             internalName: draft.internalName || `${channel.name} / ${draft.model}`,
@@ -1090,6 +1095,9 @@ export default function ModelManagementPage() {
                                 <>
                                     <Form.Item name={["pricing", "video", "billingMode"]} initialValue="duration_resolution" hidden>
                                         <Input />
+                                    </Form.Item>
+                                    <Form.Item name={["pricing", "video", "unitCredits"]} label="统一点数 / 秒（未单独设置分辨率价格时）">
+                                        <InputNumber min={0} precision={2} />
                                     </Form.Item>
                                     <Form.Item name={["pricing", "video", "minimumCredits"]} label="最低点数">
                                         <InputNumber min={0} />

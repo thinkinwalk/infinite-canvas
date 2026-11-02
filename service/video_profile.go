@@ -15,7 +15,7 @@ import (
 // model cost; the caller applies the user's group ratio afterwards.
 func VideoQuote(channel model.ModelChannel, modelName, resolution string, seconds string) (int, string, bool) {
 	profile := VideoProfile(channel, modelName)
-	if profile.BillingMode != "duration_resolution" || len(profile.BillingTiers) == 0 {
+	if profile.BillingMode != "duration_resolution" || len(profile.BillingTiers) == 0 && profile.UnitCredits <= 0 {
 		return 0, "", false
 	}
 	resolution = strings.TrimSuffix(strings.TrimSpace(resolution), "p")
