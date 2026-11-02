@@ -15,10 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.147
-- Current production source: tag v0.19.147, commit 678a77bdf36c93a36b679e3366fffad87bcb05c2
+- Current production image: infinite-canvas:v0.19.148
+- Current production source: tag v0.19.148, commit 6bf4e7d7b46fae7c34e18d3453d38686fae532c4
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
+
+## v0.19.148 deployment
+
+- Tag `v0.19.148`, commit `6bf4e7d7b46fae7c34e18d3453d38686fae532c4`, is pushed to `release/v0.19.60`. App image `infinite-canvas:v0.19.148`, ID `sha256:3228eb37b2f4474b2b591c7cf17ff8a772b42916e438558c6e082c5b17b5e7fa`, replaces v0.19.147.
+- Content replacement full-video comparison now follows the viral recreation player pattern: proportional linked playback, pause and shared seeking. The redundant full-video button is hidden once the whole-video result is loaded; failed loads retain an explicit retry action. Segmented jobs keep their full-result view switch.
+- Server frontend build, internal/public health, eleven routes and public/container asset hashes passed. Public JS `/assets/index-KcELBzSG.js` SHA-256 `102a88f6e1687596c736c1cf2aead7fb673515819e0a6abf40dec6e745532ea0`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. The expected comparison control markers are present in the public bundle.
+- App-only deployment retained Worker image `infinite-canvas-video-worker:v0.19.87`, container identity, mounts and start time. Database quick check, schema/table counts, settings, protected account fields, 140 task records and metadata for 29,066 existing media files remained unchanged. No paid inference or production model-setting change was made. Production browser interaction remains for user acceptance.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.148-prebuild-20261102-111825/`; final rollback backup `/opt/infinite-canvas/backups/v0.19.148-final-20261102-111920/`. Deployment report `/opt/infinite-canvas/releases/v0.19.148-deployment.json`; local copy `.codex_tmp/v0.19.148-deployment.json`. Rollback restores the final-backup Compose and recreates App only.
 
 ## v0.19.147 deployment
 
