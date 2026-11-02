@@ -8,6 +8,9 @@ description: Implemented changes that still need manual verification
 ## 模型接入向导支持视频按秒计费
 
 - 视频模型接入时可选择按秒计费，设置每秒点数和单次最低点数；时长按整秒向上取整，统一单价适用于各分辨率，仍可后续配置分辨率专属价格。
+- 已随 `v0.19.143`（`0462d60b`）提交、推送发布分支和 tag、发布正式 GitHub Release 并部署。生产使用 `https://studio.lingzhouai.com/admin/models`，前后端构建、内外健康、11 页面、按秒计费资源标记及公网 JS/CSS 与容器哈希核对通过。发布未重复本地测试或构建；开发后端定向回归及前端 8 项辅助测试通过，另一个页面测试受 `localStorage` 初始化限制未启动。
+- 数据库完整性、结构、表数量、完整设置/账号字段、环境及挂载保持，第 24 版目录配置未改；120 份任务记录、28,789 个现有媒体文件元数据保持，Worker `v0.19.87` 未重启。备份 `/opt/infinite-canvas/backups/v0.19.143-final-20261102-030205/`，部署报告 `/opt/infinite-canvas/releases/v0.19.143-deployment.json`，本机 `.codex_tmp/` 保留副本。未修改模型单价或提交收费生成，资源核对不等于真实保存和报价交互已验收。
+- 本机独立 HTTPS 已复核模型管理页面、健康、版本、按秒计费标记、第 24 版目录及 JS/CSS 哈希，与容器报告一致；证据 `/opt/infinite-canvas/releases/v0.19.143-public-verification.json`，本机 `.codex_tmp/` 保留副本。
 - 待验证 Wan30 新建接入、保存配置、不同分辨率及时长报价、最低点数及普通用户目录状态。
 
 ## Wan 人物替换按实际片段时长处理

@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.142
-- Current production source: tag v0.19.142, commit 08a8b610a8a31ea2f3d7cb9fd0e9921eee3430b9
+- Current production image: infinite-canvas:v0.19.143
+- Current production source: tag v0.19.143, commit 0462d60b84badf738b460a52b6ba974dc8e38770
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.142-worker/
+
+## v0.19.143 deployment
+
+- Tag `v0.19.143`, commit `0462d60b84badf738b460a52b6ba974dc8e38770`, is pushed to `release/v0.19.60` and published as the formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.143. Production App image `infinite-canvas:v0.19.143`, ID `sha256:eea9e1b58d361391a6155612d6ae3d3112734788a4d80c35034367337afd939c`, replaces `infinite-canvas:v0.19.142`.
+- The video connection wizard supports per-second credits and minimum credits. Validation and video quotes accept a unified per-second price without resolution-specific tiers; configured tiers still take precedence. Existing whole-second rounding is preserved. No production model, channel or price configuration was changed.
+- Development passed the focused backend pricing regression and eight frontend helper tests. A separate frontend page test could not initialize because its Bun environment lacked `localStorage`. Release repeated no local tests or build; server frontend/backend build, internal/external health, eleven routes, pricing UI bundle markers and public/container asset hashes passed. Production browser interaction, saving a new model and actual quotes remain pending; no paid inference was submitted.
+- Public JS `/assets/index-BHcRrhIT.js` SHA-256 `003b8a6521a75ce49b06b33d8585da9a5e64cd09d18ba47fc94c78f3f4f40406`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. The running backend matches the new release image.
+- Final root-only backup `/opt/infinite-canvas/backups/v0.19.143-final-20261102-030205/`; prebuild backup `/opt/infinite-canvas/backups/v0.19.143-prebuild-20261102-025943/`. SQLite quick check, schema, all table counts, complete settings/protected account values, environment, mounts and 120 existing job records are preserved. Sizes and modification times of 28,789 existing non-JSON/database files match; this is metadata verification, not a full media-content hash or media backup. Managed catalog revision 24 is unchanged.
+- Worker image `infinite-canvas-video-worker:v0.19.87`, container identity, startup time and `/opt/infinite-canvas/releases/v0.19.142-worker/` source mounts are unchanged. Only the App image changed in Compose.
+- Deployment report `/opt/infinite-canvas/releases/v0.19.143-deployment.json`, with local `.codex_tmp/v0.19.143-deployment.json`; deployment script `/opt/infinite-canvas/releases/deploy-v0.19.143.py`. Rollback restores final-backup Compose and recreates only App, preserving the current database and previous image.
+- Independent workstation HTTPS verification passed health, the model-management page, release version, per-second pricing markers, managed revision 24 and both asset hashes against the container report. Evidence `/opt/infinite-canvas/releases/v0.19.143-public-verification.json`, with a local `.codex_tmp/` copy. This is resource/API verification, not browser interaction or actual model pricing setup.
 
 ## v0.19.142 deployment
 
