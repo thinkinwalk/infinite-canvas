@@ -98,6 +98,26 @@ class ReplacementMediaTests(unittest.IsolatedAsyncioTestCase):
             self.assertLessEqual(abs(info["duration"] - duration), 1 / info["fps"])
             self.assertFalse(info["audio"])
 
+    async def test_wan30_screenshot_source_fits_portrait_without_changing_timeline_or_audio(self):
+        source = self.root / "wan30-source.mp4"
+        await self.ffmpeg("test", "-f", "lavfi", "-i", "color=c=red:s=480x848:r=30:d=5",
+                          "-f", "lavfi", "-i", "sine=frequency=440:duration=5",
+                          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", source)
+        original_hash = hashlib.sha256(source.read_bytes()).digest()
+        result = await self.operation("replacement-fit", {"video": source}, {"aspectRatio": "9:16"})
+        info = await self.probe_video("test", result["file"])
+        self.assertEqual(info["size"], (486, 864))
+        self.assertEqual(info["duration"], 5)
+        self.assertEqual(info["fps"], 30)
+        self.assertTrue(info["audio"])
+        hashes = []
+        for path in (source, result["file"]):
+            audio, _ = await self.command("test", [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", path,
+                                                   "-map", "0:a", "-c", "copy", "-f", "hash", "-hash", "sha256", "-"])
+            hashes.append(audio)
+        self.assertEqual(hashes[0], hashes[1])
+        self.assertEqual(hashlib.sha256(source.read_bytes()).digest(), original_hash)
+
     async def test_invalid_fit_ratio_never_calls_ffmpeg(self):
         for ratio in ("17:30", "arbitrary", None):
             with self.assertRaisesRegex(ValueError, "生成画幅"):

@@ -29,7 +29,7 @@ func replacementAspectSetup(t *testing.T) context.Context {
 	enabled := true
 	settings := model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{{
 		ID: 711, Name: "pinned-h3", BaseURL: "https://hi.hi.run", APIKey: "test", Enabled: true,
-		Models: []string{"h3-video", "minimax-h3"}, Weight: 1, VideoModels: map[string]model.VideoModelProfile{"h3-video": {
+		Models: []string{"h3-video", "minimax-h3", "wan30-720p", "wan30-1080p-fast", "custom-real-video"}, Weight: 1, VideoModels: map[string]model.VideoModelProfile{"h3-video": {
 			Interface: "sparkcine_h3", MaxImages: 1, MaxVideos: 1, ContentReplacement: &enabled,
 			Resolutions: []string{"720", "768"}, Seconds: []string{"5", "15"},
 			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 6, "768": 6},
@@ -37,6 +37,18 @@ func replacementAspectSetup(t *testing.T) context.Context {
 			Interface: "relay", MaxImages: 9, MaxVideos: 3, ContentReplacement: &enabled,
 			Resolutions: []string{"768"}, Seconds: []string{"5", "15"},
 			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"768": 6},
+		}, "wan30-720p": {
+			Interface: "relay", MaxImages: 1, MaxVideos: 1, ContentReplacement: &enabled,
+			Resolutions: []string{"720"}, Seconds: []string{"5", "15"},
+			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 6},
+		}, "wan30-1080p-fast": {
+			Interface: "relay", MaxImages: 1, MaxVideos: 1, ContentReplacement: &enabled,
+			Resolutions: []string{"1080"}, Seconds: []string{"5", "15"},
+			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"1080": 6},
+		}, "custom-real-video": {
+			Interface: "relay", MaxImages: 1, MaxVideos: 1, ContentReplacement: &enabled,
+			Resolutions: []string{"1080"}, Seconds: []string{"5", "15"},
+			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"1080": 6},
 		}},
 	}}}}
 	if _, err := repository.SaveSettings(settings, "test"); err != nil {
@@ -46,6 +58,174 @@ func replacementAspectSetup(t *testing.T) context.Context {
 	previous := aiHTTPClient
 	t.Cleanup(func() { aiHTTPClient = previous })
 	return service.WithUser(context.Background(), model.AuthUser{ID: "aspect-owner", Group: "default"})
+}
+
+func TestReplacementWan30AspectPlanAndSubmission(t *testing.T) {
+	ctx := replacementAspectSetup(t)
+	if _, err := repository.SaveUser(model.User{ID: "aspect-owner", Username: "aspect-owner", Group: "default", Status: model.UserStatusActive, Credits: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range []struct {
+		name, model, adapter, resolution, ratio string
+		source, fitted                          [2]int
+	}{
+		{"fast portrait screenshot", "wan30-1080p-fast", "video.wan30", "1080", "9:16", [2]int{480, 848}, [2]int{486, 864}},
+		{"fast portrait legacy", "wan30-1080p-fast", "", "1080", "9:16", [2]int{480, 848}, [2]int{486, 864}},
+		{"legacy portrait", "wan30-720p", "", "720", "9:16", [2]int{480, 848}, [2]int{486, 864}},
+		{"nonstandard landscape", "wan30-1080p-fast", "video.wan30", "1080", "16:9", [2]int{848, 480}, [2]int{864, 486}},
+		{"standard portrait", "wan30-1080p-fast", "video.wan30", "1080", "9:16", [2]int{720, 1280}, [2]int{}},
+		{"standard landscape", "wan30-720p", "", "720", "16:9", [2]int{1920, 1080}, [2]int{}},
+		{"standard square", "wan30-1080p-fast", "video.wan30", "1080", "1:1", [2]int{960, 960}, [2]int{}},
+		{"standard four by three", "wan30-1080p-fast", "video.wan30", "1080", "4:3", [2]int{960, 720}, [2]int{}},
+		{"nonstandard square", "wan30-1080p-fast", "video.wan30", "1080", "1:1", [2]int{960, 964}, [2]int{964, 964}},
+		{"configured adapter identity", "custom-real-video", "video.wan30", "1080", "9:16", [2]int{480, 848}, [2]int{486, 864}},
+	} {
+		t.Run(spec.name, func(t *testing.T) {
+			fits, submissions := 0, 0
+			aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+				var request map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Fatal(err)
+				}
+				if r.URL.Host != "worker.invalid" {
+					submissions++
+					if r.Method != "POST" || r.URL.Path != "/v1/videos" || request["model"] != spec.model || request["aspect_ratio"] != spec.ratio || request["resolution"] != spec.resolution+"p" || request["seconds"] != "5" {
+						t.Fatalf("incorrect upstream request: %s %s %+v", r.Method, r.URL, request)
+					}
+					references, _ := request["reference_videos"].([]any)
+					if len(references) != 1 || references[0] != "https://example.invalid/prepared.mp4" || request["image_url"] != "https://example.invalid/person.png" {
+						t.Fatalf("reference inputs changed: %+v", request)
+					}
+					// Stop after observing the real proxy payload; no paid provider is used.
+					return &http.Response{StatusCode: 400, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"mock rejection","code":"test_rejection"}}`))}, nil
+				}
+				result := map[string]any{}
+				switch request["operation"] {
+				case "replacement-plan":
+					result["metadata"] = map[string]any{"size": spec.source, "parts": []map[string]any{{"start": 0, "end": 5, "inputStart": 0, "inputEnd": 5, "seconds": 15}}}
+				case "replacement-fit":
+					fits++
+					inputs := request["inputs"].(map[string]any)
+					options := request["options"].(map[string]any)
+					if spec.fitted[0] == 0 || inputs["video"] != "original.mp4" || options["aspectRatio"] != spec.ratio {
+						t.Fatalf("incorrect fit request: %+v", request)
+					}
+					result["file"], result["metadata"] = "fitted.mp4", map[string]any{"size": spec.fitted}
+				default:
+					t.Fatalf("unexpected worker operation: %+v", request)
+				}
+				data, _ := json.Marshal(map[string]any{"status": "completed", "result": result})
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+			})}
+			job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Source: "original.mp4", Image: "https://example.invalid/person.png",
+				Model: spec.model, ModelAdapter: spec.adapter, ChannelID: 711, Seconds: "15", Resolution: spec.resolution, Prompt: "replace the person"}
+			if err := executeReplacement(ctx, &job, true); err != nil {
+				t.Fatal(err)
+			}
+			if !job.Planned || job.AspectRatio != spec.ratio || job.SourceSize != spec.source || job.Source != "original.mp4" || job.Credits != 30 || submissions != 0 {
+				t.Fatalf("incorrect plan: %+v, submissions=%d", job, submissions)
+			}
+			expectedInput := "original.mp4"
+			if spec.fitted[0] > 0 {
+				expectedInput = "fitted.mp4"
+				if fits != 1 || job.FittedSource != expectedInput {
+					t.Fatalf("nonstandard source was not fitted: %+v", job)
+				}
+			} else if fits != 0 || job.FittedSource != "" {
+				t.Fatalf("standard source was unnecessarily re-encoded: %+v", job)
+			}
+			job.Parts[0].Reference = "https://example.invalid/prepared.mp4"
+			if err := executeReplacementPart(ctx, &job, 0); err == nil || submissions != 1 || job.Parts[0].Input != expectedInput {
+				t.Fatalf("proxy path was not exercised: %+v, submissions=%d, error=%v", job, submissions, err)
+			}
+			if err := executeReplacementPart(ctx, &job, 0); err == nil || submissions != 1 {
+				t.Fatalf("ambiguous submission was resent: submissions=%d, error=%v", submissions, err)
+			}
+		})
+	}
+}
+
+func TestReplacementWan30UnfittedPlanRejectedBeforeSubmission(t *testing.T) {
+	ctx := replacementAspectSetup(t)
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("invalid old plan must not call a worker or provider", r.URL)
+		return nil, nil
+	})}
+	for _, ratio := range []string{"30:53", "9:16"} {
+		job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Model: "wan30-1080p-fast", ModelAdapter: "video.wan30",
+			AspectRatio: ratio, SourceSize: [2]int{480, 848}, Source: "original.mp4", Planned: true, Parts: []replacementPart{{}}}
+		if err := saveReplacement(&job); err != nil {
+			t.Fatal(err)
+		}
+		if err := executeReplacementPart(ctx, &job, 0); err == nil || !strings.Contains(err.Error(), "新建任务重新分析") || job.Parts[0].Submitted {
+			t.Fatalf("invalid plan advanced: %+v, %v", job, err)
+		}
+		saved, err := loadReplacement(job.ID, job.UserID)
+		if err != nil || saved.Parts[0].Submitted || saved.Parts[0].Input != "" {
+			t.Fatalf("invalid plan was mutated: %+v, %v", saved, err)
+		}
+	}
+}
+
+func TestReplacementWan30InvalidFitStopsBeforeQuote(t *testing.T) {
+	ctx := replacementAspectSetup(t)
+	for _, size := range [][2]int{{}, {480, 848}} {
+		aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Host != "worker.invalid" {
+				t.Fatal("invalid fit contacted a model provider", r.URL)
+			}
+			var request struct {
+				Operation string `json:"operation"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&request)
+			var result map[string]any
+			if request.Operation == "replacement-plan" {
+				result = map[string]any{"metadata": map[string]any{"size": [2]int{480, 848}, "parts": []map[string]any{{"start": 0, "end": 5, "inputStart": 0, "inputEnd": 5}}}}
+			} else if request.Operation == "replacement-fit" {
+				result = map[string]any{"file": "bad-fit.mp4", "metadata": map[string]any{"size": size}}
+			} else {
+				t.Fatalf("unexpected worker operation: %s", request.Operation)
+			}
+			data, _ := json.Marshal(map[string]any{"status": "completed", "result": result})
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+		})}
+		job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Model: "wan30-1080p-fast", ModelAdapter: "video.wan30",
+			Source: "original.mp4", ChannelID: 711, Resolution: "1080", Seconds: "15"}
+		if err := executeReplacement(ctx, &job, true); err == nil || !strings.Contains(err.Error(), "处理服务未返回所选画幅") || job.Planned || job.Credits != 0 || job.Parts[0].Submitted || job.FittedSource != "" {
+			t.Fatalf("bad fitted dimensions advanced: %+v, %v", job, err)
+		}
+	}
+}
+
+func TestReplacementWan30RequiresFitCapability(t *testing.T) {
+	ctx := replacementAspectSetup(t)
+	config.Cfg.PublicBaseURL = "https://studio.example.invalid"
+	if err := saveWorkerOwner("aspect-owner", "media", "original.mp4"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.SaveReferenceMediaOwner(model.ReferenceMediaOwner{ID: "person.png", UserID: "aspect-owner", MimeType: "image/png"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, available := range []bool{false, true} {
+		aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Host != "worker.invalid" || r.URL.Path != "/health" || r.Method != "GET" {
+				t.Fatal("capability check must not submit processing or generation", r.URL)
+			}
+			capabilities := []map[string]any{}
+			for _, name := range []string{"replacement-plan", "replacement-extract", "replacement-validate", "replacement-assemble", "replacement-segment", "replacement-finish"} {
+				capabilities = append(capabilities, map[string]any{"name": name, "available": true})
+			}
+			capabilities = append(capabilities, map[string]any{"name": "replacement-fit", "available": available})
+			data, _ := json.Marshal(map[string]any{"capabilities": capabilities})
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
+		})}
+		job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Model: "wan30-1080p-fast", ModelAdapter: "video.wan30",
+			Source: "original.mp4", Image: config.Cfg.PublicBaseURL + "/api/media/references/person.png", ChannelID: 711, Resolution: "1080", Seconds: "15"}
+		err := validateReplacementRequest(ctx, &job)
+		if available && err != nil || !available && (err == nil || !strings.Contains(err.Error(), "replacement-fit")) {
+			t.Fatalf("fit capability available=%t: %v", available, err)
+		}
+	}
 }
 
 func TestReplacementH3AspectPlanAndAssemblyUseFittedSource(t *testing.T) {

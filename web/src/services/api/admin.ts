@@ -383,6 +383,10 @@ export async function saveAdminSettings(token: string, settings: AdminSettings) 
     return apiPost<AdminSettings>("/api/admin/settings", settings, token);
 }
 
+export async function fetchChannelAPIKey(token: string, channelId: number) {
+    return apiPost<string>("/api/admin/settings/channel-key", { channelId }, token);
+}
+
 export type AdminChannelActionRequest = {
     index?: number;
     channel: AdminModelChannel;

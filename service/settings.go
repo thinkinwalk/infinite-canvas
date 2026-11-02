@@ -60,6 +60,30 @@ func AdminSettings() (model.Settings, error) {
 	return hidePrivateAPIKeys(normalizeSettings(settings)), err
 }
 
+func AdminChannelAPIKey(channelID int) (string, error) {
+	if channelID <= 0 {
+		return "", safeMessageError{message: "无效的渠道 ID"}
+	}
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return "", err
+	}
+	for _, channel := range normalizePrivateSetting(settings.Private).Channels {
+		if channel.ID != channelID {
+			continue
+		}
+		key := channel.APIKey
+		if channel.Protocol == "replicate" || channel.Protocol == "wavespeed" {
+			key = replicateChannelKey(channel)
+		}
+		if strings.TrimSpace(key) == "" {
+			return "", safeMessageError{message: "该渠道未配置密钥"}
+		}
+		return key, nil
+	}
+	return "", safeMessageError{message: "渠道不存在，请刷新后重试"}
+}
+
 func SaveSettings(settings model.Settings) (model.Settings, error) {
 	if settings.Private.ModelManagement != nil {
 		detached := cloneManagement(*settings.Private.ModelManagement)

@@ -15,6 +15,7 @@ import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { isMiniMaxH3Name, miniMaxH3Profile } from "@/lib/minimax-h3";
 import { sparkCineH3Preset } from "@/lib/video-capabilities";
+import ChannelAPIKeyInput from "./components/ChannelAPIKeyInput";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
 const jsonEditorTheme = EditorView.theme({
@@ -838,7 +839,12 @@ export default function AdminSettingsPage() {
                                     extra={editingChannelIndex !== null ? (channels[editingChannelIndex].apiKeyConfigured ? "密钥已配置" : "未配置密钥") : undefined}
                                     rules={editingChannelIndex === null && !channelUsesEnvironment ? [{ required: true, message: "请输入 API Key" }] : []}
                                 >
-                                    <Input.Password autoComplete="new-password" placeholder={editingChannelIndex === null ? "输入渠道密钥" : "留空则沿用该渠道已保存的密钥"} />
+                                    <ChannelAPIKeyInput
+                                        key={`${isChannelDrawerOpen}:${editingChannelIndex}:${channelProtocol}`}
+                                        channelId={editingChannelIndex === null ? undefined : channels[editingChannelIndex].id}
+                                        configured={editingChannelIndex !== null && channels[editingChannelIndex].protocol === channelProtocol && channels[editingChannelIndex].apiKeyConfigured}
+                                        placeholder={editingChannelIndex === null ? "输入渠道密钥" : "留空则沿用该渠道已保存的密钥"}
+                                    />
                                 </Form.Item>
                             </Col>
                             {editingChannelIndex !== null && (

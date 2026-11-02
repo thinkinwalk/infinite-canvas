@@ -47,6 +47,23 @@ func AdminSaveSettings(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func AdminChannelAPIKey(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	var request struct {
+		ChannelID int `json:"channelId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		Fail(w, "请求格式不正确")
+		return
+	}
+	key, err := service.AdminChannelAPIKey(request.ChannelID)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, key)
+}
+
 func AdminChannelModels(w http.ResponseWriter, r *http.Request) {
 	var request adminChannelActionRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)

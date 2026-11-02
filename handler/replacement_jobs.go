@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,6 +165,18 @@ func replacementAspectMatches(ratio string, width, height int) bool {
 	var w, h int
 	_, err := fmt.Sscanf(ratio, "%d:%d", &w, &h)
 	return err == nil && width > 0 && height > 0 && w > 0 && h > 0 && width*h == height*w
+}
+
+func isWan30Replacement(channel model.ModelChannel, job *replacementJob) bool {
+	if adapter := firstReplacementText(job.ModelAdapter, channel.ManagedAdapter); adapter != "" {
+		return adapter == "video.wan30"
+	}
+	name := strings.ToLower(strings.TrimSpace(job.Model))
+	return name == "wan30-720p" || name == "wan30-1080p-fast"
+}
+
+func wan30ReplacementAspectRatios() []string {
+	return []string{"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"}
 }
 
 func nearestReplacementAspect(ratios []string, width, height int) string {
@@ -1084,7 +1097,7 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		if err != nil {
 			return err
 		}
-		if service.IsSparkCineH3(channel, job.Model) || service.IsMiniMaxH3(job.Model) {
+		if service.IsSparkCineH3(channel, job.Model) || service.IsMiniMaxH3(job.Model) || isWan30Replacement(channel, job) {
 			needed = append(needed, "replacement-fit")
 		}
 	}
@@ -1165,6 +1178,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			profile := service.VideoProfile(channel, job.Model)
 			sparkCine := service.IsSparkCineH3(channel, job.Model)
 			miniMax := service.IsMiniMaxH3(job.Model)
+			wan30 := isWan30Replacement(channel, job)
 			if sparkCine {
 				job.AspectRatio = firstReplacementText(job.RequestedAspectRatio, nearestReplacementAspect(service.SparkCineH3AspectRatios(job.Resolution), width, height))
 				if err := service.SparkCineH3SpecError(job.Resolution, job.AspectRatio, 4); err != nil {
@@ -1172,6 +1186,8 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				}
 			} else if miniMax {
 				job.AspectRatio = nearestReplacementAspect(miniMaxH3AspectRatios(), width, height)
+			} else if wan30 {
+				job.AspectRatio = nearestReplacementAspect(wan30ReplacementAspectRatios(), width, height)
 			}
 			choices := profile.Seconds
 			for i := range job.Parts {
@@ -1199,7 +1215,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 					}
 				}
 			}
-			if (sparkCine || miniMax) && !replacementAspectMatches(job.AspectRatio, width, height) && job.FittedSource == "" {
+			if (sparkCine || miniMax || wan30) && !replacementAspectMatches(job.AspectRatio, width, height) && job.FittedSource == "" {
 				fitted, err := replacementWorkerStep(ctx, job, "fit:"+job.AspectRatio, "replacement-fit", map[string]any{"video": job.Source}, map[string]any{"aspectRatio": job.AspectRatio})
 				if err != nil {
 					return err
@@ -1584,6 +1600,12 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 		return err
 	}
 	part := &job.Parts[index]
+	if !part.Submitted && part.Generated == "" && isWan30Replacement(model.ModelChannel{}, job) {
+		if !slices.Contains(wan30ReplacementAspectRatios(), job.AspectRatio) ||
+			job.SourceSize[0] > 0 && job.SourceSize[1] > 0 && job.FittedSource == "" && !replacementAspectMatches(job.AspectRatio, job.SourceSize[0], job.SourceSize[1]) {
+			return fmt.Errorf("此任务尚未适配 Wan30 生成画幅，请新建任务重新分析；本次未提交生成")
+		}
+	}
 	if replacementCloudOperation(job.Model) == "head-swap" && !part.Submitted && part.Generated == "" {
 		return fmt.Errorf("%s", service.RetiredHeadSwapMessage)
 	}

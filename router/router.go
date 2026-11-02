@@ -165,6 +165,7 @@ func New() *gin.Engine {
 	admin.POST("/model-management", gin.WrapF(handler.AdminSaveModelManagement))
 	admin.POST("/model-management/preview", gin.WrapF(handler.AdminPreviewModelManagement))
 	admin.POST("/settings", gin.WrapF(handler.AdminSaveSettings))
+	admin.POST("/settings/channel-key", gin.WrapF(handler.AdminChannelAPIKey))
 	admin.POST("/settings/channel-models", gin.WrapF(handler.AdminChannelModels))
 	admin.POST("/settings/channel-test", gin.WrapF(handler.AdminTestChannelModel))
 	admin.GET("/prompt-categories", gin.WrapF(handler.AdminPromptCategories))
