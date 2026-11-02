@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.143
-- Current production source: tag v0.19.143, commit 0462d60b84badf738b460a52b6ba974dc8e38770
+- Current production image: infinite-canvas:v0.19.144
+- Current production source: tag v0.19.144, commit 93b8623c94e4eca49b65978c487de82081687e75
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.142-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.144-worker/
+
+## v0.19.144 deployment
+
+- Tag `v0.19.144`, commit `93b8623c94e4eca49b65978c487de82081687e75`, is pushed to `release/v0.19.60` and published as the formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.144. Production App image `infinite-canvas:v0.19.144`, ID `sha256:81e450ed1f57c41aa4e5df86f632ecd2fb2c61719ae87dd213bc5f194398ebb3`, replaces v0.19.143.
+- Person replacement videos within 15 seconds and the selected model's capacity use whole-video generation, without single-segment checkboxes. Unnecessary scene detection, extraction and assembly are skipped. Longer inputs retain segmentation and explicit billing confirmation. MiniMax H3 automatically matches source dimensions to a supported ratio and pads when necessary; invalid specs fail before quotation/submission without marking a part submitted.
+- Development passed 24 frontend tests / 940 assertions, focused Go regressions, 13 Worker logic tests, three real-media regressions and six isolated mocked browser scenarios. Release repeated no local tests or build. Server frontend/backend build, internal/external health, eleven routes, bundle markers, public/container resource hashes and the ordinary-user Worker health gateway passed. Required segment-plan/replacement-plan/fit/extract/finish capabilities are available.
+- Worker runtime image `infinite-canvas-video-worker:v0.19.87` is retained. Versioned source mounts now point to `/opt/infinite-canvas/releases/v0.19.144-worker/`; only `replacement.py` content changes, with other deployed source files preserved and checked. Worker was recreated with unchanged environment/data mounts and equivalent capabilities. No active cloud or Worker task was interrupted.
+- Public JS `/assets/index-Vh6YHNm5.js` SHA-256 `681e9dcb3b4d9010a75d1f4d4a597e36462c277e1fef6d560cedc081b58fc602`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Running backend SHA-256 `3a2d9ab7e29bd1f23165f1a51454ee8643b2d35923cc673d8bc7a708eaf6fc29` matches the release image. Independent workstation HTTPS confirmed health, content-replace page, version/whole-video markers, catalog revision 24 and both asset hashes.
+- Final root-only backup `/opt/infinite-canvas/backups/v0.19.144-final-20261102-034525/`; prebuild `/opt/infinite-canvas/backups/v0.19.144-prebuild-20261102-034352/`. SQLite quick check, schema, table counts, complete settings and protected account fields, App environment/mounts and Worker environment/data mounts are preserved. All 120 existing task records and metadata of 28,801 existing files are preserved. Backups include SQLite, Compose and private environment, not all media contents.
+- Reports `/opt/infinite-canvas/releases/v0.19.144-deployment.json` and `/opt/infinite-canvas/releases/v0.19.144-public-verification.json`, with workstation `.codex_tmp/` copies. Deployment script `/opt/infinite-canvas/releases/deploy-v0.19.144.py`. Rollback restores final-backup Compose and recreates both App and video-worker, preserving current database/media and previous image/source directory.
+- No paid inference or production model configuration changes. Production browser interaction, real model billing and output quality remain pending. Existing paused ambiguous submissions are preserved and never automatically resent. The pre-existing one-frame-short assembly regression remains separately tracked; full real-media suite is not claimed to pass.
 
 ## v0.19.143 deployment
 

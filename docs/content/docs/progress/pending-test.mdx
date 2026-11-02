@@ -13,7 +13,10 @@ description: Implemented changes that still need manual verification
 - 已通过前端 24 项定向测试 / 940 个断言、后端人物替换及 MiniMax 定向回归、Worker 13 项逻辑测试和 3 项真实 FFmpeg 媒体回归。覆盖自动补边及原音轨保留、模型固定时长补齐与裁回、既有长视频分段、预览确认和原渠道保护；另已验证非法画幅及空提示词在提交前停止，不请求上游，内存及保存记录均保持未提交状态。
 - 隔离浏览器 6 组检查通过：5 秒和恰好 15 秒整段界面、费用确认、整段 `/start` 请求、16 秒分段勾选及多段预算、页面无运行错误。1440/390/320px 深浅主题共 6 张截图已生成，抽查桌面与手机画面，无横向溢出；API 均为模拟，未提交真实收费生成。证据 `.codex_tmp/short-video-qa/report.json`。
 - 完整真实媒体回归仍有一项既有失败：`test_assembly_fits_standard_generated_canvas_without_stretching` 的 1 秒拼接输出为 0.966667 秒；修改前代码单独复跑同样失败。本轮未改动该拼接实现，不将全套媒体回归记录为通过。
-- 尚未发布部署。待在生产版本更新后验收真实 5 秒 / 15 秒原片、长视频、所选模型扣点及生成效果。原先已暂停且没有上游任务号的失败记录不会被自动重置或重发；新建分析可使用本次修复，已有云任务继续受重复提交保护。
+- 已随 `v0.19.144`（`93b8623c`）提交、推送发布分支和 tag、发布正式 GitHub Release 并部署。发布未重复本地测试或构建；服务器前后端构建、内外健康、11 页面、普通用户 Worker 网关及处理能力、公网 JS/CSS 哈希核对通过，本机独立 HTTPS 再次核对一致。生产页面 `https://studio.lingzhouai.com/video/content-replace`。
+- App 使用 `infinite-canvas:v0.19.144`；Worker 保留 `v0.19.87` 运行镜像，同步更新至 `/opt/infinite-canvas/releases/v0.19.144-worker/` 源码挂载并重启，仅替换 `replacement.py` 内容，其他已部署 Worker 源码逐文件保持。数据库完整性、结构、表数量、完整设置/账号字段、环境及数据挂载保持；第 24 版模型目录未改，120 份现有任务记录及 28,801 个现有媒体文件元数据保持。
+- 最终备份 `/opt/infinite-canvas/backups/v0.19.144-final-20261102-034525/`，包含 SQLite、Compose 及私有环境，不含全量媒体；部署及公网证据 `/opt/infinite-canvas/releases/v0.19.144-deployment.json`、`v0.19.144-public-verification.json`，本机 `.codex_tmp/` 保留副本。回滚恢复最终备份 Compose 并重建 App 与 Worker，保留当前数据库及媒体。
+- 未提交收费生成；生产浏览器交互、真实 5 秒 / 15 秒原片、长视频、所选模型扣点及生成效果仍待验收。原先已暂停且没有上游任务号的失败记录不会被自动重置或重发；新建分析可使用本次修复，已有云任务继续受重复提交保护。
 
 ## 模型接入向导支持视频按秒计费
 
