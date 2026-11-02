@@ -14,5 +14,10 @@ test("actual five-second Wan segment has no padding in the quote summary", () =>
     const job = { parts: [
         { start: 0, end: 5, inputStart: 0, inputEnd: 5, seconds: 5 },
     ] } as ReplacementJob;
-    expect(replacementDurationSummary(job)).toBe("原片 5.00 秒 · 1 段 · 重叠 0.00 秒 · 补齐 0.00 秒 · 本轮生成 5.00 秒");
+    expect(replacementDurationSummary(job)).toBe("原片 5.00 秒 · 整段生成 · 模型输入 5.00 秒");
+});
+
+test("whole video still discloses required fixed-duration padding", () => {
+    const job = { parts: [{ start: 0, end: 5, inputStart: 0, inputEnd: 5, seconds: 10 }] } as ReplacementJob;
+    expect(replacementDurationSummary(job)).toBe("原片 5.00 秒 · 整段生成 · 模型输入 10.00 秒 · 补齐 5.00 秒");
 });

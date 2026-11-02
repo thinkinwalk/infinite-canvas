@@ -108,7 +108,7 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
     source = inputs["video"]
     if operation == "replacement-fit":
         ratio = options.get("aspectRatio")
-        if ratio not in ("16:9", "9:16", "21:9", "4:3", "1:1", "3:4"):
+        if ratio not in ("16:9", "9:16", "21:9", "4:3", "1:1", "3:4", "2:3", "3:2"):
             raise ValueError("请选择模型支持的生成画幅")
         info = await probe_video(identifier, source)
         rw, rh = map(int, ratio.split(":"))
@@ -128,10 +128,12 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
     if operation == "replacement-plan":
         info = await probe_video(identifier, source)
         seconds = float(options["seconds"])
-        # FFmpeg's scdet detector uses its documented default threshold.
-        _, log = await ffmpeg(identifier, "-i", source, "-an", "-vf", "scdet,metadata=print", "-f", "null", "-")
-        cuts = [float(t) for t in re.findall(r"lavfi\.scd\.time=([0-9.]+)", log)]
         preserve_scenes = options.get("preserveScenes", True)
+        cuts = []
+        if info["duration"] > seconds or preserve_scenes:
+            # FFmpeg's scdet detector uses its documented default threshold.
+            _, log = await ffmpeg(identifier, "-i", source, "-an", "-vf", "scdet,metadata=print", "-f", "null", "-")
+            cuts = [float(t) for t in re.findall(r"lavfi\.scd\.time=([0-9.]+)", log)]
         parts = plan_segments(info["duration"], seconds, cuts, preserve_scenes=preserve_scenes)
         return {"metadata": {**info, "parts": parts, "overlap": 0.5, "preserveScenes": preserve_scenes, "identityChecked": False}}
     if operation == "replacement-extract":

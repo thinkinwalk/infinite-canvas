@@ -25,6 +25,15 @@ test("generation stages follow actual input and result state", () => {
     expect(replacementProgress(current)).toMatchObject({ activeIndex: -1, stage: 2, title: "正在合成视频", completed: 2 });
 });
 
+test("whole video progress has no segment numbering", () => {
+    const current = job({ parts: [part()] });
+    expect(replacementProgress(current).title).toBe("正在准备整段视频");
+    current.parts![0].submitted = true;
+    expect(replacementProgress(current).title).toBe("正在生成整段视频");
+    current.parts![0].generated = "generated.mp4";
+    expect(replacementProgress(current).title).toBe("正在整理视频结果");
+});
+
 test("selected parts keep exporting active and leave unselected parts idle", () => {
     const current = job({ selectionMode: true, selectedParts: [1] });
     expect(replacementProgress(current).activeIndex).toBe(1);

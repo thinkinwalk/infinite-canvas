@@ -18,6 +18,24 @@ class ReplacementTimelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((parts[0]["inputStart"], parts[0]["inputEnd"]), (0, 15))
         self.assertEqual(len(plan_segments(15, 15, cuts)), 10)
 
+    async def test_whole_video_only_probes_without_scene_detection(self):
+        async def no_ffmpeg(*args):
+            self.fail("a whole video must not run scene detection or splitting")
+
+        for duration in (5, 15):
+            async def fake_probe(identifier, path):
+                return {"duration": duration, "fps": 25, "size": (480, 848), "audio": True}
+
+            with tempfile.TemporaryDirectory() as directory:
+                result = await process(
+                    "replacement-plan", "test", {"video": "source.mp4"},
+                    {"seconds": 15, "preserveScenes": False}, Path(directory),
+                    ffmpeg=no_ffmpeg, probe_video=fake_probe, publish=lambda path: path,
+                )
+            parts = result["metadata"]["parts"]
+            self.assertEqual(len(parts), 1)
+            self.assertEqual((parts[0]["start"], parts[0]["end"]), (0, duration))
+
     def test_packing_keeps_long_video_coverage_and_input_limits(self):
         for cuts in ([1, 2, 9, 16, 17, 30, 31], [1, 40, 41], []):
             parts = plan_segments(180, 15, cuts, preserve_scenes=False)

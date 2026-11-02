@@ -66,7 +66,8 @@ class ReplacementMediaTests(unittest.IsolatedAsyncioTestCase):
                           "-c:v", "libx264", "-c:a", "aac", source)
         original_hash = hashlib.sha256(source.read_bytes()).digest()
         for ratio, size in (("9:16", (558, 992)), ("16:9", (1728, 972)), ("1:1", (960, 960)),
-                            ("21:9", (2268, 972)), ("4:3", (1280, 960)), ("3:4", (720, 960))):
+                            ("21:9", (2268, 972)), ("4:3", (1280, 960)), ("3:4", (720, 960)),
+                            ("2:3", (640, 960)), ("3:2", (1440, 960))):
             fitted = await self.operation("replacement-fit", {"video": source}, {"aspectRatio": ratio})
             info = await self.probe_video("test", fitted["file"])
             self.assertEqual(info["size"], size)

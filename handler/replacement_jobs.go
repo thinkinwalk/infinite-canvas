@@ -166,9 +166,9 @@ func replacementAspectMatches(ratio string, width, height int) bool {
 	return err == nil && width > 0 && height > 0 && w > 0 && h > 0 && width*h == height*w
 }
 
-func nearestReplacementAspect(resolution string, width, height int) string {
+func nearestReplacementAspect(ratios []string, width, height int) string {
 	best, distance := "", math.Inf(1)
-	for _, ratio := range service.SparkCineH3AspectRatios(resolution) {
+	for _, ratio := range ratios {
 		var w, h float64
 		_, _ = fmt.Sscanf(ratio, "%f:%f", &w, &h)
 		current := math.Abs(math.Log(w / h / (float64(width) / float64(height))))
@@ -447,7 +447,7 @@ func ReplacementJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	job := replacementJob{ID: request.ID, UserID: user.ID, Source: request.Source, Image: request.Image, Model: request.Model,
 		Resolution: request.Resolution, Seconds: request.Seconds, RequestedAspectRatio: request.AspectRatio, Prompt: request.Prompt, Subtitles: request.Subtitles, RegenerateSubtitles: request.Subtitles && request.RegenerateSubtitles,
-		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, PreviewRequired: request.PreviewRequired, Status: "planning", Step: "分析镜头与分段费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+		SubtitleSize: request.SubtitleSize, SubtitleColor: request.SubtitleColor, PreviewRequired: request.PreviewRequired, Status: "planning", Step: "读取视频规格与处理费用", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if enabled, err := service.ManagementEnabled(); err != nil || enabled {
 		if err == nil && request.FeatureID != "replace.person" && request.FeatureID != "replace.head" {
 			err = fmt.Errorf("请选择人物替换或换脸功能模型")
@@ -1084,7 +1084,7 @@ func validateReplacementRequest(ctx context.Context, job *replacementJob) error 
 		if err != nil {
 			return err
 		}
-		if service.IsSparkCineH3(channel, job.Model) {
+		if service.IsSparkCineH3(channel, job.Model) || service.IsMiniMaxH3(job.Model) {
 			needed = append(needed, "replacement-fit")
 		}
 	}
@@ -1154,7 +1154,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				}
 			}
 		}
-		job.PreviewRequired = job.PreviewRequired || len(job.Parts) > 1 || replacementDuration(job) > 15
+		job.PreviewRequired = len(job.Parts) > 1
 		job.Credits = 0
 		if replacementCloudOperation(job.Model) == "" {
 			user, _ := service.UserFromContext(ctx)
@@ -1163,11 +1163,15 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				return err
 			}
 			profile := service.VideoProfile(channel, job.Model)
-			if service.IsSparkCineH3(channel, job.Model) {
-				job.AspectRatio = firstReplacementText(job.RequestedAspectRatio, nearestReplacementAspect(job.Resolution, width, height))
+			sparkCine := service.IsSparkCineH3(channel, job.Model)
+			miniMax := service.IsMiniMaxH3(job.Model)
+			if sparkCine {
+				job.AspectRatio = firstReplacementText(job.RequestedAspectRatio, nearestReplacementAspect(service.SparkCineH3AspectRatios(job.Resolution), width, height))
 				if err := service.SparkCineH3SpecError(job.Resolution, job.AspectRatio, 4); err != nil {
 					return err
 				}
+			} else if miniMax {
+				job.AspectRatio = nearestReplacementAspect(miniMaxH3AspectRatios(), width, height)
 			}
 			choices := profile.Seconds
 			for i := range job.Parts {
@@ -1184,13 +1188,18 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				if math.IsInf(part.Seconds, 1) {
 					return fmt.Errorf("当前模型没有能够容纳此片段的时长档位")
 				}
-				if service.IsSparkCineH3(channel, job.Model) {
+				if sparkCine {
 					if err := service.SparkCineH3SpecError(job.Resolution, job.AspectRatio, part.Seconds); err != nil {
 						return err
 					}
 				}
+				if miniMax {
+					if _, _, err := miniMaxH3VideoSpec(map[string]any{"prompt": job.Prompt, "resolution": job.Resolution, "seconds": part.Seconds, "aspect_ratio": job.AspectRatio}); err != nil {
+						return err
+					}
+				}
 			}
-			if service.IsSparkCineH3(channel, job.Model) && !replacementAspectMatches(job.AspectRatio, width, height) && job.FittedSource == "" {
+			if (sparkCine || miniMax) && !replacementAspectMatches(job.AspectRatio, width, height) && job.FittedSource == "" {
 				fitted, err := replacementWorkerStep(ctx, job, "fit:"+job.AspectRatio, "replacement-fit", map[string]any{"video": job.Source}, map[string]any{"aspectRatio": job.AspectRatio})
 				if err != nil {
 					return err
@@ -1215,6 +1224,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		}
 		job.Planned = true
 		job.Status, job.Step = "ready", "分段计划已就绪，等待确认生成费用"
+		if len(job.Parts) == 1 {
+			job.Step = "整段视频已就绪，等待确认生成费用"
+		}
 		return saveReplacement(job)
 	}
 	// A saved first part must never allow a restart to bypass preview approval.
@@ -1237,6 +1249,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			continue
 		}
 		job.Step = fmt.Sprintf("处理第 %d / %d 段", index+1, len(job.Parts))
+		if len(job.Parts) == 1 {
+			job.Step = "正在处理整段视频"
+		}
 		if err := saveReplacement(job); err != nil {
 			return err
 		}
@@ -1245,7 +1260,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				return err
 			}
 		}
-		if job.SelectionMode && part.Result == "" {
+		if job.SelectionMode && len(job.Parts) > 1 && part.Result == "" {
 			result, err := replacementWorkerStep(ctx, job, strconv.Itoa(index)+":export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
 			if err != nil {
 				return err
@@ -1272,19 +1287,32 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		return fmt.Errorf("已暂停，全部片段已保留")
 	}
 	if job.Assembled == "" {
-		files := []string{}
-		for _, part := range job.Parts {
-			files = append(files, part.Generated)
+		if len(job.Parts) == 1 {
+			part := &job.Parts[0]
+			assembled := part.Generated
+			if part.Seconds != part.End-part.Start {
+				result, err := replacementWorkerStep(ctx, job, "0:export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
+				if err != nil {
+					return err
+				}
+				assembled = result.File
+			}
+			job.Assembled = assembled
+		} else {
+			files := []string{}
+			for _, part := range job.Parts {
+				files = append(files, part.Generated)
+			}
+			job.Step = "按原时间轴拼接画面"
+			if err := saveReplacement(job); err != nil {
+				return err
+			}
+			result, err := replacementWorkerStep(ctx, job, "assemble", "replacement-assemble", map[string]any{"video": replacementSource(job), "parts": files}, map[string]any{"parts": job.Parts})
+			if err != nil {
+				return err
+			}
+			job.Assembled = result.File
 		}
-		job.Step = "按原时间轴拼接画面"
-		if err := saveReplacement(job); err != nil {
-			return err
-		}
-		result, err := replacementWorkerStep(ctx, job, "assemble", "replacement-assemble", map[string]any{"video": replacementSource(job), "parts": files}, map[string]any{"parts": job.Parts})
-		if err != nil {
-			return err
-		}
-		job.Assembled = result.File
 		if err := saveReplacement(job); err != nil {
 			return err
 		}
@@ -1328,6 +1356,10 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 		return err
 	}
 	job.Result, job.Status, job.Step = result.File, "completed", "已合成，请验收人物、口型与接缝"
+	if len(job.Parts) == 1 {
+		job.Parts[0].Result = job.Result
+		job.Step = "已生成，请验收人物与口型"
+	}
 	if job.SubtitleOutput == "editable" {
 		if len(job.CaptionSegments) > 0 {
 			job.CaptionStatus, job.Step = "draft", "无字幕成片已保存，原字幕草稿待校对"
@@ -1556,6 +1588,9 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 		return fmt.Errorf("%s", service.RetiredHeadSwapMessage)
 	}
 	prefix := strconv.Itoa(index) + ":"
+	if part.Input == "" && len(job.Parts) == 1 && part.Start == 0 && part.InputStart == 0 && part.InputEnd == part.End && part.InputEnd == part.Seconds && strings.EqualFold(filepath.Ext(replacementSource(job)), ".mp4") {
+		part.Input = replacementSource(job)
+	}
 	if part.Input == "" {
 		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": replacementSource(job)}, part)
 		if err != nil {
@@ -1603,6 +1638,21 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 			if replacementControlFor(job.ID).pause.Load() {
 				return fmt.Errorf("已暂停，尚未提交下一次收费生成")
 			}
+			var videoInput map[string]any
+			if replacementCloudOperation(job.Model) == "" {
+				resolution := job.Resolution
+				if resolution != "2K" && resolution != "4K" {
+					resolution += "p"
+				}
+				videoInput = map[string]any{"model": job.Model, "prompt": job.Prompt, "seconds": strconv.FormatFloat(part.Seconds, 'f', -1, 64), "resolution": resolution, "input_mode": "reference", "aspect_ratio": job.AspectRatio, "image_url": job.Image, "reference_videos": []string{part.Reference}}
+				channel, err := replacementModelChannel(ctx, job.Model, current.Group, false)
+				if err != nil {
+					return err
+				}
+				if err := validateVideoProfileRequest(service.VideoProfile(channel, job.Model), mustReplacementJSON(videoInput), "application/json"); err != nil {
+					return err
+				}
+			}
 			part.Submitted = true
 			if replacementCloudOperation(job.Model) != "" {
 				part.TaskID = uuid.NewString()
@@ -1615,11 +1665,7 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 				_, err = replacementCall(ctx, CreateReplicateTask, "POST", "/api/v1/replicate/tasks", map[string]any{"id": part.TaskID, "operation": replacementCloudOperation(job.Model), "expectedCredits": part.Credits, "input": replacementCloudInput(job, part)}, nil)
 			} else {
 				var raw json.RawMessage
-				resolution := job.Resolution
-				if resolution != "2K" {
-					resolution += "p"
-				}
-				raw, err = replacementCall(ctx, AIVideos, "POST", "/api/v1/videos", map[string]any{"model": job.Model, "prompt": job.Prompt, "seconds": strconv.FormatFloat(part.Seconds, 'f', -1, 64), "resolution": resolution, "input_mode": "reference", "aspect_ratio": job.AspectRatio, "image_url": job.Image, "reference_videos": []string{part.Reference}}, &part.Credits)
+				raw, err = replacementCall(ctx, AIVideos, "POST", "/api/v1/videos", videoInput, &part.Credits)
 				if err == nil {
 					part.TaskID = videoResponseString(raw, "id", "task_id")
 					if part.TaskID == "" {

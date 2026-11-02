@@ -11,8 +11,10 @@ export function replacementProgress(job: ReplacementJob) {
     }) ?? -1 : -1;
     const part = parts[activeIndex];
     const stage = job.status === "planning" || part && !part.submitted && !part.generated ? 0 : part && !part.generated ? 1 : 2;
-    const title = job.status === "planning" ? "正在分析视频与分段"
+    const whole = parts.length === 1;
+    const title = job.status === "planning" ? "正在读取视频与费用"
         : activeIndex < 0 ? "正在合成视频"
+        : whole ? stage === 0 ? "正在准备整段视频" : stage === 1 ? "正在生成整段视频" : "正在整理视频结果"
         : stage === 0 ? `正在准备第 ${activeIndex + 1} 段`
         : stage === 1 ? `正在生成第 ${activeIndex + 1} 段`
         : `正在整理第 ${activeIndex + 1} 段结果`;

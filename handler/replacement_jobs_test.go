@@ -396,16 +396,12 @@ func TestReplacementCloudJointPreservesCleanVideoWhenTranscriptionFails(t *testi
 		operations = append(operations, request.Operation)
 		file := ""
 		switch request.Operation {
-		case "replacement-extract":
-			if request.Inputs["video"] != "original.mp4" {
-				t.Fatal("joint cloud generation must receive the original video")
-			}
-			file = "clean-part.mp4"
 		case "replacement-validate":
-		case "replacement-assemble":
-			file = "assembled.mp4"
+			if request.Inputs["source"] != "original.mp4" {
+				t.Fatal("short video must use the original without extraction")
+			}
 		case "replacement-finish":
-			if request.Inputs["source"] != "original.mp4" || request.Inputs["video"] != "assembled.mp4" || request.Options["subtitleMethod"] != nil || request.Options["subtitleOutput"] != "editable" || len(request.Options["subtitles"].([]any)) != 0 {
+			if request.Inputs["source"] != "original.mp4" || request.Inputs["video"] != "paid-output.mp4" || request.Options["subtitleMethod"] != nil || request.Options["subtitleOutput"] != "editable" || len(request.Options["subtitles"].([]any)) != 0 {
 				t.Fatalf("bad finish: %+v", request)
 			}
 			file = "clean-with-audio.mp4"
@@ -423,11 +419,11 @@ func TestReplacementCloudJointPreservesCleanVideoWhenTranscriptionFails(t *testi
 	if err := executeReplacement(context.Background(), &job, false); err != nil {
 		t.Fatalf("ASR failure should not fail the clean video delivery: %v", err)
 	}
-	if strings.Join(operations, ",") != "replacement-extract,replacement-validate,replacement-assemble,replacement-finish,replacement-transcribe" {
+	if strings.Join(operations, ",") != "replacement-validate,replacement-finish,replacement-transcribe" {
 		t.Fatalf("wrong order: %v", operations)
 	}
 	saved, err := loadReplacement(job.ID, job.UserID)
-	if err != nil || saved.Status != "completed" || saved.Result != "clean-with-audio.mp4" || saved.CaptionStatus != "failed" || saved.Assembled != "assembled.mp4" || saved.Parts[0].Generated != "paid-output.mp4" || !saved.Parts[0].Validated || saved.PreparedSource != "" {
+	if err != nil || saved.Status != "completed" || saved.Result != "clean-with-audio.mp4" || saved.CaptionStatus != "failed" || saved.Assembled != "paid-output.mp4" || saved.Parts[0].Generated != "paid-output.mp4" || !saved.Parts[0].Validated || saved.PreparedSource != "" {
 		t.Fatalf("results lost: %+v, %v", saved, err)
 	}
 	operations = nil
@@ -439,6 +435,48 @@ func TestReplacementCloudJointPreservesCleanVideoWhenTranscriptionFails(t *testi
 	operations = nil
 	if err := executeReplacement(context.Background(), &saved, false); err != nil || strings.Join(operations, ",") != "replacement-finish" {
 		t.Fatalf("clean-only job must not run ASR or inpainting: %v %v", operations, err)
+	}
+}
+
+func TestReplacementWholeFixedDurationTrimsPaddingWithoutAssembly(t *testing.T) {
+	replacementTestStorage(t)
+	t.Setenv("VIDEO_WORKER_URL", "http://worker.invalid")
+	previous := aiHTTPClient
+	t.Cleanup(func() { aiHTTPClient = previous })
+	operations := []string{}
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatal("post-processing must not call a model")
+		}
+		var request struct {
+			Operation string         `json:"operation"`
+			Inputs    map[string]any `json:"inputs"`
+			Options   map[string]any `json:"options"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		operations = append(operations, request.Operation)
+		switch request.Operation {
+		case "replacement-segment":
+			if request.Options["end"] != float64(5) || request.Inputs["video"] != "generated-10s.mp4" || request.Inputs["input"] != "padded-10s.mp4" {
+				t.Fatalf("padding was not trimmed to the original: %+v", request)
+			}
+		case "replacement-finish":
+			if request.Inputs["video"] != "short-padded-replacement-segment.mp4" || request.Inputs["source"] != "original.mp4" {
+				t.Fatalf("original audio or trimmed video was lost: %+v", request)
+			}
+		default:
+			t.Fatalf("whole video ran an unnecessary operation: %s", request.Operation)
+		}
+		body, _ := json.Marshal(map[string]any{"status": "completed", "result": map[string]any{"file": "short-padded-" + request.Operation + ".mp4"}})
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+	})}
+	job := replacementJob{ID: uuid.NewString(), UserID: "owner", Source: "original.mp4", Model: "wan30-720p", Planned: true,
+		Parts: []replacementPart{{Start: 0, End: 5, InputEnd: 5, Seconds: 10, Input: "padded-10s.mp4", Generated: "generated-10s.mp4", Submitted: true, Validated: true}}}
+	if err := executeReplacement(context.Background(), &job, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(operations, ",") != "replacement-segment,replacement-finish" || job.Status != "completed" || job.Parts[0].Result != job.Result {
+		t.Fatalf("incorrect whole video result: %+v, %v", job, operations)
 	}
 }
 

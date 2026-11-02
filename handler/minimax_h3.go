@@ -3,40 +3,58 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 )
 
-func buildMiniMaxH3VideoBody(payload map[string]any) ([]byte, bool) {
+var miniMaxH3Sizes = map[string][]string{
+	"16:9": {"864x480", "1376x768", "1920x1088"},
+	"9:16": {"480x864", "768x1376", "1088x1920"},
+	"1:1":  {"640x640", "1024x1024", "1440x1440"},
+	"2:3":  {"544x800", "832x1248", "1184x1760"},
+	"3:2":  {"800x544", "1248x832", "1760x1184"},
+	"3:4":  {"576x736", "896x1184", "1248x1664"},
+	"4:3":  {"736x576", "1184x896", "1664x1248"},
+	"21:9": {"992x416", "1568x672", "2208x960"},
+}
+
+func miniMaxH3AspectRatios() []string {
+	return slices.Sorted(maps.Keys(miniMaxH3Sizes))
+}
+
+func miniMaxH3VideoSpec(payload map[string]any) (string, int, error) {
 	if payload["content"] != nil {
-		return nil, false
-	}
-	sizes := map[string][]string{
-		"16:9": {"864x480", "1376x768", "1920x1088"},
-		"9:16": {"480x864", "768x1376", "1088x1920"},
-		"1:1":  {"640x640", "1024x1024", "1440x1440"},
-		"2:3":  {"544x800", "832x1248", "1184x1760"},
-		"3:2":  {"800x544", "1248x832", "1760x1184"},
-		"3:4":  {"576x736", "896x1184", "1248x1664"},
-		"4:3":  {"736x576", "1184x896", "1664x1248"},
-		"21:9": {"992x416", "1568x672", "2208x960"},
+		return "", 0, fmt.Errorf("MiniMax H3 请求格式不正确；本次未扣费")
 	}
 	ratio := jsonStringValue(payload["aspect_ratio"])
-	options, ok := sizes[ratio]
+	options, ok := miniMaxH3Sizes[ratio]
 	if !ok {
-		return nil, false
+		return "", 0, fmt.Errorf("MiniMax H3 不支持画幅 %q，请重新分析视频以自动匹配画幅；本次未扣费", ratio)
 	}
 	resolution := strings.TrimSuffix(jsonStringValue(payload["resolution"]), "p")
 	size := resolution
 	if resolution != "2K" && resolution != "4K" {
 		index, ok := map[string]int{"480": 0, "768": 1, "1080": 2}[resolution]
 		if !ok {
-			return nil, false
+			return "", 0, fmt.Errorf("MiniMax H3 不支持清晰度 %q；本次未扣费", resolution)
 		}
 		size = options[index]
 	}
 	seconds, err := strconv.Atoi(fmt.Sprint(payload["seconds"]))
-	if err != nil || seconds < 4 || seconds > 15 || strings.TrimSpace(jsonStringValue(payload["prompt"])) == "" {
+	if err != nil || seconds < 4 || seconds > 15 {
+		return "", 0, fmt.Errorf("MiniMax H3 时长须为 4–15 秒的整数；本次未扣费")
+	}
+	if strings.TrimSpace(jsonStringValue(payload["prompt"])) == "" {
+		return "", 0, fmt.Errorf("MiniMax H3 提示词不能为空；本次未扣费")
+	}
+	return size, seconds, nil
+}
+
+func buildMiniMaxH3VideoBody(payload map[string]any) ([]byte, bool) {
+	size, seconds, err := miniMaxH3VideoSpec(payload)
+	if err != nil {
 		return nil, false
 	}
 	// Upstream rejects size combined with aspect_ratio, megapixels or pixels.

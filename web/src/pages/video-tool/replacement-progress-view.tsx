@@ -7,7 +7,7 @@ import { replacementProgress } from "./replacement-progress";
 export function ReplacementProgress({ job }: { job: ReplacementJob }) {
     const { token } = theme.useToken();
     const progress = replacementProgress(job);
-    const stages = ["准备片段", "模型生成", "整理结果"];
+    const stages = [progress.total > 1 ? "准备片段" : "准备视频", "模型生成", "整理结果"];
     return <div className="flex min-h-64 w-full flex-1 items-center justify-center px-3 py-8" role="status" aria-live="polite" aria-label="视频处理进度">
         <div className="flex w-full max-w-sm flex-col items-center gap-5">
             <LoaderCircle size={42} className="animate-spin motion-reduce:animate-none" style={{ color: token.colorPrimary }} aria-hidden />
@@ -27,7 +27,7 @@ export function ReplacementProgress({ job }: { job: ReplacementJob }) {
                 </li>)}
             </ol>}
             <div className="space-y-1 text-center text-xs" style={{ color: token.colorTextSecondary }}>
-                {progress.total > 0 && <div className="tabular-nums">已生成 {progress.completed} / {progress.total} 段</div>}
+                {progress.total > 1 && <div className="tabular-nums">已生成 {progress.completed} / {progress.total} 段</div>}
                 <div>完成后将自动显示结果</div>
             </div>
         </div>

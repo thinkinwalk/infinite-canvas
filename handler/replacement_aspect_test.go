@@ -29,10 +29,14 @@ func replacementAspectSetup(t *testing.T) context.Context {
 	enabled := true
 	settings := model.Settings{Private: model.PrivateSetting{Channels: []model.ModelChannel{{
 		ID: 711, Name: "pinned-h3", BaseURL: "https://hi.hi.run", APIKey: "test", Enabled: true,
-		Models: []string{"h3-video"}, Weight: 1, VideoModels: map[string]model.VideoModelProfile{"h3-video": {
+		Models: []string{"h3-video", "minimax-h3"}, Weight: 1, VideoModels: map[string]model.VideoModelProfile{"h3-video": {
 			Interface: "sparkcine_h3", MaxImages: 1, MaxVideos: 1, ContentReplacement: &enabled,
 			Resolutions: []string{"720", "768"}, Seconds: []string{"5", "15"},
 			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"720": 6, "768": 6},
+		}, "minimax-h3": {
+			Interface: "relay", MaxImages: 9, MaxVideos: 3, ContentReplacement: &enabled,
+			Resolutions: []string{"768"}, Seconds: []string{"5", "15"},
+			BillingMode: "duration_resolution", BillingTiers: map[string]float64{"768": 6},
 		}},
 	}}}}
 	if _, err := repository.SaveSettings(settings, "test"); err != nil {
@@ -47,14 +51,17 @@ func replacementAspectSetup(t *testing.T) context.Context {
 func TestReplacementH3AspectPlanAndAssemblyUseFittedSource(t *testing.T) {
 	ctx := replacementAspectSetup(t)
 	for _, spec := range []struct {
-		name, requested, ratio string
-		source, fitted         [2]int
+		name, requested, ratio, model string
+		source, fitted                [2]int
 	}{
-		{"nonstandard portrait", "", "9:16", [2]int{544, 960}, [2]int{558, 992}},
-		{"explicit landscape", "16:9", "16:9", [2]int{544, 960}, [2]int{1728, 972}},
-		{"explicit ultrawide", "21:9", "21:9", [2]int{544, 960}, [2]int{2268, 972}},
-		{"standard portrait", "", "9:16", [2]int{720, 1280}, [2]int{}},
-		{"standard ultrawide", "", "21:9", [2]int{2100, 900}, [2]int{}},
+		{"nonstandard portrait", "", "9:16", "h3-video", [2]int{544, 960}, [2]int{558, 992}},
+		{"explicit landscape", "16:9", "16:9", "h3-video", [2]int{544, 960}, [2]int{1728, 972}},
+		{"explicit ultrawide", "21:9", "21:9", "h3-video", [2]int{544, 960}, [2]int{2268, 972}},
+		{"standard portrait", "", "9:16", "h3-video", [2]int{720, 1280}, [2]int{}},
+		{"standard ultrawide", "", "21:9", "h3-video", [2]int{2100, 900}, [2]int{}},
+		{"minimax original failure", "", "9:16", "minimax-h3", [2]int{480, 848}, [2]int{486, 864}},
+		{"minimax nonstandard 2:3", "", "2:3", "minimax-h3", [2]int{600, 904}, [2]int{604, 906}},
+		{"minimax standard 3:2", "", "3:2", "minimax-h3", [2]int{900, 600}, [2]int{}},
 	} {
 		t.Run(spec.name, func(t *testing.T) {
 			operations := []string{}
@@ -98,12 +105,12 @@ func TestReplacementH3AspectPlanAndAssemblyUseFittedSource(t *testing.T) {
 				data, _ := json.Marshal(map[string]any{"status": "completed", "result": result})
 				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(data)))}, nil
 			})}
-			job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Source: "original.mp4", Model: "h3-video", ChannelID: 711,
-				Seconds: "15", Resolution: "768", RequestedAspectRatio: spec.requested}
+			job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Source: "original.mp4", Model: spec.model, ChannelID: 711,
+				Seconds: "15", Resolution: "768", Prompt: "replace the person", RequestedAspectRatio: spec.requested}
 			if err := executeReplacement(ctx, &job, true); err != nil {
 				t.Fatal(err)
 			}
-			if !job.Planned || job.Credits != 30 || job.Parts[0].Seconds != 5 || job.AspectRatio != spec.ratio || job.Source != "original.mp4" || job.SourceSize != spec.source {
+			if !job.Planned || job.PreviewRequired || job.Credits != 30 || job.Parts[0].Seconds != 5 || job.AspectRatio != spec.ratio || job.Source != "original.mp4" || job.SourceSize != spec.source {
 				t.Fatalf("incorrect plan: %+v", job)
 			}
 			if len(operations) != 1 && spec.fitted[0] == 0 || len(operations) != 2 && spec.fitted[0] > 0 {
@@ -121,12 +128,68 @@ func TestReplacementH3AspectPlanAndAssemblyUseFittedSource(t *testing.T) {
 	}
 }
 
+func TestReplacementMiniMaxRejectsInvalidSpecBeforeQuoteOrSubmission(t *testing.T) {
+	ctx := replacementAspectSetup(t)
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "worker.invalid" {
+			t.Fatal("invalid plan called a model provider")
+		}
+		var input struct {
+			Operation string `json:"operation"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&input)
+		if input.Operation != "replacement-plan" {
+			t.Fatalf("invalid prompt must fail before fitting: %s", input.Operation)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"status":"completed","result":{"metadata":{"size":[480,848],"parts":[{"start":0,"end":5,"inputStart":0,"inputEnd":5,"seconds":15}]}}}`))}, nil
+	})}
+	job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Source: "original.mp4", Model: "minimax-h3", ChannelID: 711, Seconds: "15", Resolution: "768"}
+	err := executeReplacement(ctx, &job, true)
+	if err == nil || !strings.Contains(err.Error(), "提示词不能为空") || job.Planned || job.Parts[0].Submitted {
+		t.Fatalf("invalid request advanced: %+v, %v", job, err)
+	}
+}
+
+func TestReplacementMiniMaxInvalidSubmissionKeepsPartUnsubmitted(t *testing.T) {
+	ctx := replacementAspectSetup(t)
+	if _, err := repository.SaveUser(model.User{ID: "aspect-owner", Username: "aspect-owner", Group: "default", Status: model.UserStatusActive, Credits: 100}); err != nil {
+		t.Fatal(err)
+	}
+	aiHTTPClient = &http.Client{Transport: caseProcessorTransport(func(r *http.Request) (*http.Response, error) {
+		t.Fatal("invalid submission must not contact a worker or provider", r.URL)
+		return nil, nil
+	})}
+	for _, spec := range []struct {
+		name, ratio, prompt, message string
+	}{
+		{"unsupported source ratio", "30:53", "replace the person", "不支持画幅"},
+		{"empty prompt", "9:16", "", "提示词不能为空"},
+	} {
+		t.Run(spec.name, func(t *testing.T) {
+			job := replacementJob{ID: uuid.NewString(), UserID: "aspect-owner", Source: "original.mp4", Model: "minimax-h3", ChannelID: 711,
+				Seconds: "15", Resolution: "768", AspectRatio: spec.ratio, Prompt: spec.prompt, Planned: true, Credits: 30,
+				Parts: []replacementPart{{Start: 0, End: 5, InputEnd: 5, Seconds: 5, Credits: 30, Input: "original.mp4", Prepared: "original.mp4", Reference: "https://example.invalid/source.mp4"}}}
+			if err := saveReplacement(&job); err != nil {
+				t.Fatal(err)
+			}
+			err := executeReplacementPart(ctx, &job, 0)
+			if err == nil || !strings.Contains(err.Error(), spec.message) || job.Parts[0].Submitted || job.Parts[0].TaskID != "" {
+				t.Fatalf("invalid request advanced: %+v, %v", job, err)
+			}
+			saved, err := loadReplacement(job.ID, job.UserID)
+			if err != nil || saved.Parts[0].Submitted || saved.Parts[0].TaskID != "" {
+				t.Fatalf("invalid request was persisted as submitted: %+v, %v", saved, err)
+			}
+		})
+	}
+}
+
 func TestReplacementAspectRecommendationsAndSubmittedProtection(t *testing.T) {
 	for _, spec := range []struct {
 		width, height int
 		ratio         string
 	}{{544, 960, "9:16"}, {1920, 1088, "16:9"}, {1000, 1000, "1:1"}, {900, 1200, "3:4"}} {
-		if actual := nearestReplacementAspect("768", spec.width, spec.height); actual != spec.ratio {
+		if actual := nearestReplacementAspect(service.SparkCineH3AspectRatios("768"), spec.width, spec.height); actual != spec.ratio {
 			t.Fatalf("%+v: %s", spec, actual)
 		}
 	}

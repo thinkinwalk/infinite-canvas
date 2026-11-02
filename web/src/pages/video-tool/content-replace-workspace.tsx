@@ -87,7 +87,7 @@ export default function ContentReplaceWorkspace() {
     // 旧换脸草稿只用于查看和恢复，不再提供新生成入口。
     const headSwap = person && d.replacementModel === "headswap";
     const longVideo = Boolean(reference?.durationMs && reference.durationMs > longVideoPreviewThresholdMs);
-    // 人物替换统一走持久化分段流程，旧换脸记录保留原结果入口。
+    // 人物替换统一持久化，短视频整段生成，长视频按模型能力分段。
     const wholeVideo = person && cloud && (!headSwap || longVideo);
     const showSegmentHint = wholeVideo && longVideo;
     const showBatchWorkspace = wholeVideo && Boolean(d.replacementJobId) && !historyPreview;
