@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.144
-- Current production source: tag v0.19.144, commit 93b8623c94e4eca49b65978c487de82081687e75
+- Current production image: infinite-canvas:v0.19.145
+- Current production source: tag v0.19.145, commit 68e0bf4382523e87746289e272a8661163da621a
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.144-worker/
+
+## v0.19.145 deployment
+
+- Tag `v0.19.145`, commit `68e0bf4382523e87746289e272a8661163da621a`, is pushed to `release/v0.19.60` and published as a formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.145. App image `infinite-canvas:v0.19.145`, ID `sha256:827fe00bf7145f4a347890956a85810a01ecaf1d508319a319f05e2de34f3fa8`, replaces v0.19.144.
+- The connection wizard now edits video output specs and reference capacities directly. Complete new configurations enable the route, priced platform model and selected binding together; incomplete ones remain disabled drafts. Existing routes retain their IDs and support explicit enablement; existing platform models retain price and enablement choices. Person replacement requires image/video reference capacities and reference input mode; disabled unfinished bindings no longer prevent saving.
+- Read-only diagnosis of revision 24 found channel 14 has `wan30-1080p-fast` registered but no saved managed route/model for that ID. Its channel profile has no output seconds, `maxVideos: 0` and `interface: openai`. Selecting `video.wan30` requires relay specs. The earlier generic person-replacement warning occurred during local configuration validation, before any upstream call. No exact fast1080 price or reference capacities are inferred from `wan30-720p`.
+- Development passed 8 frontend helper tests / 37 assertions, 3 focused top-level Go regressions and 6 isolated browser scenarios. Release repeated no local build or unit tests. Server frontend/backend build, internal/public health, eleven routes and public/container resource hashes passed. Independent workstation HTTPS also verified the version, new controls and revision 24.
+- The actual production static bundle passed the same six isolated browser scenarios with all API requests mocked: incomplete disabled draft, complete per-second setup, repair of existing disabled route without duplication, existing route-editor persistence, identity changes clearing prior price/specs, and 390/320px drawer bounds. No runtime errors; desktop/mobile screenshots were visually sampled after resize transitions settled. This does not establish authenticated production saves or upstream generation.
+- Public JS `/assets/index-De6Ypv9U.js` SHA-256 `340ffbe7a71f018114435a5c893a65d0b3ba8eefa08c192dffec22462e537e29`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Running backend SHA-256 `f813b3881535279d053f95391f5ee3bb8dadf96810232d0191ba030a14b45328` matches the new release image.
+- Final root-only backup `/opt/infinite-canvas/backups/v0.19.145-final-20261102-042158/`; prebuild `/opt/infinite-canvas/backups/v0.19.145-prebuild-20261102-042001/`. SQLite quick check, schema, table counts, complete settings/protected account fields, environments/mounts, all 124 existing task records and metadata of 28,818 existing files are preserved. Managed revision 24, model/channel settings and prices are unchanged. Worker image, identity, startup time and source mounts are unchanged.
+- Evidence `/opt/infinite-canvas/releases/v0.19.145-deployment.json`, `v0.19.145-public-verification.json` and `v0.19.145-browser-verification.json`; local `.codex_tmp/` copies and `video-connection-public-qa/` screenshots. Deployment script `/opt/infinite-canvas/releases/deploy-v0.19.145.py`. Rollback restores final-backup Compose and recreates App only, preserving current database/media. Actual channel capabilities, authenticated save, ordinary-user refresh/quotes and paid output remain pending.
 
 ## v0.19.144 deployment
 
