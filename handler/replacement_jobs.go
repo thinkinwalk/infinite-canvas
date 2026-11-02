@@ -30,23 +30,24 @@ import (
 )
 
 type replacementPart struct {
-	Start         float64          `json:"start"`
-	End           float64          `json:"end"`
-	InputStart    float64          `json:"inputStart"`
-	InputEnd      float64          `json:"inputEnd"`
-	TrimStart     float64          `json:"trimStart"`
-	Seconds       float64          `json:"seconds"`
-	Input         string           `json:"input,omitempty"`
-	Prepared      string           `json:"prepared,omitempty"`
-	Reference     string           `json:"reference,omitempty"`
-	TaskID        string           `json:"taskId,omitempty"`
-	Submitted     bool             `json:"submitted"`
-	Generated     string           `json:"generated,omitempty"`
-	Validated     bool             `json:"validated"`
-	Result        string           `json:"result,omitempty"`
-	PreviousTasks []string         `json:"previousTasks,omitempty"`
-	Captions      []map[string]any `json:"captions,omitempty"`
-	Credits       int              `json:"credits"`
+	Start            float64          `json:"start"`
+	End              float64          `json:"end"`
+	InputStart       float64          `json:"inputStart"`
+	InputEnd         float64          `json:"inputEnd"`
+	TrimStart        float64          `json:"trimStart"`
+	Seconds          float64          `json:"seconds"`
+	ReferenceSeconds float64          `json:"referenceSeconds,omitempty"`
+	Input            string           `json:"input,omitempty"`
+	Prepared         string           `json:"prepared,omitempty"`
+	Reference        string           `json:"reference,omitempty"`
+	TaskID           string           `json:"taskId,omitempty"`
+	Submitted        bool             `json:"submitted"`
+	Generated        string           `json:"generated,omitempty"`
+	Validated        bool             `json:"validated"`
+	Result           string           `json:"result,omitempty"`
+	PreviousTasks    []string         `json:"previousTasks,omitempty"`
+	Captions         []map[string]any `json:"captions,omitempty"`
+	Credits          int              `json:"credits"`
 }
 type replacementCaption struct {
 	Start float64 `json:"start"`
@@ -159,6 +160,13 @@ func replacementCloudOperation(name string) string {
 
 func replacementSource(job *replacementJob) string {
 	return firstReplacementText(job.FittedSource, job.Source)
+}
+
+func replacementReferenceSeconds(part *replacementPart) float64 {
+	if part.ReferenceSeconds > 0 {
+		return part.ReferenceSeconds
+	}
+	return part.Seconds
 }
 
 func replacementAspectMatches(ratio string, width, height int) bool {
@@ -1204,6 +1212,9 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 				if math.IsInf(part.Seconds, 1) {
 					return fmt.Errorf("当前模型没有能够容纳此片段的时长档位")
 				}
+				if wan30 {
+					part.ReferenceSeconds = math.Max(part.InputEnd-part.InputStart, profile.ReferenceVideoMinSeconds)
+				}
 				if sparkCine {
 					if err := service.SparkCineH3SpecError(job.Resolution, job.AspectRatio, part.Seconds); err != nil {
 						return err
@@ -1277,7 +1288,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			}
 		}
 		if job.SelectionMode && len(job.Parts) > 1 && part.Result == "" {
-			result, err := replacementWorkerStep(ctx, job, strconv.Itoa(index)+":export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
+			result, err := replacementWorkerStep(ctx, job, strconv.Itoa(index)+":export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart, "seconds": part.Seconds})
 			if err != nil {
 				return err
 			}
@@ -1307,7 +1318,7 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 			part := &job.Parts[0]
 			assembled := part.Generated
 			if part.Seconds != part.End-part.Start {
-				result, err := replacementWorkerStep(ctx, job, "0:export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart})
+				result, err := replacementWorkerStep(ctx, job, "0:export", "replacement-segment", map[string]any{"source": replacementSource(job), "video": part.Generated, "input": part.Input}, map[string]any{"start": part.Start, "end": part.End, "trimStart": part.TrimStart, "seconds": part.Seconds})
 				if err != nil {
 					return err
 				}
@@ -1415,7 +1426,15 @@ func executeReplacement(ctx context.Context, job *replacementJob, planning bool)
 func finishReplacementPreview(ctx context.Context, job *replacementJob) error {
 	if job.PreviewResult == "" {
 		part := &job.Parts[0]
-		result, err := replacementWorkerStep(ctx, job, "preview-finish", "replacement-finish", map[string]any{"source": part.Input, "video": part.Generated}, map[string]any{})
+		preview := part.Generated
+		if replacementReferenceSeconds(part) != part.Seconds {
+			result, err := replacementWorkerStep(ctx, job, "preview-trim", "replacement-segment", map[string]any{"source": part.Input, "input": part.Input, "video": part.Generated}, map[string]any{"start": 0, "end": replacementReferenceSeconds(part), "trimStart": 0, "seconds": part.Seconds})
+			if err != nil {
+				return err
+			}
+			preview = result.File
+		}
+		result, err := replacementWorkerStep(ctx, job, "preview-finish", "replacement-finish", map[string]any{"source": part.Input, "video": preview}, map[string]any{})
 		if err != nil {
 			return err
 		}
@@ -1610,11 +1629,14 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 		return fmt.Errorf("%s", service.RetiredHeadSwapMessage)
 	}
 	prefix := strconv.Itoa(index) + ":"
-	if part.Input == "" && len(job.Parts) == 1 && part.Start == 0 && part.InputStart == 0 && part.InputEnd == part.End && part.InputEnd == part.Seconds && strings.EqualFold(filepath.Ext(replacementSource(job)), ".mp4") {
+	referenceSeconds := replacementReferenceSeconds(part)
+	if part.Input == "" && len(job.Parts) == 1 && part.Start == 0 && part.InputStart == 0 && part.InputEnd == part.End && part.InputEnd == referenceSeconds && strings.EqualFold(filepath.Ext(replacementSource(job)), ".mp4") {
 		part.Input = replacementSource(job)
 	}
 	if part.Input == "" {
-		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": replacementSource(job)}, part)
+		extract := *part
+		extract.Seconds = referenceSeconds
+		result, err := replacementWorkerStep(ctx, job, prefix+"extract", "replacement-extract", map[string]any{"video": replacementSource(job)}, extract)
 		if err != nil {
 			return err
 		}
@@ -1631,7 +1653,7 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 	}
 	if part.Generated == "" {
 		if part.Reference == "" {
-			address, err := publishReplacementReference(ctx, job, part.Prepared, part.Seconds)
+			address, err := publishReplacementReference(ctx, job, part.Prepared, referenceSeconds)
 			if err != nil {
 				return err
 			}
@@ -1709,7 +1731,7 @@ func executeReplacementPart(ctx context.Context, job *replacementJob, index int)
 			return err
 		}
 	}
-	_, err := replacementWorkerStep(ctx, job, prefix+"validate", "replacement-validate", map[string]any{"source": part.Input, "video": part.Generated}, map[string]any{})
+	_, err := replacementWorkerStep(ctx, job, prefix+"validate", "replacement-validate", map[string]any{"source": part.Input, "video": part.Generated}, map[string]any{"seconds": part.Seconds})
 	if err != nil {
 		return err
 	}

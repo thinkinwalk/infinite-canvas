@@ -144,6 +144,21 @@ class ReplacementTimelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("tpad=stop_mode=clone:stop_duration=5.0", output_command)
         self.assertIn("apad", output_command)
 
+    async def test_generated_duration_is_checked_against_requested_output(self):
+        async def fake_probe(identifier, path):
+            return {"duration": 5.2 if path == "reference.mp4" else 6, "fps": 25, "size": (160, 96)}
+
+        async def no_ffmpeg(*args):
+            self.fail("validation must not transcode the reference")
+
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = dict(ffmpeg=no_ffmpeg, probe_video=fake_probe, publish=lambda path: path)
+            inputs = {"source": "reference.mp4", "video": "generated.mp4"}
+            await process("replacement-validate", "test", inputs, {"seconds": 6}, Path(directory), **arguments)
+            for options in ({}, {"seconds": 5}, {"seconds": float("nan")}):
+                with self.assertRaises(ValueError):
+                    await process("replacement-validate", "test", inputs, options, Path(directory), **arguments)
+
 
 if __name__ == "__main__":
     unittest.main()

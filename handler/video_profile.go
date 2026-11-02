@@ -446,6 +446,12 @@ func validateVideoProfileRequest(profile model.VideoModelProfile, body []byte, c
 		if payload["duration"] != nil {
 			seconds = fmt.Sprint(payload["duration"])
 		}
+		if strings.EqualFold(jsonStringValue(payload["model"]), "wan30-1080p-fast") && counts["video"] > 0 {
+			value, err := strconv.ParseFloat(seconds, 64)
+			if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value != math.Trunc(value) || value < 4 || value > 15 {
+				return fmt.Errorf("wan30-1080p-fast 带参考视频时，生成时长需为 4–15 整数秒")
+			}
+		}
 	}
 	allowed := false
 	modes := profile.InputModes

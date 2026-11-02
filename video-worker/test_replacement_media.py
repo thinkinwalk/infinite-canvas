@@ -158,6 +158,22 @@ class ReplacementMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(info["duration"], 5, delta=1 / info["fps"])
         self.assertTrue(info["audio"])
 
+    async def test_fractional_reference_and_rounded_output_export_original_timeline(self):
+        source, generated = self.root / "fractional.mp4", self.root / "generated.mp4"
+        for path, duration in ((source, 5.2), (generated, 6)):
+            await self.ffmpeg("test", "-f", "lavfi", "-i", f"testsrc2=s=160x96:r=25:d={duration}",
+                              "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}",
+                              "-c:v", "libx264", "-c:a", "aac", path)
+        original_hash = hashlib.sha256(source.read_bytes()).digest()
+        await self.operation("replacement-validate", {"source": source, "video": generated}, {"seconds": 6})
+        segment = await self.operation("replacement-segment", {"source": source, "input": source, "video": generated},
+                                       {"start": 0, "end": 5.2, "trimStart": 0, "seconds": 6})
+        info = await self.probe_video("test", segment["file"])
+        self.assertEqual(info["duration"], 5.2)
+        self.assertTrue(info["audio"])
+        self.assertEqual((await self.probe_video("test", source))["duration"], 5.2)
+        self.assertEqual(hashlib.sha256(source.read_bytes()).digest(), original_hash)
+
 
 if __name__ == "__main__":
     unittest.main()

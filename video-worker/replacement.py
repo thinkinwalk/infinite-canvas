@@ -164,13 +164,14 @@ async def process(operation, identifier, inputs, options, work, *, ffmpeg, probe
     if operation == "replacement-validate":
         original = await probe_video(identifier, inputs["source"])
         generated = await probe_video(identifier, source)
+        original = {**original, "duration": float(options.get("seconds", original["duration"]))}
         validate_generated_timeline(original, generated)
         return {"metadata": {"timelineChecked": True, "identityChecked": False}}
     if operation == "replacement-segment":
         original = await probe_video(identifier, inputs["source"])
         model_input = await probe_video(identifier, inputs["input"])
         generated = await probe_video(identifier, source)
-        validate_generated_timeline(model_input, generated)
+        validate_generated_timeline({**model_input, "duration": float(options.get("seconds", model_input["duration"]))}, generated)
         start, end, trim = (float(options[k]) for k in ("start", "end", "trimStart"))
         if not all(math.isfinite(v) for v in (start, end, trim)) or start < 0 or end <= start or end > original["duration"] or trim < 0 or trim + end - start > model_input["duration"]:
             raise ValueError("单段导出范围不正确")
