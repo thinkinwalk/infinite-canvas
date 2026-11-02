@@ -15,10 +15,24 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.146
-- Current production source: tag v0.19.146, commit ba7c2247d793d096e38e05c0a43d378350b7e55b
+- Current production image: infinite-canvas:v0.19.147
+- Current production source: tag v0.19.147, commit 678a77bdf36c93a36b679e3366fffad87bcb05c2
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.144-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
+
+## v0.19.147 deployment
+
+- Tag `v0.19.147`, commit `678a77bdf36c93a36b679e3366fffad87bcb05c2`, is pushed to `release/v0.19.60` and published as a formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.147. App image `infinite-canvas:v0.19.147`, ID `sha256:33ae3493ed1190e776b75a998eadc5fe5674279bc5f09e422a5e300268c3bd77`, replaces v0.19.146.
+- The fast1080 route had only `15` saved as an output choice, causing a 5-second source to select, pad and charge for 15 seconds. Authenticated model-management repair changed only route `route_ADMGMxnw_UeYjbVJZkOL4` output seconds to integers 4 through 30 and advanced revision 29 to 30. Reference generation remains restricted to 4 through 15 seconds. Channel 14, route/model IDs, the person-replacement binding and pricing of 80 points per second with a 320-point minimum are preserved.
+- Replacement plans now distinguish reference duration from requested output duration. Exact 5-second references remain 5 seconds; fractional references do not get padded merely because requested output rounds upward. Worker validation checks requested output length, and final export restores the source timeline and audio. Existing submitted tasks retain their original task identity and billing.
+- Development passed focused Go regressions, 15 frontend tests / 68 assertions, 14 Worker logic tests, three actual FFmpeg regressions and eight isolated mocked browser checks. Desktop/mobile 1440/390/320px light/dark layouts were inspected. Server frontend/backend builds, internal/public health, eleven routes, Worker capabilities and public/container hashes passed. Actual production-bundle browser smoke passed at 1440/390/320px without runtime errors or horizontal overflow; API calls in that smoke were mocked.
+- Authenticated production quotes verified 4/5/6/15 seconds at 320/400/480/1200 points. Planning the user's actual 5-second source produced source/reference/output durations of 5/5/5 seconds, 9:16 and 400 points, without extracting or padding the source during planning. Verification plan `72d307ff-ce9d-4fb1-88f9-3c04b0c58efc` was archived; account balances and paid video-task IDs were unchanged. No new paid inference was submitted, so actual new upstream output quality remains pending.
+- The earlier task `task_aOzgC9f1pODmqtSelcehX8Q4AbgCVxY3` completed with its original 15-second request and 1200-point bill. It was neither cancelled nor resubmitted; no refund was applied.
+- Worker image `infinite-canvas-video-worker:v0.19.87` is retained, with versioned sources at `/opt/infinite-canvas/releases/v0.19.147-worker/`. Only `replacement.py` content changed; other mounted source files and runtime settings were preserved. Its SHA-256 is `95335d2e7acfbedcb754bae957d07dce30cb62022be90aa93e2c8091d7f0cda9`.
+- Public JS `/assets/index-CCY1vtpr.js` SHA-256 `60c0dc2ea639e9813ca8e18fbb0b8e453f2917451e62ff0b53f040d26ab731dc`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Running backend SHA-256 `c3ccf34d415264352d179baee99c496a80709fed6205b309aa4bab47ad05007e` matches the release image.
+- Final root-only backup `/opt/infinite-canvas/backups/v0.19.147-final-20261102-101521/`; prebuild `/opt/infinite-canvas/backups/v0.19.147-prebuild-20261102-101518/`. SQLite online backup passed quick check. Database schema/counts/accounts, 137 existing task records and metadata of 29,065 existing media files were checked at the final switch; the subsequent targeted catalog repair is recorded separately above. Backups contain SQLite, Compose and private environment, not all media contents.
+- Evidence: `/opt/infinite-canvas/releases/v0.19.147-deployment.json`, `v0.19.147-duration-verification.json`, `v0.19.147-public-verification.json` and `v0.19.147-browser-smoke.json`; local `.codex_tmp/` copies and screenshots. Two earlier deployment attempts rolled back on an obsolete unrelated head-binding assertion; the successful verifier removed that assertion while retaining database/settings preservation checks. The inherited `retiredHeadSwapPublicCatalogVerified` report flag is not evidence of a fresh head-binding check.
+- Rollback restores final-backup Compose and recreates App and video-worker using v0.19.146 and the prior Worker source mounts, preserving the current database/media. Catalog revision 30 is a separate settings change; explicitly review current route specs rather than restoring an old database over subsequent user activity.
 
 ## v0.19.145 deployment
 
