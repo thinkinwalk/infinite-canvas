@@ -15,8 +15,8 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.145
-- Current production source: tag v0.19.145, commit 68e0bf4382523e87746289e272a8661163da621a
+- Current production image: infinite-canvas:v0.19.146
+- Current production source: tag v0.19.146, commit ba7c2247d793d096e38e05c0a43d378350b7e55b
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.144-worker/
 
@@ -30,6 +30,15 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Public JS `/assets/index-De6Ypv9U.js` SHA-256 `340ffbe7a71f018114435a5c893a65d0b3ba8eefa08c192dffec22462e537e29`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Running backend SHA-256 `f813b3881535279d053f95391f5ee3bb8dadf96810232d0191ba030a14b45328` matches the new release image.
 - Final root-only backup `/opt/infinite-canvas/backups/v0.19.145-final-20261102-042158/`; prebuild `/opt/infinite-canvas/backups/v0.19.145-prebuild-20261102-042001/`. SQLite quick check, schema, table counts, complete settings/protected account fields, environments/mounts, all 124 existing task records and metadata of 28,818 existing files are preserved. Managed revision 24, model/channel settings and prices are unchanged. Worker image, identity, startup time and source mounts are unchanged.
 - Evidence `/opt/infinite-canvas/releases/v0.19.145-deployment.json`, `v0.19.145-public-verification.json` and `v0.19.145-browser-verification.json`; local `.codex_tmp/` copies and `video-connection-public-qa/` screenshots. Deployment script `/opt/infinite-canvas/releases/deploy-v0.19.145.py`. Rollback restores final-backup Compose and recreates App only, preserving current database/media. Actual channel capabilities, authenticated save, ordinary-user refresh/quotes and paid output remain pending.
+
+## v0.19.146 deployment
+
+- Tag `v0.19.146`, commit `ba7c2247d793d096e38e05c0a43d378350b7e55b`, is pushed to `release/v0.19.60` and published as the formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.146. App image `infinite-canvas:v0.19.146`, ID `sha256:bdab9dec2eafe5d27719b26f97677e00bdd67069ea38b4adca3724c83e4b6ea7`, replaces v0.19.145.
+- Wan30 person replacement normalizes non-standard source dimensions to the nearest supported aspect ratio before quote/submission. For example, `480x848` uses `9:16` and the existing Worker fit operation produces `486x864`; invalid or stale plans stop before a paid provider request and are never resent automatically.
+- The administrator channel editor can reveal a saved channel key only through the new authenticated endpoint after an explicit eye click. Ordinary settings remain redacted, invalid/non-administrator requests are rejected, responses are `private, no-store`, and viewing does not write settings. No real production key was read during deployment verification.
+- Deployment report: `/opt/infinite-canvas/releases/v0.19.146-deployment.json`; prebuild backup: `/opt/infinite-canvas/backups/v0.19.146-prebuild-20261102-084718/`; final backup: `/opt/infinite-canvas/backups/v0.19.146-final-20261102-084724/`. Public verification: `.codex_tmp/v0.19.146-public-verification.json`; deployment script: `/opt/infinite-canvas/releases/deploy-v0.19.146.py`.
+- Server and independent HTTPS verification passed health, release source, public pages, asset hashes, running backend markers, saved-key access restrictions and ordinary-user Worker capabilities including `replacement-fit`. Database schema, table counts, settings/protected account values, 130 task records and metadata for 29,025 existing media files were preserved. Worker image `v0.19.87`, identity, startup time and mounts were unchanged. Production model configuration was not changed, and no paid inference was submitted.
+- Public JS `/assets/index-VfLIfbU3.js` SHA-256 `5b1e7c1588139d0cebcb6f48cf2ca8156ef00cc7d73cb16b1cdb4efcf04e0ac8`; CSS `/assets/index-B3_nLdbx.css` SHA-256 `d80c7bb8fa030758ba0e6524ea107eb24429cf5514d6df0e1bd266da17306aa6`. Managed catalog revision at deployment was 25. Real administrator interaction, actual channel capabilities and paid Wan30 output quality remain pending.
 
 ## v0.19.144 deployment
 
