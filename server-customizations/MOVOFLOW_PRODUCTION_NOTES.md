@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.156
-- Current production source: tag v0.19.156, commit f9db584dc74521b99449eecf13ef8d9b305ffcaf
+- Current production image: infinite-canvas:v0.19.157
+- Current production source: tag v0.19.157, commit 9b4ff14de2d3fb2c956460ca9a0d4277e1bce08e
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.157 deployment
+
+- Tag `v0.19.157`, commit `9b4ff14de2d3fb2c956460ca9a0d4277e1bce08e`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image ID `sha256:a938a2dcf38f7839a7136214752fac0268b7b44060dab2edd89a6218b277e719` replaces v0.19.156.
+- Store exploration tasks now show an animated activity icon, task name, actual request stage and elapsed task time. The primary action follows the current task. Initial plan generation uses a subtle skeleton; regeneration preserves the original, and successful validated results focus the plan or pending suggestion without changing another selected tab. Motion respects reduced-motion settings; elapsed ticks do not trigger live-region announcements. No progress percentage, ETA, request timeout, retry, model price or dependency was added.
+- Store text requests mark possible submission before sending. Stopping local waiting retains an interrupted record and explicitly warns that upstream processing/billing may continue and this text interface cannot resume. Cancelling the quote still sends no generation request; server-backed video and Worker recovery remains unchanged.
+- Nine isolated waiting-interaction groups and eight existing material-reading groups passed both in development and against the production bundle, including 1440/390/320px dark/light, spinner/elapsed/reduced motion, skeleton, completion positioning, original preservation, invalid response, stopped record persistence, quote cancellation and tab preservation. Public anonymous smoke passed four views, settings/presets and themes without overflow or page errors. Screenshots were visually reviewed; auth/quote/generation APIs were mocked and no paid inference was submitted. Local compile/typecheck/unit tests were not run; server production build passed.
+- App-only deployment retained Worker identity, mounts and start time `2026-11-03T04:49:52.32052811Z`, backend hash `c3ccf34d415264352d179baee99c496a80709fed6205b309aa4bab47ad05007e`, environment/mount values, database schema/counts, settings/accounts, 173 task records and 29,322 media metadata entries. Task queues were idle before switching.
+- Internal/public health, twelve routes and public/container asset hashes passed. JS `/assets/index-vmhzHu-7.js` SHA-256 `8b2cc6463a91094522ca046e5483e859a5e0c8572e6565fc66456d6d85ae2491`; CSS `/assets/index-Cyq_k2bY.css` SHA-256 `2054d6f8d8c1d8598ab2b03ec03c37094157936e2ae393236395c0b100267056`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.157-final-20261103-061536/`; prebuild backup `/opt/infinite-canvas/backups/v0.19.157-prebuild-20261103-061436/`. Reports `/opt/infinite-canvas/releases/v0.19.157-deployment.json`, `v0.19.157-loading-verification.json`, `v0.19.157-reading-verification.json` and `v0.19.157-public-verification.json`; workstation evidence is outside the repository in `artifacts/store-explore-qa/loading-v157/`, `reading-v157/` and `production-v157/`.
+- Rollback restores final-backup Compose and recreates App only, preserving the live database/media and Worker. User acceptance: refresh the original browser without clearing cache, observe one normally needed plan generation, check retained originals and pending adoption on regeneration, and verify elapsed/stage feedback. Stopping is not proof of cancellation/refund; check usage logs before resubmitting. Detailed manual steps are in the store acceptance guide.
 
 ## v0.19.156 deployment
 
