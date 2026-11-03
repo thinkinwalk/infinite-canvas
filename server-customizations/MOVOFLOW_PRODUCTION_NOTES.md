@@ -15,10 +15,22 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.158
-- Current production source: tag v0.19.158, commit f27295e860e347313d92569936feb218f17590bc
+- Current production image: infinite-canvas:v0.19.159
+- Current production source: tag v0.19.159, commit e08802c0ca0d4e76e5b71a4074152ce5159957bf
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.159 deployment
+
+- Tag `v0.19.159`, source `e08802c0ca0d4e76e5b71a4074152ce5159957bf`, is pushed to `release/v0.19.60` and published as a formal GitHub Release in `thinkinwalk/infinite-canvas`. App image ID `sha256:285f1f6c8ef9f0dc8a8873b409fe654c00d294d2f30098159184464151ebeec7` replaces v0.19.158.
+- Store scripts now receive separately attributed image observations, user facts and requirements, plan one central theme, fit dialogue to actual shot durations, and preserve missing-reference notices. First/full-plan writing adds exactly one independent text-only review; uncached observations, writing and review are quoted together before submission. Local edits skip full review and must preserve selected IDs/times and all unselected shots. Quick requests fill the existing revision controls.
+- Valid candidates are saved before review. Failed, invalid or stopped review retains a visibly unreviewed candidate and the original, with no automatic retry/adoption. Explicit manual adoption remains available after review by the user. Suggestions expire on changed scripts, facts, observations, image identities/purposes or settings.
+- Development passed 13 script-flow, 13 material, 9 waiting and 8 reading browser groups with 1440/390/320px dark/light screenshots visually reviewed. Inference/auth/quotes were intercepted; no paid inference was submitted. These verify contracts and preservation, not actual model script quality. Local compile/typecheck/unit tests were not run; server production build passed.
+- The public production bundle passed the same 43 browser groups plus anonymous views/settings/presets/theme and independent asset hashes, with screenshots visually reviewed. The first concurrent reading run reported one `Transition was aborted because of timeout in DOM update` error; all functional assertions passed, but that run was not counted as clean. Its failure screenshot is retained locally as `production-v159/reading-first-run-transition-timeout.png`. A standalone rerun with 1400ms after theme switching passed without page errors; product theme code was unchanged, and the original transient cause is not proven. Production reports: `v0.19.159-script-verification.json`, `v0.19.159-materials-verification.json`, `v0.19.159-loading-verification.json`, `v0.19.159-reading-verification.json`, `v0.19.159-public-verification.json`; dev reports have `dev-` before the flow name.
+- Deployment initially stopped before changing containers because an existing Seedance cloud task was running. Read-only upstream GET confirmed processing at 99%; the task is external and the browser continues querying the same ID after transient errors. The second deployment permitted only that exact task, first verified identical backend binaries, and checked its ID, owner, channel, model, creation time and billing unchanged across the App-only switch. Task `task_VMBg9E4YmPgWSA6B1yuzRguKSQBxffCG` remained running; it was not cancelled or resubmitted and no new generation was initiated. Do not report the queue as idle.
+- Internal/public health, twelve routes and public/container asset hashes passed. Worker identity, mounts and start time `2026-11-03T04:49:52.32052811Z`, complete environment/mount values, backend hash `c3ccf34d415264352d179baee99c496a80709fed6205b309aa4bab47ad05007e`, database schema/counts, settings/accounts, 173 job files and 29,536 media metadata entries were preserved.
+- JS `/assets/index-BiHSVUq2.js` SHA-256 `e9b93573cc84802bd0269883135c2cda0486fbf7e7c3a7e12a2c35289e890fd5`; CSS `/assets/index-GTgLiwF7.css` SHA-256 `38dfe5d922eb8d640cd8ec9a90559a21e0e9086ce002f0d906954c5ce53e249d`. Final backup `/opt/infinite-canvas/backups/v0.19.159-final-20261103-092753/`; prebuild `/opt/infinite-canvas/backups/v0.19.159-prebuild-20261103-092748/`. Deployment and development reports `/opt/infinite-canvas/releases/v0.19.159-*.json`.
+- Rollback restores final-backup Compose and recreates App only, preserving live database/media, Worker and cloud task identities. Original-browser drafts, actual scripts and video quality remain user acceptance; refresh without clearing cache or paying for repeated QA.
 
 ## v0.19.158 deployment
 
