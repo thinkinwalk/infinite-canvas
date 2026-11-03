@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
 import { ArrowDown, ArrowLeft, ArrowUp, Download, Expand, FolderPlus, Grid2X2, Images, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
@@ -39,8 +39,24 @@ export default function StoreExploreWorkspace() {
         { message, modal } = App.useApp();
     const session = useUserStore((s) => s.token),
         presets = useVideoWorkbenchStore((s) => s.storePresets);
-    const [tab, setTab] = useState("plan"),
+    const [tab, setActiveTab] = useState("plan"),
         [editor, setEditor] = useState<Editor | null>(null);
+    const mainScroll = useRef<HTMLDivElement>(null),
+        tabScroll = useRef<Record<string, number>>({});
+    const setTab = (next: string) => {
+        if (next === tab) return;
+        tabScroll.current[tab] = mainScroll.current?.scrollTop || 0;
+        setActiveTab(next);
+    };
+    useLayoutEffect(() => {
+        const restore = () => {
+            if (mainScroll.current) mainScroll.current.scrollTop = tabScroll.current[tab] || 0;
+        };
+        restore();
+        // Textareas measure their height after mounting.
+        let frame = requestAnimationFrame(() => { restore(); frame = requestAnimationFrame(restore); });
+        return () => cancelAnimationFrame(frame);
+    }, [tab]);
     const [uploading, setUploading] = useState(false),
         uploadLock = useRef(false);
     const [assetRole, setAssetRole] = useState<"reference" | "model" | "first-frame" | null>(null);
@@ -293,6 +309,7 @@ export default function StoreExploreWorkspace() {
                     <span className="inline-flex items-center gap-2">
                         <img src={d.media.find((m) => m.id === l.id)?.url} alt="" className="h-6 w-6 object-cover" />
                         {l.label} · {l.name}
+                        <span style={muted}>{d.media.find((m) => m.id === l.id)?.storePurpose || d.media.find((m) => m.id === l.id)?.storePerson || "未分类"}</span>
                     </span>
                 ),
             }))}
@@ -378,6 +395,7 @@ export default function StoreExploreWorkspace() {
         </div>
     );
     const spec = `${cloud ? "跟随首帧 / 平台比例" : videoSizeLabel(cfg.size)} · ${cfg.videoSeconds} 秒 · ${cfg.vquality}p`;
+    const emptyInput = !labels.length && !d.script.trim() && !d.storeFacts?.trim() && !d.instructions.trim();
     const planAction = () => {
         if (textError()) {
             message.warning(textError());
@@ -425,7 +443,23 @@ export default function StoreExploreWorkspace() {
                     自定义渠道按服务账单收费
                 </p>
             )}
-            {!session && (config.channelMode === "remote" || cloud) ? (
+            {emptyInput ? (
+                <Upload
+                    accept="image/*"
+                    multiple
+                    showUploadList={false}
+                    disabled={locked}
+                    className="block w-full [&_.ant-upload]:!block"
+                    beforeUpload={(file, list) => {
+                        if (file === list[0]) void addFiles(list, "reference");
+                        return Upload.LIST_IGNORE;
+                    }}
+                >
+                    <Button block type="primary" size="large" disabled={locked} loading={uploading} icon={<Plus size={16} />}>
+                        添加门店素材
+                    </Button>
+                </Upload>
+            ) : !session && (config.channelMode === "remote" || cloud) ? (
                 <UserStatusActions accountOnly />
             ) : (
                 <Button block type="primary" size="large" disabled={locked || primary.disabled} loading={busy} icon={<Sparkles size={16} />} onClick={primary.action}>
@@ -462,8 +496,8 @@ export default function StoreExploreWorkspace() {
                 </Button>
             </header>
             {wb.storageError && <Alert type="error" title={wb.storageError} showIcon />}
-            <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden" data-testid="store-scroll">
-                <div className="mx-auto grid max-w-[1680px] lg:h-full lg:grid-cols-[320px_minmax(0,1fr)]">
+            <div className="min-h-0 flex-1 overflow-hidden" data-testid="store-scroll">
+                <div className="mx-auto grid h-full max-w-[1680px] lg:grid-cols-[320px_minmax(0,1fr)]">
                     <aside className="hidden min-h-0 flex-col border-r lg:flex" style={border} aria-label="门店素材">
                         <div className="min-h-0 flex-1 overflow-y-auto p-5">{materialsPanel}</div>
                         <div className="shrink-0 border-t p-4" style={border}>
@@ -507,7 +541,7 @@ export default function StoreExploreWorkspace() {
                             />
                         )}
                         {!busy && active?.error && <Alert className="mb-3" type="warning" title={publicServiceText(active.error)} />}
-                        <div className="min-h-0 flex-1 overflow-y-auto pb-3" data-testid="store-main-scroll">
+                        <div ref={mainScroll} className="min-h-0 flex-1 overflow-y-auto pb-3" data-testid="store-main-scroll">
                             {tab === "materials" && <div className="max-w-xl py-2">{materialsPanel}</div>}
                             {tab === "plan" && (
                                 <div className="space-y-4 py-2">
