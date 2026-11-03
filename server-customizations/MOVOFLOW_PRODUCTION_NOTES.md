@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.162
-- Current production source: tag v0.19.162, commit 2bfc28a80fcb77856c880866db51528fa0429179
+- Current production image: infinite-canvas:v0.19.163
+- Current production source: tag v0.19.163, commit 95a8005d15b27c1cba1037789129f3f0c1758f77
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.163-worker/
+
+## v0.19.163 deployment
+
+- Product tag `v0.19.163`, source `95a8005d15b27c1cba1037789129f3f0c1758f77`, is pushed on `release/v0.19.60`. The local GitHub CLI had no authenticated session, so the tag and branch were published but a formal GitHub Release was not created by this workstation.
+- Video processing now exposes `/video/voice-extract`: an uploaded or asset-library video can be trimmed to a selected interval, extracted by the Worker as a mono 16 kHz WAV reference, previewed, and saved through the existing account voice API. Store video workflows accept validated WAV/MP3 person voice references and audio assets can be reused from the asset library and canvas.
+- The App image was built on the production server as `infinite-canvas:v0.19.163`, image ID `sha256:c13d5cd14ebeda178ce086c249aa5e0404ac2934d3a680d1e82ff198100658cd`. App container `3b6cf3bb8acce8760329730ffadfb1ec280a5c89b18e47cfffa9fd34e5f27715` and Worker container `61def17ae1c6f0a3131c8f7152e264dc890ccb654ad5d22faaebd8d758284958` started at `2026-11-03T22:38:04Z`; Worker image `v0.19.87` was retained while all source mounts moved to `/opt/infinite-canvas/releases/v0.19.163-worker/`.
+- Before switching, SQLite online backup `/opt/infinite-canvas/backups/v0.19.163-prebuild-20261103-233704/database.sqlite` passed `PRAGMA quick_check`; Compose and `.env` were saved in the same backup directory. No active `video_tasks`, `replicate_tasks`, or Worker jobs were present at the switch. No paid inference was submitted.
+- Authenticated Worker health reports `voice-reference: true`. A production HTTP synthetic fixture traversed upload, `voice-reference` job creation, polling, and WAV download; the selected `0.25–1.25` second interval produced 1-channel, 16 kHz, 16000-frame audio, and all temporary media/job files were removed.
+- Internal and public health return `ok`; `/video/voice-extract` returns HTTP 200. Public and container assets match: JS `/assets/index-CWyPn58t.js` SHA-256 `6d72eea14c34fd82b6033913124a4ad568a97e907ccfd60b39f4641e0fe6d164`; CSS `/assets/index-fSa6HH0w.css` SHA-256 `42485ef1297d7dd8aafa71e1efd8d251cdf0242a235688c801d6e6b90ed38eba`. Evidence: `/opt/infinite-canvas/releases/v0.19.163-deployment.json`.
+- Rollback restores the prebuild Compose and recreates App/Worker with the previous source mount, preserving the live database and media. Real user audio quality, speaker isolation in multi-person scenes, account voice saving, and paid model output remain manual acceptance items; no automatic target-person separation is promised.
 
 ## v0.19.162 deployment
 
