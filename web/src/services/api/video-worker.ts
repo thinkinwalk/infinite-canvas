@@ -6,6 +6,10 @@ import type { WorkbenchMedia, WorkerCapabilities, WorkerConfig, WorkerJob } from
 import type { VideoImportSource } from "@/types/video-workbench";
 import type { SegmentPlan } from "@/lib/video-segmentation";
 
+export class WorkerRequestError extends Error {
+    constructor(message: string, readonly status: number) { super(message); }
+}
+
 export function resolveWorkerUrl(config: WorkerConfig) {
     const url = new URL(config.url, window.location.origin);
     if (!["http:", "https:"].includes(url.protocol)) throw new Error("处理服务地址必须是 HTTP 或 HTTPS 地址");
@@ -28,7 +32,7 @@ async function workerRequest(config: WorkerConfig, path: string, init: RequestIn
     });
     if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(typeof payload?.detail === "string" ? payload.detail : payload?.msg || `处理服务请求失败（${response.status}）`);
+        throw new WorkerRequestError(typeof payload?.detail === "string" ? payload.detail : payload?.msg || `处理服务请求失败（${response.status}）`, response.status);
     }
     if (gateway && response.headers.get("Content-Type")?.includes("application/json")) {
         const payload = await response.clone().json().catch(() => null);

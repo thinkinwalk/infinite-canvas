@@ -1,140 +1,158 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useCopyText } from "@/hooks/use-copy-text";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Input, Mentions, Modal, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme } from "antd";
-import { ArrowLeft, Download, Expand, FolderPlus, Grid2X2, Images, RefreshCw, Sparkles, X } from "lucide-react";
+import { Alert, App, Button, Collapse, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
+import { ArrowDown, ArrowLeft, ArrowUp, Download, Expand, FolderPlus, Grid2X2, Images, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { ModelPicker } from "@/components/model-picker";
 import { FeatureModelPicker } from "@/components/feature-model-picker";
+import { VideoModelOption } from "@/components/video-model-option";
 import { videoSizeLabel } from "@/components/video-settings-panel";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
-import { formatBytes } from "@/lib/image-utils";
-import { materialMentionError, supportedVideoInputModes, videoInputMode, videoProfile } from "@/lib/video-capabilities";
-import { VideoModelOption } from "@/components/video-model-option";
-import { HAILUO_VIDEO_MODEL, publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel, reconcileReplicateTask } from "@/services/api/replicate";
-import { type VideoPrice } from "@/services/api/video";
+import { audioVoiceOptions, cloudSpeechSpeakers } from "@/lib/audio-generation";
+import { supportedVideoInputModes, videoInputMode, videoProfile } from "@/lib/video-capabilities";
+import { publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
+import type { VideoPrice } from "@/services/api/video";
+import { getWorkerCapabilities } from "@/services/api/video-worker";
 import { imageToDataUrl } from "@/services/image-storage";
-import { useConfigStore, selectableModelsByCapability } from "@/stores/use-config-store";
+import { configForFeature, managedModelBinding, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import type { StoreVideoSettings, VideoDraft, VideoRecord } from "@/types/video-workbench";
+import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
+import { emptyVideoDraft, type StoreShot, type StoreVideoSettings, type VideoDraft, type VideoRecord } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
-import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoSettings } from "./store-explore-request";
+import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoSettings } from "./store-explore-request";
+import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 
-const states = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
-const names: Record<Editor, string> = { storeFacts: "门店真实资料", analysis: "视觉分析", instructions: "创作要求", script: "视频脚本" };
+const names = { storeFacts: "门店真实资料", analysis: "视觉观察", instructions: "本次要求", script: "自由脚本" };
+const states = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待恢复" };
 
 export default function StoreExploreWorkspace() {
+    const screens = Grid.useBreakpoint();
     const wb = useVideoWorkbench("store-explore"),
         { draft: d, busy } = wb;
-    const config = useVideoCreationConfig();
-    const copyText = useCopyText();
-    const modelCosts = useConfigStore((s) => s.publicSettings?.modelChannel.modelCosts);
+    const config = useVideoCreationConfig(),
+        cfg = storeVideoConfig(d, config),
+        settings = storeVideoSettings(cfg);
     const { token } = theme.useToken(),
         { message, modal } = App.useApp();
     const session = useUserStore((s) => s.token),
-        admin = useUserStore((s) => s.user?.role === "admin");
-    const openConfig = useConfigStore((s) => s.openConfigDialog),
-        updateConfig = useConfigStore((s) => s.updateConfig),
-        loadSettings = useConfigStore((s) => s.loadPublicSettings);
+        presets = useVideoWorkbenchStore((s) => s.storePresets);
+    const [tab, setTab] = useState("plan"),
+        [editor, setEditor] = useState<Editor | null>(null);
     const [uploading, setUploading] = useState(false),
         uploadLock = useRef(false);
-    const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
     const [assetRole, setAssetRole] = useState<"reference" | "model" | "first-frame" | null>(null);
-    const [tab, setTab] = useState("current"),
-        [editor, setEditor] = useState<Editor | null>(null);
     const [settingsOpen, setSettingsOpen] = useState(false),
-        [refreshing, setRefreshing] = useState(false);
-    const [price, setPrice] = useState<{ key: string; value: VideoPrice } | null>(null),
-        [priceError, setPriceError] = useState("");
-    const [quoting, setQuoting] = useState(false),
-        quoteController = useRef<AbortController | null>(null);
+        [presetsOpen, setPresetsOpen] = useState(false),
+        [presetName, setPresetName] = useState("");
     const [viewed, setViewed] = useState<VideoRecord | null>(null),
         [previewError, setPreviewError] = useState(false);
-    const cfg = storeVideoConfig(d, config),
-        settings = storeVideoSettings(cfg),
-        model = cfg.videoModel;
-    const profile = videoProfile(cfg, model),
-        mode = videoInputMode(cfg, model),
-        referenceMode = mode === "reference";
-    const wan = model === REPLICATE_VIDEO_MODEL,
-        hailuo = model === HAILUO_VIDEO_MODEL,
-        cloud = isReplicateVideoModel(model);
-    const labels = storeMaterialLabels(d),
-        materials = storeVideoMaterials(d, cfg);
-    const locked = busy || uploading;
-    const pending = wb.records.find((r) => r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask));
+    const [request, setRequest] = useState(""),
+        [scope, setScope] = useState("all");
+    const [quote, setQuote] = useState<{ key: string; value: VideoPrice } | null>(null),
+        [quoting, setQuoting] = useState(false),
+        quoteController = useRef<AbortController | null>(null);
+    const [capabilities, setCapabilities] = useState({ compose: false, transcribe: false, error: "" });
+    const [refreshing, setRefreshing] = useState(false);
+    const locked = busy || uploading,
+        labels = storeMaterialLabels(d),
+        profile = videoProfile(cfg, cfg.videoModel);
+    const mode = videoInputMode(cfg, cfg.videoModel),
+        cloud = isReplicateVideoModel(cfg.videoModel),
+        wan = cfg.videoModel === REPLICATE_VIDEO_MODEL;
     const active = wb.records.find((r) => r.id === d.activeRecord);
-    const blocked = storeVideoError(d, cfg) || (pending ? "已有任务可恢复查询，完成前请勿重复制作" : "");
-    const textBlocked = config.channelMode === "remote" && !session ? "登录后使用平台文案模型" : !config.textModel || !useConfigStore.getState().isAiConfigReady(config, config.textModel) ? "请配置分析 / 文案模型" : "";
-    const invalidMentions = materialMentionError(`${d.instructions}\n${d.script}`, labels);
-    const priceKey = JSON.stringify([
-        d.media.map((m) => [m.id, m.storageKey]),
-        settings,
-        d.storeFirstFrameId,
-        d.storeLastFrameId,
-        d.script,
-        d.instructions,
-        d.analysis,
-        d.storeFacts,
-        config.channelMode,
-        config.videoModels,
-        config.models,
-        modelCosts,
-        config.managed?.revision,
-        session,
-    ]);
-    const quote = price?.key === priceKey ? price.value : null;
-    const result = viewed ? viewed.result : d.video;
+    const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
+    const blocked = storeVideoError(d, cfg) || (pending ? "请先恢复已有任务查询" : "");
+    const textError = (analyze = false) => {
+        const c = analyze ? configForFeature(config, "store-explore.analyze", "text") : config;
+        return c.channelMode === "remote" && !session ? "请先登录" : !c.textModel || !useConfigStore.getState().isAiConfigReady(c, c.textModel) ? "请配置当前文案模型" : "";
+    };
+    const priceKey = JSON.stringify([settings, d.script, d.storeShots, d.media, d.instructions, d.storeFacts, d.storeFirstFrameId, d.storeLastFrameId, config.channelMode, config.managed?.revision, session]);
+    const price = quote?.key === priceKey ? quote.value : null,
+        result = viewed ? viewed.result : d.final || d.video;
     const muted = { color: token.colorTextSecondary },
-        surface = { background: token.colorBgContainer, borderColor: token.colorBorderSecondary };
-
+        border = { borderColor: token.colorBorderSecondary };
+    const shots = d.storeShots || [],
+        audioMode = d.storeAudioMode || "source";
+    const cloudSpeech = managedModelBinding(config, config.audioModel, "audio")?.adapter === "cloud:speech";
+    const voiceOptions = cloudSpeech ? cloudSpeechSpeakers : audioVoiceOptions.map((v) => v.value);
+    const speechCurrent = Boolean(d.speech && d.storeSpeechKey === storeSpeechKey(d, config.audioModel));
+    const duration = (d.video?.durationMs || 0) / 1000 || Number(cfg.videoSeconds),
+        captionError = storeCaptionError(d, duration);
+    const finishError = !d.video ? "请先生成视频" : d.storeOutputStale ? "方案已变化，请先生成当前画面" : audioMode === "narration" && !speechCurrent ? "请先生成当前旁白" : captionError;
     useEffect(() => {
         if (wb.hydrated && !d.storeSettings) wb.patch({ storeSettings: normalizeStoreSettings(storeVideoSettings(config), config) });
     }, [wb.hydrated, d.storeSettings, config]);
     useEffect(() => {
         quoteController.current?.abort();
         setQuoting(false);
-        setPriceError("");
         return () => quoteController.current?.abort();
     }, [priceKey]);
-    useEffect(() => setPreviewError(false), [result?.storageKey, result?.url]);
-
-    const changeSettings = (value: Partial<StoreVideoSettings>) => {
-        wb.edit({ storeSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "video");
-    };
-    const edit = (field: Editor, value: string) =>
-        wb.edit({ [field]: value, ...(field === "analysis" ? { storeAnalysisStale: false } : field === "script" ? { storeScriptStale: false } : {}) }, field === "storeFacts" ? "materials" : field === "script" ? "video" : "script");
-    const prepareQuote = async () => {
-        const controller = new AbortController();
-        quoteController.current?.abort();
-        quoteController.current = controller;
-        setQuoting(true);
-        setPriceError("");
+    useEffect(() => setPreviewError(false), [result?.url]);
+    useEffect(() => { if (screens.lg && tab === "materials") setTab("plan"); }, [screens.lg, tab]);
+    useEffect(() => {
+        if (wb.hydrated && config.audioModel && !voiceOptions.includes(d.voice)) wb.edit({ voice: cloudSpeech ? "Vivian" : "alloy" }, "speech");
+    }, [wb.hydrated, cloudSpeech, config.audioModel, d.voice]);
+    useEffect(() => {
+        if (wb.hydrated && d.speech && !speechCurrent && d.final && !d.storeFinishStale) wb.patch({ storeFinishStale: true });
+    }, [wb.hydrated, speechCurrent, d.speech, d.final, d.storeFinishStale]);
+    const refreshCapabilities = async () => {
         try {
-            const value = await wb.quoteStoreVideo(controller.signal);
-            if (!controller.signal.aborted) setPrice({ key: priceKey, value });
-        } catch (error) {
-            if (!controller.signal.aborted) {
-                setPrice(null);
-                setPriceError(error instanceof Error ? error.message : "报价失败");
-            }
-        } finally {
-            if (!controller.signal.aborted) setQuoting(false);
+            const values = await getWorkerCapabilities(wb.worker);
+            setCapabilities({ compose: Boolean(values.find((c) => c.name === "store-compose")?.available), transcribe: Boolean(values.find((c) => c.name === "store-transcribe")?.available), error: "" });
+        } catch (e) {
+            setCapabilities({ compose: false, transcribe: false, error: e instanceof Error ? e.message : "处理服务连接失败" });
         }
     };
+    useEffect(() => {
+        if (wb.hydrated) void refreshCapabilities();
+    }, [wb.hydrated, wb.worker.url, wb.worker.token, session]);
+    const changeSettings = (value: Partial<StoreVideoSettings>) => wb.edit({ storeSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "script");
+    const saveVersion = () => [...(d.storePlanVersions || []), { script: d.script, shots, createdAt: Date.now() }];
+    const edit = (field: Editor, value: string) =>
+        wb.edit(
+            { [field]: value, ...(field === "script" ? { storeShots: [], storeScriptStale: false, ...(shots.length ? { storePlanVersions: saveVersion() } : {}) } : field === "analysis" ? { storeAnalysisStale: false } : {}) },
+            field === "storeFacts" ? "materials" : field === "script" ? "video" : "script",
+        );
+    const updateShots = (value: StoreShot[]) => wb.edit({ storeShots: value, script: renderStoreShots(value, d), storeScriptStale: false }, "video");
+    const updateShot = (id: string, value: Partial<StoreShot>) => updateShots(shots.map((s) => (s.id === id ? { ...s, ...value } : s)));
+    const moveShot = (index: number, offset: number) => {
+        const next = [...shots];
+        [next[index], next[index + offset]] = [next[index + offset], next[index]];
+        let time = 0;
+        updateShots(
+            next.map((s) => {
+                const length = s.end - s.start,
+                    row = { ...s, start: time, end: time + length };
+                time += length;
+                return row;
+            }),
+        );
+    };
+    const adopt = () => {
+        if (d.storeSuggestionBase !== storePlanKey(d)) {
+            message.warning("原稿已变化，请重新生成修改建议");
+            return;
+        }
+        wb.edit({ script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion || [], storePlanVersions: saveVersion(), storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptStale: false }, "video");
+    };
     const addFiles = async (files: File[], role: "reference" | "model" | "first-frame") => {
-        if (locked || uploadLock.current) return false;
+        if (locked || uploadLock.current) return;
         uploadLock.current = true;
         setUploading(true);
-        setErrors((e) => ({ ...e, [role]: "" }));
         try {
             const added = await wb.addFiles(files, role, "image/*");
-            if (typeof added === "string") setErrors((e) => ({ ...e, [role]: added }));
+            if (typeof added === "string") throw new Error(added);
             if (Array.isArray(added) && role === "first-frame") wb.edit({ storeFirstFrameId: added[0]?.id }, "video");
+            if (Array.isArray(added) && role === "reference") {
+                const current = useVideoWorkbenchStore.getState().drafts["store-explore"]!;
+                wb.patch({ media: current.media.map((m) => added.some((a) => a.id === m.id) ? { ...m, storePurpose: storeSuggestedPurpose(m.name) } : m) });
+            }
             return Array.isArray(added);
+        } catch (e) {
+            message.error(e instanceof Error ? e.message : "素材添加失败");
         } finally {
             uploadLock.current = false;
             setUploading(false);
@@ -143,183 +161,282 @@ export default function StoreExploreWorkspace() {
     const insertAsset = async (payload: InsertAssetPayload) => {
         if (!assetRole) return;
         try {
-            if (payload.kind !== "image") throw new Error("请选择图片素材");
+            if (payload.kind !== "image") throw new Error("请选择图片");
             const blob = await (await fetch(await imageToDataUrl({ dataUrl: payload.dataUrl, storageKey: payload.storageKey }))).blob();
             if (await addFiles([new File([blob], payload.title, { type: blob.type })], assetRole)) setAssetRole(null);
-        } catch (error) {
-            setErrors((e) => ({ ...e, [assetRole]: error instanceof Error ? error.message : "素材读取失败" }));
+        } catch (e) {
+            message.error(e instanceof Error ? e.message : "素材读取失败");
         }
     };
-    const materialField = (role: "reference" | "model" | "first-frame", title: string, hint: string) => {
-        const files = d.media.filter((m) => m.role === role);
+    const prepareQuote = async () => {
+        const controller = new AbortController();
+        quoteController.current?.abort();
+        quoteController.current = controller;
+        setQuoting(true);
+        try {
+            const value = await wb.quoteStoreVideo(controller.signal);
+            if (!controller.signal.aborted) setQuote({ key: priceKey, value });
+        } catch (e) {
+            if (!controller.signal.aborted) message.error(e instanceof Error ? e.message : "报价失败");
+        } finally {
+            if (!controller.signal.aborted) setQuoting(false);
+        }
+    };
+    const restoreInput = (r: VideoRecord) =>
+        modal.confirm({
+            title: "基于这个版本制作",
+            content: "载入该版输入，当前结果保留在历史记录中。",
+            okText: "载入",
+            cancelText: "取消",
+            onOk: async () => {
+                if (!r.storeExploreInput) return;
+                const { channelMode: _c, baseUrl: _b, ...input } = r.storeExploreInput;
+                const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
+                wb.patch({ ...emptyVideoDraft("store-explore"), ...input, media, video: null, final: null, speech: null, storeSpeechKey: undefined, subtitles: [], storeOutputStale: false, storeScriptSuggestion: "", storeShotSuggestion: undefined });
+                setViewed(null);
+                setTab("plan");
+            },
+        });
+    const icon = (title: string, node: React.ReactNode, action: () => void, disabled = locked) => (
+        <Tooltip title={title}>
+            <Button aria-label={title} type="text" size="small" disabled={disabled} icon={node} onClick={action} />
+        </Tooltip>
+    );
+    const materialField = (role: "reference" | "model" | "first-frame", title: string) => {
+        const media = d.media.filter((m) => m.role === role && m.kind === "image");
+        const props = {
+            accept: "image/*",
+            multiple: role !== "first-frame",
+            showUploadList: false,
+            disabled: locked,
+            beforeUpload: (file: File, list: File[]) => {
+                if (file === list[0]) void addFiles(role === "first-frame" ? [file] : list, role);
+                return Upload.LIST_IGNORE;
+            },
+        };
         return (
-            <section data-material-role={role} className="space-y-2">
+            <section className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                    <strong className="font-medium">{title}</strong>
-                    <span className="text-xs" style={muted}>
-                        {files.length} 张
-                    </span>
+                    <strong className="text-sm font-medium">{title}</strong>
+                    <Space size={0}>
+                        <Upload {...props}>
+                            <Button aria-label={`添加${title}`} size="small" type="text" icon={<Plus size={15} />} />
+                        </Upload>
+                        <Button size="small" type="text" disabled={locked} onClick={() => setAssetRole(role)}>
+                            素材库
+                        </Button>
+                    </Space>
                 </div>
-                {files.length > 0 && (
-                    <div className="grid grid-cols-2 gap-2">
-                        {files.map((m) => (
-                            <div key={m.id} className="min-w-0 rounded-lg border p-2" style={{ borderColor: token.colorBorderSecondary }}>
-                                <button
-                                    type="button"
-                                    className="block w-full cursor-pointer"
-                                    aria-label={`预览${m.name}`}
-                                    onClick={() => modal.info({ title: m.name, width: 800, content: <img src={m.url} alt={m.name} className="max-h-[65vh] w-full object-contain" /> })}
-                                >
-                                    <img src={m.url} alt={m.name} className="h-24 w-full rounded object-contain" />
+                {media.length ? (
+                    <div className="space-y-2">
+                        {media.map((m) => (
+                            <div key={m.id} className="flex min-w-0 gap-2 border-b pb-2" style={border}>
+                                <button type="button" className="shrink-0" aria-label={`预览${m.name}`} onClick={() => modal.info({ title: m.name, width: 800, content: <img src={m.url} alt={m.name} className="max-h-[65vh] w-full object-contain" /> })}>
+                                    <img src={m.url} alt={m.name} className="h-16 w-16 rounded object-cover" />
                                 </button>
-                                <div className="mt-1 flex min-w-0 items-center gap-1">
-                                    <span className="min-w-0 flex-1 truncate text-xs" title={m.name}>
-                                        {labels.find((l) => l.id === m.id)?.label || "首帧"} · {m.name}
-                                    </span>
-                                    <Button type="text" size="small" aria-label={`移除${m.name}`} disabled={locked} icon={<X size={13} />} onClick={() => wb.removeMedia(m.id)} />
-                                </div>
-                                <div className="text-xs" style={muted}>
-                                    {formatBytes(m.bytes)}
-                                    {m.width && m.height ? ` · ${m.width}×${m.height}` : ""}
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1">
+                                        <span className="min-w-0 flex-1 truncate text-xs" title={m.name}>
+                                            {labels.find((l) => l.id === m.id)?.label} · {m.name}
+                                        </span>
+                                        {icon(`移除${m.name}`, <X size={13} />, () => wb.removeMedia(m.id))}
+                                    </div>
+                                    {role === "model" ? (
+                                        <Input
+                                            size="small"
+                                            aria-label={`${m.name}人物身份`}
+                                            placeholder="同一人物的多视角填同名"
+                                            value={m.storePerson}
+                                            disabled={locked}
+                                            onChange={(e) => wb.edit({ media: d.media.map((v) => (v.id === m.id ? { ...v, storePerson: e.target.value } : v)) }, "materials")}
+                                        />
+                                    ) : (
+                                        <Select
+                                            size="small"
+                                            aria-label={`${m.name}用途`}
+                                            className="w-full"
+                                            disabled={locked}
+                                            value={m.storePurpose || "未分类"}
+                                            onChange={(storePurpose) => wb.edit({ media: d.media.map((v) => (v.id === m.id ? { ...v, storePurpose } : v)) }, "materials")}
+                                            options={["未分类", "门头", "环境", "商品", "服务", "首帧"].map((value) => ({ value, label: value }))}
+                                        />
+                                    )}
                                 </div>
                             </div>
                         ))}
                     </div>
-                )}
-                <Upload.Dragger
-                    height={96}
-                    accept="image/*"
-                    multiple={role !== "first-frame"}
-                    showUploadList={false}
-                    disabled={locked}
-                    beforeUpload={(file, list) => {
-                        if (file === list[0]) void addFiles(role === "first-frame" ? [file] : list, role);
-                        return Upload.LIST_IGNORE;
-                    }}
-                    style={{ background: token.colorFillQuaternary }}
-                >
-                    <div className="flex items-center justify-center gap-2 text-sm">
-                        {uploading ? <Spin size="small" /> : <Images size={18} />}
-                        <span>点击或拖拽上传图片</span>
-                    </div>
-                    <div className="mt-1 px-2 text-xs" style={muted}>
-                        {hint}
-                    </div>
-                </Upload.Dragger>
-                <Button size="small" type="text" disabled={locked} onClick={() => setAssetRole(role)}>
-                    从我的素材选择
-                </Button>
-                {errors[role] && (
-                    <div role="alert" className="text-xs" style={{ color: token.colorError }}>
-                        {errors[role]}
-                    </div>
+                ) : (
+                    <Upload.Dragger {...props} height={90}>
+                        <Images size={20} className="mx-auto mb-1" />
+                        <span className="text-xs">添加{title}</span>
+                    </Upload.Dragger>
                 )}
             </section>
         );
     };
-    const editorHeading = (field: Editor, extra?: ReactNode) => (
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <strong className="font-medium">{names[field]}</strong>
-            <Space size={4}>
-                {extra}
-                <Button type="text" size="small" icon={<Expand size={13} />} onClick={() => setEditor(field)}>
-                    放大
-                </Button>
-            </Space>
+    const heading = (field: Editor) => (
+        <div className="mb-2 flex items-center justify-between">
+            <strong className="text-sm font-medium">{names[field]}</strong>
+            {icon(`放大${names[field]}`, <Expand size={13} />, () => setEditor(field), false)}
         </div>
     );
-    const textAction = (stage: "analyze" | "script", label: string) => (
-        <Button
-            size="small"
-            disabled={locked || Boolean(textBlocked) || (stage === "analyze" && !labels.length) || (stage === "script" && !labels.length && !d.storeFacts?.trim() && !d.instructions.trim())}
-            icon={<Sparkles size={13} />}
-            onClick={() => void wb.run(stage)}
-        >
-            {label}
-        </Button>
+    const mentions = (field: "script" | "instructions", rows = 4) => (
+        <Mentions
+            aria-label={names[field]}
+            rows={rows}
+            disabled={locked}
+            value={d[field]}
+            onChange={(v) => edit(field, v)}
+            options={labels.map((l) => ({
+                value: l.label,
+                label: (
+                    <span className="inline-flex items-center gap-2">
+                        <img src={d.media.find((m) => m.id === l.id)?.url} alt="" className="h-6 w-6 object-cover" />
+                        {l.label} · {l.name}
+                    </span>
+                ),
+            }))}
+        />
     );
-    const showRecord = async (record: VideoRecord) => {
-        try {
-            setViewed({ ...record, ...(record.result ? { result: await restoreWorkbenchFile(record.result) } : {}) });
-            setTab("current");
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "作品读取失败");
+    const materialsPanel = (
+        <div className="space-y-5">
+            {materialField("reference", "门店素材")}
+            <section>
+                {heading("storeFacts")}
+                <Input.TextArea aria-label="门店真实资料" rows={3} disabled={locked} value={d.storeFacts || ""} onChange={(e) => edit("storeFacts", e.target.value)} placeholder="已确认的店名、地址、价格、活动；未知留空" />
+            </section>
+            <section>
+                {heading("instructions")}
+                {mentions("instructions", 3)}
+            </section>
+            <Collapse
+                ghost
+                items={[
+                    { key: "person", label: `出镜人物（可选） · ${d.media.filter((m) => m.role === "model").length} 张`, children: materialField("model", "人物参考") },
+                    {
+                        key: "analysis",
+                        label: `视觉观察${d.storeAnalysisStale ? " · 待更新" : d.analysis ? " · 已有" : ""}`,
+                        children: (
+                            <div className="space-y-2">
+                                <Button size="small" icon={<Sparkles size={13} />} disabled={locked || !labels.length || Boolean(textError(true))} onClick={() => void wb.run("analyze")}>
+                                    分析素材
+                                </Button>
+                                <Input.TextArea aria-label="视觉观察" rows={5} disabled={locked} value={d.analysis} onChange={(e) => edit("analysis", e.target.value)} />
+                                {d.storeAnalysisSuggestion && (
+                                    <>
+                                        <Input.TextArea rows={5} readOnly value={d.storeAnalysisSuggestion} />
+                                        <Space>
+                                            <Button size="small" disabled={locked} onClick={() => wb.edit({ analysis: d.storeAnalysisSuggestion!, storeAnalysisSuggestion: "", storeAnalysisStale: false }, "script")}>
+                                                采用观察
+                                            </Button>
+                                            <Button size="small" disabled={locked} onClick={() => wb.patch({ storeAnalysisSuggestion: "" })}>
+                                                保留原文
+                                            </Button>
+                                        </Space>
+                                    </>
+                                )}
+                            </div>
+                        ),
+                    },
+                ]}
+            />
+            {mode !== "reference" && (
+                <section className="space-y-2">
+                    <strong className="text-sm font-medium">生成首帧{profile.firstFrameRequired ? "（必填）" : "（可选）"}</strong>
+                    <Select
+                        className="w-full"
+                        aria-label="生成首帧"
+                        allowClear
+                        disabled={locked}
+                        value={d.storeFirstFrameId}
+                        onChange={(storeFirstFrameId) => wb.edit({ storeFirstFrameId, ...(storeFirstFrameId ? {} : { media: d.media.filter((m) => m.role !== "first-frame") }) }, "video")}
+                        options={d.media.filter((m) => m.kind === "image").map((m) => ({ value: m.id, label: m.name }))}
+                    />
+                    {materialField("first-frame", "合成首帧")}
+                    <Button size="small" icon={<Sparkles size={13} />} disabled={locked || !labels.length || !config.imageModel} onClick={() => void wb.run("keyframe")}>AI 合成首帧预览</Button>
+                    {d.storeKeyframeSuggestion && <div className="space-y-2"><img src={d.storeKeyframeSuggestion.url} alt="待采用首帧" className="max-h-48 w-full object-contain" /><Space wrap><Button size="small" disabled={locked || d.storeKeyframeKey !== storeKeyframeKey(d)} onClick={() => {
+                        const image = d.storeKeyframeSuggestion!, id = crypto.randomUUID();
+                        wb.edit({ media: [...d.media, { ...image, id, name: "探店合成首帧", kind: "image", role: "first-frame" }], storeFirstFrameId: id, storeKeyframeSuggestion: undefined }, "video");
+                    }}>采用首帧</Button><Button size="small" disabled={locked} onClick={() => wb.patch({ storeKeyframeSuggestion: undefined })}>保留原首帧</Button></Space></div>}
+                    {mode === "first_last" && !wan && (
+                        <Select
+                            className="w-full"
+                            aria-label="生成尾帧"
+                            placeholder="生成尾帧"
+                            allowClear
+                            disabled={locked}
+                            value={d.storeLastFrameId}
+                            onChange={(storeLastFrameId) => wb.edit({ storeLastFrameId }, "video")}
+                            options={d.media.filter((m) => m.kind === "image").map((m) => ({ value: m.id, label: m.name }))}
+                        />
+                    )}
+                    <p className="text-xs" style={muted}>
+                        本次只发送选定首帧{mode === "first_last" ? "和尾帧" : ""}，其余素材用于方案。
+                    </p>
+                </section>
+            )}
+        </div>
+    );
+    const spec = `${cloud ? "跟随首帧 / 平台比例" : videoSizeLabel(cfg.size)} · ${cfg.videoSeconds} 秒 · ${cfg.vquality}p`;
+    const planAction = () => {
+        if (textError()) {
+            message.warning(textError());
+            return;
         }
+        setTab("plan");
+        void wb.run("script");
     };
-    const restoreInput = (record: VideoRecord) => {
-        if (!record.storeExploreInput) return;
-        modal.confirm({
-            title: "恢复这次制作的输入",
-            content: "将替换当前素材、资料与脚本；不会创建新收费任务。",
-            okText: "恢复输入",
-            cancelText: "取消",
-            onOk: async () => {
-                const { channelMode: _mode, baseUrl: _url, ...input } = record.storeExploreInput!;
-                const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
-                wb.patch({ ...input, media, storeOutputStale: true, storeScriptStale: false, storeAnalysisStale: false, storeAnalysisSuggestion: "", storeScriptSuggestion: "" });
-                setViewed(null);
-                setTab("current");
-            },
-        });
-    };
-    const refreshModels = async () => {
-        quoteController.current?.abort();
-        setPrice(null);
-        setRefreshing(true);
-        try {
-            await loadSettings();
-        } finally {
-            setRefreshing(false);
-        }
-    };
-    const spec = `${cloud ? (materials.length ? "跟随首帧" : "平台默认比例") : videoSizeLabel(cfg.size)} · ${wan ? "约 " : ""}${cfg.videoSeconds}秒 · ${cfg.vquality}p${wan && cfg.videoInterpolate === "true" ? " · 插帧" : ""}`;
+    const primary = tab === "result" && d.video && !viewed && !d.storeOutputStale && (audioMode !== "source" || d.addSubtitles || d.media.some((m) => m.role === "music") || d.final) && (!d.final || d.storeFinishStale)
+        ? { label: "合成当前成片", action: () => { void wb.run("compose"); }, disabled: Boolean(finishError) || !capabilities.compose }
+        : tab === "result" && result && !viewed && !d.storeOutputStale && !(d.final && d.storeFinishStale)
+        ? { label: d.final ? "下载成片" : "下载原片", action: () => { void wb.download(result); }, disabled: false }
+        : !d.script.trim()
+        ? { label: "生成拍摄方案", action: planAction, disabled: Boolean(textError()) || (!labels.length && !d.storeFacts?.trim() && !d.instructions.trim()) }
+        : {
+              label: "生成视频",
+              action: () => {
+                  setViewed(null);
+                  setTab("result");
+                  void wb.run("video");
+              },
+              disabled: Boolean(blocked),
+          };
     const controls = (
         <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-                <span className="text-xs" style={muted}>
-                    {quote ? `预计 ${quote.credits.toLocaleString()} 算力点` : config.channelMode === "remote" || cloud ? "制作前确认本次算力点" : "自定义渠道费用以服务账单为准"}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span style={muted}>
+                    {spec} · {audioMode === "narration" ? "独立旁白" : audioMode === "mute" ? "去除原声" : "保留原声"}
                 </span>
-                {(config.channelMode === "remote" || cloud) && session && (
-                    <Button size="small" type="link" disabled={locked || Boolean(blocked)} loading={quoting} onClick={() => void prepareQuote()}>
-                        查看本次费用
-                    </Button>
-                )}
+                <Button size="small" type="text" icon={<Settings2 size={14} />} onClick={() => setSettingsOpen(true)}>
+                    设置
+                </Button>
             </div>
-            {quote && (
-                <div className="text-xs" style={muted}>
-                    {publicServiceText(quote.calculation || "")}
-                </div>
-            )}
-            {priceError && (
-                <div role="alert" className="text-xs" style={{ color: token.colorError }}>
-                    {priceError}
-                </div>
-            )}
-            {(config.channelMode === "remote" || cloud) && !session ? (
-                <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm">登录后生成视频</span>
-                    <UserStatusActions accountOnly />
+            {config.channelMode === "remote" || cloud ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span>{price ? `本次视频 ${price.credits.toLocaleString()} 算力点` : "方案、视频、旁白按各阶段确认费用"}</span>
+                    {session && d.script && (
+                        <Button type="link" size="small" disabled={locked || Boolean(blocked)} loading={quoting} onClick={() => void prepareQuote()}>
+                            视频报价
+                        </Button>
+                    )}
                 </div>
             ) : (
-                <Button
-                    type="primary"
-                    size="large"
-                    block
-                    disabled={locked || Boolean(blocked)}
-                    loading={busy}
-                    icon={<Sparkles size={16} />}
-                    onClick={() => {
-                        setViewed(null);
-                        setTab("current");
-                        void wb.run("video");
-                    }}
-                >
-                    生成视频
+                <p className="text-xs" style={muted}>
+                    自定义渠道按服务账单收费
+                </p>
+            )}
+            {!session && (config.channelMode === "remote" || cloud) ? (
+                <UserStatusActions accountOnly />
+            ) : (
+                <Button block type="primary" size="large" disabled={locked || primary.disabled} loading={busy} icon={<Sparkles size={16} />} onClick={primary.action}>
+                    {primary.label}
                 </Button>
             )}
-            <div className="text-xs" style={muted}>
-                {uploading ? "正在保存素材" : busy ? "正在处理，请稍候" : blocked || "已具备制作条件；文案与视频分别计费"}
-            </div>
+            {d.script && blocked && (
+                <p role="status" className="text-xs" style={{ color: token.colorWarningText }}>
+                    {blocked}
+                </p>
+            )}
         </div>
     );
     if (!wb.hydrated)
@@ -330,357 +447,465 @@ export default function StoreExploreWorkspace() {
         );
     return (
         <main className="flex h-full min-h-0 flex-col" style={{ color: token.colorText }}>
-            <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
+            <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6" style={border}>
                 <div className="flex items-center gap-3">
-                    <Link to="/video" className="inline-flex items-center gap-1 text-sm" style={muted}>
-                        <ArrowLeft size={15} />
-                        视频制作
+                    <Link to="/video" aria-label="返回视频制作">
+                        <ArrowLeft size={18} />
                     </Link>
                     <h1 className="text-lg font-semibold">探店视频</h1>
+                    <span className="hidden text-xs sm:inline" style={muted}>
+                        {wb.storageError ? "保存失败" : "本浏览器草稿"}
+                    </span>
                 </div>
-                <span className="hidden text-sm sm:block" style={muted}>
-                    真实门店素材 → 可编辑脚本 → 视频片段
-                </span>
+                <Button type="text" icon={<Save size={15} />} onClick={() => setPresetsOpen(true)}>
+                    门店方案
+                </Button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="store-scroll">
-                <div className="mx-auto grid min-h-full max-w-[1800px] gap-5 lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]">
-                    <section className="flex min-h-0 flex-col rounded-xl border" style={surface} aria-label="探店素材与设置">
-                        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4" data-testid="store-input-scroll">
-                            {materialField("reference", "探店素材", "门头、环境、商品与服务过程")}
-                            <section>
-                                {editorHeading("storeFacts")}
-                                <Input.TextArea aria-label="门店真实资料" rows={3} disabled={locked} value={d.storeFacts || ""} onChange={(e) => edit("storeFacts", e.target.value)} placeholder="填写真实店名、地址、商品、价格和活动；未知信息留空" />
-                            </section>
-                            <section>
-                                {editorHeading("analysis", textAction("analyze", "AI 分析"))}
-                                <Input.TextArea aria-label="视觉分析" rows={3} disabled={locked} value={d.analysis} onChange={(e) => edit("analysis", e.target.value)} placeholder="分析环境、商品和可用镜头；不会从图片推测价格或地址" />
-                                {d.storeAnalysisStale && d.analysis && (
-                                    <div className="mt-1 text-xs" style={{ color: token.colorWarning }}>
-                                        素材或资料已变化，请核对分析
-                                    </div>
-                                )}
-                                {d.storeAnalysisSuggestion && (
-                                    <div className="mt-2 space-y-2">
-                                        <Input.TextArea aria-label="新分析预览" rows={4} value={d.storeAnalysisSuggestion} readOnly />
-                                        <Space>
-                                            <Button size="small" disabled={locked} onClick={() => wb.edit({ analysis: d.storeAnalysisSuggestion!, storeAnalysisSuggestion: "", storeAnalysisStale: false }, "script")}>
-                                                采用新分析
-                                            </Button>
-                                            <Button size="small" disabled={locked} onClick={() => wb.patch({ storeAnalysisSuggestion: "" })}>
-                                                保留原分析
-                                            </Button>
-                                        </Space>
-                                    </div>
-                                )}
-                            </section>
-                            {materialField("model", "出镜人物（可选）", referenceMode ? "用于人物外观参考，以当前模型能力为准" : "仅用于分析；人物进入画面需准备对应首帧")}
-                            <section>
-                                {editorHeading("instructions")}
-                                <Mentions
-                                    aria-label="创作要求"
-                                    rows={3}
-                                    disabled={locked}
-                                    value={d.instructions}
-                                    onChange={(value) => edit("instructions", value)}
-                                    options={labels.map((l) => ({ value: l.label, label: `${l.label} · ${l.name}` }))}
-                                    placeholder="风格、动作、受众等；输入 @ 引用素材"
-                                />
-                                <div className="mt-1 text-xs" style={muted}>
-                                    {labels.length} 个可引用素材
-                                </div>
-                            </section>
-                            <section>
-                                {editorHeading("script", textAction("script", "AI 撰写脚本"))}
-                                <Mentions
-                                    aria-label="视频脚本"
-                                    rows={6}
-                                    disabled={locked}
-                                    value={d.script}
-                                    onChange={(value) => edit("script", value)}
-                                    options={labels.map((l) => ({ value: l.label, label: `${l.label} · ${l.name}` }))}
-                                    placeholder={`可直接手写脚本；当前制作${cfg.videoSeconds}秒片段`}
-                                />
-                                <div className="mt-2 flex items-center justify-between gap-2">
-                                    <span className="text-xs" style={muted}>
-                                        按当前 {cfg.videoSeconds} 秒规格编写
-                                    </span>
-                                    <Button size="small" disabled={!d.script} onClick={() => copyText(d.script, "脚本已复制")}>
-                                        复制脚本
-                                    </Button>
-                                </div>
-                                {d.storeScriptStale && d.script && (
-                                    <div className="mt-1 text-xs" style={{ color: token.colorWarning }}>
-                                        输入或规格已变化，原稿已保留；请核对或更新
-                                    </div>
-                                )}
-                                {d.storeScriptSuggestion && (
-                                    <div className="mt-2 space-y-2">
-                                        <Input.TextArea aria-label="新脚本预览" rows={6} value={d.storeScriptSuggestion} readOnly />
-                                        <Space>
-                                            <Button size="small" disabled={locked} onClick={() => wb.edit({ script: d.storeScriptSuggestion!, storeScriptSuggestion: "", storeScriptStale: false }, "video")}>
-                                                采用新脚本
-                                            </Button>
-                                            <Button size="small" disabled={locked} onClick={() => wb.patch({ storeScriptSuggestion: "" })}>
-                                                保留原稿
-                                            </Button>
-                                        </Space>
-                                    </div>
-                                )}
-                                {invalidMentions && (
-                                    <div role="alert" className="mt-1 text-xs" style={{ color: token.colorError }}>
-                                        {invalidMentions}
-                                    </div>
-                                )}
-                            </section>
-                            {!referenceMode && (
-                                <section className="space-y-2">
-                                    <strong className="font-medium">生成首帧{profile.firstFrameRequired ? "（必填）" : "（可选）"}</strong>
-                                    <Select
-                                        aria-label="生成首帧"
-                                        className="w-full"
-                                        disabled={locked}
-                                        allowClear
-                                        value={d.storeFirstFrameId}
-                                        placeholder={profile.firstFrameRequired ? "明确选择本次生成首帧" : "不选图片时纯文字生成"}
-                                        onChange={(value) => wb.edit({ storeFirstFrameId: value, media: value ? d.media : d.media.filter((m) => m.role !== "first-frame") }, "video")}
-                                        options={d.media.filter((m) => m.kind === "image").map((m) => ({ value: m.id, label: `${labels.find((l) => l.id === m.id)?.label || "首帧"} · ${m.name}` }))}
-                                    />
-                                    {materialField("first-frame", "或上传生成首帧", "上传合成后的门店与人物图片，可控制起始画面")}
-                                    {mode === "first_last" && !wan && (
-                                        <Select
-                                            aria-label="生成尾帧"
-                                            className="w-full"
-                                            allowClear
-                                            disabled={locked}
-                                            value={d.storeLastFrameId}
-                                            placeholder={profile.lastFrameOptional ? "尾帧可选" : "当前模型要求尾帧"}
-                                            onChange={(value) => wb.edit({ storeLastFrameId: value }, "video")}
-                                            options={d.media.filter((m) => m.kind === "image").map((m) => ({ value: m.id, label: m.name }))}
-                                        />
-                                    )}
-                                    <p className="text-xs" style={muted}>
-                                        只有选定的首帧{mode === "first_last" && !wan ? " / 尾帧" : ""}传给视频模型，其他图用于分析与脚本。
-                                    </p>
-                                </section>
-                            )}
-                            <div className="text-xs" style={muted}>
-                                文案模型与视频分别计费。{textBlocked || "可跳过 AI 分析，直接填写资料和脚本。"}
-                            </div>
-                            <Collapse
-                                items={[
-                                    {
-                                        key: "advanced",
-                                        label: "高级设置 · 文案与渠道",
-                                        children: (
-                                            <div className="space-y-3">
-                                                <FeatureModelPicker capability="text" featureId="store-explore.analyze" />
-                                                <ModelPicker
-                                                    config={config}
-                                                    capability="text"
-                                                    value={config.textModel}
-                                                    fullWidth
-                                                    onChange={(value) => {
-                                                        if (!locked) updateConfig("textModel", value);
-                                                    }}
-                                                    onMissingConfig={() => openConfig(true)}
-                                                />
-                                                <Button disabled={locked} onClick={() => openConfig(true)}>
-                                                    配置模型渠道
-                                                </Button>
-                                                <p className="text-xs" style={muted}>
-                                                    草稿、素材与作品保存在本浏览器。选择自定义渠道后，费用以该渠道账单为准。
-                                                </p>
-                                            </div>
-                                        ),
-                                    },
-                                ]}
-                            />
-                        </div>
-                        <div className="hidden shrink-0 space-y-2 border-t p-4 lg:block" style={{ borderColor: token.colorBorderSecondary }}>
-                            <div className="flex items-center gap-2">
-                                <Select
-                                    aria-label="视频模型"
-                                    className="min-w-0 flex-1"
-                                    disabled={locked}
-                                    value={model}
-                                    virtual={false}
-                                    optionRender={(option) => <VideoModelOption config={config} model={String(option.value)} />}
-                                    onChange={(videoModel) => changeSettings({ videoModel })}
-                                    options={selectableModelsByCapability(config, "video").map((value) => ({ value, label: videoProfile(config, value).displayName }))}
-                                />
-                                <Button aria-label="刷新模型" icon={<RefreshCw size={14} />} loading={refreshing} disabled={locked} onClick={() => void refreshModels()} />
-                            </div>
-                            <Button block disabled={locked} onClick={() => setSettingsOpen(true)}>
-                                视频设置 · {spec}
-                            </Button>
-                            <p className="text-xs" style={muted}>
-                                {referenceMode ? `${materials.length}张视频参考图` : materials.length ? `选定${materials.length}张首帧${materials.length > 1 ? " / 尾帧" : ""}` : "当前无首帧"}
-                            </p>
+            {wb.storageError && <Alert type="error" title={wb.storageError} showIcon />}
+            <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden" data-testid="store-scroll">
+                <div className="mx-auto grid max-w-[1680px] lg:h-full lg:grid-cols-[320px_minmax(0,1fr)]">
+                    <aside className="hidden min-h-0 flex-col border-r lg:flex" style={border} aria-label="门店素材">
+                        <div className="min-h-0 flex-1 overflow-y-auto p-5">{materialsPanel}</div>
+                        <div className="shrink-0 border-t p-4" style={border}>
                             {controls}
                         </div>
-                    </section>
-                    <aside className="flex min-h-0 flex-col rounded-xl border p-4" style={surface} aria-label="作品与说明">
-                        {wb.storageError && <Alert type="error" showIcon title="本地保存异常" description={wb.storageError} className="mb-3" />}
-                        {busy && (
-                            <Alert
-                                type="info"
-                                showIcon
-                                title={`${stageLabels[active?.stage || ""] || "正在处理"}：${active?.step || "等待请求"}`}
-                                description={
-                                    <Space>
-                                        <Button size="small" onClick={wb.stop}>
-                                            停止等待
-                                        </Button>
-                                        {active?.replicateTask && (
-                                            <Button size="small" danger onClick={() => void wb.cancel()}>
-                                                取消处理任务
-                                            </Button>
-                                        )}
-                                    </Space>
-                                }
-                                className="mb-3"
-                            />
-                        )}
-                        {!busy && pending && (
-                            <Alert
-                                type="info"
-                                showIcon
-                                title="已有任务可恢复查询"
-                                description={
-                                    <Button
-                                        size="small"
-                                        onClick={() => {
-                                            setViewed(null);
-                                            void wb.resume(pending);
-                                        }}
-                                    >
-                                        恢复任务结果
-                                    </Button>
-                                }
-                                className="mb-3"
-                            />
-                        )}
-                        {!busy && active?.error && <Alert type={active.status === "interrupted" ? "warning" : "error"} title={publicServiceText(active.error)} className="mb-3" />}
+                    </aside>
+                    <section className="flex min-h-0 min-w-0 flex-col px-4 pb-4 sm:px-6">
                         <Tabs
                             activeKey={tab}
                             onChange={setTab}
                             items={[
-                                { key: "current", label: "当前作品" },
-                                { key: "history", label: "本浏览器作品" },
-                                { key: "help", label: "使用说明" },
+                                ...(!screens.lg ? [{ key: "materials", label: "素材" }] : []),
+                                { key: "plan", label: "拍摄方案" },
+                                { key: "result", label: "成片" },
+                                { key: "history", label: "历史版本" },
                             ]}
                         />
-                        <div className="min-h-0 flex-1 overflow-y-auto" data-testid="store-result-scroll">
-                            {tab === "current" && (
-                                <div className="flex min-h-[320px] flex-col gap-3 lg:h-full">
-                                    {viewed && (
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <span className="text-sm">
-                                                查看历史 · {stageLabels[viewed.stage]} · {new Date(viewed.createdAt).toLocaleString()}
-                                            </span>
-                                            <Button size="small" onClick={() => setViewed(null)}>
-                                                返回当前制作
+                        {busy && (
+                            <Alert
+                                className="mb-3"
+                                type="info"
+                                showIcon
+                                title={active?.step || "正在处理"}
+                                description={
+                                    <Button size="small" onClick={wb.stop}>
+                                        停止等待
+                                    </Button>
+                                }
+                            />
+                        )}
+                        {!busy && pending && (
+                            <Alert
+                                className="mb-3"
+                                type="info"
+                                title="已有任务可恢复"
+                                description={
+                                    <Button size="small" onClick={() => void wb.resume(pending)}>
+                                        查询原任务结果
+                                    </Button>
+                                }
+                            />
+                        )}
+                        {!busy && active?.error && <Alert className="mb-3" type="warning" title={publicServiceText(active.error)} />}
+                        <div className="min-h-0 flex-1 overflow-y-auto pb-3" data-testid="store-main-scroll">
+                            {tab === "materials" && <div className="max-w-xl py-2">{materialsPanel}</div>}
+                            {tab === "plan" && (
+                                <div className="space-y-4 py-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <h2 className="text-base font-medium">{shots.length ? `${shots.length} 个镜头 · ${shots.at(-1)?.end} 秒` : "拍摄方案"}</h2>
+                                        <Space wrap size={4}>
+                                            <Button size="small" icon={<Sparkles size={14} />} disabled={locked || Boolean(textError())} onClick={planAction}>
+                                                {d.script ? "重新编写" : "AI 编写"}
+                                            </Button>
+                                            {icon(
+                                                "撤销采用",
+                                                <Undo2 size={14} />,
+                                                () => {
+                                                    const versions = d.storePlanVersions!,
+                                                        last = versions.at(-1)!;
+                                                    wb.edit({ script: last.script, storeShots: last.shots, storePlanVersions: versions.slice(0, -1) }, "video");
+                                                },
+                                                locked || !d.storePlanVersions?.length,
+                                            )}
+                                            <Button size="small" icon={<Expand size={13} />} onClick={() => setEditor("script")}>
+                                                自由编辑
+                                            </Button>
+                                        </Space>
+                                    </div>
+                                    {d.storeScriptStale && d.script && <Alert type="warning" title="资料或规格已变化，原方案已保留，请核对后调整" />}
+                                    {!d.script && !shots.length && (
+                                        <div className="space-y-4">
+                                            <div className="flex flex-wrap gap-2">
+                                                {d.media
+                                                    .filter((m) => m.kind === "image")
+                                                    .map((m) => (
+                                                        <img key={m.id} src={m.url} alt={m.name} className="h-24 w-24 rounded object-cover" />
+                                                    ))}
+                                            </div>
+                                            {mentions("script", 8)}
+                                        </div>
+                                    )}
+                                    {shots.length
+                                        ? shots.map((s, i) => (
+                                              <article key={s.id} className="space-y-3 border-b pb-4" style={border}>
+                                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                                      <strong className="text-sm font-medium">镜头 {i + 1}</strong>
+                                                      <div className="flex flex-wrap items-center gap-1">
+                                                          <InputNumber aria-label={`镜头${i + 1}开始`} size="small" className="!w-20" value={s.start} disabled={locked} onChange={(v) => updateShot(s.id, { start: v ?? 0 })} />
+                                                          <span>–</span>
+                                                          <InputNumber aria-label={`镜头${i + 1}结束`} size="small" className="!w-20" value={s.end} disabled={locked} onChange={(v) => updateShot(s.id, { end: v ?? 0 })} />
+                                                          <span className="text-xs">秒</span>
+                                                          {icon(`上移镜头${i + 1}`, <ArrowUp size={13} />, () => moveShot(i, -1), locked || i === 0)}
+                                                          {icon(`下移镜头${i + 1}`, <ArrowDown size={13} />, () => moveShot(i, 1), locked || i === shots.length - 1)}
+                                                          {icon(`删除镜头${i + 1}`, <Trash2 size={13} />, () => updateShots(shots.filter((v) => v.id !== s.id)))}
+                                                      </div>
+                                                  </div>
+                                                  <Input.TextArea aria-label={`镜头${i + 1}画面`} autoSize={{ minRows: 2 }} value={s.visual} disabled={locked} onChange={(e) => updateShot(s.id, { visual: e.target.value })} />
+                                                  <div className="flex flex-wrap gap-2">
+                                                      {s.materialIds.map((id) => {
+                                                          const m = d.media.find((v) => v.id === id);
+                                                          return m ? <img key={id} src={m.url} alt={m.name} title={m.name} className="h-12 w-12 rounded object-cover" /> : <Alert key={id} type="error" title="引用素材已移除" />;
+                                                      })}
+                                                  </div>
+                                                  <Select
+                                                      className="w-full"
+                                                      mode="multiple"
+                                                      aria-label={`镜头${i + 1}素材`}
+                                                      placeholder="选择参考素材"
+                                                      disabled={locked}
+                                                      value={s.materialIds}
+                                                      onChange={(materialIds) => updateShot(s.id, { materialIds })}
+                                                      options={labels.map((l) => ({ value: l.id, label: `${l.label} · ${l.name}` }))}
+                                                  />
+                                                  <Input.TextArea aria-label={`镜头${i + 1}台词`} autoSize={{ minRows: 1 }} placeholder="台词（可选）" disabled={locked} value={s.dialogue} onChange={(e) => updateShot(s.id, { dialogue: e.target.value })} />
+                                              </article>
+                                          ))
+                                        : d.script && mentions("script", 12)}
+                                    <Button
+                                        size="small"
+                                        disabled={locked || Boolean(d.script && !shots.length)}
+                                        icon={<Plus size={14} />}
+                                        onClick={() => {
+                                            const last = shots.at(-1), end = last?.end || Number(cfg.videoSeconds), start = last ? Number(((last.start + end) / 2).toFixed(3)) : 0;
+                                            updateShots([...shots.map((s) => s === last ? { ...s, end: start } : s), { id: crypto.randomUUID(), start, end, materialIds: [], visual: "", dialogue: "" }]);
+                                        }}
+                                    >
+                                        添加镜头
+                                    </Button>
+                                    {d.script && (
+                                        <div className="flex flex-wrap gap-2 border-t pt-4" style={border}>
+                                            <Select
+                                                aria-label="修改范围"
+                                                value={scope}
+                                                className="w-full sm:w-44"
+                                                disabled={locked}
+                                                onChange={setScope}
+                                                options={[{ value: "all", label: "重新编写全稿" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
+                                            />
+                                            <Input aria-label="AI修改要求" className="min-w-0 flex-1" value={request} disabled={locked} onChange={(e) => setRequest(e.target.value)} placeholder="例如：缩短台词，保留画面" />
+                                            <Button
+                                                disabled={locked || !request.trim() || Boolean(textError()) || (scope !== "all" && !shots.some((s) => s.id === scope))}
+                                                icon={<Sparkles size={14} />}
+                                                onClick={() => void wb.reviseScript(JSON.stringify({ request, ...(scope !== "all" ? { ids: [scope] } : {}) }))}
+                                            >
+                                                预览修改
                                             </Button>
                                         </div>
                                     )}
-                                    {!viewed && d.storeOutputStale && d.video && <Alert type="warning" title="输入已变化，以下为上一次制作的结果" />}
+                                    {d.storeScriptSuggestion && (
+                                        <section className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
+                                            <strong className="text-sm font-medium">待采用方案</strong>
+                                            <Input.TextArea readOnly aria-label="待采用方案" value={d.storeScriptSuggestion} rows={10} />
+                                            <Space wrap>
+                                                <Button type="primary" size="small" disabled={locked || d.storeSuggestionBase !== storePlanKey(d)} onClick={adopt}>
+                                                    采用方案
+                                                </Button>
+                                                <Button size="small" disabled={locked} onClick={() => wb.patch({ storeScriptSuggestion: "", storeShotSuggestion: undefined })}>
+                                                    保留原稿
+                                                </Button>
+                                            </Space>
+                                            {d.storeSuggestionBase !== storePlanKey(d) && (
+                                                <p className="text-xs" style={muted}>
+                                                    原稿已变化，请重新生成建议。
+                                                </p>
+                                            )}
+                                        </section>
+                                    )}
+                                    <p className="text-xs" style={muted}>
+                                        单条片段 {cfg.videoSeconds} 秒。镜头时间为创作计划，实际转场和人物表现取决于模型。
+                                    </p>
+                                </div>
+                            )}
+                            {tab === "result" && (
+                                <div className="space-y-4 py-2">
+                                    {viewed && (
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <span className="text-sm">历史版本 · {new Date(viewed.createdAt).toLocaleString()}</span>
+                                            <Button size="small" onClick={() => setViewed(null)}>
+                                                返回当前
+                                            </Button>
+                                        </div>
+                                    )}
+                                    {!viewed && (d.storeOutputStale || (d.final && d.storeFinishStale)) && <Alert type="warning" title={d.storeOutputStale ? "方案已变化，当前显示此前作品" : "声音或字幕已变化，当前显示此前成片"} />}
                                     {result ? (
                                         <>
-                                            <div className="flex min-h-[260px] flex-1 items-center justify-center rounded-lg" style={{ background: token.colorFillQuaternary }}>
-                                                <video controls src={result.url} className="max-h-[65vh] w-full rounded-lg object-contain" onError={() => setPreviewError(true)} />
-                                            </div>
-                                            {previewError && <Alert type="warning" title="当前浏览器无法播放此编码，仍可下载原文件" />}
+                                            {result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史首帧" className="max-h-[58vh] w-full object-contain" /> : result.mimeType.startsWith("audio/") ? (
+                                                <audio controls src={result.url} className="w-full" />
+                                            ) : (
+                                                <video controls src={result.url} className="max-h-[58vh] min-h-40 w-full object-contain" onError={() => setPreviewError(true)} />
+                                            )}
+                                            {previewError && <Alert type="warning" title="浏览器无法播放此文件，可下载检查原文件" />}
                                             <Space wrap>
-                                                <Button icon={<Download size={15} />} onClick={() => void wb.download(result)}>
-                                                    下载视频
+                                                <Button type="primary" icon={<Download size={15} />} onClick={() => void wb.download(result)}>
+                                                    下载{viewed ? "本版" : d.final ? "成片" : "原片"}
                                                 </Button>
-                                                {!viewed && (
-                                                    <>
-                                                        <Button icon={<FolderPlus size={15} />} onClick={() => void wb.saveAsset()}>
-                                                            保存素材
-                                                        </Button>
-                                                        <Button icon={<Grid2X2 size={15} />} onClick={() => void wb.toCanvas()}>
-                                                            加入画布
-                                                        </Button>
-                                                    </>
+                                                {!result.mimeType.startsWith("image/") && <Button icon={<FolderPlus size={15} />} onClick={() => void wb.saveAsset(result, viewed ? { title: "探店历史作品", tags: "", cover: null } : undefined)}>
+                                                    保存素材
+                                                </Button>}
+                                                {result.mimeType.startsWith("video/") && (
+                                                    <Button icon={<Grid2X2 size={15} />} onClick={() => void wb.toCanvas(result)}>
+                                                        加入画布
+                                                    </Button>
                                                 )}
                                             </Space>
                                         </>
                                     ) : viewed?.text ? (
-                                        <Input.TextArea rows={14} value={viewed.text} readOnly aria-label="历史文案" />
+                                        <Input.TextArea readOnly rows={12} value={viewed.text} />
                                     ) : (
-                                        <div className="flex min-h-[300px] flex-1 items-center justify-center">
-                                            <Empty description="视频制作完成后在这里预览" />
-                                        </div>
+                                        <Empty description="暂无视频" />
                                     )}
-                                    <p className="text-xs" style={muted}>
-                                        当前生成单条视频片段。配音、字幕与多镜头剪辑需相应模型或额外处理，不会自动完成。
-                                    </p>
+                                    {!viewed && (
+                                        <section className="space-y-4 border-t pt-4" style={border}>
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <h2 className="text-base font-medium">声音与字幕</h2>
+                                                <Button size="small" type="text" icon={<RefreshCw size={13} />} onClick={() => void refreshCapabilities()}>
+                                                    检查服务
+                                                </Button>
+                                            </div>
+                                            <Segmented
+                                                block
+                                                aria-label="声音模式"
+                                                disabled={locked}
+                                                value={audioMode}
+                                                options={[
+                                                    { label: "原片声音", value: "source" },
+                                                    { label: "独立旁白", value: "narration" },
+                                                    { label: "去除原声", value: "mute" },
+                                                ]}
+                                                onChange={(storeAudioMode) => wb.edit({ storeAudioMode: storeAudioMode as VideoDraft["storeAudioMode"] }, "finish")}
+                                            />
+                                            {audioMode === "source" && (
+                                                <p className="text-xs" style={muted}>
+                                                    {profile.generateAudio && cfg.videoGenerateAudio === "true" ? "已请求模型生成声音，需核对实际结果与口型。" : "保留已有音轨；当前设置未请求模型生成声音。"}
+                                                </p>
+                                            )}
+                                            {audioMode === "narration" && (
+                                                <div className="space-y-3">
+                                                    <Input.TextArea aria-label="旁白文案" rows={3} disabled={locked} value={d.narration} placeholder="独立画外旁白，不提供人物口型同步" onChange={(e) => wb.edit({ narration: e.target.value }, "speech")} />
+                                                    <Space wrap>
+                                                        <Button
+                                                            size="small"
+                                                            disabled={locked || !shots.some((s) => s.dialogue)}
+                                                            onClick={() =>
+                                                                wb.edit(
+                                                                    {
+                                                                        narration: shots
+                                                                            .map((s) => s.dialogue)
+                                                                            .filter(Boolean)
+                                                                            .join("\n"),
+                                                                    },
+                                                                    "speech",
+                                                                )
+                                                            }
+                                                        >
+                                                            从镜头台词填入
+                                                        </Button>
+                                                        <Select
+                                                            aria-label="旁白音色"
+                                                            value={d.voice}
+                                                            disabled={locked}
+                                                            className="w-36"
+                                                            onChange={(voice) => wb.edit({ voice }, "speech")}
+                                                            options={[...new Set([...voiceOptions, d.voice])].map((value) => ({ value, label: value }))}
+                                                        />
+                                                        <Button icon={<Sparkles size={14} />} disabled={locked || !d.narration.trim() || !config.audioModel} onClick={() => void wb.run("speech")}>
+                                                            生成并试听旁白
+                                                        </Button>
+                                                    </Space>
+                                                    {d.speech && (
+                                                        <>
+                                                            <audio controls src={d.speech.url} className="w-full" />
+                                                            <p className="text-xs" style={muted}>
+                                                                {speechCurrent ? "当前旁白" : "文案或音色已变化，需要重新生成"}
+                                                                {d.speech.durationMs ? ` · 实际 ${(d.speech.durationMs / 1000).toFixed(2)} 秒` : ""}
+                                                            </p>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Switch aria-label="添加字幕" checked={d.addSubtitles} disabled={locked} onChange={(addSubtitles) => wb.edit({ addSubtitles }, "finish")} />
+                                                <span className="text-sm">字幕</span>
+                                                <Button size="small" disabled={locked || !capabilities.transcribe || audioMode === "mute" || !(audioMode === "narration" ? speechCurrent : d.video)} onClick={() => void wb.run("subtitles")}>
+                                                    识别真实音轨
+                                                </Button>
+                                                <Button
+                                                    size="small"
+                                                    icon={<Plus size={13} />}
+                                                    disabled={locked || !d.video}
+                                                    onClick={() => wb.edit({ subtitles: [...d.subtitles, { start: d.subtitles.at(-1)?.end || 0, end: duration, text: "" }] }, "finish")}
+                                                >
+                                                    添加文字
+                                                </Button>
+                                            </div>
+                                            {d.addSubtitles && (
+                                                <div className="space-y-2">
+                                                    {d.subtitles.map((s, i) => (
+                                                        <div key={i} className="flex flex-wrap items-center gap-2">
+                                                            {(["start", "end"] as const).map((key) => (
+                                                                <InputNumber
+                                                                    key={key}
+                                                                    className="!w-20"
+                                                                    aria-label={`字幕${i + 1}${key === "start" ? "开始" : "结束"}`}
+                                                                    size="small"
+                                                                    value={s[key]}
+                                                                    disabled={locked}
+                                                                    onChange={(v) => wb.edit({ subtitles: d.subtitles.map((row, j) => (j === i ? { ...row, [key]: v ?? 0 } : row)) }, "finish")}
+                                                                />
+                                                            ))}
+                                                            <Input
+                                                                className="min-w-0 flex-1"
+                                                                aria-label={`字幕${i + 1}文字`}
+                                                                value={s.text}
+                                                                disabled={locked}
+                                                                onChange={(e) => wb.edit({ subtitles: d.subtitles.map((v, j) => (j === i ? { ...v, text: e.target.value } : v)) }, "finish")}
+                                                            />
+                                                            {icon(`删除字幕${i + 1}`, <X size={13} />, () => wb.edit({ subtitles: d.subtitles.filter((_, j) => j !== i) }, "finish"))}
+                                                        </div>
+                                                    ))}
+                                                    {d.subtitles.length > 0 && (
+                                                        <Button size="small" disabled={locked} onClick={() => wb.edit({ storeSubtitleSource: storeSubtitleSource(d) }, "finish")}>
+                                                            已核对当前音轨与字幕时间
+                                                        </Button>
+                                                    )}
+                                                    {captionError && (
+                                                        <p className="text-xs" style={{ color: token.colorWarningText }}>
+                                                            {captionError}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <Collapse
+                                                ghost
+                                                items={[
+                                                    {
+                                                        key: "style",
+                                                        label: "配乐与字幕样式",
+                                                        children: (
+                                                            <div className="space-y-3">
+                                                                <Upload
+                                                                    accept="audio/*"
+                                                                    showUploadList={false}
+                                                                    disabled={locked}
+                                                                    beforeUpload={(file) => {
+                                                                        void wb.addFiles([file], "music", "audio/*");
+                                                                        return Upload.LIST_IGNORE;
+                                                                    }}
+                                                                >
+                                                                    <Button disabled={locked} icon={<Plus size={14} />}>
+                                                                        添加背景音乐
+                                                                    </Button>
+                                                                </Upload>
+                                                                {d.media
+                                                                    .filter((m) => m.role === "music")
+                                                                    .map((m) => (
+                                                                        <div key={m.id} className="flex items-center gap-2">
+                                                                            <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
+                                                                            {icon(`删除音乐${m.name}`, <X size={13} />, () => wb.removeMedia(m.id))}
+                                                                        </div>
+                                                                    ))}
+                                                                <label className="block text-sm">
+                                                                    音乐音量
+                                                                    <Slider aria-label="音乐音量" disabled={locked} min={0} max={1} step={0.01} value={d.musicVolume} onChange={(musicVolume) => wb.edit({ musicVolume }, "finish")} />
+                                                                </label>
+                                                                <Space wrap>
+                                                                    <label>
+                                                                        字号 <InputNumber aria-label="字幕字号" disabled={locked} min={1} value={d.subtitleSize} onChange={(v) => wb.edit({ subtitleSize: v || 42 }, "finish")} />
+                                                                    </label>
+                                                                    <label>
+                                                                        颜色 <input aria-label="字幕颜色" type="color" disabled={locked} value={d.subtitleColor} onChange={(e) => wb.edit({ subtitleColor: e.target.value }, "finish")} />
+                                                                    </label>
+                                                                    <label>
+                                                                        底部距离{" "}
+                                                                        <InputNumber
+                                                                            aria-label="字幕底部比例"
+                                                                            disabled={locked}
+                                                                            min={0}
+                                                                            max={0.99}
+                                                                            step={0.01}
+                                                                            value={d.storeSubtitleBottom ?? 0.08}
+                                                                            onChange={(v) => wb.edit({ storeSubtitleBottom: v ?? 0.08 }, "finish")}
+                                                                        />
+                                                                    </label>
+                                                                </Space>
+                                                            </div>
+                                                        ),
+                                                    },
+                                                ]}
+                                            />
+                                            {capabilities.error && <Alert type="warning" title={capabilities.error} />}
+                                            <p className="text-xs" style={muted}>
+                                                {finishError || (!capabilities.compose ? "后期服务尚未就绪" : "复用原片，修改旁白或字幕不会重新生成视频")}
+                                            </p>
+                                            {d.final && d.video && (
+                                                <Button size="small" onClick={() => void wb.download(d.video!)}>
+                                                    下载未合成原片
+                                                </Button>
+                                            )}
+                                        </section>
+                                    )}
                                 </div>
                             )}
                             {tab === "history" && (
-                                <div className="space-y-3">
-                                    {!wb.records.length && <Empty description="本浏览器还没有探店作品或文案记录" />}
+                                <div className="space-y-3 py-2">
+                                    {!wb.records.length && <Empty description="暂无历史版本" />}
                                     {wb.records.map((r) => (
-                                        <article key={r.id} className="space-y-2 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }}>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <strong className="font-medium">{stageLabels[r.stage] || r.stage}</strong>
-                                                <Tag color={r.status === "completed" ? "success" : r.status === "failed" ? "error" : "processing"}>{states[r.status]}</Tag>
+                                        <article key={r.id} className="space-y-2 border-b py-3" style={border}>
+                                            <div className="flex flex-wrap justify-between gap-2">
+                                                <strong className="text-sm font-medium">{stageLabels[r.stage] || r.stage}</strong>
+                                                <span className="text-xs" style={muted}>
+                                                    {states[r.status]} · {new Date(r.createdAt).toLocaleString()}
+                                                </span>
                                             </div>
-                                            <p className="text-xs" style={muted}>
-                                                {new Date(r.createdAt).toLocaleString()} · {r.storeExploreInput?.storeSettings?.videoModel ? videoProfile(config, r.storeExploreInput.storeSettings.videoModel).displayName : "原任务"}
-                                                {r.stage === "video" && r.storeExploreInput?.storeSettings ? ` · ${r.storeExploreInput.storeSettings.videoSeconds}秒 · ${r.storeExploreInput.storeSettings.vquality}p` : ""}
-                                            </p>
                                             {r.error && (
-                                                <p className="text-xs" style={{ color: token.colorError }}>
-                                                    {r.error}
+                                                <p className="text-xs" style={{ color: token.colorWarningText }}>
+                                                    {publicServiceText(r.error)}
                                                 </p>
                                             )}
                                             <Space wrap>
                                                 {(r.result || r.text) && (
-                                                    <Button size="small" onClick={() => void showRecord(r)}>
-                                                        查看作品
+                                                    <Button
+                                                        size="small"
+                                                        onClick={async () => {
+                                                            try {
+                                                                setViewed({ ...r, ...(r.result ? { result: await restoreWorkbenchFile(r.result) } : {}) });
+                                                                setTab("result");
+                                                            } catch (e) {
+                                                                message.error(e instanceof Error ? e.message : "作品读取失败");
+                                                            }
+                                                        }}
+                                                    >
+                                                        查看本版
                                                     </Button>
                                                 )}
                                                 {r.storeExploreInput && (
                                                     <Button size="small" disabled={locked} onClick={() => restoreInput(r)}>
-                                                        恢复输入
+                                                        基于本版制作
                                                     </Button>
                                                 )}
-                                                {["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask) && (
-                                                    <Button
-                                                        size="small"
-                                                        disabled={locked}
-                                                        onClick={() => {
-                                                            setViewed(null);
-                                                            setTab("current");
-                                                            void wb.resume(r);
-                                                        }}
-                                                    >
+                                                {["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob) && (
+                                                    <Button size="small" disabled={locked} onClick={() => void wb.resume(r)}>
                                                         恢复查询
-                                                    </Button>
-                                                )}
-                                                {admin && r.replicateTask && (
-                                                    <Button
-                                                        size="small"
-                                                        disabled={locked}
-                                                        onClick={() => {
-                                                            let prediction = "";
-                                                            modal.confirm({
-                                                                title: "核对平台任务",
-                                                                content: (
-                                                                    <Input
-                                                                        placeholder="原任务编号，不创建新任务"
-                                                                        onChange={(e) => {
-                                                                            prediction = e.target.value.trim();
-                                                                        }}
-                                                                    />
-                                                                ),
-                                                                onOk: () => reconcileReplicateTask(r.replicateTask!.id, prediction),
-                                                            });
-                                                        }}
-                                                    >
-                                                        核对平台任务
                                                     </Button>
                                                 )}
                                             </Space>
@@ -688,53 +913,70 @@ export default function StoreExploreWorkspace() {
                                     ))}
                                 </div>
                             )}
-                            {tab === "help" && (
-                                <div className="space-y-4 text-sm">
-                                    <h2 className="font-medium">如何制作探店片段</h2>
-                                    <ol className="list-inside list-decimal space-y-2">
-                                        <li>上传门店与商品照片，填写真实资料。</li>
-                                        <li>按需要上传人物图，分析素材或直接填写脚本。</li>
-                                        <li>选择多图参考模型，或明确选择生成首帧。</li>
-                                        <li>核对当前时长、清晰度与费用，再确认制作。</li>
-                                    </ol>
-                                    <p style={muted}>门店地址、价格与活动不从照片推测。输入变化会保留原稿并提示核对；AI 新稿需明确采用。</p>
-                                    <p style={muted}>单首帧模型不会直接接收其他门店或人物照片。希望人物出现在画面中时，请上传已有的门店人物合成首帧。</p>
-                                    <p style={muted}>没有本站实测样例时不展示外站作品充当生成效果。草稿与作品保存在当前浏览器。</p>
-                                </div>
-                            )}
                         </div>
-                    </aside>
+                    </section>
                 </div>
             </div>
-            <div className="shrink-0 space-y-2 border-t px-4 py-3 lg:hidden" style={{ ...surface, borderColor: token.colorBorderSecondary }}>
-                <div className="flex items-center gap-2">
-                    <Select
-                        aria-label="视频模型"
-                        className="min-w-0 flex-1"
-                        disabled={locked}
-                        value={model}
-                        virtual={false}
-                        optionRender={(option) => <VideoModelOption config={config} model={String(option.value)} />}
-                        onChange={(videoModel) => changeSettings({ videoModel })}
-                        options={selectableModelsByCapability(config, "video").map((value) => ({ value, label: videoProfile(config, value).displayName }))}
-                    />
-                    <Button aria-label="刷新模型" icon={<RefreshCw size={14} />} disabled={locked} loading={refreshing} onClick={() => void refreshModels()} />
-                    <Button disabled={locked} onClick={() => setSettingsOpen(true)}>
-                        规格
-                    </Button>
-                </div>
-                <div className="text-xs" style={muted}>
-                    {spec}
-                </div>
+            <footer className="shrink-0 border-t px-4 py-3 lg:hidden" style={{ ...border, background: token.colorBgContainer }}>
                 {controls}
-            </div>
-            <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
-            <Modal title={editor ? names[editor] : "编辑"} width={900} open={Boolean(editor)} onCancel={() => setEditor(null)} footer={<Button onClick={() => setEditor(null)}>完成</Button>}>
-                {editor && <Input.TextArea aria-label={`放大编辑${names[editor]}`} rows={14} disabled={locked} value={d[editor] || ""} onChange={(e) => edit(editor, e.target.value)} />}
+            </footer>
+            <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(p) => void insertAsset(p)} />
+            <Modal open={Boolean(editor)} title={editor ? names[editor] : ""} width={960} onCancel={() => setEditor(null)} footer={<Button onClick={() => setEditor(null)}>完成</Button>}>
+                {editor === "script" || editor === "instructions" ? (
+                    <>
+                        {editor === "script" && shots.length > 0 && <Alert className="mb-3" type="info" title="直接改写会保存为自由脚本，原分镜可撤销恢复" />}
+                        {mentions(editor, 16)}
+                    </>
+                ) : (
+                    editor && <Input.TextArea rows={16} aria-label={`放大${names[editor]}`} disabled={locked} value={d[editor] || ""} onChange={(e) => edit(editor, e.target.value)} />
+                )}
+            </Modal>
+            <Modal open={presetsOpen} title="本浏览器门店方案" onCancel={() => setPresetsOpen(false)} footer={null}>
+                <div className="space-y-4">
+                    <div className="flex gap-2">
+                        <Input aria-label="门店方案名称" value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="门店名称" />
+                        <Button
+                            icon={<Save size={14} />}
+                            disabled={locked || !presetName.trim()}
+                            onClick={() => {
+                                useVideoWorkbenchStore.getState().saveStorePreset({ id: crypto.randomUUID(), name: presetName.trim(), media: d.media.filter((m) => m.kind === "image"), facts: d.storeFacts || "", instructions: d.instructions, settings });
+                                setPresetName("");
+                                message.success("已保存到本浏览器");
+                            }}
+                        >
+                            保存
+                        </Button>
+                    </div>
+                    {presets.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                            <Button
+                                size="small"
+                                disabled={locked}
+                                onClick={() =>
+                                    modal.confirm({
+                                        title: `载入「${p.name}」`,
+                                        content: "替换素材和资料，已有方案与作品保留并提示核对。",
+                                        onOk: async () => {
+                                            const media = await Promise.all(p.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
+                                            wb.edit({ media, storeFacts: p.facts, instructions: p.instructions, storeSettings: p.settings, storeFirstFrameId: undefined, storeLastFrameId: undefined }, "materials");
+                                            setPresetsOpen(false);
+                                        },
+                                    })
+                                }
+                            >
+                                载入
+                            </Button>
+                            {icon(`删除方案${p.name}`, <Trash2 size={14} />, () => {
+                                modal.confirm({ title: `删除方案「${p.name}」？`, onOk: () => useVideoWorkbenchStore.getState().removeStorePreset(p.id) });
+                            })}
+                        </div>
+                    ))}
+                </div>
             </Modal>
             <Modal
-                title="视频设置"
                 open={settingsOpen}
+                title="制作设置"
                 onCancel={() => setSettingsOpen(false)}
                 footer={
                     <Button type="primary" onClick={() => setSettingsOpen(false)}>
@@ -743,10 +985,35 @@ export default function StoreExploreWorkspace() {
                 }
             >
                 <div className="space-y-4">
-                    <p style={muted}>{profile.displayName} · 按当前渠道能力展示</p>
+                    <div className="flex gap-2">
+                        <Select
+                            aria-label="视频模型"
+                            className="min-w-0 flex-1"
+                            disabled={locked}
+                            value={cfg.videoModel}
+                            virtual={false}
+                            optionRender={(o) => <VideoModelOption config={config} model={String(o.value)} />}
+                            onChange={(videoModel) => changeSettings({ videoModel })}
+                            options={selectableModelsByCapability(config, "video").map((value) => ({ value, label: videoProfile(config, value).displayName }))}
+                        />
+                        <Button
+                            aria-label="刷新模型"
+                            icon={<RefreshCw size={14} />}
+                            disabled={locked}
+                            loading={refreshing}
+                            onClick={async () => {
+                                setRefreshing(true);
+                                try {
+                                    await useConfigStore.getState().loadPublicSettings();
+                                } finally {
+                                    setRefreshing(false);
+                                }
+                            }}
+                        />
+                    </div>
                     {!cloud && (
                         <label className="block">
-                            画面比例
+                            画幅
                             <Select
                                 aria-label="视频比例"
                                 className="mt-2 w-full"
@@ -758,11 +1025,11 @@ export default function StoreExploreWorkspace() {
                         </label>
                     )}
                     <label className="block">
-                        分辨率
+                        清晰度
                         <Select aria-label="视频分辨率" className="mt-2 w-full" disabled={locked} value={cfg.vquality} onChange={(vquality) => changeSettings({ vquality })} options={profile.resolutions.map((value) => ({ value, label: `${value}p` }))} />
                     </label>
                     <label className="block">
-                        视频时长
+                        时长
                         {profile.seconds.length ? (
                             <Select
                                 aria-label="视频时长"
@@ -770,7 +1037,7 @@ export default function StoreExploreWorkspace() {
                                 disabled={locked}
                                 value={cfg.videoSeconds}
                                 onChange={(videoSeconds) => changeSettings({ videoSeconds })}
-                                options={profile.seconds.map((value) => ({ value, label: `${wan ? "约 " : ""}${value}秒` }))}
+                                options={profile.seconds.map((value) => ({ value, label: `${value}秒` }))}
                             />
                         ) : (
                             <Input aria-label="视频时长" disabled={locked} value={cfg.videoSeconds} onChange={(e) => changeSettings({ videoSeconds: e.target.value })} />
@@ -783,32 +1050,40 @@ export default function StoreExploreWorkspace() {
                             disabled={locked}
                             value={mode}
                             onChange={(videoInputMode) => changeSettings({ videoInputMode })}
-                            options={supportedVideoInputModes(profile).map((value) => ({ value, label: value === "reference" ? "多图参考" : value === "first_last" ? "首尾帧" : "单首帧 / 文生" }))}
+                            options={supportedVideoInputModes(profile).map((value) => ({ value, label: value === "reference" ? "多图参考" : value === "first_last" ? "首尾帧" : "首帧 / 文生" }))}
                         />
                     )}
                     {wan && (
-                        <label>
-                            <Switch aria-label="视频插帧" disabled={locked} checked={cfg.videoInterpolate === "true"} onChange={(value) => changeSettings({ videoInterpolate: String(value) })} /> 插帧（使用对应费用档）
+                        <label className="block">
+                            <Switch disabled={locked} checked={cfg.videoInterpolate === "true"} onChange={(value) => changeSettings({ videoInterpolate: String(value) })} /> 插帧
                         </label>
                     )}
                     {profile.generateAudio && (
-                        <label>
-                            <Switch aria-label="生成声音" disabled={locked} checked={cfg.videoGenerateAudio === "true"} onChange={(value) => changeSettings({ videoGenerateAudio: String(value) })} /> 生成声音
+                        <label className="block">
+                            <Switch aria-label="生成模型声音" disabled={locked} checked={cfg.videoGenerateAudio === "true"} onChange={(value) => changeSettings({ videoGenerateAudio: String(value) })} /> 生成模型声音
                         </label>
                     )}
                     {profile.interface === "ark" && (
-                        <label>
-                            <Switch aria-label="平台水印" disabled={locked} checked={cfg.videoWatermark === "true"} onChange={(value) => changeSettings({ videoWatermark: String(value) })} /> 平台水印
+                        <label className="block">
+                            <Switch disabled={locked} checked={cfg.videoWatermark === "true"} onChange={(value) => changeSettings({ videoWatermark: String(value) })} /> 平台水印
                         </label>
                     )}
-                    {cloud && (
-                        <p className="text-xs" style={muted}>
-                            {hailuo ? "768p支持6/10秒；1080p仅支持6秒。上传图片跟随首帧，纯文字使用平台默认比例。" : "当前探店仅使用1张首帧，比例跟随该图。"}
-                        </p>
-                    )}
-                    <p className="text-xs" style={muted}>
-                        脚本、费用预估与正式生成共用这些规格。
-                    </p>
+                    <Collapse
+                        ghost
+                        items={[
+                            {
+                                key: "models",
+                                label: "分析、文案与语音模型",
+                                children: (
+                                    <div className="space-y-3">
+                                        <FeatureModelPicker capability="text" featureId="store-explore.analyze" />
+                                        {config.managed?.enabled && config.channelMode === "remote" ? <><FeatureModelPicker capability="text" featureId="store-explore.script" /><FeatureModelPicker capability="audio" featureId="store-explore.audio" /><FeatureModelPicker capability="image" featureId="store-explore.image" /></> : <><ModelPicker config={config} capability="text" value={config.textModel} fullWidth onChange={(v) => useConfigStore.getState().updateConfig("textModel", v)} /><ModelPicker config={config} capability="audio" value={config.audioModel} fullWidth onChange={(v) => useConfigStore.getState().updateConfig("audioModel", v)} /></>}
+                                        <Button onClick={() => useConfigStore.getState().openConfigDialog(true)}>渠道配置</Button>
+                                    </div>
+                                ),
+                            },
+                        ]}
+                    />
                 </div>
             </Modal>
         </main>

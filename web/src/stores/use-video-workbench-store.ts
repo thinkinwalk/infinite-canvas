@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { archiveContentReplacementDraft, newContentReplacementDraft, normalizeContentReplacementDraft } from "@/lib/content-replacement-state";
 import { archiveViralTask } from "@/lib/viral-task";
-import { emptyVideoDraft, type DigitalHumanPreset, type VideoDraft, type VideoRecord, type VideoTool, type WorkerConfig } from "@/types/video-workbench";
+import { emptyVideoDraft, type DigitalHumanPreset, type StorePreset, type VideoDraft, type VideoRecord, type VideoTool, type WorkerConfig } from "@/types/video-workbench";
 
 type WorkbenchState = {
     hydrated: boolean;
@@ -17,6 +17,9 @@ type WorkbenchState = {
     archivedTasks: Record<string, boolean>;
     setTaskArchived: (keys: string[], archived: boolean) => void;
     digitalPresets: DigitalHumanPreset[];
+    storePresets: StorePreset[];
+    saveStorePreset: (preset: StorePreset) => void;
+    removeStorePreset: (id: string) => void;
     saveDigitalPreset: (preset: DigitalHumanPreset) => void;
     removeDigitalPreset: (id: string) => void;
     worker: WorkerConfig;
@@ -38,6 +41,9 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
             hydrated: false, storageError: "", busyTools: {}, setBusy: (tool, busy) => set((state) => ({ busyTools: { ...state.busyTools, [tool]: busy } })), setStorageError: (storageError) => set({ storageError }), drafts: {}, records: [], worker: { url: import.meta.env.DEV ? "http://127.0.0.1:8767" : "/api/v1/video-worker", token: "" },
             setHydrated: () => set({ hydrated: true }),
             digitalPresets: [], archivedTasks: {},
+            storePresets: [],
+            saveStorePreset: (preset) => set((state) => ({ storePresets: [...state.storePresets.filter((p) => p.id !== preset.id), preset] })),
+            removeStorePreset: (id) => set((state) => ({ storePresets: state.storePresets.filter((p) => p.id !== id) })),
             setTaskArchived: (keys, archived) => set((state) => ({
                 archivedTasks: { ...state.archivedTasks, ...Object.fromEntries(keys.map((key) => [key, archived])) },
             })),
@@ -89,7 +95,7 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
                 setItem: async (key, value) => { try { await storage.setItem(key, value); } catch (error) { const detail = error instanceof Error ? error.message : "本地保存失败"; if (useVideoWorkbenchStore.getState().storageError !== detail) useVideoWorkbenchStore.getState().setStorageError(detail); } },
                 removeItem: (key) => storage.removeItem(key),
             })),
-            partialize: ({ drafts, records, worker, digitalPresets, archivedTasks }) => ({ drafts, records, worker, digitalPresets, archivedTasks }),
+            partialize: ({ drafts, records, worker, digitalPresets, storePresets, archivedTasks }) => ({ drafts, records, worker, digitalPresets, storePresets, archivedTasks }),
             merge: (persisted, current) => {
                 const saved = (persisted || {}) as Partial<WorkbenchState>;
                 const draft = saved.drafts?.["content-replace"];

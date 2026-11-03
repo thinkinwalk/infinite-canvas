@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from PIL import Image, ImageDraw
 from pydantic import BaseModel
 import remote_subtitles
+import store_explore
 from replacement import fit_frame_count, probe as probe_replacement_video, process as process_replacement, validate_generated_timeline, validate_masked_generation, validate_timeline
 from subtitle_matching import matched_ocr_indices, normalize_text, validate_segments, overlaps_caption_line
 from replacement_subtitles import caption_lane_boxes, locate_caption_masks, audio_captions
@@ -102,6 +103,8 @@ def capabilities():
     return [
         {"name": "frames", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "compose", "available": ffmpeg, "reason": "需要 FFmpeg"},
+        {"name": "store-compose", "available": ffmpeg and bool(FFPROBE), "reason": "探店后期需要 FFmpeg 和 FFprobe"},
+        {"name": "store-transcribe", "available": ffmpeg and bool(FFPROBE) and whisper, "reason": "字幕识别服务尚未配置"},
         {"name": "trim", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "segment-plan", "available": ffmpeg and bool(FFPROBE) and bool(importlib.util.find_spec("scenedetect")) and bool(importlib.util.find_spec("cv2")), "reason": "自动分段需要更新 Worker 并安装 requirements.txt 中的 PySceneDetect"},
         {"name": "analysis-proxy", "available": ffmpeg, "reason": "需要 FFmpeg"},
@@ -131,7 +134,7 @@ async def available_capabilities():
     if os.environ.get("GPU_WORKER_URL"):
         remote = await remote_subtitles.capabilities()
         for item in items:
-            if item["name"] == "replacement-transcribe":
+            if item["name"] in ("replacement-transcribe", "store-transcribe"):
                 item["available"] = remote.get("transcribe", False) and bool(FFPROBE) and Path(FFMPEG).exists()
                 item["reason"] = "字幕识别服务未就绪，请管理员检查服务地址、令牌和识别模型"
     return items
@@ -291,6 +294,10 @@ async def recover():
 
 def validate_options(request: JobRequest):
     try:
+        if request.operation == "store-compose":
+            store_explore.validate_options(request.inputs, request.options)
+        if request.operation == "store-transcribe" and not isinstance(request.inputs.get("video"), str):
+            raise ValueError("请提供需要识别的声音来源")
         if request.operation == "segment-plan":
             segment_limits(request.options)
             if not isinstance(request.inputs.get("video"), str):
@@ -844,6 +851,12 @@ async def run_job(identifier: str, request: JobRequest):
         elif operation == "transcribe":
             segments = await transcribe(identifier, inputs["video"], work)
             result = {"segments": segments, "text": "\n".join(segment["text"] for segment in segments)}
+        elif operation == "store-transcribe":
+            duration = await store_explore.audio_info(identifier, inputs["video"], command, FFPROBE)
+            segments = await remote_subtitles.transcribe(inputs["video"], work, lambda step: update_job(identifier, step=step)) if os.environ.get("GPU_WORKER_URL") else await transcribe(identifier, inputs["video"], work)
+            result = {"segments": audio_captions(segments, duration), "metadata": {"duration": duration}}
+        elif operation == "store-compose":
+            result = await store_explore.compose(identifier, inputs, options, work, command=command, ffprobe=FFPROBE, ffmpeg=ffmpeg, probe_video=probe_video, write_subtitles=write_subtitles, publish=publish)
         elif operation == "replacement-transcribe":
             source_info = await probe_video(identifier, inputs["video"])
             if not source_info["audio"]:

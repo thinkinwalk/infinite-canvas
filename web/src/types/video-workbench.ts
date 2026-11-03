@@ -3,7 +3,10 @@ import type { VideoGenerationTask } from "@/services/api/video";
 import type { AiConfig } from "@/stores/use-config-store";
 
 export type StoreVideoSettings = Pick<AiConfig, "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoInputMode" | "videoInterpolate">;
-export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
+export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
+export type StoreShot = { id: string; start: number; end: number; materialIds: string[]; visual: string; dialogue: string };
+export type StorePlanVersion = { script: string; shots: StoreShot[]; createdAt: number };
+export type StorePreset = { id: string; name: string; media: WorkbenchMedia[]; facts: string; instructions: string; settings?: StoreVideoSettings };
 export type ViralRecreateInput = Pick<
     VideoDraft,
     | "media"
@@ -93,7 +96,7 @@ export type VideoTool = "cloud-create" | "content-replace" | "store-explore" | "
 export const isTalkingVideoTool = (tool: VideoTool) => ["digital-human", "photo-talk", "lipsync"].includes(tool);
 export type MediaRole = "reference" | "visual-reference" | "learning" | "product" | "model" | "background" | "voice" | "avatar" | "music" | "mask" | "first-frame";
 export type VideoImportSource = { platform: string; title: string; author: string; sourceUrl: string; coverUrl?: string; clip?: { extractionId: string; start: number; end: number } };
-export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole; source?: VideoImportSource };
+export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole; source?: VideoImportSource; storePurpose?: string; storePerson?: string };
 export type UpscaleInput = Pick<VideoDraft, "media" | "route" | "replicateTargetResolution" | "replicateFps" | "scale" | "fps">;
 export type SubtitleSegment = { start: number; end: number; text: string };
 export type SubtitleRegion = { x: number; y: number; width: number; height: number };
@@ -241,6 +244,17 @@ export type VideoDraft = {
     storeOutputStale?: boolean;
     storeAnalysisSuggestion?: string;
     storeScriptSuggestion?: string;
+    storeShots?: StoreShot[];
+    storeShotSuggestion?: StoreShot[];
+    storeSuggestionBase?: string;
+    storePlanVersions?: StorePlanVersion[];
+    storeAudioMode?: "source" | "narration" | "mute";
+    storeSpeechKey?: string;
+    storeSubtitleSource?: string;
+    storeFinishStale?: boolean;
+    storeSubtitleBottom?: number;
+    storeKeyframeSuggestion?: UploadedFile;
+    storeKeyframeKey?: string;
     viralFacts?: string;
     viralProductAnalysis?: string;
     viralSettings?: StoreVideoSettings;
@@ -333,6 +347,7 @@ export type VideoRecord = {
         subtitles?: SubtitleSegment[];
     };
     storeExploreInput?: StoreExploreInput;
+    storeCompiledPrompt?: string;
     viralInput?: ViralRecreateInput;
     viralTaskId?: string;
     viralDraft?: VideoDraft;
@@ -402,7 +417,7 @@ export const emptyVideoDraft = (tool?: VideoTool): VideoDraft => ({
     subtitleColor: "#ffffff",
     highlightColor: "#ffe066",
     cutSilence: false,
-    addSubtitles: true,
+    addSubtitles: tool !== "store-explore",
     // Subtitle repair is opt-in; the CPU server can compose audio and captions but does not run OCR/inpainting.
     replaceSubtitles: false,
     regenerateSubtitles: false,

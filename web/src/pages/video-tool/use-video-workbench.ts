@@ -17,6 +17,7 @@ import { isWan30, remapMaterialMentions } from "@/lib/video-capabilities";
 import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
+import { parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource } from "./store-explore-plan";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { applyViralScriptEdits, viralScriptEditDraft, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
@@ -27,7 +28,7 @@ import { requestViralAnalysis, videoAnalysisConfig } from "@/services/api/video-
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
 import { contentReplacementPrompt } from "./content-replace-prompt";
-import { analysisReferenceVideo, readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeTemporaryWorkbenchVideo, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
+import { WorkerRequestError, analysisReferenceVideo, readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeTemporaryWorkbenchVideo, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
 import { originalVideoSizeError } from "@/lib/video-reference-retention";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -62,7 +63,7 @@ export const stageLabels: Record<string, string> = {
 };
 const controllers = new Map<VideoTool, AbortController>();
 const store = () => useVideoWorkbenchStore.getState();
-const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-replace" ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
+const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-replace" || tool === "store-explore" ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
 const imagesOf = (media: WorkbenchMedia[]): ReferenceImage[] => media.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name, type: m.mimeType, dataUrl: m.url, storageKey: m.storageKey }));
 const mediaOf = (media: WorkbenchMedia[], kind: "video" | "audio") =>
     media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs, referenceId: m.referenceId }));
@@ -178,6 +179,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             const frames = await Promise.all(current.frames.map(restoreWorkbenchFile));
             const outputs: Partial<VideoDraft> = {};
             if (current.replacementSource) outputs.replacementSource = await restoreWorkbenchFile(current.replacementSource);
+            if (current.storeKeyframeSuggestion) outputs.storeKeyframeSuggestion = await restoreWorkbenchFile(current.storeKeyframeSuggestion);
             for (const key of ["speech", "voicePreview", "video", "edited", "final", "cover"] as const) {
                 const file = current[key];
                 if (file) outputs[key] = await restoreWorkbenchFile(file);
@@ -247,7 +249,12 @@ export function useVideoWorkbench(tool: VideoTool) {
                       script: remapMaterialMentions(current.script, storeMaterialLabels(current), storeMaterialLabels({ ...current, ...value })),
                   }
                 : {};
-            patch({ ...(invalidate ? { storeOutputStale: true, storeScriptStale: true, storeScriptSuggestion: "" } : {}), ...(invalidate === "materials" ? { storeAnalysisStale: true, storeAnalysisSuggestion: "" } : {}), ...mentions, ...value });
+            const finishOnly = invalidate === "finish" || invalidate === "speech";
+            const storeShots = value.media && current.storeShots?.length && !value.storeShots ? current.storeShots.map((s) => ({
+                ...s, visual: remapMaterialMentions(s.visual, storeMaterialLabels(current), storeMaterialLabels({ ...current, ...value })),
+                dialogue: remapMaterialMentions(s.dialogue, storeMaterialLabels(current), storeMaterialLabels({ ...current, ...value })),
+            })) : undefined;
+            patch({ ...(invalidate ? { storeFinishStale: true } : {}), ...(invalidate && !finishOnly ? { storeOutputStale: true, storeScriptStale: invalidate !== "video", storeScriptSuggestion: "", storeShotSuggestion: undefined } : {}), ...(invalidate === "materials" ? { storeAnalysisStale: true, storeAnalysisSuggestion: "" } : {}), ...mentions, ...(storeShots ? { storeShots } : {}), ...value });
             return;
         }
         if (digital && value.digitalHumanMode && value.digitalHumanMode !== read(tool).digitalHumanMode) {
@@ -426,9 +433,16 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ? await Promise.all(files.map(prepare))
                 : await prepare(files);
         }
-        const job = await createWorkerJob(ctx.worker, operation, uploaded, options, ctx.signal);
-        store().patchRecord(ctx.recordId, { workerJob: { id: job.id, url: resolveWorkerUrl(ctx.worker) } });
-        const result = await waitForWorkerJob(ctx.worker, job.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: job.step, ...(digital && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) }));
+        const jobId = tool === "store-explore" ? crypto.randomUUID() : undefined;
+        if (jobId) store().patchRecord(ctx.recordId, { workerJob: { id: jobId, url: resolveWorkerUrl(ctx.worker) } });
+        let job: WorkerJob;
+        try { job = await createWorkerJob(ctx.worker, operation, uploaded, options, ctx.signal, jobId); }
+        catch (error) {
+            if (jobId && error instanceof WorkerRequestError && error.status >= 400 && error.status < 500 && error.status !== 409) store().patchRecord(ctx.recordId, { status: "failed", workerJob: undefined });
+            throw error;
+        }
+        if (!jobId) store().patchRecord(ctx.recordId, { workerJob: { id: job.id, url: resolveWorkerUrl(ctx.worker) } });
+        const result = await waitForWorkerJob(ctx.worker, job.id, ctx.signal, (job) => store().patchRecord(ctx.recordId, { step: job.step, ...((digital || tool === "store-explore") && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) }));
         if (digital && operation === "transcribe" && !result.result?.text?.trim()) {
             store().patchRecord(ctx.recordId, { status: "failed" });
             throw new Error("没有识别到口播文字，请检查人声或手动粘贴参考原文");
@@ -463,14 +477,17 @@ export function useVideoWorkbench(tool: VideoTool) {
                 ...(tool === "viral-recreate" ? { viralTranscriptSource: viralSource(source) } : {}),
             };
         }
-        if (stage === "subtitles") return { subtitles: job.result.segments || [] };
+        if (stage === "subtitles") {
+            if (tool === "store-explore" && !job.result.segments?.length) throw new Error("没有识别到人声字幕，请检查音轨或手动填写字幕");
+            return { subtitles: job.result.segments || [], ...(tool === "store-explore" ? { storeSubtitleSource: storeSubtitleSource(source), storeFinishStale: true } : {}) };
+        }
         if (stage === "cover") {
             if (!job.result.files?.[0]) throw new Error("没有提取到封面帧");
             return { cover: await storeWorkerImage(worker, job.result.files[0]) };
         }
         if (!job.result.file) throw new Error("处理服务未返回输出文件");
         const result = await storeWorkerResult(worker, job.result.file);
-        return { [stage === "speech-preview" ? "voicePreview" : stage === "speech" ? "speech" : stage === "video" ? "video" : stage === "cut" ? "edited" : "final"]: result };
+        return { [stage === "speech-preview" ? "voicePreview" : stage === "speech" ? "speech" : stage === "video" ? "video" : stage === "cut" ? "edited" : "final"]: result, ...(tool === "store-explore" && stage === "compose" ? { storeFinishStale: false } : {}) };
     };
     const cloudResult = async (stage: string, task: ReplicateTask): Promise<Partial<VideoDraft>> => {
         if (task.operation === "transcribe") {
@@ -858,17 +875,62 @@ export function useVideoWorkbench(tool: VideoTool) {
             const cfg = storeVideoConfig(d, config);
             const labels = storeMaterialLabels(d);
             const images = d.media.filter((m) => m.kind === "image" && ["reference", "model", "first-frame"].includes(m.role));
+            if (stage === "keyframe") {
+                if (!images.length) throw new Error("请先添加门店或人物素材");
+                const imageConfig = modelConfig("image", { count: "1" });
+                if (imageConfig.channelMode === "remote") {
+                    const quote = await quoteManagedFixed(imageConfig, "image", 1, ctx.signal);
+                    await confirmStorePrice({ ...quote, calculation: "" }, "合成首帧", ctx.signal, "图片单独计费，预览采用后才用于视频生成");
+                }
+                store().patchRecord(ctx.recordId, { imageEditSubmitted: true });
+                const output = await requestEdit(imageConfig, `为探店短片合成起始画面。根据门店照片保留真实空间和商品，根据人物多视角保持同一身份，不凭空增加人物。资料：${d.storeFacts || ""}；要求：${d.instructions}；开场画面：${d.storeShots?.[0]?.visual || d.script}。不新增招牌文字、价格、活动和字幕。素材顺序：${images.map((m) => `${m.name}（${m.role === "model" ? `人物 ${m.storePerson || ""}` : m.storePurpose || "门店"}）`).join("；")}`, imagesOf(images), { signal: ctx.signal });
+                if (!output[0]) throw new Error("图片模型未返回首帧");
+                const image = await uploadImage(output[0].dataUrl);
+                return { storeKeyframeSuggestion: { ...image, storageKey: image.storageKey || "" }, storeKeyframeKey: storeKeyframeKey(d) };
+            }
             if (stage === "analyze" || stage === "script") {
+                const scope = ctx.scriptRequest ? JSON.parse(ctx.scriptRequest) as { request: string; ids?: string[] } : undefined;
                 const instruction =
                     stage === "analyze"
-                        ? `分析门店环境、商品和可用镜头，只描述图片可见事实。价格、地址、活动只能引用用户真实资料，未知事项标记待确认。人物图只用于描述人物。真实资料：${d.storeFacts || "未提供"}。创作要求：${d.instructions}`
-                        : `为探店视频写一段可直接提交模型的中文镜头脚本。只输出脚本，适配实际${cfg.videoSeconds}秒单条片段，不能承诺长视频、多镜头剪辑、配音或字幕已经完成。门店价格、地址和活动只能引用用户真实资料。资料：${d.storeFacts || "未提供，不虚构"}。要求：${d.instructions}。视觉分析：${d.analysis}。原稿供参考：${d.script}。素材编号：${labels.map((m) => `${m.label}=${m.name}`).join("；")}；保留用户的@素材编号，不添加不存在的编号。`;
-                const value = await text(ctx, instruction, images, stage === "analyze");
-                return stage === "analyze"
-                    ? { ...(d.analysis ? { storeAnalysisSuggestion: value } : { analysis: value, storeAnalysisStale: false }), storeScriptStale: Boolean(d.script), storeOutputStale: true }
-                    : d.script
-                      ? { storeScriptSuggestion: value }
-                      : { script: value, storeScriptStale: false, storeOutputStale: true };
+                        ? `分析门店环境、商品和可用镜头，只描述图片可见事实。按逐图用途建议（门头/环境/商品/服务/人物/未分类）、可用画面、待核对文字整理简明中文。照片中的价格地址活动仅作为线索，不写成已确认事实。同名人物多视角为同一身份。真实资料：${d.storeFacts || "未提供"}。创作要求：${d.instructions}`
+                        : `编写探店短片分镜。只输出JSON {"shots":[{"id":"稳定镜头ID","start":0,"end":3,"materialIds":["实际素材ID"],"visual":"画面动作","dialogue":"可选台词或空串"}]}。全片连续从0至${cfg.videoSeconds}秒，这是一次生成中的创作计划，单镜无模型最低秒数限制。素材ID只能取提供列表，可为空。不虚构价格地址活动承诺，不在画面烘焙字幕。资料：${d.storeFacts || "未提供，省略未知事项"}。要求：${d.instructions}。视觉观察：${d.analysis}。素材：${JSON.stringify(images.map((m) => ({id:m.id,name:m.name,purpose:m.storePurpose,person:m.storePerson})))}。已有方案：${JSON.stringify(d.storeShots || [])}。自由原稿：${d.script}。${scope ? `修改要求：${scope.request}。${scope.ids?.length ? `只返回ID属于${JSON.stringify(scope.ids)}的镜头，原时间与ID保留，其余镜头由系统原样保留。` : "重新编写全稿。"} ` : "已有镜头尽量保留稳定ID，新镜头使用不重复ID。"}台词精简，适配短片。`;
+                const value = await text(ctx, instruction, images, stage === "analyze", images.map((m) => `${labels.find((l) => l.id === m.id)?.label}；ID=${m.id}；用途=${m.storePurpose || m.role}；人物=${m.storePerson || "未指定"}`), stage === "script");
+                if (stage === "analyze") return { ...(d.analysis ? { storeAnalysisSuggestion: value } : { analysis: value, storeAnalysisStale: false }), storeScriptStale: Boolean(d.script) };
+                const shots = parseStoreShots(value, d, Number(cfg.videoSeconds), scope?.ids?.length ? scope.ids : undefined);
+                const script = renderStoreShots(shots, d);
+                return d.script ? { storeScriptSuggestion: script, storeShotSuggestion: shots, storeSuggestionBase: storePlanKey(d) } : { script, storeShots: shots, storeScriptStale: false, storeOutputStale: true };
+            }
+            if (stage === "speech") {
+                if (!d.narration.trim()) throw new Error("请填写旁白文案");
+                const audio = modelConfig("audio", { audioVoice: d.voice || config.audioVoice });
+                if (audio.channelMode === "remote" && managedModelBinding(audio, audio.audioModel, "audio")?.adapter !== "cloud:speech") {
+                    const quote = await quoteManagedFixed(audio, "audio", 1, ctx.signal);
+                    await confirmStorePrice({ ...quote, calculation: "" }, "旁白生成", ctx.signal, "只生成音频，不重新生成画面");
+                }
+                const speech = await storeGeneratedAudio(await requestAudioGeneration(audio, d.narration.trim(), {
+                    signal: ctx.signal, confirmReplicate,
+                    onTaskSubmitted: async (id) => { store().patchRecord(ctx.recordId, { replicateTask: { id, operation: "speech" } }); },
+                    onTaskFailed: () => store().patchRecord(ctx.recordId, { status: "failed" }),
+                }));
+                return { speech, storeSpeechKey: storeSpeechKey(d, audio.audioModel), storeFinishStale: true };
+            }
+            if (stage === "subtitles") {
+                if (d.storeAudioMode === "mute") throw new Error("无声模式请手动添加画面文字，不能识别人声字幕");
+                const source = required(d.storeAudioMode === "narration" ? d.speech : d.video, d.storeAudioMode === "narration" ? "生成旁白" : "生成带声音的视频");
+                if (d.storeAudioMode === "narration" && d.storeSpeechKey !== storeSpeechKey(d, config.audioModel)) throw new Error("旁白文案或音色已变化，请重新生成旁白");
+                return applyWorkerResult(stage, await workerJob(ctx, "store-transcribe", { video: source }), ctx.worker, d);
+            }
+            if (stage === "compose") {
+                const video = required(d.video, "生成视频");
+                if (d.storeOutputStale) throw new Error("画面输入已变化，请先生成当前方案，或恢复原版本输入");
+                const audioMode = d.storeAudioMode || "source";
+                if (audioMode === "narration" && (!d.speech || d.storeSpeechKey !== storeSpeechKey(d, config.audioModel))) throw new Error("请先为当前文案和音色生成旁白");
+                const error = storeCaptionError(d, (video.durationMs || 0) / 1000 || Number(cfg.videoSeconds));
+                if (error) throw new Error(error);
+                const music = d.media.find((m) => m.kind === "audio" && m.role === "music");
+                return applyWorkerResult(stage, await workerJob(ctx, "store-compose", { video, ...(audioMode === "narration" ? { narration: d.speech! } : {}), ...(music ? { music } : {}) }, {
+                    audioMode, musicVolume: d.musicVolume, subtitles: d.addSubtitles ? d.subtitles : [], subtitleSize: d.subtitleSize, subtitleColor: d.subtitleColor, subtitleBottom: d.storeSubtitleBottom ?? 0.08,
+                }), ctx.worker, d);
             }
             if (stage === "video") {
                 const error = storeVideoError(d, cfg);
@@ -880,7 +942,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                     expectedCredits = quote.credits;
                 }
                 ctx.signal.throwIfAborted();
-                const task = await createVideoGenerationTask(cfg, storeVideoPrompt(d, cfg), imagesOf(storeVideoMaterials(d, cfg)), [], [], {
+                const prompt = storeVideoPrompt(d, cfg);
+                store().patchRecord(ctx.recordId, { storeCompiledPrompt: prompt });
+                const task = await createVideoGenerationTask(cfg, prompt, imagesOf(storeVideoMaterials(d, cfg)), [], [], {
                     signal: ctx.signal,
                     expectedCredits,
                     confirmReplicate,
@@ -1129,7 +1193,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const clearAfter = (stage: string): Partial<VideoDraft> => {
         if (tool === "viral-recreate") return stage === "video" ? { edited: null, final: null, cover: null, viralOutputStale: false } : {};
-        if (tool === "store-explore") return stage === "video" ? { edited: null, final: null, cover: null, storeOutputStale: false } : {};
+        if (tool === "store-explore") return stage === "video" ? { edited: null, final: null, cover: null, storeOutputStale: false, storeFinishStale: true } : {};
         if (stage === "video") return { edited: null, final: null, cover: null, subtitles: [] };
         if (stage === "cut") return { final: null, cover: null, subtitles: [] };
         if (stage === "speech") return { video: null, edited: null, final: null, cover: null, subtitles: [] };
@@ -1254,18 +1318,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             });
         if (tool === "store-explore")
             store().patchRecord(id, {
-                storeExploreInput: {
-                    media: d.media,
-                    storeFacts: d.storeFacts,
-                    instructions: d.instructions,
-                    analysis: d.analysis,
-                    script: d.script,
-                    storeFirstFrameId: d.storeFirstFrameId,
-                    storeLastFrameId: d.storeLastFrameId,
-                    storeSettings: storeVideoSettings(storeVideoConfig(d, config)),
-                    channelMode: config.channelMode,
-                    baseUrl: resolveModelRequestConfig(config, storeVideoConfig(d, config).videoModel).baseUrl,
-                },
+                storeExploreInput: storeExploreInput({ ...d, ...(stage === "speech" ? { storeSpeechKey: storeSpeechKey(d, config.audioModel) } : {}), storeSettings: storeVideoSettings(storeVideoConfig(d, config)) }, { ...config, baseUrl: resolveModelRequestConfig(config, storeVideoConfig(d, config).videoModel).baseUrl }),
             });
         if (tool === "viral-recreate") store().patchRecord(id, { viralTaskId: d.viralTaskId, viralInput: viralInput(d, viralVideoConfig(d, config)) });
         patch({ activeRecord: id });
@@ -1284,7 +1337,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                         : {};
                 patch({ ...clearAfter(stage), ...value, ...mentions });
             }
-            const result = (stage === "keyframe" ? value.media?.find((m) => m.id === (value.viralClimaxId || value.viralFirstFrameId)) : undefined) || [value.final, value.cover, value.edited, value.video, value.speech, value.voicePreview].find(Boolean) || undefined;
+            const result = value.storeKeyframeSuggestion || (stage === "keyframe" ? value.media?.find((m) => m.id === (value.viralClimaxId || value.viralFirstFrameId)) : undefined) || [value.final, value.cover, value.edited, value.video, value.speech, value.voicePreview].find(Boolean) || undefined;
             store().patchRecord(id, {
                 status: "completed",
                 result,
@@ -1314,7 +1367,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             store().patchRecord(id, {
                 status:
-                    stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || (digital && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
+                    stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || ((digital || tool === "store-explore") && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
                         ? "interrupted"
                         : "failed",
                 error: detail,
@@ -1374,6 +1427,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (error) throw new Error(error);
                 if (store().records.some((r) => r.tool === tool && r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask))) throw new Error("已有视频任务，请恢复查询原任务，避免重复付费");
             }
+            if (tool === "store-explore" && ["speech", "compose", "subtitles"].includes(stage) && store().records.some((r) => r.tool === tool && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob))) throw new Error("已有处理任务，请先查询原任务结果");
             if (tool === "content-replace" && stage === "video") {
                 if (read(tool).replacement === "person" && read(tool).replacementModel === "headswap") throw new Error(RETIRED_HEAD_SWAP_MESSAGE);
                 if (read(tool).route === "replicate") replacementRequest(read(tool));
@@ -1483,7 +1537,9 @@ export function useVideoWorkbench(tool: VideoTool) {
                     const { channelMode: _mode, baseUrl: _url, ...input } = record.storeExploreInput;
                     const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     signal.throwIfAborted();
-                    patch({ ...input, media, activeRecord: record.id, video: null, storeAnalysisSuggestion: "", storeScriptSuggestion: "", storeAnalysisStale: false, storeScriptStale: false });
+                    const outputs: Partial<VideoDraft> = {};
+                    for (const key of ["speech", "video", "final"] as const) outputs[key] = input[key] ? await restoreWorkbenchFile(input[key]!) : null;
+                    patch({ ...input, ...outputs, media, activeRecord: record.id, storeAnalysisSuggestion: "", storeScriptSuggestion: "", storeShotSuggestion: undefined, storeAnalysisStale: false, storeScriptStale: false });
                 } else if (tool === "subtitle-remove" && record.subtitleRemoveInput) {
                     const media = await Promise.all(record.subtitleRemoveInput.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     signal.throwIfAborted();
@@ -1503,7 +1559,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                             store().patchRecord(record.id, { step: publicServiceText(job.error || job.status), replicateBilling: { credits: job.credits, refunded: job.refunded }, ...(job.status === "failed" || job.status === "cancelled" ? { status: "failed" as const } : {}) }),
                         ),
                     );
-                else if (record.workerJob) value = await applyWorkerResult(record.stage, await waitForWorkerJob(worker, record.workerJob.id, signal, (job) => store().patchRecord(record.id, { step: job.step, ...(digital && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })), worker);
+                else if (record.workerJob) value = await applyWorkerResult(record.stage, await waitForWorkerJob(worker, record.workerJob.id, signal, (job) => store().patchRecord(record.id, { step: job.step, ...((digital || tool === "store-explore") && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })), worker);
                 else if (record.modelTask)
                     value = {
                         video: await storeGeneratedVideo(
@@ -1512,6 +1568,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                     };
                 else throw new Error("该任务没有可恢复的服务端任务编号，请重试该步骤");
                 signal.throwIfAborted();
+                if (tool === "store-explore" && record.stage === "speech") { value.storeSpeechKey = record.storeExploreInput?.storeSpeechKey; value.storeFinishStale = true; }
                 if (tool === "upscale" && record.upscaleInput) Object.assign(value, { upscaleOutputInput: upscaleInput(read(tool)), upscaleOutputStale: false });
                 const current = read(tool);
                 const mentions =
@@ -1525,11 +1582,15 @@ export function useVideoWorkbench(tool: VideoTool) {
                 const result = value.final ?? value.video ?? value.edited ?? value.speech ?? value.cover ?? undefined;
                 store().patchRecord(record.id, { status: "completed", draftPatch: value, result, step: "已完成" });
             } catch (error) {
+                if (tool === "store-explore" && record.workerJob && error instanceof WorkerRequestError && error.status === 404) {
+                    store().patchRecord(record.id, { status: "failed", error: "原处理任务不存在，输入和原片已保留，可手动重新执行此步骤" });
+                    throw error;
+                }
                 store().patchRecord(record.id, {
                     status:
                         signal.aborted ||
                         (record.replicateTask && store().records.find((r) => r.id === record.id)?.status !== "failed" && !isVideoTaskFailed(error)) ||
-                        (digital && record.workerJob && store().records.find((r) => r.id === record.id)?.status !== "failed") ||
+                        ((digital || tool === "store-explore") && record.workerJob && store().records.find((r) => r.id === record.id)?.status !== "failed") ||
                         (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && record.modelTask && !isVideoTaskFailed(error))
                             ? "interrupted"
                             : "failed",

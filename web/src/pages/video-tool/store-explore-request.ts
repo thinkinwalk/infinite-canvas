@@ -4,6 +4,7 @@ import { isReplicateVideoModel, REPLICATE_VIDEO_MODEL } from "@/services/api/rep
 import { selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, StoreVideoSettings } from "@/types/video-workbench";
+import { storeFreeScriptError, storePlanError } from "./store-explore-plan";
 
 export function storeVideoSettings(config: AiConfig): StoreVideoSettings {
     const { videoModel, size, vquality, videoSeconds, videoGenerateAudio, videoWatermark, videoInputMode, videoInterpolate } = config;
@@ -47,6 +48,12 @@ export function storeVideoError(d: VideoDraft, config: AiConfig) {
     if ((config.channelMode === "remote" || isReplicateVideoModel(model)) && !useUserStore.getState().token) return "登录后使用平台视频模型";
     if (!isReplicateVideoModel(model) && !useConfigStore.getState().isAiConfigReady(config, model)) return "请配置当前视频模型的渠道";
     if (!d.script.trim()) return "请填写或生成视频脚本";
+    const planError = storePlanError(d.storeShots || [], d.media.filter((m) => m.kind === "image").map((m) => m.id), Number(config.videoSeconds));
+    if (planError) return planError;
+    if (!d.storeShots?.length) {
+        const scriptError = storeFreeScriptError(d.script, Number(config.videoSeconds), inferVideoRatio(config.size));
+        if (scriptError) return scriptError;
+    }
     const profile = videoProfile(config, model);
     if (profile.interface === "unavailable") return profile.description;
     if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) return "当前模型不支持所选时长，请调整视频设置";
@@ -65,8 +72,11 @@ export function storeVideoPrompt(d: VideoDraft, config: AiConfig) {
     const mapping = materials
         .map(
             (m, index) =>
-                `${labels.find((label) => label.id === m.id)?.label || m.name}=${videoInputMode(config, config.videoModel) === "reference" ? `视频参考图${index + 1}` : index === 0 ? "生成首帧" : "生成尾帧"}（${m.role === "model" ? "人物" : "门店/商品"}）`,
+                `${labels.find((label) => label.id === m.id)?.label || m.name}=${videoInputMode(config, config.videoModel) === "reference" ? `视频参考图${index + 1}` : index === 0 ? "生成首帧" : "生成尾帧"}（${m.role === "model" ? `人物 ${m.storePerson || "未命名"}` : m.storePurpose || "门店/商品"}）`,
         )
         .join("；");
-    return `${d.script}\n门店真实资料（价格、地址和活动仅以此为准）：${d.storeFacts || "未提供，不虚构"}\n创作要求：${d.instructions}\n视觉分析（不作为价格、地址或促销依据）：${d.analysis}\n本次实际图片对应关系：${mapping || "纯文字生成"}。制作${config.videoSeconds}秒的单条视频片段；不要把未发送的图片当作视觉输入。`;
+    const plan = d.storeShots?.length ? d.storeShots.map((s) => `${s.start}-${s.end}秒：${s.visual}${s.dialogue && d.storeAudioMode !== "mute" ? `；台词：${s.dialogue}` : ""}。本镜实际参考：${s.materialIds.filter((id) => materials.some((m) => m.id === id)).map((id) => labels.find((l) => l.id === id)?.label || id).join("、") || "无直接图片输入，以文字描述为准"}`).join("\n") : d.script;
+    const audio = d.storeAudioMode === "narration" ? "画面不生成口播，旁白在后期添加；不要求人物对口型。" : d.storeAudioMode === "mute" ? "不生成口播或人声。" : "声音以当前模型实际能力为准，不承诺精确口型。";
+    const canvas = isReplicateVideoModel(config.videoModel) ? "画幅跟随所传首帧，纯文字时使用模型默认比例" : `画幅${config.size}`;
+    return `${plan}\n门店真实资料（价格、地址和活动仅以此为准）：${d.storeFacts || "未提供，不虚构"}\n本次实际图片对应关系：${mapping || "纯文字生成"}。同名人物多图属于同一身份。制作${config.videoSeconds}秒、${canvas}、${config.vquality}p的单条视频片段。镜头时间为创作计划；不要把未发送的图片当作视觉输入。${audio}\n不要将分析说明或制作参数显示为画面文字。`;
 }
