@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.155
-- Current production source: tag v0.19.155, commit 0a258ffd9dff8e02440b2930397680804dfe08a9
+- Current production image: infinite-canvas:v0.19.156
+- Current production source: tag v0.19.156, commit f9db584dc74521b99449eecf13ef8d9b305ffcaf
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.156 deployment
+
+- Tag `v0.19.156`, commit `f9db584dc74521b99449eecf13ef8d9b305ffcaf`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image ID `sha256:4bd2fccdaad4e438fbaebe45eacd8b94c9b43c38f6ef8cf3af1a07a48df86003` replaces v0.19.155.
+- Store material observations now provide a compact summary and a wide reading/editing modal with Markdown formatting, material thumbnails, copy, explicit save/cancel, separate current/pending observations and the existing plan-generation price confirmation. Reading replaces only known material IDs for display; original text and storage structure are preserved. Static Markdown remounts when content changes to prevent stale list text during version switching. No dependencies or backend services were added.
+- Eight isolated browser groups passed in development and on the public production bundle: old-text preservation, formatting/material mapping, full copy, save/cancel/reload, close without saving, mocked reanalysis adoption/rejection, plan-price cancellation and 1440/390/320px dark/light reading/edit controls. Screenshots were visually reviewed; mocked auth/generation API requests were intercepted and no paid inference was submitted. Anonymous public smoke also passed four views, settings/presets, themes and no overflow or page exceptions. Local compile/typecheck/unit tests were not run; server production build passed.
+- Deployment initially stopped before any container change while video/replacement tasks ran, and proceeded only after cloud and Worker task checks passed. App-only switch preserved Worker identity, mounts and start time `2026-11-03T04:49:52.32052811Z`, backend hash, environment/mount values, database schema/counts, settings/accounts, 173 job records and 29,304 media metadata entries.
+- Internal/public health, twelve routes and public/container asset hashes passed. JS `/assets/index-BstPWwSj.js` SHA-256 `5299bb6686a5f57e6aaf511c874f61c7a7816c9b326fe1dfc7e52ba09d2831b0`; CSS `/assets/index-BGZ07brA.css` SHA-256 `2db888fb3580c6cdd9e27b2e6f57ce58158cd2230ee1767dcfe8dee4d171703e`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.156-final-20261103-055230/`; prebuild backup `/opt/infinite-canvas/backups/v0.19.156-prebuild-20261103-055227/`. Reports `/opt/infinite-canvas/releases/v0.19.156-deployment.json`, `v0.19.156-public-verification.json` and `v0.19.156-reading-verification.json`; local evidence is outside the repository in `artifacts/store-explore-qa/reading-v156/` and `production-v156/`. Rollback restores final-backup Compose and recreates App only, retaining current database/media and Worker.
+- User acceptance: refresh the original browser without clearing cache, open “素材观察 → 查看完整分析”, check existing observations, copy, edit/save/cancel and mobile reading. No new analysis or paid generation is required to verify this reading improvement.
 
 ## v0.19.155 deployment
 
