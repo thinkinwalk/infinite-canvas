@@ -124,7 +124,6 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
     useEffect(() => {
         setCaptionEditorJobId("");
     }, [token]);
-    const activeCount = jobs.filter((job) => job.status === "running" || job.status === "planning" || job.captionStatus === "recognizing" || job.captionStatus === "rendering").length;
     const captionEditorJob = jobs.find((job) => job.id === captionEditorJobId);
     const selectedResult = currentJob ? (previewChoice?.jobId === currentJob.id ? previewChoice.result : replacementJobResult(currentJob)) : undefined;
     const fullResult = d.replacementResultKey === selectedResult ? d.final : null;
@@ -335,14 +334,14 @@ export function ReplacementBatchPanel({ subtitleBlocked, workspace, onOpenWorksp
         {!needsReplan && (!source || !image ? <p className="m-0 text-xs" style={{ color: colors.colorTextSecondary }}>{!source ? "请先上传原视频" : "请上传人物参考图"}</p> : (!duration || !size) && <Alert type="warning" title="当前模型尚未配置可用的时长或清晰度，请在高级设置中切换模型。" />)}
         </>}
         {error && <Alert type="warning" showIcon title={publicServiceText(error)} closable onClose={() => setError("")} />}
-        {workspace && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
+        {workspace && (currentJob || d.replacementJobId) && createPortal(<div className="flex items-start justify-between gap-3 border-b pb-3" style={{ borderColor: colors.colorBorderSecondary }}>
             <div className="min-w-0">
                 <div className="text-sm font-medium">当前任务{currentJob ? ` · ${labels[currentJob.status]}` : ""}</div>
                 {currentJob ? <div className="mt-1 flex items-start gap-2 text-xs" style={{ color: colors.colorTextSecondary }} role="status">
                     {replacementProgress(currentJob).processing && <LoaderCircle size={14} className="shrink-0 animate-spin motion-reduce:animate-none" style={{ color: colors.colorPrimary }} aria-hidden />}
                     <span>{jobStep(currentJob)}{currentJob.parts && currentJob.parts.length > 1 ? ` · 已生成 ${currentJob.parts.filter((part) => part.validated).length}/${currentJob.parts.length} 段` : ""}</span>
                 </div>
-                    : <div className="mt-1 text-xs" style={{ color: colors.colorTextSecondary }}>{d.replacementJobId ? "正在载入任务详情…" : activeCount ? `${activeCount} 项任务处理中` : "分析并确认费用后，任务会显示在这里"}</div>}
+                    : <div className="mt-1 text-xs" style={{ color: colors.colorTextSecondary }}>正在载入任务详情…</div>}
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
                 {currentJob && !fullResult && <Button size="small" onClick={() => onDetailsChange(true)}>任务详情</Button>}

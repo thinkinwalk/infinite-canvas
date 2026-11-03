@@ -987,7 +987,7 @@ export default function ContentReplaceWorkspace() {
                                             </Button>
                                         </div>
                                     )}
-                                    {wholeVideo && !historyPreview && <div ref={setBatchWorkspace} className="space-y-4" />}
+                                    {wholeVideo && !historyPreview && <div ref={setBatchWorkspace} className="space-y-4 empty:hidden" />}
                                     {!showBatchWorkspace && <div className="grid flex-1 gap-4 xl:grid-cols-2">
                                         <div className="flex min-w-0 flex-col gap-3 rounded-lg p-3" style={{ background: token.colorFillQuaternary }}>
                                             <div className="text-sm font-medium">原视频</div>
