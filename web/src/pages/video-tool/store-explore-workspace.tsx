@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Download, Expand, FolderPlus, Grid2X2, Images, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, Expand, FolderPlus, Grid2X2, Images, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { ModelPicker } from "@/components/model-picker";
@@ -20,12 +21,14 @@ import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import { emptyVideoDraft, type StoreShot, type StoreVideoSettings, type VideoDraft, type VideoRecord } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
+import { useCopyText } from "@/hooks/use-copy-text";
+import { storeAnalysisDisplay } from "./store-analysis";
 import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoSettings } from "./store-explore-request";
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
-const names = { storeFacts: "门店真实资料", analysis: "视觉观察", instructions: "本次要求", script: "自由脚本" };
+const names = { storeFacts: "门店真实资料", analysis: "素材观察", instructions: "本次要求", script: "自由脚本" };
 const states = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待恢复" };
 
 export default function StoreExploreWorkspace() {
@@ -37,6 +40,7 @@ export default function StoreExploreWorkspace() {
         settings = storeVideoSettings(cfg);
     const { token } = theme.useToken(),
         { message, modal } = App.useApp();
+    const copyText = useCopyText();
     const session = useUserStore((s) => s.token),
         presets = useVideoWorkbenchStore((s) => s.storePresets);
     const [tab, setActiveTab] = useState("plan"),
@@ -67,6 +71,9 @@ export default function StoreExploreWorkspace() {
         [previewError, setPreviewError] = useState(false);
     const [request, setRequest] = useState(""),
         [scope, setScope] = useState("all");
+    const [analysisOpen, setAnalysisOpen] = useState(false),
+        [analysisView, setAnalysisView] = useState("current"),
+        [analysisDraft, setAnalysisDraft] = useState<{ base: string; value: string } | null>(null);
     const [quote, setQuote] = useState<{ key: string; value: VideoPrice } | null>(null),
         [quoting, setQuoting] = useState(false),
         quoteController = useRef<AbortController | null>(null);
@@ -315,6 +322,32 @@ export default function StoreExploreWorkspace() {
             }))}
         />
     );
+    const openAnalysis = (view = "current") => {
+        setAnalysisView(view);
+        setAnalysisDraft(null);
+        setAnalysisOpen(true);
+    };
+    const viewingAnalysisSuggestion = analysisView === "suggestion" && Boolean(d.storeAnalysisSuggestion);
+    const analysisText = viewingAnalysisSuggestion ? d.storeAnalysisSuggestion! : d.analysis;
+    const analysisDocument = (value: string, summary = false) => {
+        const content = storeAnalysisDisplay(value, labels);
+        // Static Markdown can retain list nodes from the previous version.
+        return (
+            <Streamdown
+                key={content}
+                mode="static"
+                controls={false}
+                className={`min-w-0 break-words [overflow-wrap:anywhere] [&_:is(h1,h2,h3,h4,h5,h6)]:text-base [&_:is(h1,h2,h3,h4,h5,h6)]:font-medium ${summary ? "text-sm leading-6 [&_:is(h1,h2,h3,h4,h5,h6)]:text-sm" : "text-base leading-7"}`}
+                components={{ img: () => null }}
+            >
+                {content}
+            </Streamdown>
+        );
+    };
+    const adoptAnalysis = () => {
+        wb.edit({ analysis: d.storeAnalysisSuggestion!, storeAnalysisSuggestion: "", storeAnalysisStale: false }, "script");
+        setAnalysisView("current");
+    };
     const materialsPanel = (
         <div className="space-y-5">
             {materialField("reference", "门店素材")}
@@ -332,25 +365,23 @@ export default function StoreExploreWorkspace() {
                     { key: "person", label: `出镜人物（可选） · ${d.media.filter((m) => m.role === "model").length} 张`, children: materialField("model", "人物参考") },
                     {
                         key: "analysis",
-                        label: `视觉观察${d.storeAnalysisStale ? " · 待更新" : d.analysis ? " · 已有" : ""}`,
+                        label: `素材观察${d.storeAnalysisStale ? " · 待更新" : d.analysis ? " · 已有" : ""}`,
+                        extra: <span onClick={(e) => e.stopPropagation()}>{icon("放大素材观察", <Expand size={14} />, () => openAnalysis(), false)}</span>,
                         children: (
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                                 <Button size="small" icon={<Sparkles size={13} />} disabled={locked || !labels.length || Boolean(textError(true))} onClick={() => void wb.run("analyze")}>
                                     分析素材
                                 </Button>
-                                <Input.TextArea aria-label="视觉观察" rows={5} disabled={locked} value={d.analysis} onChange={(e) => edit("analysis", e.target.value)} />
-                                {d.storeAnalysisSuggestion && (
+                                {d.analysis ? (
                                     <>
-                                        <Input.TextArea rows={5} readOnly value={d.storeAnalysisSuggestion} />
-                                        <Space>
-                                            <Button size="small" disabled={locked} onClick={() => wb.edit({ analysis: d.storeAnalysisSuggestion!, storeAnalysisSuggestion: "", storeAnalysisStale: false }, "script")}>
-                                                采用观察
-                                            </Button>
-                                            <Button size="small" disabled={locked} onClick={() => wb.patch({ storeAnalysisSuggestion: "" })}>
-                                                保留原文
-                                            </Button>
-                                        </Space>
+                                        <div aria-label="素材观察摘要" className="max-h-28 overflow-hidden">{analysisDocument(d.analysis, true)}</div>
+                                        <Button size="small" type="link" className="!px-0" icon={<Expand size={14} />} onClick={() => openAnalysis()}>
+                                            查看完整分析
+                                        </Button>
                                     </>
+                                ) : <p className="text-sm" style={muted}>尚无素材观察</p>}
+                                {d.storeAnalysisSuggestion && (
+                                    <Button size="small" onClick={() => openAnalysis("suggestion")}>查看新分析 · 待采用</Button>
                                 )}
                             </div>
                         ),
@@ -955,6 +986,98 @@ export default function StoreExploreWorkspace() {
                 {controls}
             </footer>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(p) => void insertAsset(p)} />
+            <Modal
+                open={analysisOpen}
+                title="素材观察"
+                width={1040}
+                style={{ top: 16, maxWidth: "calc(100vw - 24px)" }}
+                styles={{
+                    container: { maxHeight: "calc(100dvh - 32px)", display: "flex", flexDirection: "column" },
+                    header: { flexShrink: 0 },
+                    body: { height: "min(68dvh, 760px)", minHeight: 0, flex: "1 1 auto", display: "flex", flexDirection: "column", gap: 12 },
+                    footer: { flexShrink: 0 },
+                }}
+                onCancel={() => { setAnalysisOpen(false); setAnalysisDraft(null); }}
+                footer={
+                    analysisDraft ? (
+                        <Space wrap>
+                            <Button onClick={() => setAnalysisDraft(null)}>取消编辑</Button>
+                            <Button type="primary" icon={<Save size={15} />} disabled={locked} onClick={() => {
+                                if (analysisDraft.base !== d.analysis) {
+                                    message.warning("当前观察已变化，请复制编辑内容后重新核对");
+                                    return;
+                                }
+                                if (analysisDraft.value !== d.analysis) edit("analysis", analysisDraft.value);
+                                setAnalysisDraft(null);
+                            }}>保存观察</Button>
+                        </Space>
+                    ) : viewingAnalysisSuggestion ? (
+                        <Space wrap>
+                            <Button disabled={locked} onClick={() => { wb.patch({ storeAnalysisSuggestion: "" }); setAnalysisView("current"); }}>保留原文</Button>
+                            <Button type="primary" disabled={locked} onClick={adoptAnalysis}>采用观察</Button>
+                        </Space>
+                    ) : (
+                        <Space wrap>
+                            <Button onClick={() => setAnalysisOpen(false)}>关闭</Button>
+                            <Button type="primary" icon={<Sparkles size={15} />} disabled={locked || !d.analysis.trim() || Boolean(textError())} onClick={() => { setAnalysisOpen(false); planAction(); }}>
+                                {d.script ? "重新编写拍摄方案" : "生成拍摄方案"}
+                            </Button>
+                        </Space>
+                    )
+                }
+            >
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                    {d.storeAnalysisSuggestion ? (
+                        <Segmented
+                            aria-label="素材观察版本"
+                            disabled={Boolean(analysisDraft)}
+                            value={viewingAnalysisSuggestion ? "suggestion" : "current"}
+                            options={[{ value: "current", label: "当前观察" }, { value: "suggestion", label: "新分析 · 待采用" }]}
+                            onChange={setAnalysisView}
+                        />
+                    ) : <span className="text-sm" style={muted}>{analysisDraft ? "编辑原文" : "当前观察"}</span>}
+                    <Space size={0}>
+                        {icon("复制完整分析", <Copy size={16} />, () => copyText(storeAnalysisDisplay(analysisDraft?.value ?? analysisText, labels), "分析已复制"), !(analysisDraft?.value ?? analysisText).trim())}
+                        {!viewingAnalysisSuggestion && !analysisDraft && icon("编辑素材观察", <Pencil size={16} />, () => setAnalysisDraft({ base: d.analysis, value: d.analysis }))}
+                    </Space>
+                </div>
+                {d.storeAnalysisStale && <Alert type="warning" showIcon title="素材或资料已变化，请核对当前观察" />}
+                {labels.length > 0 && (
+                    <div className="flex shrink-0 gap-3 overflow-x-auto pb-2" aria-label="观察对应素材">
+                        {labels.map((l) => {
+                            const media = d.media.find((m) => m.id === l.id)!;
+                            return (
+                                <button
+                                    key={l.id}
+                                    type="button"
+                                    className="flex w-40 shrink-0 items-center gap-2 text-left"
+                                    aria-label={`查看素材${l.label}`}
+                                    onClick={() => modal.info({ title: `${l.label} · ${l.name}`, width: 800, content: <img src={media.url} alt={l.name} className="max-h-[65vh] w-full object-contain" /> })}
+                                >
+                                    <img src={media.url} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
+                                    <span className="min-w-0 text-sm">
+                                        <span className="block truncate">{l.label} · {media.storePerson || media.storePurpose || "未分类"}</span>
+                                        <span className="block truncate text-xs" title={l.name} style={muted}>{l.name}</span>
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+                {analysisDraft ? (
+                    <Input.TextArea
+                        aria-label="编辑素材观察原文"
+                        disabled={locked}
+                        value={analysisDraft.value}
+                        onChange={(e) => setAnalysisDraft({ ...analysisDraft, value: e.target.value })}
+                        style={{ flex: 1, minHeight: 0, resize: "none", fontSize: 16, lineHeight: 1.8, padding: 16 }}
+                    />
+                ) : (
+                    <div className="min-h-0 flex-1 overflow-auto pr-2" data-testid="store-analysis-document">
+                        {analysisText.trim() ? analysisDocument(analysisText) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无素材观察" />}
+                    </div>
+                )}
+            </Modal>
             <Modal open={Boolean(editor)} title={editor ? names[editor] : ""} width={960} onCancel={() => setEditor(null)} footer={<Button onClick={() => setEditor(null)}>完成</Button>}>
                 {editor === "script" || editor === "instructions" ? (
                     <>
