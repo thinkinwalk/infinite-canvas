@@ -245,6 +245,7 @@ export type VideoDraft = {
     storeOutputStale?: boolean;
     storeAnalysisSuggestion?: string;
     storeScriptSuggestion?: string;
+    storeScriptReview?: "pending" | "failed" | "passed" | "local";
     storeShots?: StoreShot[];
     storeReferenceIds?: string[];
     storeMaterialSuggestion?: StoreMaterialSuggestion;

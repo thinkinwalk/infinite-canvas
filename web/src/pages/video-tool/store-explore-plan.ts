@@ -19,7 +19,7 @@ export function storeFreeScriptError(script: string, seconds: number, ratio: str
     return "";
 }
 
-export const storePlanKey = (d: Pick<VideoDraft, "script" | "storeShots">) => JSON.stringify([d.script, d.storeShots || []]);
+export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.media.filter((m) => m.kind === "image").map((m) => [m.id, m.storageKey || m.url, m.storePurpose, m.storePerson])]);
 export const storeSpeechKey = (d: Pick<VideoDraft, "narration" | "voice">, model: string) => JSON.stringify([d.narration.trim(), d.voice, model]);
 export const storeSubtitleSource = (d: VideoDraft) => (d.storeAudioMode === "narration" ? d.speech?.storageKey || d.speech?.url || "" : d.storeAudioMode === "mute" ? "" : d.video?.storageKey || d.video?.url || "");
 
@@ -71,6 +71,10 @@ export function parseStoreShots(raw: string, d: VideoDraft, seconds: number, sel
     let merged = shots;
     if (selectedIds) {
         if (!d.storeShots?.length || shots.length !== selectedIds.length || shots.some((s) => !selectedIds.includes(s.id)) || new Set(shots.map((s) => s.id)).size !== shots.length) throw new Error("局部修改超出选定范围，未覆盖原稿");
+        if (shots.some((s) => {
+            const original = d.storeShots!.find((row) => row.id === s.id)!;
+            return s.start !== original.start || s.end !== original.end;
+        })) throw new Error("局部修改改变了原时间，未覆盖原稿");
         merged = d.storeShots.map((s) => shots.find((next) => next.id === s.id) || s);
     }
     const error = storePlanError(merged, [...allowed], seconds);
@@ -79,7 +83,7 @@ export function parseStoreShots(raw: string, d: VideoDraft, seconds: number, sel
 }
 
 export function renderStoreShots(shots: StoreShot[], d: Pick<VideoDraft, "media">) {
-    return shots.map((s, i) => `${i + 1}. ${s.start}–${s.end}秒\n画面：${s.visual}\n素材：${s.materialIds.map((id) => d.media.find((m) => m.id === id)?.name || "已移除素材").join("、") || "无"}${s.dialogue ? `\n台词：${s.dialogue}` : ""}`).join("\n\n");
+    return shots.map((s, i) => `${i + 1}. ${s.start}–${s.end}秒\n画面：${s.visual}\n素材：${s.materialIds.map((id) => d.media.find((m) => m.id === id)?.name || "已移除素材").join("、") || "无"}${s.dialogue ? `\n台词：${s.dialogue}` : ""}${s.referenceNeed ? `\n待补素材：${s.referenceNeed}` : ""}`).join("\n\n");
 }
 
 export function storeCaptionError(d: VideoDraft, duration: number) {

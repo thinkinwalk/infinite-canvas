@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
+import { Alert, App, Button, Collapse, Dropdown, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
 import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, Images, LoaderCircle, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -103,7 +103,7 @@ export default function StoreExploreWorkspace() {
             return;
         }
         if (busy || !runningPlan.current) return;
-        const completed = active?.id === runningPlan.current && active.status === "completed";
+        const completed = active?.id === runningPlan.current && (active.status === "completed" || Boolean(d.storeScriptSuggestion));
         runningPlan.current = null;
         if (!completed || tab !== "plan") return;
         const frame = requestAnimationFrame(() => {
@@ -185,10 +185,10 @@ export default function StoreExploreWorkspace() {
     };
     const adopt = () => {
         if (d.storeSuggestionBase !== storePlanKey(d)) {
-            message.warning("原稿已变化，请重新生成修改建议");
+            message.warning("原稿、资料或素材已变化，请重新生成修改建议");
             return;
         }
-        wb.edit({ script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion || [], storePlanVersions: saveVersion(), storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptStale: false }, "video");
+        wb.edit({ script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion || [], storePlanVersions: saveVersion(), storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeScriptStale: false }, "video");
     };
     const addFiles = async (files: File[], role: "reference" | "model" | "first-frame") => {
         if (locked || uploadLock.current) return;
@@ -245,7 +245,7 @@ export default function StoreExploreWorkspace() {
                 if (!r.storeExploreInput) return;
                 const { channelMode: _c, baseUrl: _b, ...input } = r.storeExploreInput;
                 const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
-                wb.patch({ ...emptyVideoDraft("store-explore"), ...input, media, video: null, final: null, speech: null, storeSpeechKey: undefined, subtitles: [], storeOutputStale: false, storeScriptSuggestion: "", storeShotSuggestion: undefined });
+                wb.patch({ ...emptyVideoDraft("store-explore"), ...input, media, video: null, final: null, speech: null, storeSpeechKey: undefined, subtitles: [], storeOutputStale: false, storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined });
                 setViewed(null);
                 setTab("plan");
             },
@@ -736,6 +736,15 @@ export default function StoreExploreWorkspace() {
                                                 options={[{ value: "all", label: "重新编写全稿" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
                                             />
                                             <Input aria-label="AI修改要求" className="min-w-0 flex-1" value={request} disabled={locked} onChange={(e) => setRequest(e.target.value)} placeholder="例如：缩短台词，保留画面" />
+                                            <Dropdown disabled={locked} menu={{
+                                                items: [{ key: "spoken", label: "更口语" }, { key: "shorter", label: "精简台词" }, { key: "opening", label: "换个开头" }],
+                                                onClick: ({ key }) => {
+                                                    setRequest(key === "spoken" ? "台词改得更口语，保留事实与画面" : key === "shorter" ? "精简台词，保留核心信息与画面" : "换一个具体自然的开头，保留事实和原时长");
+                                                    if (key === "opening") setScope(shots[0]?.id || "all");
+                                                },
+                                            }} trigger={["click"]}>
+                                                <Button aria-label="常用修改要求" title="常用修改要求" icon={<Pencil size={14} />} />
+                                            </Dropdown>
                                             <Button
                                                 disabled={locked || !request.trim() || Boolean(textError()) || (scope !== "all" && !shots.some((s) => s.id === scope))}
                                                 icon={<Sparkles size={14} />}
@@ -748,18 +757,19 @@ export default function StoreExploreWorkspace() {
                                     {d.storeScriptSuggestion && (
                                         <section ref={planSuggestion} tabIndex={-1} aria-label="待采用方案" className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
                                             <strong className="text-sm font-medium">待采用方案</strong>
+                                            {d.storeScriptReview && <p className="text-xs" style={muted}>{d.storeScriptReview === "passed" ? "已完成脚本检查，请核对后采用。" : d.storeScriptReview === "local" ? "仅修改所选镜头，未追加整稿检查。" : d.storeScriptReview === "pending" && busy ? "候选已保存，正在检查事实与台词。" : "未检查候选：检查未完成，请人工核对后决定是否采用；不会自动重试。"}</p>}
                                             <Input.TextArea readOnly aria-label="待采用方案" value={d.storeScriptSuggestion} rows={10} />
                                             <Space wrap>
                                                 <Button type="primary" size="small" disabled={locked || d.storeSuggestionBase !== storePlanKey(d)} onClick={adopt}>
-                                                    采用方案
+                                                    {d.storeScriptReview === "failed" || (d.storeScriptReview === "pending" && !busy) ? "采用未检查方案" : "采用方案"}
                                                 </Button>
-                                                <Button size="small" disabled={locked} onClick={() => wb.patch({ storeScriptSuggestion: "", storeShotSuggestion: undefined })}>
-                                                    保留原稿
+                                                <Button size="small" disabled={locked} onClick={() => wb.patch({ storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined })}>
+                                                    {d.script ? "保留原稿" : "放弃候选"}
                                                 </Button>
                                             </Space>
                                             {d.storeSuggestionBase !== storePlanKey(d) && (
                                                 <p className="text-xs" style={muted}>
-                                                    原稿已变化，请重新生成建议。
+                                                    原稿、资料、素材或规格已变化，请重新生成建议。
                                                 </p>
                                             )}
                                         </section>
