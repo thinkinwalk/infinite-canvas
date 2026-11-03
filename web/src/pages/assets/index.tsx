@@ -1,4 +1,4 @@
-import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
+import { Copy, Download, Music2, PencilLine, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
@@ -25,7 +25,7 @@ type AssetFormValues = {
 
 type ImageDraft = ImageAsset["data"] | null;
 
-const kindOptions = ["all", "text", "image", "video"] as const;
+const kindOptions = ["all", "text", "image", "video", "audio"] as const;
 
 export default function AssetsPage() {
     const { message } = App.useApp();
@@ -53,7 +53,7 @@ export default function AssetsPage() {
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
     const content = Form.useWatch("content", form) || "";
-    const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video"), [assets]);
+    const validAssets = useMemo(() => assets.filter((asset) => ["text", "image", "video", "audio"].includes(asset.kind)), [assets]);
 
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
@@ -146,14 +146,14 @@ export default function AssetsPage() {
     };
 
     const downloadImage = async (asset: Asset) => {
-        if (asset.kind !== "image" && asset.kind !== "video") return;
+        if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") return;
         try {
             const blob = await readAssetMediaBlob(asset);
             if (!blob) {
                 message.error(t("assets.downloadFailed"));
                 return;
             }
-            const ext = asset.data.mimeType?.split("/")[1]?.split("+")[0] || (asset.kind === "video" ? "mp4" : "png");
+            const ext = asset.data.mimeType?.split("/")[1]?.split("+")[0] || (asset.kind === "video" ? "mp4" : asset.kind === "audio" ? "mp3" : "png");
             saveAs(blob, `${asset.title || "asset"}.${ext}`);
         } catch {
             message.error(t("assets.downloadFailed"));
@@ -420,7 +420,9 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
             styles={{ body: { padding: 0 } }}
             cover={
                 <button type="button" className="block w-full text-left" onClick={onOpen}>
-                    {cover ? (
+                    {asset?.kind === "audio" ? (
+                        <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 dark:bg-stone-900"><Music2 className="size-8 opacity-65" /></div>
+                    ) : cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
                         <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : t("assets.noCover")}</div>
@@ -456,7 +458,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                 <Button size="small" onClick={onOpen}>
                     {t("common.view")}
                 </Button>
-                {asset.kind !== "video" ? (
+                {asset.kind !== "video" && asset.kind !== "audio" ? (
                     <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
                         {t("common.edit")}
                     </Button>
@@ -466,7 +468,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                         {t("common.copy")}
                     </Button>
                 ) : null}
-                {asset.kind === "image" || asset.kind === "video" ? (
+                {asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? (
                     <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>
                         {t("common.download")}
                     </Button>
@@ -509,6 +511,8 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                         </Typography.Text>
                         {asset.kind === "text" ? (
                             <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{asset.data.content}</Typography.Paragraph>
+                        ) : asset.kind === "audio" ? (
+                            <audio src={asset.data.url} controls className="mt-2 w-full" />
                         ) : asset.kind === "video" ? (
                             <video src={asset.data.url} controls className="mt-2 aspect-video w-full rounded-lg bg-black" />
                         ) : (
@@ -529,9 +533,9 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                                 {t("assets.copyText")}
                             </Button>
                         ) : null}
-                        {asset.kind === "image" || asset.kind === "video" ? (
+                        {asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? (
                             <Button type="primary" icon={<Download className="size-4" />} onClick={() => onDownload(asset)}>
-                                {asset.kind === "video" ? t("assets.downloadVideo") : t("assets.downloadImage")}
+                                {asset.kind === "video" ? t("assets.downloadVideo") : asset.kind === "audio" ? t("common.download") : t("assets.downloadImage")}
                             </Button>
                         ) : null}
                     </Space>
@@ -541,13 +545,13 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
     );
 }
 
-async function readAssetMediaBlob(asset: Extract<Asset, { kind: "image" | "video" }>) {
+async function readAssetMediaBlob(asset: Extract<Asset, { kind: "image" | "video" | "audio" }>) {
     const storageKey = asset.data.storageKey;
     if (storageKey) {
         const stored = asset.kind === "image" ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
         if (stored) return stored;
     }
-    const url = asset.kind === "video" ? asset.data.url : asset.data.dataUrl || asset.coverUrl;
+    const url = asset.kind === "image" ? asset.data.dataUrl || asset.coverUrl : asset.data.url;
     if (!url) return null;
     const response = await fetch(url);
     return response.ok ? response.blob() : null;
@@ -555,6 +559,7 @@ async function readAssetMediaBlob(asset: Extract<Asset, { kind: "image" | "video
 
 function assetSummary(asset: Asset) {
     if (asset.kind === "text") return asset.data.content;
+    if (asset.kind === "audio") return `${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}${asset.data.durationMs ? ` · ${(asset.data.durationMs / 1000).toFixed(1)} 秒` : ""}`;
     return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
 }
 

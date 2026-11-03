@@ -19,7 +19,7 @@ export function storeFreeScriptError(script: string, seconds: number, ratio: str
     return "";
 }
 
-export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.media.filter((m) => m.kind === "image").map((m) => [m.id, m.storageKey || m.url, m.role, m.storePurpose, m.storePerson])]);
+export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.media.filter((m) => m.kind === "image" || m.role === "voice").map((m) => [m.id, m.storageKey || m.url, m.role, m.storePurpose, m.storePerson])]);
 export const storeSpeechKey = (d: Pick<VideoDraft, "narration" | "voice">, model: string) => JSON.stringify([d.narration.trim(), d.voice, model]);
 export const storeSubtitleSource = (d: VideoDraft) => (d.storeAudioMode === "narration" ? d.speech?.storageKey || d.speech?.url || "" : d.storeAudioMode === "mute" ? "" : d.video?.storageKey || d.video?.url || "");
 

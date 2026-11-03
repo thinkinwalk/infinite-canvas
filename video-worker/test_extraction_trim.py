@@ -3,6 +3,7 @@ import hashlib
 import tempfile
 import unittest
 import uuid
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,6 +23,38 @@ class ExtractionTrimTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_decimal_selection_without_audio_still_produces_a_full_one_second_clip(self):
         await self.check_decimal_clip(audio=False)
+
+    async def test_voice_reference_exports_selected_audio_as_mono_wav(self):
+        if not worker.FFPROBE:
+            self.skipTest("real FFprobe required")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            media, jobs = root / "media", root / "jobs"
+            media.mkdir()
+            jobs.mkdir()
+            with patch.multiple(worker, MEDIA=media, JOBS=jobs, TASKS={}):
+                source = media / "source.mp4"
+                process = await asyncio.create_subprocess_exec(
+                    worker.FFMPEG, "-y", "-nostdin", "-v", "error",
+                    "-f", "lavfi", "-i", "color=c=black:s=160x90:r=25:d=3",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(source),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                _, error = await process.communicate()
+                self.assertEqual(process.returncode, 0, error.decode(errors="replace"))
+                request = worker.JobRequest(operation="voice-reference", inputs={"video": source.name}, options={"start": 0.25, "end": 1.75})
+                worker.validate_options(request)
+                identifier = str(uuid.uuid4())
+                worker.atomic_json(jobs / f"{identifier}.json", {"id": identifier, "status": "running", "request": request.model_dump()})
+                await worker.run_job(identifier, request)
+                job = worker.read_job(identifier)
+                self.assertEqual(job["status"], "completed", job.get("error"))
+                output = media / job["result"]["file"]
+                with wave.open(str(output), "rb") as audio:
+                    self.assertEqual(audio.getnchannels(), 1)
+                    self.assertEqual(audio.getframerate(), 16000)
+                    self.assertGreater(audio.getnframes(), 0)
+                self.assertFalse((jobs / identifier).exists())
 
     async def check_decimal_clip(self, audio):
         with tempfile.TemporaryDirectory() as directory:

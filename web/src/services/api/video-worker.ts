@@ -240,6 +240,22 @@ export async function storeWorkerResult(config: WorkerConfig, file: string): Pro
     return registerTemporaryReferenceCopy(id, media);
 }
 
+export async function extractVoiceReference(config: WorkerConfig, media: UploadedFile, start: number, end: number, signal: AbortSignal, onProgress?: (step: string) => void): Promise<UploadedFile> {
+    if (![start, end].every(Number.isFinite) || start < 0 || end <= start) throw new Error("请选择有效的音色提取范围");
+    const capabilities = await getWorkerCapabilities(config, signal);
+    if (!capabilities.some((item) => item.name === "voice-reference" && item.available)) throw new Error("当前视频处理服务暂不支持音色提取，请更新 Worker 后重试");
+    const source = await uploadWorkerMedia(config, { ...media, kind: "video" }, signal);
+    const job = await createWorkerJob(config, "voice-reference", { video: source }, { start, end }, signal);
+    try {
+        const completed = await waitForWorkerJob(config, job.id, signal, (state) => onProgress?.(state.step));
+        if (!completed.result?.file) throw new Error("处理服务未返回参考音频");
+        return await storeWorkerResult(config, completed.result.file);
+    } catch (error) {
+        if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
+        throw error;
+    }
+}
+
 export async function storeWorkerImage(config: WorkerConfig, file: string): Promise<UploadedFile> {
     const response = await workerRequest(config, `media/${encodeURIComponent(file)}`);
     const image = await uploadImage(await response.blob());

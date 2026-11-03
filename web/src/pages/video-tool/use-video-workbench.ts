@@ -21,6 +21,7 @@ import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMater
 import { parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource } from "./store-explore-plan";
 import { parseStoreMaterialSuggestion, storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
 import { storeScriptPrompt, type StoreScriptScope } from "./store-script";
+import { storePersonVoices, storeVoiceFileError, storeVoiceFileFormatError, storeVoiceSampleError } from "./store-person-voice";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptPrompt, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { applyViralScriptEdits, viralScriptEditDraft, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
 import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, viralVisualRole } from "./viral-keyframe";
@@ -305,9 +306,18 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             return;
         }
         const added: WorkbenchMedia[] = [];
+        const personVoice = tool === "store-explore" && role === "voice";
         try {
-            for (const file of files) {
+            if (personVoice && files.length !== 1) throw new Error("请一次选择一份人物音色录音");
+            for (let file of files) {
                 imported?.signal.throwIfAborted();
+                if (personVoice) {
+                    const error = storeVoiceFileError(file);
+                    if (error) throw new Error(error);
+                    const formatError = await storeVoiceFileFormatError(file);
+                    if (formatError) throw new Error(formatError);
+                    file = new File([file], file.name, { type: /\.wav$/i.test(file.name) ? "audio/wav" : "audio/mpeg" });
+                }
                 if (!accept.split(",").some((a) => file.type.startsWith(a.trim().replace("*", "")))) throw new Error("请选择该位置支持的图片、视频或音频格式");
                 if (file.type.startsWith("video/") && originalVideoSizeError(file.size)) throw new Error(originalVideoSizeError(file.size));
                 const temporary = file.type.startsWith("video/") && ["reference", "learning"].includes(role);
@@ -316,19 +326,29 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                     ? await storeTemporaryWorkbenchVideo(store().worker, file, file.name, { source: imported?.source, signal: imported?.signal, compatible: Boolean(imported) || tool === "content-replace" })
                     : file.type.startsWith("image/") ? await uploadImage(file) : await uploadMediaFile(blob, "video-material");
                 added.push({ ...result, storageKey: result.storageKey || "", id: nanoid(), name: file.name, kind: file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "video", role, ...(imported ? { source: imported.source } : {}) });
+                if (personVoice) {
+                    const error = storeVoiceSampleError(added[0], storeVideoConfig(read(tool), config));
+                    if (error) throw new Error(error);
+                }
             }
             imported?.signal.throwIfAborted();
             imported?.validate();
             if (imported && isBusy()) throw new Error("当前正在制作视频，请稍后重新导入");
             const single = (["voice", "avatar", "music", "mask", "first-frame", "learning"].includes(role) || (tool === "content-replace" && ["model", "background"].includes(role)) || (role === "reference" && added.some((m) => m.kind === "video"))) && !(tool === "viral-recreate" && role === "first-frame");
             const current = read(tool);
+            const videoConfig = personVoice ? storeVideoConfig(current, config) : undefined;
+            if (personVoice) {
+                const cast = storeCast(current);
+                added[0].storePerson = cast.length === 1 ? cast[0].name : "";
+            }
             const media = [...current.media.filter((m) => !single || m.role !== role), ...added];
             edit(
-                { media, ...(tool === "viral-recreate" && current.viralIntent && (role === "model" || role === "background" || role === "product") && !current.media.some((m) => m.role === role) ? { viralIntent: { ...current.viralIntent, replacements: [...new Set([...current.viralIntent.replacements, role])] } } : {}), ...(digital && role === "avatar" && added[0] ? { digitalHumanMode: added[0].kind === "video" ? "video" : "photo" } : {}), ...(digital && role === "reference" ? { video: added.find((m) => m.kind === "video") || null } : {}) },
-                role === "learning" ? "learning" : role === "music" ? "finish" : role === "voice" ? "speech" : role === "avatar" || role === "first-frame" || (digital && role === "reference") ? "video" : "materials",
+                { media, ...(videoConfig ? { storeAudioMode: "source", ...(videoProfile(videoConfig, videoConfig.videoModel).generateAudio ? { storeSettings: { ...storeVideoSettings(videoConfig), videoGenerateAudio: "true" } } : {}) } : {}), ...(tool === "viral-recreate" && current.viralIntent && (role === "model" || role === "background" || role === "product") && !current.media.some((m) => m.role === role) ? { viralIntent: { ...current.viralIntent, replacements: [...new Set([...current.viralIntent.replacements, role])] } } : {}), ...(digital && role === "avatar" && added[0] ? { digitalHumanMode: added[0].kind === "video" ? "video" : "photo" } : {}), ...(digital && role === "reference" ? { video: added.find((m) => m.kind === "video") || null } : {}) },
+                personVoice ? "video" : role === "learning" ? "learning" : role === "music" ? "finish" : role === "voice" ? "speech" : role === "avatar" || role === "first-frame" || (digital && role === "reference") ? "video" : "materials",
             );
             return added;
         } catch (error) {
+            if (personVoice) await deleteStoredMedia(added.map((media) => media.storageKey));
             if (imported) {
                 await deleteStoredMedia(added.map((media) => media.storageKey));
                 throw error;
@@ -367,7 +387,7 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
         const media = current.media.filter((m) => m.id !== id);
         edit(
             { media, ...(tool === "viral-recreate" && current.viralIntent ? { viralIntent: { ...current.viralIntent, replacements: current.viralIntent.replacements.filter((role) => role !== item.role || media.some((m) => m.kind === "image" && m.role === role)) } } : {}) },
-            item.role === "learning" ? "learning" : item.role === "music" ? "finish" : item.role === "voice" ? "speech" : item.role === "avatar" || item.role === "first-frame" || (digital && item.role === "reference") ? "video" : "materials",
+            tool === "store-explore" && item.role === "voice" ? "video" : item.role === "learning" ? "learning" : item.role === "music" ? "finish" : item.role === "voice" ? "speech" : item.role === "avatar" || item.role === "first-frame" || (digital && item.role === "reference") ? "video" : "materials",
         );
     };
     const modelConfig = (capability: "text" | "video" | "audio" | "image", overrides: Partial<AiConfig> = {}): AiConfig => {
@@ -387,6 +407,9 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                     createElement("p", null, `${details}；${quote.calculation}；本次 ${quote.credits.toLocaleString()} 算力点。各制作环节单独计费。`),
                     materials.length > 0 && createElement("div", { className: "flex max-h-64 flex-wrap gap-2 overflow-auto", "aria-label": "本次实际发送图片" },
                         materials.map((m) => createElement("img", { key: m.id, src: m.url, alt: m.name, title: m.name, className: "h-16 w-16 rounded object-cover" }))),
+                    ...materials.filter((m) => m.kind === "audio").map((m) => createElement("div", { key: m.id, className: "min-w-0 space-y-1" },
+                        createElement("p", { className: "break-words text-sm" }, `人物音色 · ${m.storePerson} · ${m.name}`),
+                        createElement("audio", { controls: true, src: m.url, className: "w-full min-w-0", "aria-label": `确认人物音色${m.name}` }))),
                 ),
                 okText: "确认制作",
                 cancelText: "取消",
@@ -1023,18 +1046,19 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             if (stage === "video") {
                 const error = storeVideoError(d, cfg);
                 if (error) throw new Error(error);
+                const materials = storeVideoMaterials(d, cfg), voices = storePersonVoices(d);
                 let expectedCredits: number | undefined;
                 let quoteToken: string | undefined;
                 if (cfg.channelMode === "remote" && !isReplicateVideoModel(cfg.videoModel)) {
                     const quote = await quoteVideoModel(cfg, cfg.videoModel, ctx.signal);
-                    await confirmStorePrice(quote, "视频制作", ctx.signal, `${cfg.videoSeconds}秒 · ${cfg.vquality}p · ${storeVideoMaterials(d, cfg).length}张实际图片输入`, storeVideoMaterials(d, cfg));
+                    await confirmStorePrice(quote, "视频制作", ctx.signal, `${cfg.videoSeconds}秒 · ${cfg.vquality}p · ${materials.length}张实际图片输入${voices.length ? ` · ${voices.length}份人物音色参考` : ""}`, [...materials, ...voices]);
                     expectedCredits = quote.credits;
                     quoteToken = quote.quoteToken;
                 }
                 ctx.signal.throwIfAborted();
                 const prompt = storeVideoPrompt(d, cfg);
                 store().patchRecord(ctx.recordId, { storeCompiledPrompt: prompt });
-                const task = await createVideoGenerationTask(cfg, prompt, imagesOf(storeVideoMaterials(d, cfg)), [], [], {
+                const task = await createVideoGenerationTask(cfg, prompt, imagesOf(materials), [], mediaOf(voices, "audio"), {
                     signal: ctx.signal,
                     expectedCredits,
                     quoteToken,

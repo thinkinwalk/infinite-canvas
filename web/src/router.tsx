@@ -21,6 +21,7 @@ import RegisterPage from "@/pages/register";
 import VideoPage from "@/pages/video";
 import VideoToolPage from "@/pages/video-tool";
 import VideoExtractPage from "@/pages/video-extract";
+import VideoVoiceExtractPage from "@/pages/video-voice-extract";
 
 export const router = createBrowserRouter([
     {
@@ -38,6 +39,7 @@ export const router = createBrowserRouter([
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
             { path: "/video/extract", element: <VideoExtractPage /> },
+            { path: "/video/voice-extract", element: <VideoVoiceExtractPage /> },
             { path: "/video/:tool", element: <VideoToolPage /> },
             { path: "/digital-human", element: <VideoToolPage /> },
             { path: "/assets", element: <AssetsPage /> },

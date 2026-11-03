@@ -6,6 +6,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, StoreVideoSettings } from "@/types/video-workbench";
 import { storeFreeScriptError, storePlanError } from "./store-explore-plan";
 import { storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
+import { storePersonVoiceError, storePersonVoices, storePersonVoicePrompt } from "./store-person-voice";
 
 export function storeVideoSettings(config: AiConfig): StoreVideoSettings {
     const { videoModel, size, vquality, videoSeconds, videoGenerateAudio, videoWatermark, videoInputMode, videoInterpolate } = config;
@@ -62,6 +63,8 @@ export function storeVideoError(d: VideoDraft, config: AiConfig) {
     if (profile.interface === "unavailable") return profile.description;
     if (profile.seconds.length && !profile.seconds.includes(config.videoSeconds)) return "当前模型不支持所选时长，请调整视频设置";
     if (profile.resolutions.length && !profile.resolutions.includes(config.vquality.replace(/p$/i, ""))) return "当前模型不支持所选清晰度，请调整视频设置";
+    const voiceError = storePersonVoiceError(d, config);
+    if (voiceError) return voiceError;
     const mentionError = materialMentionError(`${d.instructions}\n${d.script}`, storeMaterialLabels(d));
     if (mentionError) return mentionError;
     const mode = videoInputMode(config, model);
@@ -76,7 +79,7 @@ export function storeVideoError(d: VideoDraft, config: AiConfig) {
     }
     if (mode !== "reference" && d.storeFirstFrameId && !d.media.some((m) => m.id === d.storeFirstFrameId)) return "选定的首帧已移除，请重新选择";
     if (mode === "first_last" && model !== REPLICATE_VIDEO_MODEL && d.storeLastFrameId && !d.media.some((m) => m.id === d.storeLastFrameId)) return "选定的尾帧已移除，请重新选择";
-    return videoReferenceError(config, model, materials.length, 0, 0);
+    return videoReferenceError(config, model, materials.length, 0, storePersonVoices(d).length);
 }
 
 export function storeVideoPrompt(d: VideoDraft, config: AiConfig) {
@@ -93,7 +96,8 @@ export function storeVideoPrompt(d: VideoDraft, config: AiConfig) {
         )
         .join("；");
     const plan = d.storeShots?.length ? d.storeShots.map((s) => `${s.start}-${s.end}秒：${renumber(s.visual)}${s.dialogue && d.storeAudioMode !== "mute" ? `；台词：${renumber(s.dialogue)}` : ""}。本镜实际参考：${s.materialIds.filter((id) => materials.some((m) => m.id === id)).map((id) => `图片${materials.findIndex((m) => m.id === id) + 1}`).join("、") || "无直接图片输入，以文字描述为准"}`).join("\n") : renumber(d.script);
-    const audio = d.storeAudioMode === "narration" ? "画面不生成口播，旁白在后期添加；不要求人物对口型。" : d.storeAudioMode === "mute" ? "不生成口播或人声。" : "声音以当前模型实际能力为准，不承诺精确口型。";
+    const audio = d.storeAudioMode === "narration" ? "画面不生成口播，旁白在后期添加；不要求人物对口型。" : d.storeAudioMode === "mute" ? "不生成口播或人声。" : storePersonVoicePrompt(d, config, materials)
+        || "声音以当前模型实际能力为准，不承诺精确口型。";
     const canvas = isReplicateVideoModel(config.videoModel) ? "画幅跟随所传首帧，纯文字时使用模型默认比例" : `画幅${config.size}`;
     const cast = storeCast(d);
     const people = cast.length ? `出镜人物：${cast.map((person) => person.name).join("、")}；按方案实际出镜并完成相应动作，保持同一人物的脸部、发型和服装，不替换成随机主持人。同名或未命名人物的多视角、单张三视图只代表同一个人，不生成重复人物或三视图拼贴。人物身份仅依据本次实际输入的人物参考或已合成首帧。` : "";

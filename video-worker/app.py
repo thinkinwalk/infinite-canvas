@@ -108,6 +108,7 @@ def capabilities():
         {"name": "trim", "available": ffmpeg, "reason": "需要 FFmpeg"},
         {"name": "segment-plan", "available": ffmpeg and bool(FFPROBE) and bool(importlib.util.find_spec("scenedetect")) and bool(importlib.util.find_spec("cv2")), "reason": "自动分段需要更新 Worker 并安装 requirements.txt 中的 PySceneDetect"},
         {"name": "analysis-proxy", "available": ffmpeg, "reason": "需要 FFmpeg"},
+        {"name": "voice-reference", "available": ffmpeg and bool(FFPROBE), "reason": "需要 FFmpeg 和 FFprobe"},
         {"name": "cut", "available": ffmpeg and whisper, "reason": "需要配置 Whisper 转写模型"},
         {"name": "transcribe", "available": ffmpeg and whisper, "reason": "需要安装 faster-whisper 并配置 WHISPER_MODEL"},
         {"name": "upscale", "available": ffmpeg and engine_ready("realesrgan"), "reason": "需要配置 Real-ESRGAN 引擎及权重"},
@@ -302,6 +303,15 @@ def validate_options(request: JobRequest):
             segment_limits(request.options)
             if not isinstance(request.inputs.get("video"), str):
                 raise ValueError("请提供需要分段的视频")
+        if request.operation == "voice-reference":
+            try:
+                start, end = float(request.options["start"]), float(request.options["end"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError("音色提取范围不正确") from error
+            if not all(math.isfinite(value) for value in (start, end)) or start < 0 or end <= start:
+                raise ValueError("音色提取范围不正确")
+            if not isinstance(request.inputs.get("video"), str):
+                raise ValueError("请提供需要提取音色的视频")
         if "segmentQueue" in request.options and not isinstance(request.options["segmentQueue"], bool):
             raise ValueError("分段排队参数不正确")
         if request.operation in ("replacement-prepare", "replacement-finish", "replacement-transcribe", "replacement-render-captions"):
@@ -834,6 +844,30 @@ async def run_job(identifier: str, request: JobRequest):
                 if reference_id:
                     atomic_json((MEDIA / published).with_suffix(".mp4.json"), {"temporaryReference": reference_id, "mime": "video/mp4"})
             result = {"file": published}
+        elif operation == "voice-reference":
+            source = inputs["video"]
+            start, end = float(options["start"]), float(options["end"])
+            info = await probe_video(identifier, source)
+            if not info["audio"]:
+                raise ValueError("视频没有音轨，无法提取音色")
+            if end > info["duration"]:
+                raise ValueError("音色提取结束时间超过视频时长")
+            update_job(identifier, step="提取选定片段中的参考音频")
+            output = work / "voice-reference.wav"
+            await ffmpeg(
+                identifier,
+                "-ss", start,
+                "-i", source,
+                "-t", end - start,
+                "-map", "0:a:0",
+                "-vn",
+                "-ac", "1",
+                "-ar", "16000",
+                "-c:a", "pcm_s16le",
+                output,
+            )
+            published = publish(output)
+            result = {"file": published, "metadata": {"start": start, "end": end, "duration": end - start, "sampleRate": 16000, "channels": 1}}
         elif operation == "frames":
             source = inputs["video"]
             info = await asyncio.to_thread(metadata, source)

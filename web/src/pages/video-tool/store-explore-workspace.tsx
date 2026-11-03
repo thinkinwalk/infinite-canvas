@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Dropdown, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, Images, LoaderCircle, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, Images, Library, LoaderCircle, Mic, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -15,6 +15,7 @@ import { supportedVideoInputModes, videoInputMode, videoProfile } from "@/lib/vi
 import { publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
 import type { VideoPrice } from "@/services/api/video";
 import { getWorkerCapabilities } from "@/services/api/video-worker";
+import { getMediaBlob } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { configForFeature, managedModelBinding, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -26,7 +27,8 @@ import { storeAnalysisDisplay } from "./store-analysis";
 import { StorePlanSkeleton, StoreTaskProgress, storeTaskTitle } from "./store-task-progress";
 import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoSettings } from "./store-explore-request";
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
-import { storeCandidateMaterials, storeCastReferenceError, storeMaterialKey, storeSelectedIds } from "./store-materials";
+import { storeCandidateMaterials, storeCast, storeCastReferenceError, storeMaterialKey, storeSelectedIds } from "./store-materials";
+import { storePersonVoiceError, storePersonVoices, storeVoiceMinimumSeconds } from "./store-person-voice";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { StoreProjectPanel, storeRecordStatus } from "./store-project-panel";
 import { useStoreProjectAccess } from "./use-store-project-access";
@@ -81,7 +83,7 @@ function StoreProjectEditor() {
     }, [tab]);
     const [uploading, setUploading] = useState(false),
         uploadLock = useRef(false);
-    const [assetRole, setAssetRole] = useState<"reference" | "model" | "first-frame" | null>(null);
+    const [assetRole, setAssetRole] = useState<"reference" | "model" | "first-frame" | "voice" | null>(null);
     const [materialPicker, setMaterialPicker] = useState<{ shotId: string | null; ids: string[] } | null>(null),
         [materialSearch, setMaterialSearch] = useState("");
     const [settingsOpen, setSettingsOpen] = useState(false),
@@ -109,6 +111,8 @@ function StoreProjectEditor() {
         actualMaterials = storeVideoMaterials(d, cfg),
         selectedIds = storeSelectedIds(d),
         overLimit = mode === "reference" && actualMaterials.length > profile.maxImages;
+    const cast = storeCast(d), personVoice = storePersonVoices(d)[0],
+        personVoiceError = storePersonVoiceError(d, cfg);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     useEffect(() => {
         if (busy && active?.stage === "script") {
@@ -134,7 +138,7 @@ function StoreProjectEditor() {
         const c = analyze ? configForFeature(config, "store-explore.analyze", "text") : config;
         return c.channelMode === "remote" && !session ? "请先登录" : !c.textModel || !useConfigStore.getState().isAiConfigReady(c, c.textModel) ? "请配置当前文案模型" : "";
     };
-    const priceKey = JSON.stringify([settings, d.script, d.storeShots, d.media, d.instructions, d.storeFacts, d.storeFirstFrameId, d.storeLastFrameId, config.channelMode, config.managed?.revision, session]);
+    const priceKey = JSON.stringify([settings, d.script, d.storeShots, d.media, d.storeAudioMode, d.instructions, d.storeFacts, d.storeFirstFrameId, d.storeLastFrameId, config.channelMode, config.managed?.revision, session]);
     const price = quote?.key === priceKey ? quote.value : null,
         result = viewed ? viewed.result : d.final || d.video;
     const muted = { color: token.colorTextSecondary },
@@ -244,11 +248,38 @@ function StoreProjectEditor() {
     const insertAsset = async (payload: InsertAssetPayload) => {
         if (!assetRole) return;
         try {
+            if (assetRole === "voice" && payload.kind === "audio") {
+                const blob = payload.storageKey ? await getMediaBlob(payload.storageKey) : null;
+                let fileBlob = blob;
+                if (!fileBlob) {
+                    const response = await fetch(payload.url);
+                    if (!response.ok) throw new Error("素材读取失败");
+                    fileBlob = await response.blob();
+                }
+                const mimeType = payload.mimeType || fileBlob.type || "audio/mpeg";
+                const extension = mimeType === "audio/wav" || mimeType === "audio/x-wav" || mimeType === "audio/wave" ? ".wav" : ".mp3";
+                const name = /\.(wav|mp3)$/i.test(payload.title) ? payload.title : `${payload.title}${extension}`;
+                if (await addPersonVoice(new File([fileBlob], name, { type: mimeType }))) setAssetRole(null);
+                return;
+            }
+            if (assetRole === "voice") throw new Error("请选择音频");
             if (payload.kind !== "image") throw new Error("请选择图片");
             const blob = await (await fetch(await imageToDataUrl({ dataUrl: payload.dataUrl, storageKey: payload.storageKey }))).blob();
             if (await addFiles([new File([blob], payload.title, { type: blob.type })], assetRole)) setAssetRole(null);
         } catch (e) {
             message.error(e instanceof Error ? e.message : "素材读取失败");
+        }
+    };
+    const addPersonVoice = async (file: File) => {
+        if (locked || uploadLock.current) return false;
+        uploadLock.current = true;
+        setUploading(true);
+        try {
+            const added = await wb.addFiles([file], "voice", "audio/*");
+            return Array.isArray(added);
+        } finally {
+            uploadLock.current = false;
+            setUploading(false);
         }
     };
     const prepareQuote = async () => {
@@ -486,7 +517,58 @@ function StoreProjectEditor() {
             <Collapse
                 ghost
                 items={[
-                    { key: "person", label: `出镜人物 · ${d.media.filter((m) => m.role === "model").length} 张`, children: materialField("model", "人物参考") },
+                    {
+                        key: "person",
+                        label: `出镜人物 · ${d.media.filter((m) => m.role === "model").length} 张${personVoice ? " · 已设音色" : ""}`,
+                        children: (
+                            <div className="space-y-4">
+                                {materialField("model", "人物参考")}
+                                <section className="min-w-0 space-y-2" aria-label="人物音色">
+                                    <div className="flex flex-wrap items-center justify-between gap-1">
+                                        <strong className="inline-flex items-center gap-1 text-sm font-medium"><Mic size={14} />人物音色</strong>
+                                        <Upload
+                                            accept=".wav,.mp3,audio/wav,audio/x-wav,audio/mpeg"
+                                            showUploadList={false}
+                                            disabled={locked || !cast.length}
+                                            beforeUpload={(file) => { void addPersonVoice(file); return Upload.LIST_IGNORE; }}
+                                        >
+                                            <Button type="text" size="small" aria-label={personVoice ? "更换人物音色" : "上传人物音色"} disabled={locked || !cast.length} icon={personVoice ? <RefreshCw size={14} /> : <Plus size={14} />}>
+                                                {personVoice ? "更换" : "上传录音"}
+                                            </Button>
+                                        </Upload>
+                                        <Button type="text" size="small" aria-label="从素材库选择人物音色" disabled={locked || !cast.length} icon={<Library size={14} />} onClick={() => setAssetRole("voice")}>
+                                            素材库
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs" style={muted}>本人或已授权录音 · WAV / MP3 · {storeVoiceMinimumSeconds(cfg)}–15 秒 · 最大 15 MB</p>
+                                    {!cast.length && <p className="text-xs" style={muted}>请先添加出镜人物参考</p>}
+                                    {personVoice && (
+                                        <>
+                                            <div className="flex min-w-0 items-center gap-1">
+                                                <span className="min-w-0 flex-1 truncate text-xs" title={personVoice.name}>{personVoice.name} · {((personVoice.durationMs || 0) / 1000).toFixed(1)} 秒</span>
+                                                {icon("移除人物音色", <X size={13} />, () => wb.removeMedia(personVoice.id))}
+                                            </div>
+                                            <audio key={personVoice.id} aria-label="试听人物音色" controls preload="metadata" src={personVoice.url} className="block h-10 w-full min-w-0" />
+                                            {cast.length === 1 && personVoice.storePerson === cast[0].name ? (
+                                                <p className="break-words text-xs" style={muted}>对应人物：{cast[0].name}</p>
+                                            ) : (
+                                                <Select
+                                                    aria-label="音色对应人物"
+                                                    className="w-full"
+                                                    placeholder="选择音色对应人物"
+                                                    disabled={locked}
+                                                    value={cast.some((person) => person.name === personVoice.storePerson) ? personVoice.storePerson : undefined}
+                                                    options={cast.map((person) => ({ value: person.name, label: person.name }))}
+                                                    onChange={(storePerson) => wb.edit({ media: d.media.map((m) => m.id === personVoice.id ? { ...m, storePerson } : m) }, "video")}
+                                                />
+                                            )}
+                                        </>
+                                    )}
+                                    {personVoiceError && <p role="status" className="text-xs" style={{ color: token.colorWarningText }}>{personVoiceError}</p>}
+                                </section>
+                            </div>
+                        ),
+                    },
                     {
                         key: "analysis",
                         label: `素材观察${d.storeAnalysisStale ? " · 待更新" : d.analysis ? " · 已有" : ""}`,
@@ -578,7 +660,7 @@ function StoreProjectEditor() {
         <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span style={muted}>
-                    {spec} · {audioMode === "narration" ? "独立旁白" : audioMode === "mute" ? "去除原声" : "保留原声"}
+                    {spec} · {audioMode === "narration" ? "独立旁白" : audioMode === "mute" ? "去除原声" : personVoice ? "人物音色" : "保留原声"}
                 </span>
                 <Button size="small" type="text" icon={<Settings2 size={14} />} onClick={() => setSettingsOpen(true)}>
                     设置
@@ -926,7 +1008,7 @@ function StoreProjectEditor() {
                                             />
                                             {audioMode === "source" && (
                                                 <p className="text-xs" style={muted}>
-                                                    {profile.generateAudio && cfg.videoGenerateAudio === "true" ? "已请求模型生成声音，需核对实际结果与口型。" : "保留已有音轨；当前设置未请求模型生成声音。"}
+                                                    {personVoice ? "已选择人物音色参考，生成后需核对实际声音与口型。" : profile.generateAudio && cfg.videoGenerateAudio === "true" ? "已请求模型生成声音，需核对实际结果与口型。" : "保留已有音轨；当前设置未请求模型生成声音。"}
                                                 </p>
                                             )}
                                             {audioMode === "narration" && (
@@ -1195,7 +1277,7 @@ function StoreProjectEditor() {
                     <p className="text-xs" style={muted}>{mode === "reference" ? `整条视频图片去重后最多 ${profile.maxImages} 张，人物参考也计入。` : "镜头配图用于编写方案，生成只发送指定首帧或尾帧。"}</p>
                 </div>
             </Modal>
-            <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(p) => void insertAsset(p)} />
+            <AssetPickerModal open={Boolean(assetRole)} allowedKinds={assetRole === "voice" ? ["audio"] : undefined} onClose={() => setAssetRole(null)} onInsert={(p) => void insertAsset(p)} />
             <Modal
                 open={analysisOpen}
                 title="素材观察"
