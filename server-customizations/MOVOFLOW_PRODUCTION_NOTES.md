@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.152
-- Current production source: tag v0.19.152, commit 612659a444499f27ffa498fb0a15a89388b9ce16
+- Current production image: infinite-canvas:v0.19.153
+- Current production source: tag v0.19.153, commit 6e22768f73c0f46d052f775a6609c54a32774895
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
+
+## v0.19.153 deployment
+
+- Tag `v0.19.153`, commit `6e22768f73c0f46d052f775a6609c54a32774895`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image `infinite-canvas:v0.19.153`, ID `sha256:836ba7919e9e9308077759de64fe57bcc213a61ca9b8d89d2ca16f307f9578ad`, replaces v0.19.152.
+- Content replacement hides its repeated task title, description and separator when no current job is selected. Empty portal containers collapse; actual job status, loading indicators and actions remain. Concurrent local store-exploration changes were excluded.
+- Server build, internal/public health, eleven routes, removed/retained UI markers, empty-container CSS and public/container asset hashes passed. Public JS `/assets/index-Bx3bYT_r.js` SHA-256 `2f81fef8ca311ecaecabf03adf15b0a1cc38bb61c9ac014c02dfaadafccc982a`; CSS `/assets/index-Cgdhuezx.css` SHA-256 `732705725c62138568eb00f0d013e60c8a8b80d89977590e0b061df94c301160`. Backend binary is unchanged.
+- App-only deployment retained Worker identity, mounts and start time. Database quick check, schema/table counts, settings/protected account fields, 145 task JSON records and metadata for 29,269 existing media files were preserved. No paid inference or production settings change was submitted.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.153-prebuild-20261103-042330/`; final rollback backup `/opt/infinite-canvas/backups/v0.19.153-final-20261103-042427/`. Reports `/opt/infinite-canvas/releases/v0.19.153-deployment.json` and `v0.19.153-public-verification.json`, with workstation `.codex_tmp/` copies. Backups contain verified SQLite, Compose and private environment, not full media contents. Rollback restores final-backup Compose and recreates App only, preserving current database/media and Worker.
+- Independent workstation HTTPS verification passed health, both video pages, removed empty-description/retained task markers, empty-container CSS, asset hashes and the formal Release target. No local build, type checking, unit tests or production browser interaction was run. Actual browser layout and interactions remain for acceptance.
 
 ## v0.19.152 deployment
 

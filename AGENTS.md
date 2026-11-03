@@ -88,9 +88,9 @@
 
 ## 生产环境与部署
 
-- 当前生产版本 `v0.19.152`（`612659a444499f27ffa498fb0a15a89388b9ce16`），已推送发布分支/tag、发布正式 GitHub Release 并部署。本版取消内容替换默认历史任务继续提醒，用户从右上角历史任务主动选择，保留当前任务异常恢复；服务器构建、内外健康、11 页面与公网／容器资源哈希通过。Worker v0.19.87 身份／挂载／启动时间、数据库结构／表数、账号／设置、145 份任务记录与 29,269 项素材元数据保持。备份 `/opt/infinite-canvas/backups/v0.19.152-final-20261103-040957/`，报告 `/opt/infinite-canvas/releases/v0.19.152-deployment.json`。JS `/assets/index-CUezl_Rj.js`，CSS `/assets/index-BAlkj_Vs.css`。回滚恢复最终备份 Compose，仅重建 App；不覆盖当前数据库／素材。未提交收费生成，未执行本地构建／测试或生产浏览器交互，真实交互仍待验收。本版未包含工作区并行开发的探店改动。以下带版本号的条目为历史记录，以本条和生产交接文档为准。
+- 当前生产版本 `v0.19.153`（`6e22768f73c0f46d052f775a6609c54a32774895`），已推送发布分支/tag、发布正式 GitHub Release 并部署。本版隐藏内容替换空任务重复标题、说明和分隔线，收起空容器，保留实际任务状态、载入与操作；服务器构建、内外健康、11 页面与公网／容器资源哈希通过。Worker v0.19.87 身份／挂载／启动时间、数据库结构／表数、账号／设置、145 份任务记录与 29,269 项素材元数据保持。备份 `/opt/infinite-canvas/backups/v0.19.153-final-20261103-042427/`，报告 `/opt/infinite-canvas/releases/v0.19.153-deployment.json`。JS `/assets/index-Bx3bYT_r.js`，CSS `/assets/index-Cgdhuezx.css`。回滚恢复最终备份 Compose，仅重建 App；不覆盖当前数据库／素材。未提交收费生成，未执行本地构建／测试或生产浏览器交互，真实交互仍待验收。本版未包含工作区并行开发的探店改动。以下带版本号的条目为历史记录，以本条和生产交接文档为准。
 - 当前生产域名是 `https://studio.lingzhouai.com`，不要再使用旧域名 `https://studio.movoflow.com` 做生产验证。
-- `v0.19.152` 本机独立 HTTPS 复核健康、两页资源、历史提醒移除／入口保留标记、资源哈希和正式 Release 提交均通过，报告 `/opt/infinite-canvas/releases/v0.19.152-public-verification.json`；未执行生产浏览器交互验收。
+- `v0.19.153` 本机独立 HTTPS 复核健康、两页资源、空任务说明移除／载入与历史入口保留标记、空容器隐藏样式、资源哈希和正式 Release 提交均通过，报告 `/opt/infinite-canvas/releases/v0.19.153-public-verification.json`；未执行生产浏览器交互验收。
 - 当前生产服务器是 `37.221.196.102`，登录用户 `root`，端口 `22`，主机名 `v2202606374943476754`。
 - SSH 连接使用本机密钥路径 `C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519`；只记录路径，不要把私钥内容写入仓库或文档。
 - 推荐 SSH 命令：`ssh -o BatchMode=yes -o IdentitiesOnly=yes -i C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519 root@37.221.196.102`。
