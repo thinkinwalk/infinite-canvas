@@ -15,10 +15,21 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.150
-- Current production source: tag v0.19.150, commit 98700ded21ed41d5a2d179af05ce8bb2724c83f9
+- Current production image: infinite-canvas:v0.19.151
+- Current production source: tag v0.19.151, commit c6378706fa2f328b4a1807e76a885da3040bd940
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
+
+## v0.19.151 deployment
+
+- Tag `v0.19.151`, commit `c6378706fa2f328b4a1807e76a885da3040bd940`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image `infinite-canvas:v0.19.151`, ID `sha256:fc0c51d2179c0b901aa5b14074c76ea6810778cd8ddf64ce635a49d19895ea43`, replaces v0.19.150.
+- Removed the redundant content-replacement header description. History and new-task buttons remain, and upload guidance stays beside the source video and reference image fields. Product code changes only remove one display line.
+- Server build, internal/public health, eleven routes, retained UI markers and public/container asset hashes passed. Public JS `/assets/index-BtQRcqik.js` SHA-256 `82bff594be121ad8b90dd9a10b49c2d68e51da47b3932c5803e58f3d4ed2b04a`; CSS `/assets/index-BAlkj_Vs.css` SHA-256 `92ebcdb0952cbeefb13392da4762956486b2618816d310c69a17b2894391c72b`. The removed sentence is absent from the public bundle. Backend binary is unchanged.
+- App-only deployment retained Worker identity, mounts and start time. Database quick check, schema/table counts, settings/protected account fields, 145 task JSON records and metadata for 29,199 existing media files were preserved. No paid inference or production settings change was submitted by deployment.
+- An initial attempt automatically rolled back after concurrent user API consumption changed credit-log counts and account balances. Read-only diagnosis confirmed matching consumption-log and balance deltas. A fresh backup and retry passed the original strict preservation checks without relaxing them or restoring the live database.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.151-prebuild-20261103-025132/`; final rollback backup `/opt/infinite-canvas/backups/v0.19.151-final-20261103-025135/`. Report `/opt/infinite-canvas/releases/v0.19.151-deployment.json`, with a workstation `.codex_tmp/` copy. Backups contain verified SQLite, Compose and private environment, not full media contents. Rollback restores final-backup Compose and recreates App only, preserving current database/media and Worker.
+- No local build, unit tests or production browser interaction was repeated for this display-only deletion. Actual browser layout remains for acceptance.
+- Independent workstation HTTPS verification passed health, both video pages, removed/retained bundle markers, container/public asset hashes and the formal Release target. Evidence `/opt/infinite-canvas/releases/v0.19.151-public-verification.json`, with a workstation `.codex_tmp/` copy.
 
 ## v0.19.150 deployment
 

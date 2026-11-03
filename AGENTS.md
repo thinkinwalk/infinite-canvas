@@ -88,8 +88,9 @@
 
 ## 生产环境与部署
 
-- 当前生产版本 `v0.19.149`（`2a078c173776a2b9c29b1d8e8cf3cc0204816c76`），已推送发布分支/tag、发布正式 GitHub Release 并部署。两页成片区统一下载、保存素材与任务详情，版本／字幕／重新生成进入详情；开发 14 组隔离模拟检查通过。服务器构建、内外健康、11 页面与公网／容器资源哈希、本机 HTTPS 复核通过；Worker v0.19.87 身份／挂载／启动时间保持，数据库结构／表数、账号／设置、145 份任务记录与 29,105 项素材元数据保持。备份 `/opt/infinite-canvas/backups/v0.19.149-final-20261102-135616/`，报告 `/opt/infinite-canvas/releases/v0.19.149-deployment.json` 和 `v0.19.149-public-verification.json`。JS `/assets/index-Bpcof-58.js`，CSS `/assets/index-B3_nLdbx.css`。回滚恢复最终备份 Compose，仅重建 App；不覆盖当前数据库／素材。未发起收费生成，生产真实任务交互仍待验收。以下带版本号的条目为历史记录，以本条和生产交接文档为准。
+- 当前生产版本 `v0.19.151`（`c6378706fa2f328b4a1807e76a885da3040bd940`），已推送发布分支/tag、发布正式 GitHub Release 并部署。本版移除内容替换顶部重复上传说明，保留任务按钮和素材区域提示；服务器构建、内外健康、11 页面与公网／容器资源哈希通过。Worker v0.19.87 身份／挂载／启动时间、数据库结构／表数、账号／设置、145 份任务记录与 29,199 项素材元数据保持。备份 `/opt/infinite-canvas/backups/v0.19.151-final-20261103-025135/`，报告 `/opt/infinite-canvas/releases/v0.19.151-deployment.json`。JS `/assets/index-BtQRcqik.js`，CSS `/assets/index-BAlkj_Vs.css`。首次因用户并发调用导致日志／余额变化自动回退，重新备份后原有严格校验通过，未恢复覆盖数据库。回滚恢复最终备份 Compose，仅重建 App；不覆盖当前数据库／素材。未提交收费生成，未重复本地构建／测试或生产浏览器交互，真实布局仍待验收。以下带版本号的条目为历史记录，以本条和生产交接文档为准。
 - 当前生产域名是 `https://studio.lingzhouai.com`，不要再使用旧域名 `https://studio.movoflow.com` 做生产验证。
+- `v0.19.151` 本机独立 HTTPS 复核健康、两页资源、顶部文案移除／保留标记、资源哈希和正式 Release 提交均通过，报告 `/opt/infinite-canvas/releases/v0.19.151-public-verification.json`；未重复生产浏览器布局验收。
 - 当前生产服务器是 `37.221.196.102`，登录用户 `root`，端口 `22`，主机名 `v2202606374943476754`。
 - SSH 连接使用本机密钥路径 `C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519`；只记录路径，不要把私钥内容写入仓库或文档。
 - 推荐 SSH 命令：`ssh -o BatchMode=yes -o IdentitiesOnly=yes -i C:/Users/Administrator/.ssh/racknerd-ef66d95_ed25519 root@37.221.196.102`。

@@ -9,6 +9,8 @@ description: Implemented changes that still need manual verification
 
 - 移除顶部「上传原片与参考图，替换人物、商品或背景」说明，保留「历史任务」「新建任务」；原视频和参考图的上传指引仍在左侧素材区。
 - 本次为单行展示文案删除，未改变任务、上传、生成或计费逻辑；发布后核对线上资源与服务健康，真实浏览器布局仍需验收。
+- 已随 `v0.19.151`（`c637870`）提交、推送发布分支/tag、发布正式 GitHub Release 并部署。服务器构建、内外健康、11 页面和公网／容器资源哈希通过，JS `/assets/index-BtQRcqik.js` 已无旧说明且保留任务按钮与上传提示标记；数据库结构／表数、设置／账号、145 份任务记录、29,199 项素材元数据和 Worker 保持。最终备份 `/opt/infinite-canvas/backups/v0.19.151-final-20261103-025135/`，报告 `/opt/infinite-canvas/releases/v0.19.151-deployment.json`。首次因部署期间用户调用导致账户／日志变化自动回退，重新备份后原校验全部通过；未覆盖数据库或提交收费生成，未重复本地构建／测试和生产浏览器交互。
+- 本机独立 HTTPS 复核健康、两页资源、文案移除／保留标记、哈希和正式 Release 提交均通过，证据 `/opt/infinite-canvas/releases/v0.19.151-public-verification.json`；真实浏览器布局仍待验收。
 
 ## 视频对照联动播放修复
 
