@@ -15,10 +15,22 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.157
-- Current production source: tag v0.19.157, commit 9b4ff14de2d3fb2c956460ca9a0d4277e1bce08e
+- Current production image: infinite-canvas:v0.19.158
+- Current production source: tag v0.19.158, commit f27295e860e347313d92569936feb218f17590bc
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.158 deployment
+
+- Tag `v0.19.158`, commit `f27295e860e347313d92569936feb218f17590bc`, is pushed to `release/v0.19.60` and published as a formal GitHub Release in `thinkinwalk/infinite-canvas`. App image ID `sha256:ef05ec88d7ce909d42d14411c2336d726bd3c41f039fbfafb73185ba5ba686b5` replaces v0.19.157.
+- Store material uploads now populate a candidate pool independently of adopted shot references. Each shot opens a searchable image picker with multiple selection, upload and existing local assets. Cancelling selection preserves uploaded candidates and existing references. Uploading candidates preserves scripts, shots, timing and existing outputs.
+- AI matching fills only shots without references. Over-limit selection offers a separate AI selection proposal that cannot empty an already referenced shot. Proposals require explicit adoption, support undo and are invalidated by changed inputs. Video input is the deduplicated adopted shot set or explicitly selected free-script references; persons count toward the configured limit. First/last-frame modes keep their specific inputs. Confirmation shows actual thumbnails; submitted image mentions are renumbered to actual input order, and the OpenAI adapter no longer silently takes only seven images.
+- Unobserved candidates are processed one image per text call, then matching/script generation uses text observations. An aggregate confirmation discloses call count and total fixed credits. Successful observations persist through a later failure, with no automatic retry; later matching/script requests reuse them. Explicit analysis still reobserves current candidates and produces a pending analysis when an original exists. Existing manual observations remain supplied to matching and script prompts.
+- Development and the actual production bundle each passed thirteen material-workflow groups, nine waiting groups and eight analysis-reading groups, including 30 candidates/eight real request inputs, upload preservation, proposal adoption/undo/staleness, invalid response, over-limit rejection, partial observation failure/cache reuse, free script, frame modes, changed capacity and 1440/390/320px dark/light layouts. Production screenshots were visually reviewed. Anonymous four-view/settings/presets/theme smoke and independent HTTPS asset hashes passed. Auth/quote/generation APIs were mocked; no paid inference was submitted and the user's browser was untouched. No local compile, typecheck or unit-test command was run; server build passed.
+- App-only deployment preserved Worker identity, mounts and start time `2026-11-03T04:49:52.32052811Z`, backend SHA-256 `c3ccf34d415264352d179baee99c496a80709fed6205b309aa4bab47ad05007e`, environment/mount values, database schema/counts, settings/accounts, 173 task records and metadata of 29,398 existing media files. Cloud/Worker tasks were idle before switching. No production channel settings or model prices were changed.
+- Internal/public health and twelve routes passed. JS `/assets/index-C8i0FkhE.js` SHA-256 `92dfa0619ce55e6c694a01cfe099f9aadd5d0cf4adfa61448f780b3b0b5b52c7`; CSS `/assets/index-GTgLiwF7.css` SHA-256 `38dfe5d922eb8d640cd8ec9a90559a21e0e9086ce002f0d906954c5ce53e249d`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.158-final-20261103-065909/`; prebuild `/opt/infinite-canvas/backups/v0.19.158-prebuild-20261103-065811/`. Backups contain verified SQLite, Compose and private environment, not all media. Reports `/opt/infinite-canvas/releases/v0.19.158-{deployment,materials-verification,loading-verification,reading-verification,public-verification}.json`; workstation reports/screenshots are outside Git in `artifacts/store-explore-qa/materials-v158/`, `materials-production-v158/`, `loading-v158/`, `reading-v158/` and `production-v158/`.
+- Rollback restores the final-backup Compose and recreates App only, retaining the current database/media and Worker. User acceptance: refresh the original browser without clearing data, check actual old drafts/uploads, matching relevance and the next normally required video's real model result. Mocked request checks establish input selection/count, not output fidelity. See the store acceptance guide; do not repeat paid inference solely for verification.
 
 ## v0.19.157 deployment
 
