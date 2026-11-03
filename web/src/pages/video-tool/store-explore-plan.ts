@@ -66,7 +66,7 @@ export function parseStoreShots(raw: string, d: VideoDraft, seconds: number, sel
             row.materialIds.some((id) => typeof id !== "string" || !allowed.has(id))
         )
             throw new Error("镜头字段或素材引用不正确，原稿已保留");
-        return { id: row.id, start: row.start, end: row.end, materialIds: [...new Set(row.materialIds as string[])], visual: row.visual, dialogue: row.dialogue };
+        return { id: row.id, start: row.start, end: row.end, materialIds: [...new Set(row.materialIds as string[])], visual: row.visual, dialogue: row.dialogue, ...(typeof row.referenceNeed === "string" && row.referenceNeed.trim() ? { referenceNeed: row.referenceNeed.trim() } : {}) };
     });
     let merged = shots;
     if (selectedIds) {
@@ -105,6 +105,7 @@ export function storeExploreInput(d: VideoDraft, config: AiConfig): StoreExplore
         storeLastFrameId,
         storeSettings,
         storeShots,
+        storeReferenceIds,
         storeAudioMode,
         narration,
         speech,
@@ -130,6 +131,7 @@ export function storeExploreInput(d: VideoDraft, config: AiConfig): StoreExplore
         storeLastFrameId,
         storeSettings,
         storeShots,
+        storeReferenceIds,
         storeAudioMode,
         narration,
         speech,

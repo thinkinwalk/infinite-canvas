@@ -317,7 +317,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         imageReferences.forEach((reference) => body.append("image_reference", reference));
     } else {
         body.append("preset", "normal");
-        const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+        const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
         const profile = videoProfile(config, model);
         const mode = videoInputMode(config, model);
         if (mode === "reference") files.forEach((file) => body.append("input_reference[]", file));

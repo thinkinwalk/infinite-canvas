@@ -3,9 +3,10 @@ import type { VideoGenerationTask } from "@/services/api/video";
 import type { AiConfig } from "@/stores/use-config-store";
 
 export type StoreVideoSettings = Pick<AiConfig, "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoInputMode" | "videoInterpolate">;
-export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
-export type StoreShot = { id: string; start: number; end: number; materialIds: string[]; visual: string; dialogue: string };
-export type StorePlanVersion = { script: string; shots: StoreShot[]; createdAt: number };
+export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeReferenceIds" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
+export type StoreShot = { id: string; start: number; end: number; materialIds: string[]; visual: string; dialogue: string; referenceNeed?: string };
+export type StoreMaterialSuggestion = { shots: Pick<StoreShot, "id" | "materialIds">[]; referenceIds: string[]; base: string; mode: "fill" | "select" };
+export type StorePlanVersion = { script: string; shots: StoreShot[]; referenceIds?: string[]; createdAt: number };
 export type StorePreset = { id: string; name: string; media: WorkbenchMedia[]; facts: string; instructions: string; settings?: StoreVideoSettings };
 export type ViralRecreateInput = Pick<
     VideoDraft,
@@ -96,7 +97,7 @@ export type VideoTool = "cloud-create" | "content-replace" | "store-explore" | "
 export const isTalkingVideoTool = (tool: VideoTool) => ["digital-human", "photo-talk", "lipsync"].includes(tool);
 export type MediaRole = "reference" | "visual-reference" | "learning" | "product" | "model" | "background" | "voice" | "avatar" | "music" | "mask" | "first-frame";
 export type VideoImportSource = { platform: string; title: string; author: string; sourceUrl: string; coverUrl?: string; clip?: { extractionId: string; start: number; end: number } };
-export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole; source?: VideoImportSource; storePurpose?: string; storePerson?: string };
+export type WorkbenchMedia = UploadedFile & { id: string; name: string; kind: "image" | "video" | "audio"; role: MediaRole; source?: VideoImportSource; storePurpose?: string; storePerson?: string; storeObservation?: string };
 export type UpscaleInput = Pick<VideoDraft, "media" | "route" | "replicateTargetResolution" | "replicateFps" | "scale" | "fps">;
 export type SubtitleSegment = { start: number; end: number; text: string };
 export type SubtitleRegion = { x: number; y: number; width: number; height: number };
@@ -245,6 +246,8 @@ export type VideoDraft = {
     storeAnalysisSuggestion?: string;
     storeScriptSuggestion?: string;
     storeShots?: StoreShot[];
+    storeReferenceIds?: string[];
+    storeMaterialSuggestion?: StoreMaterialSuggestion;
     storeShotSuggestion?: StoreShot[];
     storeSuggestionBase?: string;
     storePlanVersions?: StorePlanVersion[];

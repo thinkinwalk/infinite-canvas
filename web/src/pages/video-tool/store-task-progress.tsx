@@ -6,6 +6,8 @@ import type { VideoRecord } from "@/types/video-workbench";
 const taskTitles: Record<string, string> = {
     analyze: "正在分析门店素材",
     script: "正在生成拍摄方案",
+    "material-match": "正在匹配镜头素材",
+    "material-select": "正在精选参考图片",
     keyframe: "正在合成首帧预览",
     video: "正在生成探店视频",
     speech: "正在生成旁白",

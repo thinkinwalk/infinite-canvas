@@ -5,6 +5,7 @@ import { selectableModelsByCapability, useConfigStore, type AiConfig } from "@/s
 import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, StoreVideoSettings } from "@/types/video-workbench";
 import { storeFreeScriptError, storePlanError } from "./store-explore-plan";
+import { storeCandidateMaterials, storeSelectedIds } from "./store-materials";
 
 export function storeVideoSettings(config: AiConfig): StoreVideoSettings {
     const { videoModel, size, vquality, videoSeconds, videoGenerateAudio, videoWatermark, videoInputMode, videoInterpolate } = config;
@@ -36,7 +37,10 @@ export function storeMaterialLabels(d: VideoDraft) {
 }
 
 export function storeVideoMaterials(d: VideoDraft, config: AiConfig) {
-    if (videoInputMode(config, config.videoModel) === "reference") return d.media.filter((m) => m.kind === "image" && ["reference", "model"].includes(m.role));
+    if (videoInputMode(config, config.videoModel) === "reference") {
+        const selected = new Set(storeSelectedIds(d));
+        return storeCandidateMaterials(d).filter((m) => selected.has(m.id));
+    }
     const first = d.media.find((m) => m.kind === "image" && m.id === d.storeFirstFrameId) || d.media.find((m) => m.role === "first-frame" && m.kind === "image");
     const last = d.media.find((m) => m.kind === "image" && m.id === d.storeLastFrameId);
     return [...(first ? [first] : []), ...(videoInputMode(config, config.videoModel) === "first_last" && config.videoModel !== REPLICATE_VIDEO_MODEL && last ? [last] : [])];
@@ -61,21 +65,32 @@ export function storeVideoError(d: VideoDraft, config: AiConfig) {
     const mentionError = materialMentionError(`${d.instructions}\n${d.script}`, storeMaterialLabels(d));
     if (mentionError) return mentionError;
     const mode = videoInputMode(config, model);
+    const materials = storeVideoMaterials(d, config);
+    if (mode === "reference") {
+        if (storeSelectedIds(d).some((id) => !storeCandidateMaterials(d).some((m) => m.id === id))) return "已采用的参考素材已移除，请重新选择";
+        const mentioned = (d.storeShots?.length ? d.storeShots.map((s) => `${s.visual}\n${s.dialogue}`).join("\n") : d.script).match(/@?图片\d+/g) || [];
+        if (mentioned.some((mention) => !materials.some((m) => storeMaterialLabels(d).find((l) => l.id === m.id)?.label === mention.replace(/^@/, "")))) return "方案引用了未采用的图片，请在对应镜头或本次参考图中选用";
+        if (materials.length > profile.maxImages) return `本次已选 ${materials.length} 张，当前模型最多支持 ${profile.maxImages} 张，请精选或调整参考图`;
+    }
     if (mode !== "reference" && d.storeFirstFrameId && !d.media.some((m) => m.id === d.storeFirstFrameId)) return "选定的首帧已移除，请重新选择";
     if (mode === "first_last" && model !== REPLICATE_VIDEO_MODEL && d.storeLastFrameId && !d.media.some((m) => m.id === d.storeLastFrameId)) return "选定的尾帧已移除，请重新选择";
-    return videoReferenceError(config, model, storeVideoMaterials(d, config).length, 0, 0);
+    return videoReferenceError(config, model, materials.length, 0, 0);
 }
 
 export function storeVideoPrompt(d: VideoDraft, config: AiConfig) {
     const materials = storeVideoMaterials(d, config);
     const labels = storeMaterialLabels(d);
+    const renumber = (text: string) => text.replace(/(@?)图片(\d+)/g, (original, at, index) => {
+        const label = labels[Number(index) - 1], actual = materials.findIndex((m) => m.id === label?.id);
+        return actual < 0 ? "未发送的候选图片" : `${at}图片${actual + 1}`;
+    });
     const mapping = materials
         .map(
             (m, index) =>
-                `${labels.find((label) => label.id === m.id)?.label || m.name}=${videoInputMode(config, config.videoModel) === "reference" ? `视频参考图${index + 1}` : index === 0 ? "生成首帧" : "生成尾帧"}（${m.role === "model" ? `人物 ${m.storePerson || "未命名"}` : m.storePurpose || "门店/商品"}）`,
+                `图片${index + 1}=${videoInputMode(config, config.videoModel) === "reference" ? `视频参考图${index + 1}` : index === 0 ? "生成首帧" : "生成尾帧"}（${m.role === "model" ? `人物 ${m.storePerson || "未命名"}` : m.storePurpose || "门店/商品"}）`,
         )
         .join("；");
-    const plan = d.storeShots?.length ? d.storeShots.map((s) => `${s.start}-${s.end}秒：${s.visual}${s.dialogue && d.storeAudioMode !== "mute" ? `；台词：${s.dialogue}` : ""}。本镜实际参考：${s.materialIds.filter((id) => materials.some((m) => m.id === id)).map((id) => labels.find((l) => l.id === id)?.label || id).join("、") || "无直接图片输入，以文字描述为准"}`).join("\n") : d.script;
+    const plan = d.storeShots?.length ? d.storeShots.map((s) => `${s.start}-${s.end}秒：${renumber(s.visual)}${s.dialogue && d.storeAudioMode !== "mute" ? `；台词：${renumber(s.dialogue)}` : ""}。本镜实际参考：${s.materialIds.filter((id) => materials.some((m) => m.id === id)).map((id) => `图片${materials.findIndex((m) => m.id === id) + 1}`).join("、") || "无直接图片输入，以文字描述为准"}`).join("\n") : renumber(d.script);
     const audio = d.storeAudioMode === "narration" ? "画面不生成口播，旁白在后期添加；不要求人物对口型。" : d.storeAudioMode === "mute" ? "不生成口播或人声。" : "声音以当前模型实际能力为准，不承诺精确口型。";
     const canvas = isReplicateVideoModel(config.videoModel) ? "画幅跟随所传首帧，纯文字时使用模型默认比例" : `画幅${config.size}`;
     return `${plan}\n门店真实资料（价格、地址和活动仅以此为准）：${d.storeFacts || "未提供，不虚构"}\n本次实际图片对应关系：${mapping || "纯文字生成"}。同名人物多图属于同一身份。制作${config.videoSeconds}秒、${canvas}、${config.vquality}p的单条视频片段。镜头时间为创作计划；不要把未发送的图片当作视觉输入。${audio}\n不要将分析说明或制作参数显示为画面文字。`;

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, Expand, FolderPlus, Grid2X2, Images, LoaderCircle, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, Images, LoaderCircle, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -24,8 +24,9 @@ import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { storeAnalysisDisplay } from "./store-analysis";
 import { StorePlanSkeleton, StoreTaskProgress, storeTaskTitle } from "./store-task-progress";
-import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoSettings } from "./store-explore-request";
+import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoSettings } from "./store-explore-request";
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
+import { storeCandidateMaterials, storeMaterialKey, storeSelectedIds } from "./store-materials";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
@@ -68,6 +69,8 @@ export default function StoreExploreWorkspace() {
     const [uploading, setUploading] = useState(false),
         uploadLock = useRef(false);
     const [assetRole, setAssetRole] = useState<"reference" | "model" | "first-frame" | null>(null);
+    const [materialPicker, setMaterialPicker] = useState<{ shotId: string | null; ids: string[] } | null>(null),
+        [materialSearch, setMaterialSearch] = useState("");
     const [settingsOpen, setSettingsOpen] = useState(false),
         [presetsOpen, setPresetsOpen] = useState(false),
         [presetName, setPresetName] = useState("");
@@ -89,6 +92,10 @@ export default function StoreExploreWorkspace() {
     const mode = videoInputMode(cfg, cfg.videoModel),
         cloud = isReplicateVideoModel(cfg.videoModel),
         wan = cfg.videoModel === REPLICATE_VIDEO_MODEL;
+    const candidates = storeCandidateMaterials(d),
+        actualMaterials = storeVideoMaterials(d, cfg),
+        selectedIds = storeSelectedIds(d),
+        overLimit = mode === "reference" && actualMaterials.length > profile.maxImages;
     const active = wb.records.find((r) => r.id === d.activeRecord);
     useEffect(() => {
         if (busy && active?.stage === "script") {
@@ -155,10 +162,10 @@ export default function StoreExploreWorkspace() {
         if (wb.hydrated) void refreshCapabilities();
     }, [wb.hydrated, wb.worker.url, wb.worker.token, session]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => wb.edit({ storeSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "script");
-    const saveVersion = () => [...(d.storePlanVersions || []), { script: d.script, shots, createdAt: Date.now() }];
+    const saveVersion = () => [...(d.storePlanVersions || []), { script: d.script, shots, referenceIds: d.storeReferenceIds, createdAt: Date.now() }];
     const edit = (field: Editor, value: string) =>
         wb.edit(
-            { [field]: value, ...(field === "script" ? { storeShots: [], storeScriptStale: false, ...(shots.length ? { storePlanVersions: saveVersion() } : {}) } : field === "analysis" ? { storeAnalysisStale: false } : {}) },
+            { [field]: value, ...(field === "script" ? { storeShots: [], ...(shots.length ? { storeReferenceIds: selectedIds } : {}), storeScriptStale: false, ...(shots.length ? { storePlanVersions: saveVersion() } : {}) } : field === "analysis" ? { storeAnalysisStale: false } : {}) },
             field === "storeFacts" ? "materials" : field === "script" ? "video" : "script",
         );
     const updateShots = (value: StoreShot[]) => wb.edit({ storeShots: value, script: renderStoreShots(value, d), storeScriptStale: false }, "video");
@@ -195,6 +202,7 @@ export default function StoreExploreWorkspace() {
                 const current = useVideoWorkbenchStore.getState().drafts["store-explore"]!;
                 wb.patch({ media: current.media.map((m) => added.some((a) => a.id === m.id) ? { ...m, storePurpose: storeSuggestedPurpose(m.name) } : m) });
             }
+            if (Array.isArray(added)) setMaterialPicker((current) => current ? { ...current, ids: [...new Set([...current.ids, ...added.map((m) => m.id)])] } : null);
             return Array.isArray(added);
         } catch (e) {
             message.error(e instanceof Error ? e.message : "素材添加失败");
@@ -247,6 +255,28 @@ export default function StoreExploreWorkspace() {
             <Button aria-label={title} type="text" size="small" disabled={disabled} icon={node} onClick={action} />
         </Tooltip>
     );
+    const openMaterialPicker = (shotId: string | null) => {
+        setMaterialSearch("");
+        setMaterialPicker({ shotId, ids: shotId ? shots.find((s) => s.id === shotId)?.materialIds || [] : d.storeReferenceIds || [] });
+    };
+    const materialThumbnails = (ids: string[], onClick: () => void, label: string, need?: string) => (
+        <div className="flex flex-wrap items-center gap-2" aria-label={label}>
+            {ids.map((id) => {
+                const m = d.media.find((v) => v.id === id);
+                return m ? (
+                    <Tooltip key={id} title={`${m.name} · 点击更换`}>
+                        <button type="button" aria-label={`更换${m.name}`} disabled={locked} onClick={onClick} className="h-14 w-14 shrink-0 overflow-hidden rounded border" style={border}>
+                            <img src={m.url} alt={m.name} className="h-full w-full object-cover" />
+                        </button>
+                    </Tooltip>
+                ) : <Button key={id} danger size="small" disabled={locked} onClick={onClick}>重新选择已移除素材</Button>;
+            })}
+            <Tooltip title="添加或更换参考图片">
+                <Button aria-label={label} type="text" disabled={locked} icon={<Plus size={18} />} onClick={onClick} className="!h-14 !w-14 shrink-0" />
+            </Tooltip>
+            {!ids.length && <span className="text-xs" style={muted}>{need ? `建议补充${need}` : "根据描述生成 · 可补充实拍参考"}</span>}
+        </div>
+    );
     const materialField = (role: "reference" | "model" | "first-frame", title: string) => {
         const media = d.media.filter((m) => m.role === role && m.kind === "image");
         const props = {
@@ -265,7 +295,7 @@ export default function StoreExploreWorkspace() {
                     <strong className="text-sm font-medium">{title}</strong>
                     <Space size={0}>
                         <Upload {...props}>
-                            <Button aria-label={`添加${title}`} size="small" type="text" icon={<Plus size={15} />} />
+                            <Button aria-label={`添加${title}`} size="small" type="text" icon={<Plus size={15} />}>{role === "reference" ? "补充素材" : "添加"}</Button>
                         </Upload>
                         <Button size="small" type="text" disabled={locked} onClick={() => setAssetRole(role)}>
                             素材库
@@ -373,6 +403,7 @@ export default function StoreExploreWorkspace() {
     const materialsPanel = (
         <div className="space-y-5">
             {materialField("reference", "门店素材")}
+            {candidates.length > 0 && <p className="text-xs" style={muted}>已添加 {candidates.length} 张 · 已采用 {selectedIds.length} 张</p>}
             <section>
                 {heading("storeFacts")}
                 <Input.TextArea aria-label="门店真实资料" rows={3} disabled={locked} value={d.storeFacts || ""} onChange={(e) => edit("storeFacts", e.target.value)} placeholder="已确认的店名、地址、价格、活动；未知留空" />
@@ -482,6 +513,14 @@ export default function StoreExploreWorkspace() {
                     设置
                 </Button>
             </div>
+            {d.script && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span style={overLimit ? { color: token.colorWarningText } : muted}>本次参考图 {actualMaterials.length}/{mode === "reference" ? profile.maxImages : mode === "first_last" && !wan ? 2 : 1} 张</span>
+                    {mode === "reference" && (!shots.length ? (
+                        <Button type="link" size="small" disabled={locked} onClick={() => openMaterialPicker(null)}>选择参考图</Button>
+                    ) : null)}
+                </div>
+            )}
             {config.channelMode === "remote" || cloud ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <span>{price ? `本次视频 ${price.credits.toLocaleString()} 算力点` : "方案、视频、旁白按各阶段确认费用"}</span>
@@ -598,7 +637,7 @@ export default function StoreExploreWorkspace() {
                                                 () => {
                                                     const versions = d.storePlanVersions!,
                                                         last = versions.at(-1)!;
-                                                    wb.edit({ script: last.script, storeShots: last.shots, storePlanVersions: versions.slice(0, -1) }, "video");
+                                                    wb.edit({ script: last.script, storeShots: last.shots, storeReferenceIds: last.referenceIds, storePlanVersions: versions.slice(0, -1) }, "video");
                                                 },
                                                 locked || !d.storePlanVersions?.length,
                                             )}
@@ -608,6 +647,39 @@ export default function StoreExploreWorkspace() {
                                         </Space>
                                     </div>
                                     {d.storeScriptStale && d.script && <Alert type="warning" title="资料或规格已变化，原方案已保留，请核对后调整" />}
+                                    {d.script && candidates.length > 0 && mode === "reference" && profile.maxImages > 0 && (overLimit || !shots.length || shots.some((s) => !s.materialIds.length)) && (
+                                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                                            <span style={muted}>{overLimit ? `已选 ${actualMaterials.length} 张，当前模型最多 ${profile.maxImages} 张` : "可用已有素材为镜头配图"}</span>
+                                            <Button size="small" icon={<Sparkles size={14} />} disabled={locked || Boolean(textError())} onClick={() => void wb.run(overLimit ? "material-select" : "material-match")}>{overLimit ? "AI 精选参考图" : "AI 匹配素材"}</Button>
+                                        </div>
+                                    )}
+                                    {d.storeMaterialSuggestion && mode === "reference" && (
+                                        <section className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }} aria-label="待采用配图">
+                                            <strong className="text-sm font-medium">配图建议 · 待采用</strong>
+                                            {(shots.length ? d.storeMaterialSuggestion.shots : [{ id: "", materialIds: d.storeMaterialSuggestion.referenceIds }]).map((s) => (
+                                                <div key={s.id} className="flex flex-wrap items-center gap-2">
+                                                    <span className="text-xs">{s.id ? `镜头 ${shots.findIndex((v) => v.id === s.id) + 1}` : "本次参考"}</span>
+                                                    {s.materialIds.length ? s.materialIds.map((id) => {
+                                                        const m = d.media.find((v) => v.id === id);
+                                                        return m ? <img key={id} src={m.url} alt={m.name} title={m.name} className="h-14 w-14 rounded object-cover" /> : null;
+                                                    }) : <span className="text-xs" style={muted}>没有合适参考，保留描述生成</span>}
+                                                </div>
+                                            ))}
+                                            <Space wrap>
+                                                <Button type="primary" size="small" disabled={locked || d.storeMaterialSuggestion.base !== storeMaterialKey(d, profile.maxImages)} onClick={() => {
+                                                    const suggestion = d.storeMaterialSuggestion!;
+                                                    const next = shots.map((s) => ({ ...s, materialIds: suggestion.shots.find((v) => v.id === s.id)!.materialIds }));
+                                                    wb.edit({
+                                                        storePlanVersions: saveVersion(),
+                                                        ...(shots.length ? { storeShots: next, script: renderStoreShots(next, d) } : { storeReferenceIds: suggestion.referenceIds }),
+                                                        storeMaterialSuggestion: undefined,
+                                                    }, "video");
+                                                }}>采用配图</Button>
+                                                <Button size="small" disabled={locked} onClick={() => wb.patch({ storeMaterialSuggestion: undefined })}>保留原选择</Button>
+                                            </Space>
+                                            {d.storeMaterialSuggestion.base !== storeMaterialKey(d, profile.maxImages) && <p className="text-xs" style={muted}>方案、素材或模型上限已变化，请重新匹配。</p>}
+                                        </section>
+                                    )}
                                     {busy && active?.stage === "script" && !d.script && !shots.length && <StorePlanSkeleton />}
                                     {!d.script && !shots.length && !(busy && active?.stage === "script") && (
                                         <div className="space-y-4">
@@ -637,26 +709,11 @@ export default function StoreExploreWorkspace() {
                                                       </div>
                                                   </div>
                                                   <Input.TextArea aria-label={`镜头${i + 1}画面`} autoSize={{ minRows: 2 }} value={s.visual} disabled={locked} onChange={(e) => updateShot(s.id, { visual: e.target.value })} />
-                                                  <div className="flex flex-wrap gap-2">
-                                                      {s.materialIds.map((id) => {
-                                                          const m = d.media.find((v) => v.id === id);
-                                                          return m ? <img key={id} src={m.url} alt={m.name} title={m.name} className="h-12 w-12 rounded object-cover" /> : <Alert key={id} type="error" title="引用素材已移除" />;
-                                                      })}
-                                                  </div>
-                                                  <Select
-                                                      className="w-full"
-                                                      mode="multiple"
-                                                      aria-label={`镜头${i + 1}素材`}
-                                                      placeholder="选择参考素材"
-                                                      disabled={locked}
-                                                      value={s.materialIds}
-                                                      onChange={(materialIds) => updateShot(s.id, { materialIds })}
-                                                      options={labels.map((l) => ({ value: l.id, label: `${l.label} · ${l.name}` }))}
-                                                  />
+                                                  {materialThumbnails(s.materialIds, () => openMaterialPicker(s.id), `镜头${i + 1}素材`, s.referenceNeed)}
                                                   <Input.TextArea aria-label={`镜头${i + 1}台词`} autoSize={{ minRows: 1 }} placeholder="台词（可选）" disabled={locked} value={s.dialogue} onChange={(e) => updateShot(s.id, { dialogue: e.target.value })} />
                                               </article>
                                           ))
-                                        : d.script && mentions("script", 12)}
+                                        : d.script && <>{mentions("script", 12)}{mode === "reference" && materialThumbnails(d.storeReferenceIds || [], () => openMaterialPicker(null), "本次参考图")}</>}
                                     <Button
                                         size="small"
                                         disabled={locked || Boolean(d.script && !shots.length)}
@@ -996,6 +1053,58 @@ export default function StoreExploreWorkspace() {
             <footer className="shrink-0 border-t px-4 py-3 lg:hidden" style={{ ...border, background: token.colorBgContainer }}>
                 {controls}
             </footer>
+            <Modal
+                open={Boolean(materialPicker)}
+                title={materialPicker?.shotId ? `镜头 ${shots.findIndex((s) => s.id === materialPicker.shotId) + 1} · 参考图片` : "本次参考图片"}
+                width={760}
+                style={{ top: 16, maxWidth: "calc(100vw - 24px)" }}
+                styles={{
+                    container: { maxHeight: "calc(100dvh - 32px)", display: "flex", flexDirection: "column" },
+                    body: { minHeight: 0, overflowY: "auto" },
+                }}
+                onCancel={() => { if (!uploading) setMaterialPicker(null); }}
+                footer={<Space wrap>
+                    <Button disabled={locked} onClick={() => setMaterialPicker(null)}>取消</Button>
+                    <Button type="primary" disabled={locked} onClick={() => {
+                        if (!materialPicker) return;
+                        if (materialPicker.shotId) updateShot(materialPicker.shotId, { materialIds: materialPicker.ids });
+                        else wb.edit({ storeReferenceIds: materialPicker.ids }, "video");
+                        setMaterialPicker(null);
+                    }}>采用所选{materialPicker?.ids.length ? ` ${materialPicker.ids.length} 张` : ""}</Button>
+                </Space>}
+            >
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Input aria-label="搜索参考图片" placeholder="搜索素材名称" className="!w-full sm:!w-56" value={materialSearch} onChange={(e) => setMaterialSearch(e.target.value)} allowClear />
+                        <Upload accept="image/*" multiple showUploadList={false} disabled={locked} beforeUpload={(file, list) => {
+                            if (file === list[0]) void addFiles(list, "reference");
+                            return Upload.LIST_IGNORE;
+                        }}><Button disabled={locked} loading={uploading} icon={<Plus size={14} />}>上传照片</Button></Upload>
+                        <Button disabled={locked} icon={<Images size={14} />} onClick={() => setAssetRole("reference")}>素材库</Button>
+                    </div>
+                    <div className="max-h-[55vh] space-y-4 overflow-auto">
+                        {[true, false].map((selected) => {
+                            const items = candidates.filter((m) => Boolean(materialPicker?.ids.includes(m.id)) === selected && (!materialSearch.trim() || `${m.name} ${m.storePerson || ""} ${m.storePurpose || ""}`.toLowerCase().includes(materialSearch.trim().toLowerCase())));
+                            return items.length > 0 && <section key={String(selected)} className="space-y-2">
+                                <strong className="text-xs font-medium">{selected ? "已选择" : "其他素材"}</strong>
+                                <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                                    {items.map((m) => <button key={m.id} type="button" disabled={locked} aria-label={`${selected ? "取消选择" : "选择"}${m.name}`} aria-pressed={selected} className="min-w-0 text-left" onClick={() => setMaterialPicker((current) => current ? { ...current, ids: selected ? current.ids.filter((id) => id !== m.id) : [...current.ids, m.id] } : null)}>
+                                        <div className="relative aspect-square overflow-hidden rounded border-2" style={{ borderColor: selected ? token.colorPrimary : token.colorBorderSecondary }}>
+                                            <img src={m.url} alt={m.name} className="h-full w-full object-cover" />
+                                            {selected && <Check size={20} className="absolute right-1 top-1 rounded p-0.5" style={{ background: token.colorPrimary, color: token.colorTextLightSolid }} />}
+                                        </div>
+                                        <span className="mt-1 block truncate text-xs" title={m.name}>{m.name}</span>
+                                        <span className="block truncate text-xs" style={muted}>{m.storePerson || m.storePurpose || labels.find((l) => l.id === m.id)?.label}</span>
+                                    </button>)}
+                                </div>
+                            </section>;
+                        })}
+                        {!candidates.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="补充照片作为参考" />}
+                    </div>
+                    {materialPicker?.ids.some((id) => !candidates.some((m) => m.id === id)) && <Button danger size="small" onClick={() => setMaterialPicker((current) => current ? { ...current, ids: current.ids.filter((id) => candidates.some((m) => m.id === id)) } : null)}>移除失效引用</Button>}
+                    <p className="text-xs" style={muted}>{mode === "reference" ? `整条视频图片去重后最多 ${profile.maxImages} 张，人物参考也计入。` : "镜头配图用于编写方案，生成只发送指定首帧或尾帧。"}</p>
+                </div>
+            </Modal>
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(p) => void insertAsset(p)} />
             <Modal
                 open={analysisOpen}
