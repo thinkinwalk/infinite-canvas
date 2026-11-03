@@ -57,6 +57,7 @@ func New() *gin.Engine {
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.ProtectTemporaryReferenceUse(handler.AIVideos)))
+	v1.POST("/videos/validate", gin.WrapF(handler.AIVideosValidate))
 	v1.POST("/models/quote", gin.WrapF(handler.ModelQuote))
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
 	v1.POST("/video/import-url", gin.WrapF(handler.ImportVideoURL))

@@ -2,9 +2,23 @@ import type { StoreMaterialSuggestion, VideoDraft } from "@/types/video-workbenc
 
 export const storeCandidateMaterials = (d: Pick<VideoDraft, "media">) => d.media.filter((m) => m.kind === "image" && ["reference", "model", "first-frame"].includes(m.role));
 export const storeSelectedIds = (d: VideoDraft) => [...new Set(d.storeShots?.length ? d.storeShots.flatMap((s) => s.materialIds) : d.storeReferenceIds || [])];
+export function storeCast(d: Pick<VideoDraft, "media">) {
+    const people = new Map<string, string[]>();
+    for (const m of d.media.filter((m) => m.kind === "image" && m.role === "model")) {
+        const name = m.storePerson?.trim() || "探店人";
+        people.set(name, [...(people.get(name) || []), m.id]);
+    }
+    return [...people].map(([name, materialIds]) => ({ name, materialIds }));
+}
+
+export function storeCastReferenceError(d: Pick<VideoDraft, "media">, selectedIds: string[]) {
+    const missing = storeCast(d).filter((person) => !person.materialIds.some((id) => selectedIds.includes(id)));
+    return missing.length ? `方案未采用出镜人物「${missing.map((person) => person.name).join("、")}」的参考，请为出镜镜头选择人物图或重新编写方案` : "";
+}
+
 export const storeMaterialKey = (d: VideoDraft, limit: number) => JSON.stringify([
     d.script, d.storeShots, d.storeReferenceIds, d.storeFacts, d.instructions, d.analysis, limit,
-    storeCandidateMaterials(d).map((m) => [m.id, m.storageKey, m.storePurpose, m.storePerson]),
+    storeCandidateMaterials(d).map((m) => [m.id, m.storageKey, m.role, m.storePurpose, m.storePerson]),
 ]);
 
 export function parseStoreMaterialSuggestion(raw: string, d: VideoDraft, limit: number, mode: "fill" | "select"): StoreMaterialSuggestion {
@@ -48,6 +62,8 @@ export function parseStoreMaterialSuggestion(raw: string, d: VideoDraft, limit: 
             if (!adopted.includes(candidates[Number(match[1]) - 1]?.id)) throw new Error("配图建议遗漏了方案明确引用的图片，原选择已保留");
         }
     }
+    const castError = storeCastReferenceError(d, [...selected]);
+    if (castError) throw new Error(castError);
     if (selected.size > limit) throw new Error(`建议仍超过当前模型的 ${limit} 张上限，请手动调整参考图片`);
     return { shots, referenceIds, base: storeMaterialKey(d, limit), mode };
 }

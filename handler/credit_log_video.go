@@ -143,7 +143,14 @@ func AdminCreditLogVideoContent(w http.ResponseWriter, r *http.Request, id strin
 		http.Error(w, "视频尚未生成", http.StatusConflict)
 		return
 	}
-	request, client, err := creditLogVideoRequest(r, *task)
+	copyVideoTaskContent(w, r, *task)
+}
+
+// Both the owner's workbench and the admin ledger use the same validated download.
+func copyVideoTaskContent(w http.ResponseWriter, r *http.Request, task model.VideoTask) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	request, client, err := creditLogVideoRequest(r, task)
 	if err != nil {
 		Fail(w, "视频地址不可用，请检查原任务或渠道配置")
 		return
@@ -174,7 +181,7 @@ func AdminCreditLogVideoContent(w http.ResponseWriter, r *http.Request, id strin
 }
 
 func creditLogVideoRequest(r *http.Request, task model.VideoTask) (*http.Request, *http.Client, error) {
-	channel, channelErr := service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL)
+	channel, channelErr := service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL, task.ChannelID)
 	if channelErr == nil && service.IsSparkCineH3(channel, task.Model) {
 		body, err := querySparkCineH3(r.Context(), channel, task.ID)
 		if err != nil {
@@ -190,7 +197,7 @@ func creditLogVideoRequest(r *http.Request, task model.VideoTask) (*http.Request
 		address = ""
 	}
 	if address == "" {
-		channel, err := service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL)
+		channel, err := service.ResolveModelChannelForTask(task.ChannelName, task.ChannelBaseURL, task.ChannelID)
 		if err != nil {
 			return nil, nil, err
 		}

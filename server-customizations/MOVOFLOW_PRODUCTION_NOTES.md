@@ -15,10 +15,18 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.160
-- Current production source: tag v0.19.160, commit a38fe6a57df65f1aac27619b10ccd68d1fb746ac
+- Current production image: infinite-canvas:v0.19.161
+- Current production source: tag v0.19.161, commit e4f532624b3f376c27dff0629d62d52fe8f21f4c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.161 deployment
+
+- Tag `v0.19.161` is deployed and formally published from isolated branch `fix/store-submission-v161`, commit `e4f532624b3f376c27dff0629d62d52fe8f21f4c`. Concurrent person/script changes in this dirty checkout were preserved and excluded. Complete source/handoff/manual acceptance are in `C:/Users/Administrator/Documents/无限画布/.codex_tmp/store-v161-release/`. Future releases must include that fix and increment above v0.19.161; do not redeploy this checkout's older backend or reset user changes. No main merge occurred.
+- Fixed original opaque VP8X WebP references by upgrading existing `golang.org/x/image`, added unbilled preflight, explicit rejection versus unknown submission, original error/request ID retention, manual reconciliation closure, accurate task counts/model context, and owner-authenticated original-ID result retrieval. No channel, price, concurrency, size or polling boundary changed.
+- Frontend 29 tests/276 assertions, targeted backend checks and development/production 16-group isolated browser checks passed. Real production original-reference preflight passed at 720p/768p. Original Seedance `task_tgQwplybh1nkiing40iBIG0hFh5njjrd` returned playable 720x1280 MP4, about 15 seconds, by its old ID. Zero new generation tasks/charges; original browser tab and local records were not modified. New paid model quality and actual quotas await user testing.
+- Only App was recreated. Worker/start time/source mount, environment/mounts, database schema/counts/settings/accounts, 173 job records and 29,548 media metadata entries stayed unchanged. Internal/public health, twelve routes, authenticated preflight and public/container asset hashes passed. JS `/assets/index-DVo0OdWr.js`, CSS `/assets/index-DaTH3b5h.css`.
+- Final backup `/opt/infinite-canvas/backups/v0.19.161-final-20261103-114141/`; reports `/opt/infinite-canvas/releases/v0.19.161-*.json`. Restore its Compose and recreate App only for rollback, preserving live database/media and Worker. The isolated release's production notes contain exact image/backend/asset hashes and all evidence filenames.
 
 ## v0.19.160 deployment
 

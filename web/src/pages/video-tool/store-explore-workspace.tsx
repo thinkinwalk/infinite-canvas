@@ -26,7 +26,7 @@ import { storeAnalysisDisplay } from "./store-analysis";
 import { StorePlanSkeleton, StoreTaskProgress, storeTaskTitle } from "./store-task-progress";
 import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoSettings } from "./store-explore-request";
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
-import { storeCandidateMaterials, storeMaterialKey, storeSelectedIds } from "./store-materials";
+import { storeCandidateMaterials, storeCastReferenceError, storeMaterialKey, storeSelectedIds } from "./store-materials";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { StoreProjectPanel, storeRecordStatus } from "./store-project-panel";
 import { useStoreProjectAccess } from "./use-store-project-access";
@@ -128,7 +128,7 @@ function StoreProjectEditor() {
         });
         return () => cancelAnimationFrame(frame);
     }, [busy, active?.id, active?.stage, active?.status, tab]);
-    const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
+    const pending = active && ["running", "interrupted"].includes(active.status) && (active.modelTask || active.replicateTask || active.workerJob) ? active : undefined;
     const blocked = storeVideoError(d, cfg);
     const textError = (analyze = false) => {
         const c = analyze ? configForFeature(config, "store-explore.analyze", "text") : config;
@@ -211,6 +211,11 @@ function StoreProjectEditor() {
     const adopt = () => {
         if (d.storeSuggestionBase !== storePlanKey(d)) {
             message.warning("原稿、资料或素材已变化，请重新生成修改建议");
+            return;
+        }
+        const castError = storeCastReferenceError(d, (d.storeShotSuggestion || []).flatMap((s) => s.materialIds));
+        if (castError) {
+            message.warning(castError);
             return;
         }
         wb.edit({ script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion || [], storePlanVersions: saveVersion(), storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeScriptStale: false }, "video");
@@ -481,7 +486,7 @@ function StoreProjectEditor() {
             <Collapse
                 ghost
                 items={[
-                    { key: "person", label: `出镜人物（可选） · ${d.media.filter((m) => m.role === "model").length} 张`, children: materialField("model", "人物参考") },
+                    { key: "person", label: `出镜人物 · ${d.media.filter((m) => m.role === "model").length} 张`, children: materialField("model", "人物参考") },
                     {
                         key: "analysis",
                         label: `素材观察${d.storeAnalysisStale ? " · 待更新" : d.analysis ? " · 已有" : ""}`,
@@ -688,7 +693,7 @@ function StoreProjectEditor() {
                                 }
                             />
                         )}
-                        {!busy && active?.error && <Alert className="mb-3" type="warning" title={publicServiceText(active.error)} />}
+                        {!busy && active?.error && <Alert className="mb-3" type="warning" title={`${active.stage === "video" ? `${active.storeOrigin?.modelLabel || active.modelTask?.model || "视频任务"}：` : ""}${publicServiceText(active.error)}`} />}
                         <div ref={mainScroll} className="min-h-0 flex-1 overflow-y-auto pb-3" data-testid="store-main-scroll">
                             {tab === "materials" && <div className="max-w-xl py-2">{materialsPanel}</div>}
                             {tab === "plan" && (
@@ -869,7 +874,7 @@ function StoreProjectEditor() {
                                             </Space>
                                         </div>
                                     )}
-                                    {!viewed && (d.storeOutputStale || (d.final && d.storeFinishStale)) && <Alert type="warning" title={d.storeOutputStale ? "方案已变化，当前显示此前作品" : "声音或字幕已变化，当前显示此前成片"} />}
+                                    {!viewed && result && (d.storeOutputStale || (d.final && d.storeFinishStale)) && <Alert type="warning" title={d.storeOutputStale ? "方案已变化，当前显示此前作品" : "声音或字幕已变化，当前显示此前成片"} />}
                                     {result ? (
                                         <>
                                             {result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史首帧" className="max-h-[58vh] w-full object-contain" /> : result.mimeType.startsWith("audio/") ? (

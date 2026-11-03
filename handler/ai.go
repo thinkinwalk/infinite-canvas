@@ -16,6 +16,7 @@ import (
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
+	"github.com/google/uuid"
 )
 
 var aiHTTPClient = &http.Client{Timeout: 15 * time.Minute}
@@ -46,6 +47,10 @@ func AIAudioSpeech(w http.ResponseWriter, r *http.Request) {
 
 func AIVideos(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/videos")
+}
+
+func AIVideosValidate(w http.ResponseWriter, r *http.Request) {
+	proxyAIRequestMode(w, r, "/videos", true)
 }
 
 func AIVideo(w http.ResponseWriter, r *http.Request, id string) {
@@ -104,6 +109,10 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 		copySparkCineH3Video(w, r, channel, task, content)
 		return
 	}
+	if tracked && content && task.Status == "completed" && task.OutputURL != "" {
+		copyVideoTaskContent(w, r, task)
+		return
+	}
 	path := "/videos/" + url.PathEscape(id)
 	if content {
 		path += "/content"
@@ -131,13 +140,30 @@ func proxyAIVideoGetRequest(w http.ResponseWriter, r *http.Request, id string, c
 }
 
 func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
+	proxyAIRequestMode(w, r, path, false)
+}
+
+func proxyAIRequestMode(w http.ResponseWriter, r *http.Request, path string, validateOnly bool) {
 	videoCreate := path == "/videos"
+	if videoCreate {
+		w.Header().Set("X-Request-ID", uuid.NewString())
+		w.Header().Set("X-Video-Submission", "rejected")
+		w.Header().Set("X-Video-Stage", "request")
+		defer func() {
+			if outcome := w.Header().Get("X-Video-Submission"); outcome == "rejected" || outcome == "unknown" {
+				log.Printf("Video submission: request=%s stage=%s outcome=%s", w.Header().Get("X-Request-ID"), w.Header().Get("X-Video-Stage"), outcome)
+			}
+		}()
+	}
 	billingPath := path
 	body, contentType, modelName, err := readAIRequest(r)
 	if err != nil {
 		log.Printf("AI proxy request read failed: %v", err)
 		Fail(w, "AI 接口请求失败")
 		return
+	}
+	if videoCreate {
+		w.Header().Set("X-Video-Stage", "quote")
 	}
 	r, body, contentType, modelName, err = prepareManagedAI(r, path, body, contentType, modelName)
 	if err != nil {
@@ -150,6 +176,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if !ok {
 		Fail(w, "未登录或权限不足")
 		return
+	}
+	if videoCreate {
+		w.Header().Set("X-Video-Stage", "pricing")
 	}
 	baseCredits, err := service.ManagedModelCost(r.Context(), modelName)
 	if err != nil {
@@ -177,6 +206,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		proxyAIImageRequest(w, r, path, body, contentType, modelName, user, credits)
 		return
 	}
+	if videoCreate {
+		w.Header().Set("X-Video-Stage", "channel")
+	}
 	channel, err := replacementModelChannel(r.Context(), modelName, user.Group, false)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
@@ -188,6 +220,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	if videoCreate {
+		w.Header().Set("X-Video-Stage", "spec")
 		if selected := service.ManagedSelectionFromContext(r.Context()); selected != nil && selected.Model.Pricing.Free {
 			credits = 0
 		}
@@ -215,6 +248,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 		if profile.Interface == service.SparkCineH3Interface {
+			w.Header().Set("X-Video-Stage", "references")
 			body, err = sparkCineH3Body(body, user.ID)
 			if err != nil {
 				Fail(w, err.Error())
@@ -244,6 +278,11 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			body, contentType = normalizeAIProxyVideoBody(formatBase, path, body, contentType)
 		}
 	}
+	if validateOnly {
+		w.Header().Set("X-Video-Submission", "validated")
+		OK(w, map[string]any{"validated": true, "credits": credits})
+		return
+	}
 	logAIImageUpstreamParams(channel, path, modelName, body, contentType)
 	if path == "/responses" {
 		if err := service.ConsumeUserCredits(user.ID, modelName, credits, path, channel); err != nil {
@@ -270,6 +309,9 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
+	}
+	if videoCreate {
+		w.Header().Set("X-Video-Stage", "billing")
 	}
 	entry, err := service.ConsumeUserCreditsWithLog(user.ID, modelName, credits, path, channel)
 	if err != nil {
@@ -336,6 +378,8 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 }
 
 func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, task model.VideoTask, creditLogID string, onFailure func()) {
+	w.Header().Set("X-Video-Stage", "upstream")
+	w.Header().Set("X-Video-Submission", "unknown")
 	response, err := aiHTTPClient.Do(request)
 	if err != nil {
 		log.Printf("AI proxy video create failed: url=%s err=%v", request.URL.String(), err)
@@ -351,6 +395,9 @@ func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, tas
 		return
 	}
 	if response.StatusCode >= http.StatusBadRequest {
+		if response.StatusCode < http.StatusInternalServerError {
+			w.Header().Set("X-Video-Submission", "rejected")
+		}
 		log.Printf("AI upstream error: url=%s status=%d body=%s", request.URL.String(), response.StatusCode, safeUpstreamText(string(body)))
 		onFailure()
 		Fail(w, aiUpstreamStatusMessage(response.StatusCode, body))
@@ -359,7 +406,18 @@ func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, tas
 	task.ID = videoResponseString(body, "id", "task_id")
 	if task.ID == "" {
 		onFailure()
-		Fail(w, "视频接口没有返回任务 ID")
+		message := "视频接口没有返回任务 ID"
+		var failure struct {
+			Code any `json:"code"`
+			Msg string `json:"msg"`
+			Message string `json:"message"`
+			Error json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal(body, &failure) == nil && (failure.Code != nil && fmt.Sprint(failure.Code) != "0" || len(failure.Error) > 0 && string(failure.Error) != "null") {
+			w.Header().Set("X-Video-Submission", "rejected")
+			message = aiUpstreamStatusMessage(http.StatusBadRequest, body)
+		}
+		Fail(w, message)
 		return
 	}
 	task.Status = videoResponseString(body, "status")
@@ -367,13 +425,15 @@ func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, tas
 	if err := service.SaveVideoTask(task, creditLogID); err != nil {
 		log.Printf("AI proxy save video task failed: task=%s user=%s err=%v", task.ID, task.UserID, err)
 		onFailure()
-		Fail(w, "视频任务记录失败")
+		w.Header().Set("X-Video-Stage", "save_task")
+		Fail(w, "视频任务已提交，但记录保存失败，请保留请求编号核对")
 		return
 	}
 	if err := service.UpdateVideoTaskStatus(task, task.Status); err != nil {
 		log.Printf("AI proxy update created video task failed: task=%s status=%s err=%v", task.ID, task.Status, err)
 	}
 	copyAIResponseHeaders(w, response)
+	w.Header().Set("X-Video-Submission", "accepted")
 	w.WriteHeader(response.StatusCode)
 	_, _ = w.Write(body)
 }

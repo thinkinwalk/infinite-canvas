@@ -33,7 +33,8 @@ export function StoreTaskProgress({ record, onStop }: { record?: VideoRecord; on
                 <LoaderCircle size={20} className="mt-0.5 shrink-0 animate-spin motion-reduce:animate-none" style={{ color: token.colorPrimary }} aria-hidden />
                 <div className="min-w-0 flex-1">
                     <div role="status" aria-live="polite" aria-atomic="true">
-                        <p className="text-sm font-medium">{storeTaskTitle(record?.stage)}</p>
+                        <p className="text-sm font-medium">{record?.storeResultPending ? "云端已完成，正在取回视频" : storeTaskTitle(record?.stage)}</p>
+                        {record?.stage === "video" && <p className="mt-1 break-words text-xs" style={{ color: token.colorTextSecondary }}>{record.storeOrigin?.modelLabel || record.storeExploreInput?.storeSettings?.videoModel || record.modelTask?.model}</p>}
                         <p className="mt-1 text-xs" style={{ color: token.colorTextSecondary }}>{step}</p>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: token.colorTextSecondary }}>

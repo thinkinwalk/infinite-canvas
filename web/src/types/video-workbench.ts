@@ -324,6 +324,9 @@ export type VideoRecord = {
     storeOrigin?: StoreTaskOrigin;
     storeQueryState?: "querying" | "paused" | "interrupted";
     storeSubmissionStarted?: boolean;
+    storeSubmissionFailure?: import("@/services/api/video-submission").VideoSubmissionFailure;
+    storeSubmissionReviewed?: boolean;
+    storeResultPending?: boolean;
     error?: string;
     modelTask?: VideoGenerationTask;
     workerJob?: { id: string; url: string };

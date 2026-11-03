@@ -9,7 +9,7 @@ export function storeSuggestedPurpose(name: string) {
     return "未分类";
 }
 
-export const storeKeyframeKey = (d: VideoDraft) => JSON.stringify([d.media.filter((m) => m.kind === "image").map((m) => [m.id, m.storageKey, m.storePurpose, m.storePerson]), d.script, d.storeFacts, d.instructions]);
+export const storeKeyframeKey = (d: VideoDraft) => JSON.stringify([d.media.filter((m) => m.kind === "image").map((m) => [m.id, m.storageKey, m.role, m.storePurpose, m.storePerson]), d.script, d.storeFacts, d.instructions]);
 
 export function storeFreeScriptError(script: string, seconds: number, ratio: string) {
     const duration = script.match(/(?:总时长|全片时长|视频时长)\s*[：:]?\s*(\d+(?:\.\d+)?)\s*秒/);
@@ -19,7 +19,7 @@ export function storeFreeScriptError(script: string, seconds: number, ratio: str
     return "";
 }
 
-export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.media.filter((m) => m.kind === "image").map((m) => [m.id, m.storageKey || m.url, m.storePurpose, m.storePerson])]);
+export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.media.filter((m) => m.kind === "image").map((m) => [m.id, m.storageKey || m.url, m.role, m.storePurpose, m.storePerson])]);
 export const storeSpeechKey = (d: Pick<VideoDraft, "narration" | "voice">, model: string) => JSON.stringify([d.narration.trim(), d.voice, model]);
 export const storeSubtitleSource = (d: VideoDraft) => (d.storeAudioMode === "narration" ? d.speech?.storageKey || d.speech?.url || "" : d.storeAudioMode === "mute" ? "" : d.video?.storageKey || d.video?.url || "");
 

@@ -2,6 +2,15 @@ import { expect, test } from "bun:test";
 import { emptyVideoDraft, type StoreShot, type WorkbenchMedia } from "../src/types/video-workbench";
 import { parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeFreeScriptError, storePlanError, storePlanKey, storeSpeechKey, storeSubtitleSource } from "../src/pages/video-tool/store-explore-plan";
 
+if (!globalThis.localStorage) {
+    const memory = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+        getItem: (key: string) => memory.get(key) ?? null,
+        setItem: (key: string, value: string) => memory.set(key, value),
+        removeItem: (key: string) => memory.delete(key),
+    } });
+}
+
 const image = (id: string): WorkbenchMedia => ({ id, name: id, url: `https://example.test/${id}.jpg`, storageKey: id, bytes: 1, mimeType: "image/jpeg", kind: "image", role: "reference" });
 const shots: StoreShot[] = [
     { id: "opening", start: 0, end: 2, materialIds: ["store"], visual: "门头", dialogue: "欢迎" },
