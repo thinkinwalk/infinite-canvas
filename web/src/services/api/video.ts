@@ -406,9 +406,9 @@ async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt:
         await options?.onSubmissionStarted?.();
         options?.signal?.throwIfAborted();
         response = await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), config.channelMode !== "remote" && isMiniMaxH3Name(modelName) ? miniMaxH3VideoBody(payload) : payload, {
-                    headers: videoCreateHeaders(config, options, "application/json"),
-                    signal: options?.signal,
-                });
+            headers: videoCreateHeaders(config, options, "application/json"),
+            signal: options?.signal,
+        });
         const created = unwrapVideoResponse(response.data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("视频接口没有返回任务 ID");

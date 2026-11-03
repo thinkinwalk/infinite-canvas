@@ -75,6 +75,7 @@ export async function queryStoreTask(id: string, action: (signal: AbortSignal) =
             store().patchRecord(id, {
                 status: failed ? "failed" : "running",
                 storeQueryState: failed ? undefined : controller.signal.aborted ? "paused" : "interrupted",
+                ...(failed ? { step: "任务失败" } : {}),
                 error: controller.signal.aborted
                     ? session !== useUserStore.getState().token ? "登录状态已变化，查询已暂停；任务编号已保留" : "已停止本地等待，云端任务可能继续处理，可恢复原任务查询"
                     : publicServiceText(error instanceof Error ? error.message : "查询中断，请恢复查询"),

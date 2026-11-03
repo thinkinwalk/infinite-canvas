@@ -110,6 +110,19 @@ func TestVideoCreditLogCreatePollAndRead(t *testing.T) {
 	if content.Code != 200 || content.Header().Get("Content-Type") != "video/mp4" || !bytes.Equal(content.Body.Bytes(), logTestMP4) {
 		t.Fatalf("incorrect content: status=%d headers=%v body=%q", content.Code, content.Header(), content.Body.Bytes())
 	}
+	for _, owner := range []string{user.ID, "another-user"} {
+		download := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/videos/"+task.ID+"/content", nil)
+		r = r.WithContext(service.WithUser(r.Context(), model.AuthUser{ID: owner, Group: "default"}))
+		AIVideoContent(download, r, task.ID)
+		if owner == user.ID {
+			if download.Header().Get("Content-Type") != "video/mp4" || !bytes.Equal(download.Body.Bytes(), logTestMP4) {
+				t.Fatalf("owner could not retrieve original result: %s", download.Body.String())
+			}
+		} else if bytes.Equal(download.Body.Bytes(), logTestMP4) || !strings.Contains(download.Body.String(), "视频任务不存在") {
+			t.Fatal("another user could retrieve original result")
+		}
+	}
 	current, _, _ := repository.GetUserByID(user.ID)
 	if current.Credits != 300 {
 		t.Fatalf("viewing changed billing: credits=%d", current.Credits)

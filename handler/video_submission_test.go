@@ -34,8 +34,8 @@ func TestManagedStoreH3PreflightAndSubmission(t *testing.T) {
 	settings := model.Settings{Private: model.PrivateSetting{
 		Channels: []model.ModelChannel{{ID: 16, Name: "H3 test", Protocol: "openai", BaseURL: "https://hi.hi.run/api/openai/v1", APIKey: "test-only", Enabled: true, Weight: 1, Models: []string{"h3-video"}}},
 		ModelManagement: &model.ModelManagement{Enabled: true, Revision: 30,
-			Routes: []model.ManagedRoute{{ID: "h3-route", ChannelID: 16, Model: "h3-video", Adapter: "video.sparkcine_h3", Capability: "video", Operations: []string{"video"}, Enabled: true, Video: &profile}},
-			Models: []model.ManagedModel{{ID: modelID, DisplayName: "MiniMax H3 Video", DisplayMode: "both", Enabled: true, RouteIDs: []string{"h3-route"}, Pricing: model.ManagedPricing{Configured: true, Credits: 24, Video: &profile}}},
+			Routes:   []model.ManagedRoute{{ID: "h3-route", ChannelID: 16, Model: "h3-video", Adapter: "video.sparkcine_h3", Capability: "video", Operations: []string{"video"}, Enabled: true, Video: &profile}},
+			Models:   []model.ManagedModel{{ID: modelID, DisplayName: "MiniMax H3 Video", DisplayMode: "both", Enabled: true, RouteIDs: []string{"h3-route"}, Pricing: model.ManagedPricing{Configured: true, Credits: 24, Video: &profile}}},
 			Bindings: []model.FeatureBinding{{FeatureID: "store-explore.video", ModelID: modelID, RouteIDs: []string{"h3-route"}, Enabled: true}},
 		},
 	}}
@@ -78,7 +78,7 @@ func TestManagedStoreH3PreflightAndSubmission(t *testing.T) {
 			var envelope struct {
 				Data struct {
 					QuoteToken string `json:"quoteToken"`
-					Credits int `json:"credits"`
+					Credits    int    `json:"credits"`
 				} `json:"data"`
 			}
 			if json.Unmarshal(price.Body.Bytes(), &envelope) != nil || envelope.Data.QuoteToken == "" || envelope.Data.Credits != 90 {
@@ -118,7 +118,10 @@ func TestManagedStoreH3PreflightAndSubmission(t *testing.T) {
 				}
 			}
 			payload["image_url"] = "https://cdn.example/door.jpg"
-			for _, failure := range []struct{ status int; body, outcome string }{
+			for _, failure := range []struct {
+				status        int
+				body, outcome string
+			}{
 				{200, `{"code":400,"message":"reference rejected"}`, "rejected"},
 				{422, `{"error":{"message":"unsupported reference"}}`, "rejected"},
 				{502, `{"error":{"message":"upstream unavailable"}}`, "unknown"},

@@ -408,10 +408,10 @@ func copyAIVideoCreateResponse(w http.ResponseWriter, request *http.Request, tas
 		onFailure()
 		message := "视频接口没有返回任务 ID"
 		var failure struct {
-			Code any `json:"code"`
-			Msg string `json:"msg"`
-			Message string `json:"message"`
-			Error json.RawMessage `json:"error"`
+			Code    any             `json:"code"`
+			Msg     string          `json:"msg"`
+			Message string          `json:"message"`
+			Error   json.RawMessage `json:"error"`
 		}
 		if json.Unmarshal(body, &failure) == nil && (failure.Code != nil && fmt.Sprint(failure.Code) != "0" || len(failure.Error) > 0 && string(failure.Error) != "null") {
 			w.Header().Set("X-Video-Submission", "rejected")

@@ -10,7 +10,7 @@ import type { VideoRecord } from "@/types/video-workbench";
 export const storeRecordStatus = (record: VideoRecord) => record.status === "completed" ? "已完成"
     : record.storeSubmissionReviewed ? "已核对 · 未提交成功"
     : record.status === "failed" ? record.storeSubmissionFailure?.outcome === "rejected" || record.stage === "video" && !record.modelTask && !record.storeSubmissionStarted ? "提交失败" : "生成失败"
-    : record.storeResultPending ? record.storeQueryState === "paused" ? "云端已完成 · 取回已暂停" : "云端已完成 · 待取回" 
+    : record.storeResultPending ? record.storeQueryState === "paused" ? "云端已完成 · 取回已暂停" : "云端已完成 · 待取回"
     : record.storeQueryState === "paused" ? "查询已暂停"
     : record.storeQueryState === "interrupted" ? "查询中断"
     : record.status === "interrupted" ? canResumeStoreTask(record) ? "可恢复查询" : "待核对"
@@ -29,7 +29,7 @@ export function StoreProjectPanel({ disabled }: { disabled: boolean }) {
     const [filter, setFilter] = useState<string>("all");
     const projects = Object.values(state.storeProjects).sort((a, b) => b.createdAt - a.createdAt);
     const records = state.records.filter((r) => r.tool === "store-explore");
-    const activeCount = records.filter((r) => r.status === "running" && !r.storeResultPending && r.storeQueryState !== "paused" || r.status === "interrupted" && canResumeStoreTask(r) && r.storeQueryState === "querying").length;
+    const activeCount = records.filter((r) => !r.storeResultPending && (r.status === "running" && r.storeQueryState !== "paused" || r.status === "interrupted" && canResumeStoreTask(r) && r.storeQueryState === "querying")).length;
     const uncertainCount = records.filter((r) => r.status === "interrupted" && !canResumeStoreTask(r)).length;
     const labels: Record<string, string> = { video: "视频", script: "拍摄方案", analyze: "素材分析", speech: "旁白", subtitles: "字幕", compose: "成片", keyframe: "首帧", "material-match": "匹配素材", "material-select": "精选素材" };
     return (
