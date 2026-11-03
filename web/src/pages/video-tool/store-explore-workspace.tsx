@@ -28,15 +28,28 @@ import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVid
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
 import { storeCandidateMaterials, storeMaterialKey, storeSelectedIds } from "./store-materials";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
+import { StoreProjectPanel, storeRecordStatus } from "./store-project-panel";
+import { useStoreProjectAccess } from "./use-store-project-access";
+import { stopStoreTask } from "./store-task-runtime";
+import { flushWorkbenchStorage } from "@/stores/workbench-storage";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
 const names = { storeFacts: "门店真实资料", analysis: "素材观察", instructions: "本次要求", script: "自由脚本" };
-const states = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待恢复" };
 
 export default function StoreExploreWorkspace() {
+    const id = useVideoWorkbenchStore((s) => s.activeStoreProjectId);
+    return <StoreProjectEditor key={id} />;
+}
+
+function StoreProjectEditor() {
     const screens = Grid.useBreakpoint();
-    const wb = useVideoWorkbench("store-explore"),
+    const projectId = useVideoWorkbenchStore((s) => s.activeStoreProjectId);
+    const editable = useStoreProjectAccess(projectId);
+    const wb = useVideoWorkbench("store-explore", editable),
         { draft: d, busy } = wb;
+    const querying = useVideoWorkbenchStore((s) => s.storeQuerying);
+    const previewRecordId = useVideoWorkbenchStore((s) => s.storePreviewRecordId);
+    const [adopting, setAdopting] = useState(false);
     const config = useVideoCreationConfig(),
         cfg = storeVideoConfig(d, config),
         settings = storeVideoSettings(cfg);
@@ -86,7 +99,7 @@ export default function StoreExploreWorkspace() {
         quoteController = useRef<AbortController | null>(null);
     const [capabilities, setCapabilities] = useState({ compose: false, transcribe: false, error: "" });
     const [refreshing, setRefreshing] = useState(false);
-    const locked = busy || uploading,
+    const locked = busy || uploading || adopting || !editable,
         labels = storeMaterialLabels(d),
         profile = videoProfile(cfg, cfg.videoModel);
     const mode = videoInputMode(cfg, cfg.videoModel),
@@ -116,7 +129,7 @@ export default function StoreExploreWorkspace() {
         return () => cancelAnimationFrame(frame);
     }, [busy, active?.id, active?.stage, active?.status, tab]);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
-    const blocked = storeVideoError(d, cfg) || (pending ? "请先恢复已有任务查询" : "");
+    const blocked = storeVideoError(d, cfg);
     const textError = (analyze = false) => {
         const c = analyze ? configForFeature(config, "store-explore.analyze", "text") : config;
         return c.channelMode === "remote" && !session ? "请先登录" : !c.textModel || !useConfigStore.getState().isAiConfigReady(c, c.textModel) ? "请配置当前文案模型" : "";
@@ -135,8 +148,8 @@ export default function StoreExploreWorkspace() {
         captionError = storeCaptionError(d, duration);
     const finishError = !d.video ? "请先生成视频" : d.storeOutputStale ? "方案已变化，请先生成当前画面" : audioMode === "narration" && !speechCurrent ? "请先生成当前旁白" : captionError;
     useEffect(() => {
-        if (wb.hydrated && !d.storeSettings) wb.patch({ storeSettings: normalizeStoreSettings(storeVideoSettings(config), config) });
-    }, [wb.hydrated, d.storeSettings, config]);
+        if (wb.hydrated && editable && !d.storeSettings) wb.patch({ storeSettings: normalizeStoreSettings(storeVideoSettings(config), config) });
+    }, [wb.hydrated, editable, d.storeSettings, config]);
     useEffect(() => {
         quoteController.current?.abort();
         setQuoting(false);
@@ -145,11 +158,23 @@ export default function StoreExploreWorkspace() {
     useEffect(() => setPreviewError(false), [result?.url]);
     useEffect(() => { if (screens.lg && tab === "materials") setTab("plan"); }, [screens.lg, tab]);
     useEffect(() => {
-        if (wb.hydrated && config.audioModel && !voiceOptions.includes(d.voice)) wb.edit({ voice: cloudSpeech ? "Vivian" : "alloy" }, "speech");
-    }, [wb.hydrated, cloudSpeech, config.audioModel, d.voice]);
+        if (wb.hydrated && editable && config.audioModel && !voiceOptions.includes(d.voice)) wb.edit({ voice: cloudSpeech ? "Vivian" : "alloy" }, "speech");
+    }, [wb.hydrated, editable, cloudSpeech, config.audioModel, d.voice]);
     useEffect(() => {
-        if (wb.hydrated && d.speech && !speechCurrent && d.final && !d.storeFinishStale) wb.patch({ storeFinishStale: true });
-    }, [wb.hydrated, speechCurrent, d.speech, d.final, d.storeFinishStale]);
+        if (wb.hydrated && editable && d.speech && !speechCurrent && d.final && !d.storeFinishStale) wb.patch({ storeFinishStale: true });
+    }, [wb.hydrated, editable, speechCurrent, d.speech, d.final, d.storeFinishStale]);
+    const viewRecord = async (record: VideoRecord) => {
+        try {
+            setViewed({ ...record, ...(record.result ? { result: await restoreWorkbenchFile(record.result) } : {}) });
+            setTab("result");
+        } catch (error) { message.error(error instanceof Error ? error.message : "作品读取失败"); }
+    };
+    useEffect(() => {
+        const record = wb.records.find((r) => r.id === previewRecordId);
+        if (!record) return;
+        useVideoWorkbenchStore.getState().setStorePreviewRecord("");
+        void viewRecord(record);
+    }, [previewRecordId, wb.records]);
     const refreshCapabilities = async () => {
         try {
             const values = await getWorkerCapabilities(wb.worker);
@@ -199,7 +224,7 @@ export default function StoreExploreWorkspace() {
             if (typeof added === "string") throw new Error(added);
             if (Array.isArray(added) && role === "first-frame") wb.edit({ storeFirstFrameId: added[0]?.id }, "video");
             if (Array.isArray(added) && role === "reference") {
-                const current = useVideoWorkbenchStore.getState().drafts["store-explore"]!;
+                const current = useVideoWorkbenchStore.getState().storeProjects[wb.projectId].draft;
                 wb.patch({ media: current.media.map((m) => added.some((a) => a.id === m.id) ? { ...m, storePurpose: storeSuggestedPurpose(m.name) } : m) });
             }
             if (Array.isArray(added)) setMaterialPicker((current) => current ? { ...current, ids: [...new Set([...current.ids, ...added.map((m) => m.id)])] } : null);
@@ -238,18 +263,59 @@ export default function StoreExploreWorkspace() {
     const restoreInput = (r: VideoRecord) =>
         modal.confirm({
             title: "基于这个版本制作",
-            content: "载入该版输入，当前结果保留在历史记录中。",
-            okText: "载入",
+            content: "以本版素材、资料和脚本新建独立项目。",
+            okText: "新建项目",
             cancelText: "取消",
             onOk: async () => {
                 if (!r.storeExploreInput) return;
                 const { channelMode: _c, baseUrl: _b, ...input } = r.storeExploreInput;
                 const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
-                wb.patch({ ...emptyVideoDraft("store-explore"), ...input, media, video: null, final: null, speech: null, storeSpeechKey: undefined, subtitles: [], storeOutputStale: false, storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined });
-                setViewed(null);
-                setTab("plan");
+                const project = useVideoWorkbenchStore.getState().storeProjects[wb.projectId];
+                await useVideoWorkbenchStore.getState().createStoreProject(`${project.name} · 新版本`, { ...emptyVideoDraft("store-explore"), ...input, media, video: null, final: null, speech: null, storeSpeechKey: undefined, subtitles: [], storeOutputStale: false });
             },
         });
+    const adoptResult = (record: VideoRecord) => {
+        if (locked || !record.storeExploreInput || record.status !== "completed") return;
+        const snapshot = { ...emptyVideoDraft("store-explore"), ...record.storeExploreInput };
+        if (record.stage !== "video" && (d.video?.storageKey || d.video?.url) !== (snapshot.video?.storageKey || snapshot.video?.url)) {
+            message.warning("此结果属于另一版视频，请先采用对应原片，或基于本版新建项目");
+            return;
+        }
+        modal.confirm({
+            title: "采用本版",
+            content: "采用本版的输入与结果。当前输入如有变化，会先另存为独立项目。",
+            okText: "采用",
+            cancelText: "取消",
+            onOk: async () => {
+                setAdopting(true);
+                try {
+                    const state = useVideoWorkbenchStore.getState(), project = state.storeProjects[wb.projectId];
+                    const changed = project.revision !== record.storeProjectRevision || storePlanKey(d) !== storePlanKey(snapshot) || JSON.stringify([d.narration, d.voice, d.storeAudioMode, d.subtitles, d.addSubtitles, d.musicVolume, d.subtitleSize, d.subtitleColor, d.speech?.storageKey, d.final?.storageKey]) !== JSON.stringify([snapshot.narration, snapshot.voice, snapshot.storeAudioMode, snapshot.subtitles, snapshot.addSubtitles, snapshot.musicVolume, snapshot.subtitleSize, snapshot.subtitleColor, snapshot.speech?.storageKey, snapshot.final?.storageKey]);
+                    if (changed) await state.createStoreProject(`${project.name} · 采用前草稿`, project.draft, false);
+                    const media = await Promise.all(snapshot.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
+                    for (const field of ["video", "speech", "final"] as const) {
+                        if (snapshot[field]) snapshot[field] = await restoreWorkbenchFile(snapshot[field]!);
+                    }
+                    const output = { ...record.draftPatch };
+                    if (record.result) {
+                        const file = await restoreWorkbenchFile(record.result);
+                        if (record.stage === "video") output.video = file;
+                        if (record.stage === "compose") output.final = file;
+                        if (record.stage === "speech") output.speech = file;
+                    }
+                    wb.patch({
+                        ...snapshot, media, ...output, activeRecord: record.id, storeOutputStale: false, storeScriptStale: false, storeAnalysisStale: false,
+                        ...(record.stage === "video" ? { storeAdoptedVideoId: record.id, final: null, subtitles: [], storeSubtitleSource: undefined, storeOutputStale: false, storeFinishStale: true } : {}),
+                        storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeSuggestionBase: undefined,
+                        storeAnalysisSuggestion: "", storeMaterialSuggestion: undefined, storeKeyframeSuggestion: undefined, storeKeyframeKey: undefined,
+                    }, true);
+                    await flushWorkbenchStorage();
+                    setViewed(null);
+                    message.success("已采用本版");
+                } finally { setAdopting(false); }
+            },
+        });
+    };
     const icon = (title: string, node: React.ReactNode, action: () => void, disabled = locked) => (
         <Tooltip title={title}>
             <Button aria-label={title} type="text" size="small" disabled={disabled} icon={node} onClick={action} />
@@ -583,11 +649,13 @@ export default function StoreExploreWorkspace() {
                         {wb.storageError ? "保存失败" : "本浏览器草稿"}
                     </span>
                 </div>
-                <Button type="text" icon={<Save size={15} />} onClick={() => setPresetsOpen(true)}>
-                    门店方案
+                <StoreProjectPanel disabled={uploading || adopting} />
+                <Button aria-label="门店方案" type="text" icon={<Save size={15} />} onClick={() => setPresetsOpen(true)}>
+                    <span className="hidden sm:inline">门店方案</span>
                 </Button>
             </header>
             {wb.storageError && <Alert type="error" title={wb.storageError} showIcon />}
+            {!editable && wb.hydrated && <Alert type="info" showIcon title="此项目正在另一标签页编辑，可查看进度或新建项目" />}
             <div className="min-h-0 flex-1 overflow-hidden" data-testid="store-scroll">
                 <div className="mx-auto grid h-full max-w-[1680px] lg:grid-cols-[320px_minmax(0,1fr)]">
                     <aside className="hidden min-h-0 flex-col border-r lg:flex" style={border} aria-label="门店素材">
@@ -608,11 +676,11 @@ export default function StoreExploreWorkspace() {
                             ]}
                         />
                         {busy && <StoreTaskProgress key={active?.id || "preparing"} record={active} onStop={wb.stop} />}
-                        {!busy && pending && (
+                        {!busy && pending && querying[pending.id] ? <StoreTaskProgress record={pending} onStop={() => stopStoreTask(pending.id)} /> : !busy && pending && (
                             <Alert
                                 className="mb-3"
                                 type="info"
-                                title="已有任务可恢复"
+                                title="任务已保留，可继续制作其他版本"
                                 description={
                                     <Button size="small" onClick={() => void wb.resume(pending)}>
                                         查询原任务结果
@@ -781,12 +849,24 @@ export default function StoreExploreWorkspace() {
                             )}
                             {tab === "result" && (
                                 <div className="space-y-4 py-2">
+                                    <section className="space-y-2" aria-label="生成版本">
+                                        {wb.records.filter((r) => r.stage === "video" && r.status === "completed" && r.result).map((r) => (
+                                            <div key={r.id} className="flex min-w-0 flex-wrap items-center gap-2 border-b py-2" style={border}>
+                                                <span className="min-w-0 flex-1 break-words text-xs">{r.storeOrigin?.modelLabel || r.modelTask?.model || "视频"} · {new Date(r.createdAt).toLocaleString()}{d.storeAdoptedVideoId === r.id ? " · 当前采用" : ""}</span>
+                                                <Button size="small" onClick={() => void viewRecord(r)}>预览</Button>
+                                                <Button size="small" disabled={locked || d.storeAdoptedVideoId === r.id} onClick={() => adoptResult(r)}>采用本版</Button>
+                                            </div>
+                                        ))}
+                                    </section>
                                     {viewed && (
                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                             <span className="text-sm">历史版本 · {new Date(viewed.createdAt).toLocaleString()}</span>
+                                            <Space wrap>
+                                            {["video", "speech", "subtitles", "compose"].includes(viewed.stage) && viewed.status === "completed" && <Button size="small" disabled={locked} onClick={() => adoptResult(viewed)}>采用本版</Button>}
                                             <Button size="small" onClick={() => setViewed(null)}>
                                                 返回当前
                                             </Button>
+                                            </Space>
                                         </div>
                                     )}
                                     {!viewed && (d.storeOutputStale || (d.final && d.storeFinishStale)) && <Alert type="warning" title={d.storeOutputStale ? "方案已变化，当前显示此前作品" : "声音或字幕已变化，当前显示此前成片"} />}
@@ -814,6 +894,8 @@ export default function StoreExploreWorkspace() {
                                         </>
                                     ) : viewed?.text ? (
                                         <Input.TextArea readOnly rows={12} value={viewed.text} />
+                                    ) : viewed?.draftPatch?.subtitles ? (
+                                        <Input.TextArea readOnly rows={12} value={viewed.draftPatch.subtitles.map((s) => `${s.start}–${s.end} ${s.text}`).join("\n")} />
                                     ) : (
                                         <Empty description="暂无视频" />
                                     )}
@@ -1017,7 +1099,7 @@ export default function StoreExploreWorkspace() {
                                             <div className="flex flex-wrap justify-between gap-2">
                                                 <strong className="text-sm font-medium">{stageLabels[r.stage] || r.stage}</strong>
                                                 <span className="text-xs" style={muted}>
-                                                    {states[r.status]} · {new Date(r.createdAt).toLocaleString()}
+                                                    {storeRecordStatus(r)} · {new Date(r.createdAt).toLocaleString()}
                                                 </span>
                                             </div>
                                             {r.error && (
@@ -1026,17 +1108,10 @@ export default function StoreExploreWorkspace() {
                                                 </p>
                                             )}
                                             <Space wrap>
-                                                {(r.result || r.text) && (
+                                                {(r.result || r.text || r.draftPatch?.subtitles) && (
                                                     <Button
                                                         size="small"
-                                                        onClick={async () => {
-                                                            try {
-                                                                setViewed({ ...r, ...(r.result ? { result: await restoreWorkbenchFile(r.result) } : {}) });
-                                                                setTab("result");
-                                                            } catch (e) {
-                                                                message.error(e instanceof Error ? e.message : "作品读取失败");
-                                                            }
-                                                        }}
+                                                        onClick={() => void viewRecord(r)}
                                                     >
                                                         查看本版
                                                     </Button>

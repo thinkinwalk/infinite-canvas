@@ -41,7 +41,7 @@ type SeedanceTask = {
 };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
-type RequestOptions = { signal?: AbortSignal; expectedCredits?: number; onWaitState?: (state: VideoTaskWaitState) => void; confirmReplicate?: (quote: ReplicateQuote, signal?: AbortSignal) => Promise<void>; onTaskSubmitted?: (task: VideoGenerationTask) => Promise<void> };
+type RequestOptions = { signal?: AbortSignal; expectedCredits?: number; onWaitState?: (state: VideoTaskWaitState) => void; confirmReplicate?: (quote: ReplicateQuote, signal?: AbortSignal) => Promise<void>; onTaskSubmitted?: (task: VideoGenerationTask) => Promise<void>; onSubmissionStarted?: () => Promise<void> };
 
 export type VideoPrice = { credits: number; calculation: string; quoteToken?: string };
 const modelQuotes = new Map<string,string>();
@@ -164,6 +164,8 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
         options.signal?.throwIfAborted();
         const task: VideoGenerationTask = { id: nanoid(), provider: "replicate", model: selectedModel, createdAt: Date.now() };
         await options.onTaskSubmitted?.(task);
+        await options.onSubmissionStarted?.();
+        options.signal?.throwIfAborted();
         await createReplicateTask(task.id, "hailuo-video", input, quote.credits, options.signal, {config,model:selectedModel,quoteToken:quote.quoteToken});
         return task;
     }
@@ -189,6 +191,8 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
         options.signal?.throwIfAborted();
         const task: VideoGenerationTask = { id: nanoid(), provider: "replicate", model: selectedModel, createdAt: Date.now() };
         await options.onTaskSubmitted?.(task);
+        await options.onSubmissionStarted?.();
+        options.signal?.throwIfAborted();
         await createReplicateTask(task.id, operation, input, quote.credits, options.signal, {config,model:selectedModel,quoteToken:quote.quoteToken});
         return task;
     }
@@ -239,6 +243,8 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
     if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
     if (!config.apiKey.trim()) throw new Error("请先配置 API Key");
     const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
+    await options?.onSubmissionStarted?.();
+    options?.signal?.throwIfAborted();
     const result = videoPluginResult(
         await runModelPlugin({
             capability: "video",
@@ -328,6 +334,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         }
     }
     try {
+        await options?.onSubmissionStarted?.();
+        options?.signal?.throwIfAborted();
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: videoCreateHeaders(config, options), signal: options?.signal })).data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("视频接口没有返回任务 ID");
@@ -368,6 +376,8 @@ async function createPidoiJsonVideoTask(config: AiConfig, model: string, prompt:
         if (!url.startsWith("https://")) throw new Error("视频中转接口需要公网 HTTPS 素材地址；请配置服务端 PUBLIC_BASE_URL 后重试。本次未创建任务、未扣费。");
     }
     try {
+        await options?.onSubmissionStarted?.();
+        options?.signal?.throwIfAborted();
         const created = unwrapVideoResponse(
             (
                 await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), config.channelMode !== "remote" && isMiniMaxH3Name(modelName) ? miniMaxH3VideoBody(payload) : payload, {
@@ -441,6 +451,8 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     };
 
     try {
+        await options?.onSubmissionStarted?.();
+        options?.signal?.throwIfAborted();
         const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: videoCreateHeaders(config, options, "application/json"), signal: options?.signal })).data);
         const taskID = videoTaskId(created);
         if (!taskID) throw new Error("Seedance 接口没有返回任务 ID");

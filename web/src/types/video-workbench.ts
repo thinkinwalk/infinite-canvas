@@ -3,11 +3,21 @@ import type { VideoGenerationTask } from "@/services/api/video";
 import type { AiConfig } from "@/stores/use-config-store";
 
 export type StoreVideoSettings = Pick<AiConfig, "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoInputMode" | "videoInterpolate">;
-export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeReferenceIds" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
+export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeReferenceIds" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "storeAdoptedVideoId" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
 export type StoreShot = { id: string; start: number; end: number; materialIds: string[]; visual: string; dialogue: string; referenceNeed?: string };
 export type StoreMaterialSuggestion = { shots: Pick<StoreShot, "id" | "materialIds">[]; referenceIds: string[]; base: string; mode: "fill" | "select" };
 export type StorePlanVersion = { script: string; shots: StoreShot[]; referenceIds?: string[]; createdAt: number };
 export type StorePreset = { id: string; name: string; media: WorkbenchMedia[]; facts: string; instructions: string; settings?: StoreVideoSettings };
+export type StoreProject = { id: string; name: string; draft: VideoDraft; createdAt: number; updatedAt: number; revision: number };
+export type StoreTaskOrigin = {
+    channelMode: AiConfig["channelMode"];
+    channelId: string;
+    baseUrl: string;
+    model: string;
+    modelLabel: string;
+    featureId?: string;
+    userId?: string;
+};
 export type ViralRecreateInput = Pick<
     VideoDraft,
     | "media"
@@ -243,6 +253,7 @@ export type VideoDraft = {
     storeAnalysisStale?: boolean;
     storeScriptStale?: boolean;
     storeOutputStale?: boolean;
+    storeAdoptedVideoId?: string;
     storeAnalysisSuggestion?: string;
     storeScriptSuggestion?: string;
     storeScriptReview?: "pending" | "failed" | "passed" | "local";
@@ -308,6 +319,11 @@ export type VideoRecord = {
     stage: string;
     status: "running" | "completed" | "failed" | "interrupted";
     createdAt: number;
+    storeProjectId?: string;
+    storeProjectRevision?: number;
+    storeOrigin?: StoreTaskOrigin;
+    storeQueryState?: "querying" | "paused" | "interrupted";
+    storeSubmissionStarted?: boolean;
     error?: string;
     modelTask?: VideoGenerationTask;
     workerJob?: { id: string; url: string };

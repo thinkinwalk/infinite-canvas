@@ -39,6 +39,8 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { configForFeature, managedModelBinding, resolveModelRequestConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { cancelReplicateTask, createReplicateTask, getReplicateModels, quoteReplicate, readReplicateTask, storeReplicateResult, uploadReplicateReference, waitForReplicateTask, type ReplicateOperation, type ReplicateQuote, type ReplicateTask } from "@/services/api/replicate";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
+import { flushWorkbenchStorage } from "@/stores/workbench-storage";
+import { queryStoreTask, resumeStoreTask, storeTaskOrigin } from "./store-task-runtime";
 import { useUserStore } from "@/stores/use-user-store";
 import { CanvasNodeType } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
@@ -65,9 +67,9 @@ export const stageLabels: Record<string, string> = {
     upscale: "视频增强",
     "subtitle-remove": "去除硬字幕",
 };
-const controllers = new Map<VideoTool, AbortController>();
+const controllers = new Map<string, AbortController>();
 const store = () => useVideoWorkbenchStore.getState();
-const read = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-replace" || tool === "store-explore" ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
+const readDefault = (tool: VideoTool) => isTalkingVideoTool(tool) || tool === "content-replace" || tool === "store-explore" ? { ...emptyVideoDraft(tool), ...store().drafts[tool] } : store().drafts[tool] || emptyVideoDraft(tool);
 const imagesOf = (media: WorkbenchMedia[]): ReferenceImage[] => media.filter((m) => m.kind === "image").map((m) => ({ id: m.id, name: m.name, type: m.mimeType, dataUrl: m.url, storageKey: m.storageKey }));
 const mediaOf = (media: WorkbenchMedia[], kind: "video" | "audio") =>
     media.filter((m) => m.kind === kind).map((m) => ({ id: m.id, name: m.name, type: m.mimeType, url: m.url, storageKey: m.storageKey, width: m.width, height: m.height, durationMs: m.durationMs, referenceId: m.referenceId }));
@@ -147,19 +149,29 @@ export async function restoreWorkbenchFile(file: UploadedFile): Promise<Uploaded
 
 type Context = { signal: AbortSignal; recordId: string; worker: WorkerConfig; analysisReview?: ViralAnalysisVersion; scriptRequest?: string; scriptEditMode?: ViralScriptEditMode };
 type Invalidation = "materials" | "brief" | "learning" | "preview" | "script" | "speech" | "video" | "finish" | "cover";
-export function useVideoWorkbench(tool: VideoTool) {
+export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
     const { message, modal } = App.useApp();
     const confirmReplicate = useReplicateConfirmation();
     const navigate = useNavigate();
     const config = useEffectiveConfig();
     const state = useVideoWorkbenchStore();
+    const projectId = tool === "store-explore" ? state.activeStoreProjectId : "";
+    const read = (target: VideoTool): VideoDraft => target === "store-explore" && projectId
+        ? store().storeProjects[projectId]?.draft || emptyVideoDraft(target)
+        : readDefault(target);
+    const isBusy = () => Boolean(tool === "store-explore" ? store().storeBusyProjects[projectId] : store().busyTools[tool]);
+    const controllerKey = tool === "store-explore" ? `store:${projectId}` : tool;
     const cloudReferences = useRef({ token: "", urls: new Map<string, string>() });
     const [importing, setImporting] = useState(false);
     const importSignal = useRef<AbortSignal | null>(null);
     const digital = isTalkingVideoTool(tool);
-    const draft = { ...emptyVideoDraft(tool), ...state.drafts[tool] };
-    const busy = Boolean(state.busyTools[tool]);
-    const patch = (value: Partial<VideoDraft>) => {
+    const draft = tool === "store-explore" ? read(tool) : { ...emptyVideoDraft(tool), ...state.drafts[tool] };
+    const busy = isBusy();
+    const patch = (value: Partial<VideoDraft>, edited = false) => {
+        if (tool === "store-explore") {
+            if (projectId) store().patchStoreProject(projectId, value, edited);
+            return;
+        }
         if (tool === "viral-recreate") {
             const current = read(tool), next = { ...current, ...value };
             if (!viralAdoptedAnalysisError(current) && viralAdoptedAnalysisError(next))
@@ -174,10 +186,10 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
 
     useEffect(() => {
-        if (!state.hydrated) return;
+        if (!state.hydrated || (tool === "store-explore" && (!projectId || !storeEditable))) return;
         let disposed = false;
         const resolve = async () => {
-            const saved = store().drafts[tool];
+            const saved = tool === "store-explore" ? store().storeProjects[projectId]?.draft : store().drafts[tool];
             const current = read(tool);
             const media = await Promise.all(current.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
             const frames = await Promise.all(current.frames.map(restoreWorkbenchFile));
@@ -189,16 +201,16 @@ export function useVideoWorkbench(tool: VideoTool) {
                 if (file) outputs[key] = await restoreWorkbenchFile(file);
             }
             if (tool === "upscale" && current.upscaleOutputInput) outputs.upscaleOutputInput = { ...current.upscaleOutputInput, media: await Promise.all(current.upscaleOutputInput.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) }))) };
-            if (!disposed && store().drafts[tool] === saved) patch({ media, frames, ...outputs });
+            if (!disposed && (tool === "store-explore" ? store().storeProjects[projectId]?.draft : store().drafts[tool]) === saved) patch({ media, frames, ...outputs });
         };
         void resolve().catch((error) => message.error(`素材恢复失败：${error instanceof Error ? error.message : "请重新上传"}`));
         return () => {
             disposed = true;
         };
-    }, [tool, state.hydrated]);
+    }, [tool, state.hydrated, projectId, storeEditable]);
 
     const edit = (value: Partial<VideoDraft>, invalidate?: Invalidation) => {
-        if (store().busyTools[tool]) return;
+        if (isBusy() || (tool === "store-explore" && !storeEditable)) return;
         if (tool === "content-replace" && value.media) {
             const source = (media: WorkbenchMedia[]) => media.find((m) => m.role === "reference" && m.kind === "video")?.storageKey;
             if (source(value.media) !== source(read(tool).media)) value = { ...value, regions: [], replacementSeedTime: undefined, media: value.media.filter((m) => m.role !== "mask") };
@@ -259,7 +271,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 dialogue: remapMaterialMentions(s.dialogue, storeMaterialLabels(current), storeMaterialLabels({ ...current, ...value })),
             })) : undefined;
             const candidatesOnly = value.media && invalidate === "materials" && current.media.every((m) => value.media!.some((next) => next.id === m.id && next.storageKey === m.storageKey && next.storePerson === m.storePerson && next.storePurpose === m.storePurpose));
-            patch({ ...(invalidate && !candidatesOnly ? { storeFinishStale: true } : {}), ...(invalidate && !finishOnly && !candidatesOnly ? { storeOutputStale: true, storeScriptStale: invalidate !== "video", storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined } : {}), ...(invalidate === "materials" ? { storeAnalysisStale: true, storeAnalysisSuggestion: "" } : {}), ...mentions, ...(storeShots ? { storeShots } : {}), ...value });
+            patch({ ...(invalidate && !candidatesOnly ? { storeFinishStale: true } : {}), ...(invalidate && !finishOnly && !candidatesOnly ? { storeOutputStale: true, storeScriptStale: invalidate !== "video", storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined } : {}), ...(invalidate === "materials" ? { storeAnalysisStale: true, storeAnalysisSuggestion: "" } : {}), ...mentions, ...(storeShots ? { storeShots } : {}), ...value }, true);
             return;
         }
         if (digital && value.digitalHumanMode && value.digitalHumanMode !== read(tool).digitalHumanMode) {
@@ -287,7 +299,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         patch({ ...cleared, ...value });
     };
     const addFiles = async (files: File[], role: MediaRole, accept: string, imported?: { source: VideoImportSource; signal: AbortSignal; validate: () => void }) => {
-        if (store().busyTools[tool] || (importSignal.current && !imported)) {
+        if (isBusy() || (importSignal.current && !imported)) {
             if (imported) throw new Error("当前正在制作视频，请稍后重新导入");
             return;
         }
@@ -306,7 +318,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
             imported?.signal.throwIfAborted();
             imported?.validate();
-            if (imported && store().busyTools[tool]) throw new Error("当前正在制作视频，请稍后重新导入");
+            if (imported && isBusy()) throw new Error("当前正在制作视频，请稍后重新导入");
             const single = (["voice", "avatar", "music", "mask", "first-frame", "learning"].includes(role) || (tool === "content-replace" && ["model", "background"].includes(role)) || (role === "reference" && added.some((m) => m.kind === "video"))) && !(tool === "viral-recreate" && role === "first-frame");
             const current = read(tool);
             const media = [...current.media.filter((m) => !single || m.role !== role), ...added];
@@ -326,7 +338,7 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
     };
     const importLink = async (text: string, role: MediaRole, signal: AbortSignal) => {
-        if (store().busyTools[tool] || importSignal.current) throw new Error("当前素材正在处理，请稍候");
+        if (isBusy() || importSignal.current) throw new Error("当前素材正在处理，请稍候");
         importSignal.current = signal;
         setImporting(true);
         const session = useUserStore.getState().token;
@@ -1016,20 +1028,30 @@ export function useVideoWorkbench(tool: VideoTool) {
                     signal: ctx.signal,
                     expectedCredits,
                     confirmReplicate,
+                    onSubmissionStarted: async () => {
+                        ctx.signal.throwIfAborted();
+                        store().patchRecord(ctx.recordId, { storeSubmissionStarted: true, step: "正在提交视频任务" });
+                        await flushWorkbenchStorage();
+                    },
                     onTaskSubmitted: async (task) => {
                         store().patchRecord(ctx.recordId, { modelTask: task, ...(task.provider === "replicate" ? { replicateTask: { id: task.id, operation: task.model === REPLICATE_VIDEO_MODEL ? "image-to-video" : task.model === REPLICATE_TEXT_VIDEO_MODEL ? "text-to-video" : "hailuo-video" } } : {}) });
+                        await flushWorkbenchStorage();
                     },
                 });
                 store().patchRecord(ctx.recordId, { modelTask: task });
-                return {
+                void queryStoreTask(ctx.recordId, async (signal) => ({
                     video: await storeGeneratedVideo(
                         await waitForVideoGenerationTask(cfg, task, {
-                            signal: ctx.signal,
-                            onWaitState: (state) => store().patchRecord(ctx.recordId, { step: state === "query_interrupted" ? "查询中断，可恢复原任务" : state === "background" ? "已转后台查询" : "视频模型正在处理" }),
+                            signal,
+                            onWaitState: (state) => store().patchRecord(ctx.recordId, {
+                                storeQueryState: state === "query_interrupted" ? "interrupted" : "querying",
+                                step: state === "query_interrupted" ? "查询暂时中断，正在继续查询" : state === "background" ? "已转后台查询" : "视频模型正在处理",
+                            }),
                         }),
                     ),
                     storeOutputStale: false,
-                };
+                }));
+                return {};
             }
         }
         const reference = d.media.find((m) => m.role === "reference" && m.kind === "video");
@@ -1272,7 +1294,7 @@ export function useVideoWorkbench(tool: VideoTool) {
     };
     const perform = async (stage: string, signal: AbortSignal, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode) => {
         const d = read(tool);
-        for (const record of store().records.filter((r) => r.tool === tool && r.stage === stage && r.replicateTask && r.status !== "completed" && (tool !== "content-replace" || isCurrentReplacementRecord(r, d)))) {
+        for (const record of store().records.filter((r) => tool !== "store-explore" && r.tool === tool && r.stage === stage && r.replicateTask && r.status !== "completed" && (tool !== "content-replace" || isCurrentReplacementRecord(r, d)))) {
             const existing = await readReplicateTask(record.replicateTask!.id, signal);
             if (existing.status !== "failed" && existing.status !== "cancelled") {
                 if (tool !== "content-replace") throw new Error("该步骤已有云任务，请从任务记录恢复查询，避免重复付费");
@@ -1301,6 +1323,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             stage,
             status: "running",
             createdAt: Date.now(),
+            ...(tool === "store-explore" ? { storeProjectId: projectId, storeProjectRevision: store().storeProjects[projectId]?.revision, storeOrigin: storeTaskOrigin(storeVideoConfig(d, config)) } : {}),
             ...(tool === "upscale" ? { upscaleInput: stage === "compatibility" ? d.upscaleOutputInput : upscaleInput(d) } : {}),
             ...(tool === "content-replace"
                 ? {
@@ -1391,10 +1414,19 @@ export function useVideoWorkbench(tool: VideoTool) {
         if (tool === "viral-recreate") store().patchRecord(id, { viralTaskId: d.viralTaskId, viralInput: viralInput(d, viralVideoConfig(d, config)) });
         patch({ activeRecord: id });
         try {
-            const value = await execute(stage, { signal, recordId: id, worker, analysisReview, scriptRequest, scriptEditMode });
+            if (tool === "store-explore") {
+                await flushWorkbenchStorage();
+                if (store().storageError) throw new Error("本地任务保存失败，未开始生成，请检查浏览器存储");
+            }
+            const executeStage = () => execute(stage, { signal, recordId: id, worker, analysisReview, scriptRequest, scriptEditMode });
+            const value = tool === "store-explore" && navigator.locks
+                ? await navigator.locks.request(`store-task-submit:${id}`, executeStage)
+                : await executeStage();
+            if (tool === "store-explore" && stage === "video" && store().records.find((r) => r.id === id)?.modelTask) return;
             signal.throwIfAborted();
             if (tool === "upscale" && stage === "upscale") Object.assign(value, { upscaleOutputInput: upscaleInput(d), upscaleOutputStale: false });
-            if ((tool !== "viral-recreate" || (read(tool).viralRevision || 0) === (d.viralRevision || 0)) && (!digital || (read(tool).digitalRevision || 0) === (d.digitalRevision || 0))) {
+            const sameStoreRevision = tool !== "store-explore" || store().storeProjects[projectId]?.revision === store().records.find((r) => r.id === id)?.storeProjectRevision;
+            if (sameStoreRevision && (tool !== "viral-recreate" || (read(tool).viralRevision || 0) === (d.viralRevision || 0)) && (!digital || (read(tool).digitalRevision || 0) === (d.digitalRevision || 0))) {
                 const current = read(tool);
                 const mentions =
                     tool === "viral-recreate" && (value.frames || value.media)
@@ -1427,15 +1459,16 @@ export function useVideoWorkbench(tool: VideoTool) {
         } catch (error) {
             const stopped = signal.aborted;
             const submitted = store().records.find((r) => r.id === id);
-            const detail = stopped ? submitted?.storeTextSubmitted ? "已停止本地等待；文案请求可能继续处理或计费，不支持恢复查询，请先核对使用日志再重新发起" : submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
-            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.storeTextSubmitted && !submitted?.imageEditSubmitted && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
+            const uncertain = tool === "store-explore" && submitted?.storeSubmissionStarted && !submitted.modelTask;
+            const detail = uncertain ? "视频提交状态待核对：请求可能已到达渠道，但尚未取得任务编号。请先核对使用日志或渠道记录，不会自动重新提交。" : stopped ? submitted?.storeTextSubmitted ? "已停止本地等待；文案请求可能继续处理或计费，不支持恢复查询，请先核对使用日志再重新发起" : submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
+            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.storeSubmissionStarted && !submitted?.storeTextSubmitted && !submitted?.imageEditSubmitted && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
             }
             store().patchRecord(id, {
                 status:
-                    stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || ((digital || tool === "store-explore") && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
+                    uncertain || stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || ((digital || tool === "store-explore") && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
                         ? "interrupted"
                         : "failed",
                 error: detail,
@@ -1445,19 +1478,26 @@ export function useVideoWorkbench(tool: VideoTool) {
         }
     };
     const guard = async (action: (signal: AbortSignal) => Promise<void>) => {
-        if (store().busyTools[tool] || controllers.has(tool) || importSignal.current) return;
+        if (isBusy() || controllers.has(controllerKey) || importSignal.current || (tool === "store-explore" && !storeEditable)) return;
         const controller = new AbortController();
-        controllers.set(tool, controller);
-        store().setBusy(tool, true);
+        const session = useUserStore.getState().token;
+        const unsubscribe = tool === "store-explore"
+            ? useUserStore.subscribe((state) => { if (state.token !== session) controller.abort(); })
+            : () => {};
+        controllers.set(controllerKey, controller);
+        if (tool === "store-explore") store().setStoreBusy(projectId, true);
+        else store().setBusy(tool, true);
         try {
             await action(controller.signal);
-            message.success("处理完成，结果已保存到本地工作台");
+            message.success(tool === "store-explore" && store().records.some((r) => r.storeProjectId === projectId && r.status === "running" && r.modelTask) ? "任务已提交，可继续编辑或新建探店项目" : "处理完成，结果已保存到本地工作台");
         } catch (error) {
             if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && error instanceof DOMException && error.name === "AbortError") message.info(error.message);
             else message.error(publicServiceText(error instanceof Error ? error.message : "处理失败"));
         } finally {
-            controllers.delete(tool);
-            store().setBusy(tool, false);
+            unsubscribe();
+            controllers.delete(controllerKey);
+            if (tool === "store-explore") store().setStoreBusy(projectId, false);
+            else store().setBusy(tool, false);
         }
     };
     const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode) =>
@@ -1493,9 +1533,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (tool === "store-explore" && stage === "video") {
                 const error = storeVideoError(read(tool), storeVideoConfig(read(tool), config));
                 if (error) throw new Error(error);
-                if (store().records.some((r) => r.tool === tool && r.stage === "video" && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask))) throw new Error("已有视频任务，请恢复查询原任务，避免重复付费");
             }
-            if (tool === "store-explore" && ["speech", "compose", "subtitles"].includes(stage) && store().records.some((r) => r.tool === tool && ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob))) throw new Error("已有处理任务，请先查询原任务结果");
             if (tool === "content-replace" && stage === "video") {
                 if (read(tool).replacement === "person" && read(tool).replacementModel === "headswap") throw new Error(RETIRED_HEAD_SWAP_MESSAGE);
                 if (read(tool).route === "replicate") replacementRequest(read(tool));
@@ -1556,7 +1594,7 @@ export function useVideoWorkbench(tool: VideoTool) {
             if (!read(tool).cover) await perform("cover", signal);
         });
     const resume = (record: VideoRecord) =>
-        guard(async (signal) => {
+        tool === "store-explore" ? resumeStoreTask(record, config) : guard(async (signal) => {
             const worker = { ...store().worker };
             if (record.workerJob && resolveWorkerUrl({ ...worker, url: record.workerJob.url }) !== resolveWorkerUrl(worker)) throw new Error("该任务属于另一处理服务，请先切换到记录中的服务地址；不会向旧地址发送当前令牌");
             store().patchRecord(record.id, { status: "running", error: undefined });
@@ -1598,16 +1636,6 @@ export function useVideoWorkbench(tool: VideoTool) {
                         } },
                     }));
                     if (store().storageError) throw new Error("任务保存失败，请检查浏览器存储后恢复查询");
-                } else if (tool === "store-explore" && record.storeExploreInput) {
-                    if (record.storeExploreInput.channelMode !== config.channelMode) throw new Error("请切换回该任务原来的平台 / 自定义渠道后恢复查询");
-                    if (config.channelMode === "local" && record.storeExploreInput.baseUrl !== resolveModelRequestConfig(config, record.storeExploreInput.storeSettings?.videoModel || record.modelTask?.model || "").baseUrl)
-                        throw new Error("当前自定义渠道地址与原任务不同，请恢复原渠道设置后查询");
-                    const { channelMode: _mode, baseUrl: _url, ...input } = record.storeExploreInput;
-                    const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
-                    signal.throwIfAborted();
-                    const outputs: Partial<VideoDraft> = {};
-                    for (const key of ["speech", "video", "final"] as const) outputs[key] = input[key] ? await restoreWorkbenchFile(input[key]!) : null;
-                    patch({ ...input, ...outputs, media, activeRecord: record.id, storeAnalysisSuggestion: "", storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeAnalysisStale: false, storeScriptStale: false });
                 } else if (tool === "subtitle-remove" && record.subtitleRemoveInput) {
                     const media = await Promise.all(record.subtitleRemoveInput.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
                     signal.throwIfAborted();
@@ -1627,16 +1655,15 @@ export function useVideoWorkbench(tool: VideoTool) {
                             store().patchRecord(record.id, { step: publicServiceText(job.error || job.status), replicateBilling: { credits: job.credits, refunded: job.refunded }, ...(job.status === "failed" || job.status === "cancelled" ? { status: "failed" as const } : {}) }),
                         ),
                     );
-                else if (record.workerJob) value = await applyWorkerResult(record.stage, await waitForWorkerJob(worker, record.workerJob.id, signal, (job) => store().patchRecord(record.id, { step: job.step, ...((digital || tool === "store-explore") && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })), worker);
+                else if (record.workerJob) value = await applyWorkerResult(record.stage, await waitForWorkerJob(worker, record.workerJob.id, signal, (job) => store().patchRecord(record.id, { step: job.step, ...(digital && ["failed", "cancelled"].includes(job.status) ? { status: "failed" as const } : {}) })), worker);
                 else if (record.modelTask)
                     value = {
                         video: await storeGeneratedVideo(
-                            await waitForVideoGenerationTask(tool === "store-explore" ? storeVideoConfig(read(tool), config) : tool === "viral-recreate" ? viralVideoConfig(read(tool), config) : config, record.modelTask, { signal }),
+                            await waitForVideoGenerationTask(tool === "viral-recreate" ? viralVideoConfig(read(tool), config) : config, record.modelTask, { signal }),
                         ),
                     };
                 else throw new Error("该任务没有可恢复的服务端任务编号，请重试该步骤");
                 signal.throwIfAborted();
-                if (tool === "store-explore" && record.stage === "speech") { value.storeSpeechKey = record.storeExploreInput?.storeSpeechKey; value.storeFinishStale = true; }
                 if (tool === "upscale" && record.upscaleInput) Object.assign(value, { upscaleOutputInput: upscaleInput(read(tool)), upscaleOutputStale: false });
                 const current = read(tool);
                 const mentions =
@@ -1650,16 +1677,12 @@ export function useVideoWorkbench(tool: VideoTool) {
                 const result = value.final ?? value.video ?? value.edited ?? value.speech ?? value.cover ?? undefined;
                 store().patchRecord(record.id, { status: "completed", draftPatch: value, result, step: "已完成" });
             } catch (error) {
-                if (tool === "store-explore" && record.workerJob && error instanceof WorkerRequestError && error.status === 404) {
-                    store().patchRecord(record.id, { status: "failed", error: "原处理任务不存在，输入和原片已保留，可手动重新执行此步骤" });
-                    throw error;
-                }
                 store().patchRecord(record.id, {
                     status:
                         signal.aborted ||
                         (record.replicateTask && store().records.find((r) => r.id === record.id)?.status !== "failed" && !isVideoTaskFailed(error)) ||
-                        ((digital || tool === "store-explore") && record.workerJob && store().records.find((r) => r.id === record.id)?.status !== "failed") ||
-                        (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && record.modelTask && !isVideoTaskFailed(error))
+                        (digital && record.workerJob && store().records.find((r) => r.id === record.id)?.status !== "failed") ||
+                        (["viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && record.modelTask && !isVideoTaskFailed(error))
                             ? "interrupted"
                             : "failed",
                     error: publicServiceText(error instanceof Error ? error.message : "恢复失败"),
@@ -1667,7 +1690,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                 throw error;
             }
         });
-    const stop = () => controllers.get(tool)?.abort();
+    const stop = () => controllers.get(controllerKey)?.abort();
     const cancel = async () => {
         const record = store().records.find((r) => r.id === read(tool).activeRecord);
         if (record?.replicateTask && !record.replacementPipeline?.generated) {
@@ -1739,11 +1762,12 @@ export function useVideoWorkbench(tool: VideoTool) {
     return {
         draft,
         busy,
+        projectId,
         importing,
         hydrated: state.hydrated,
         storageError: state.storageError,
         worker: state.worker,
-        records: state.records.filter((r) => r.tool === tool),
+        records: state.records.filter((r) => r.tool === tool && (tool !== "store-explore" || r.storeProjectId === projectId)),
         edit,
         patch,
         addFiles,
