@@ -689,7 +689,6 @@ export default function ContentReplaceWorkspace() {
                 <div className="flex items-center gap-2">
                     <Button type={tab === "history" ? "primary" : "text"} size="small" icon={<History size={14} />} onClick={() => setTab("history")}>历史任务</Button>
                     <Button type="text" size="small" disabled={locked || Boolean(wb.storageError)} icon={<Plus size={14} />} onClick={createTask}>新建任务</Button>
-                    {tab !== "history" && <span className="hidden text-sm sm:block" style={muted}>上传原片与参考图，替换人物、商品或背景</span>}
                 </div>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="replacement-scroll">
