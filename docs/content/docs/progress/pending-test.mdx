@@ -10,6 +10,7 @@ description: Implemented changes that still need manual verification
 - `v0.19.155` 补齐 A+B 最终核对发现的三项交互：空白任务主操作直接添加门店素材且支持键盘触发，普通及放大编辑器的素材引用菜单显示用途，手机页签保持可达，桌面／手机切换视图恢复各自滚动位置。自适应文本框测量完成后再次恢复位置，避免重新挂载造成阅读位置漂移。
 - 13 组隔离浏览器检查通过，包含上述交互，以及 AI 局部预览／采用／撤销、稳定素材引用、刷新保留、后期复用原片和 1440／390／320px 深浅主题。额外模拟 Worker 已收到提交但响应中断，确认重复点击不会新建处理任务，恢复沿用同一编号查询。生成及账号接口均模拟，未提交收费推理；证据在工作区外 `artifacts/store-explore-qa/final-audit-v155/`。
 - 本补丁仅调整前端交互，不改变 A+B 已发布的数据结构、生成、报价和后期接口；原有真实模型效果仍由用户按[详细验收流程](/docs/progress/store-explore-acceptance)手测。
+- 已随 `v0.19.155`（`0a258ff`）提交推送、发布正式 Release 并部署。服务器构建、内外健康、12 页面和资源哈希通过；公网匿名浏览器 1440／390／320px、主题、设置、门店方案和键盘添加素材通过。Worker、后端、数据库／账号／设置、145 份任务记录与 29,269 项素材元数据保持。备份 `/opt/infinite-canvas/backups/v0.19.155-final-20261103-050627/`；报告 `/opt/infinite-canvas/releases/v0.19.155-deployment.json` 和 `v0.19.155-public-verification.json`，没有提交收费推理。
 
 ## 探店视频方案与独立后期
 

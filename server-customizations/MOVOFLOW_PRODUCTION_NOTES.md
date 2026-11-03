@@ -15,10 +15,19 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.154
-- Current production source: tag v0.19.154, commit 7724c8a33b068a31902dffa71a714c6a29dadc38
+- Current production image: infinite-canvas:v0.19.155
+- Current production source: tag v0.19.155, commit 0a258ffd9dff8e02440b2930397680804dfe08a9
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.155 deployment
+
+- Tag `v0.19.155`, commit `0a258ffd9dff8e02440b2930397680804dfe08a9`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image ID `sha256:988067abd0c2bb6715b4948dad0ce09ecb7fb3bd1115d9501248257796483d68` replaces v0.19.154.
+- Final A+B audit completed the empty-state primary upload action with keyboard support, purpose labels in both reference editors and per-view scroll restoration. Mobile tabs remain above the scrollable content. Thirteen isolated browser groups passed, including uncertain Worker submission recovery without duplicate POSTs, local draft/preset persistence, local AI adoption/undo and responsive layouts. Mocked generation was used; no paid inference was submitted.
+- Server build, internal/public health, twelve routes and public/container hashes passed. JS `/assets/index-CA4fJvrP.js` SHA-256 `4c9e3e4adbe869ec89ce9b74e3b1ee21a915a08aa8e895da61294f38ec95d623`; CSS `/assets/index-0Va_PwIm.css` SHA-256 `aa2e5dfc840fe5af9a5b3135e17f6b9e5585cff1d5ba713e0b1cbdc2bb7fd8a0`. Public anonymous Chromium verified the four views, settings/preset dialogs, theme and keyboard upload action at 1440/390/320px, without page exceptions, horizontal overflow or API mutations.
+- App-only deployment retained Worker identity, mounts and start time `2026-11-03T04:49:52.32052811Z`; the v0.19.154 Worker source and its production media verification remain applicable. Backend binary, all environment/mount values, database schema/table counts, settings/accounts, 145 existing task records and 29,269 media metadata entries are preserved.
+- Final backup `/opt/infinite-canvas/backups/v0.19.155-final-20261103-050627/`; prebuild backup `/opt/infinite-canvas/backups/v0.19.155-prebuild-20261103-050521/`. Reports `/opt/infinite-canvas/releases/v0.19.155-deployment.json` and `v0.19.155-public-verification.json`; workstation browser evidence is in `artifacts/store-explore-qa/final-audit-v155/` and `production-v155/` outside the repo. Rollback restores final-backup Compose and recreates App only, preserving current database/media and Worker.
+- Detailed user acceptance procedure is updated for v0.19.155. Actual paid video/voice quality, identity and ASR accuracy remain the user's manual acceptance, as requested; no independent-shot generation, long-form mixing or cloud project sync was added.
 
 ## v0.19.154 deployment
 
