@@ -39,9 +39,9 @@ export function StoreTaskRecovery() {
                 if (!latest || latest.status !== "running" || canResumeStoreTask(latest)) return;
                 useVideoWorkbenchStore.getState().patchRecord(record.id, {
                     status: "interrupted",
-                    error: latest.storeSubmissionStarted
+                    error: latest.error || (latest.storeSubmissionStarted
                         ? "视频提交状态待核对：尚未取得任务编号，请先核对使用日志或渠道记录，不会自动重新提交"
-                        : "上次本地等待已中断，已保留输入和候选；此请求没有可恢复的任务编号，请先核对使用日志",
+                        : "上次本地等待已中断，已保留输入和候选；此请求没有可恢复的任务编号，请先核对使用日志"),
                 });
             };
             if (navigator.locks) void navigator.locks.request(`store-task-submit:${record.id}`, { ifAvailable: true }, (lock) => { if (lock) interrupted(); });

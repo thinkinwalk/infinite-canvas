@@ -12,6 +12,7 @@ import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audi
 import { importVideoURL } from "@/services/api/video-import";
 import { requestEdit, requestImageQuestion, type AiTextMessage } from "@/services/api/image";
 import { createVideoGenerationTask, isVideoTaskFailed, quoteTextModel, quoteVideoModel, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPrice } from "@/services/api/video";
+import { VideoSubmissionError } from "@/services/api/video-submission";
 import { isReplicateVideoModel, publicServiceText, readReplicateTranscription, REPLICATE_VIDEO_MODEL, REPLICATE_TEXT_VIDEO_MODEL, transcriptionUnavailable } from "@/services/api/replicate";
 import { isWan30, remapMaterialMentions, videoProfile } from "@/lib/video-capabilities";
 import { inferVideoRatio } from "@/lib/media-size";
@@ -1016,10 +1017,12 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 const error = storeVideoError(d, cfg);
                 if (error) throw new Error(error);
                 let expectedCredits: number | undefined;
+                let quoteToken: string | undefined;
                 if (cfg.channelMode === "remote" && !isReplicateVideoModel(cfg.videoModel)) {
                     const quote = await quoteVideoModel(cfg, cfg.videoModel, ctx.signal);
                     await confirmStorePrice(quote, "视频制作", ctx.signal, `${cfg.videoSeconds}秒 · ${cfg.vquality}p · ${storeVideoMaterials(d, cfg).length}张实际图片输入`, storeVideoMaterials(d, cfg));
                     expectedCredits = quote.credits;
+                    quoteToken = quote.quoteToken;
                 }
                 ctx.signal.throwIfAborted();
                 const prompt = storeVideoPrompt(d, cfg);
@@ -1027,6 +1030,8 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 const task = await createVideoGenerationTask(cfg, prompt, imagesOf(storeVideoMaterials(d, cfg)), [], [], {
                     signal: ctx.signal,
                     expectedCredits,
+                    quoteToken,
+                    preflight: true,
                     confirmReplicate,
                     onSubmissionStarted: async () => {
                         ctx.signal.throwIfAborted();
@@ -1044,8 +1049,9 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                         await waitForVideoGenerationTask(cfg, task, {
                             signal,
                             onWaitState: (state) => store().patchRecord(ctx.recordId, {
+                                ...(state === "retrieving" ? { storeResultPending: true } : {}),
                                 storeQueryState: state === "query_interrupted" ? "interrupted" : "querying",
-                                step: state === "query_interrupted" ? "查询暂时中断，正在继续查询" : state === "background" ? "已转后台查询" : "视频模型正在处理",
+                                step: state === "retrieving" ? "云端已完成，正在取回视频" : state === "query_interrupted" ? "查询暂时中断，正在继续查询" : state === "background" ? "已转后台查询" : "视频模型正在处理",
                             }),
                         }),
                     ),
@@ -1459,16 +1465,21 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
         } catch (error) {
             const stopped = signal.aborted;
             const submitted = store().records.find((r) => r.id === id);
-            const uncertain = tool === "store-explore" && submitted?.storeSubmissionStarted && !submitted.modelTask;
-            const detail = uncertain ? "视频提交状态待核对：请求可能已到达渠道，但尚未取得任务编号。请先核对使用日志或渠道记录，不会自动重新提交。" : stopped ? submitted?.storeTextSubmitted ? "已停止本地等待；文案请求可能继续处理或计费，不支持恢复查询，请先核对使用日志再重新发起" : submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
+            const failure = error instanceof VideoSubmissionError ? error.submission : undefined;
+            const rejected = failure?.outcome === "rejected";
+            const uncertain = tool === "store-explore" && submitted?.storeSubmissionStarted && !submitted.modelTask && !rejected;
+            const originalError = error instanceof Error ? error.message : "执行失败";
+            const detail = uncertain ? `${originalError}。视频提交状态待核对：尚未取得任务编号，请先核对使用日志或渠道记录，不会自动重新提交。` : rejected ? originalError : stopped ? submitted?.storeTextSubmitted ? "已停止本地等待；文案请求可能继续处理或计费，不支持恢复查询，请先核对使用日志再重新发起" : submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : originalError;
             if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.storeSubmissionStarted && !submitted?.storeTextSubmitted && !submitted?.imageEditSubmitted && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
             }
             store().patchRecord(id, {
+                ...(failure ? { storeSubmissionFailure: failure } : {}),
+                ...(tool === "store-explore" && stage === "video" && !submitted?.modelTask ? { step: uncertain ? "提交结果待核对" : "视频提交失败" } : {}),
                 status:
-                    uncertain || stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || ((digital || tool === "store-explore") && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error))
+                    !rejected && (uncertain || stopped || (submitted?.replacementPipeline?.generated && error instanceof DOMException && error.name === "AbortError") || (submitted?.replicateTask && submitted.status !== "failed" && !isVideoTaskFailed(error)) || ((digital || tool === "store-explore") && submitted?.workerJob && submitted.status !== "failed") || (["content-replace", "store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && submitted?.modelTask && !isVideoTaskFailed(error)))
                         ? "interrupted"
                         : "failed",
                 error: detail,

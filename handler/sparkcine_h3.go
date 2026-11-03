@@ -165,7 +165,10 @@ func validateSparkCineReference(kind, address, userID string) error {
 		}
 		size, _, err := image.DecodeConfig(file)
 		file.Close()
-		if err != nil || size.Width < 64 || size.Height < 64 || int64(size.Width)*int64(size.Height) > 12_000_000 {
+		if err != nil {
+			return fmt.Errorf("H3 参考图片无法解码，请检查文件是否完整，或转存为 PNG / JPEG / WebP 后重新上传；本次未扣费")
+		}
+		if size.Width < 64 || size.Height < 64 || int64(size.Width)*int64(size.Height) > 12_000_000 {
 			return fmt.Errorf("H3 参考图片宽高至少 64 像素且不超过 1200 万像素")
 		}
 	}

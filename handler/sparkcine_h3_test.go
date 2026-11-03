@@ -3,9 +3,13 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,6 +258,46 @@ func TestSparkCineUnknownTasksAndUnverifiedReferences(t *testing.T) {
 	for _, address := range []string{"http://cdn.example/a.mp4", "https://user:secret@cdn.example/a.mp4", "file:///video.mp4"} {
 		if _, err := sparkCineDownloadRequest(t.Context(), address); err == nil {
 			t.Fatal("unsafe download accepted", address)
+		}
+	}
+}
+
+func TestSparkCineOpaqueVP8XReferenceAndDecodeErrors(t *testing.T) {
+	db := setupVideoLogTest(t)
+	config.Cfg.PublicBaseURL = "https://platform.example"
+	if err := os.MkdirAll(referenceMediaDir(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile("testdata/reference-vp8x.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte("VP8X")) || data[20]&0x10 != 0 {
+		t.Fatal("fixture must reproduce a non-alpha VP8X container")
+	}
+	var small bytes.Buffer
+	if err := png.Encode(&small, image.NewRGBA(image.Rect(0, 0, 32, 32))); err != nil {
+		t.Fatal(err)
+	}
+	for _, sample := range []struct {
+		id, mime, message string
+		data              []byte
+	}{
+		{"opaque-vp8x.webp", "image/webp", "", data},
+		{"broken.webp", "image/webp", "无法解码", []byte("broken webp")},
+		{"too-small.png", "image/png", "宽高至少", small.Bytes()},
+	} {
+		if err := os.WriteFile(filepath.Join(referenceMediaDir(), sample.id), sample.data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		owner := model.ReferenceMediaOwner{ID: sample.id, UserID: "vp8x-owner", MimeType: sample.mime, Bytes: int64(len(sample.data))}
+		if err := repository.SaveReferenceMediaOwner(owner); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Delete(&owner) })
+		err := validateSparkCineReference("image", config.Cfg.PublicBaseURL+"/api/media/references/"+sample.id, owner.UserID)
+		if sample.message == "" && err != nil || sample.message != "" && (err == nil || !strings.Contains(err.Error(), sample.message)) {
+			t.Fatalf("%s: %v", sample.id, err)
 		}
 	}
 }

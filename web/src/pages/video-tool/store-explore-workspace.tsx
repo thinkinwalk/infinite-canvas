@@ -128,7 +128,7 @@ function StoreProjectEditor() {
         });
         return () => cancelAnimationFrame(frame);
     }, [busy, active?.id, active?.stage, active?.status, tab]);
-    const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
+    const pending = active && ["running", "interrupted"].includes(active.status) && (active.modelTask || active.replicateTask || active.workerJob) ? active : undefined;
     const blocked = storeVideoError(d, cfg);
     const textError = (analyze = false) => {
         const c = analyze ? configForFeature(config, "store-explore.analyze", "text") : config;
@@ -688,7 +688,7 @@ function StoreProjectEditor() {
                                 }
                             />
                         )}
-                        {!busy && active?.error && <Alert className="mb-3" type="warning" title={publicServiceText(active.error)} />}
+                        {!busy && active?.error && <Alert className="mb-3" type="warning" title={`${active.stage === "video" ? `${active.storeOrigin?.modelLabel || active.modelTask?.model || "视频任务"}：` : ""}${publicServiceText(active.error)}`} />}
                         <div ref={mainScroll} className="min-h-0 flex-1 overflow-y-auto pb-3" data-testid="store-main-scroll">
                             {tab === "materials" && <div className="max-w-xl py-2">{materialsPanel}</div>}
                             {tab === "plan" && (
@@ -869,7 +869,7 @@ function StoreProjectEditor() {
                                             </Space>
                                         </div>
                                     )}
-                                    {!viewed && (d.storeOutputStale || (d.final && d.storeFinishStale)) && <Alert type="warning" title={d.storeOutputStale ? "方案已变化，当前显示此前作品" : "声音或字幕已变化，当前显示此前成片"} />}
+                                    {!viewed && result && (d.storeOutputStale || (d.final && d.storeFinishStale)) && <Alert type="warning" title={d.storeOutputStale ? "方案已变化，当前显示此前作品" : "声音或字幕已变化，当前显示此前成片"} />}
                                     {result ? (
                                         <>
                                             {result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史首帧" className="max-h-[58vh] w-full object-contain" /> : result.mimeType.startsWith("audio/") ? (
