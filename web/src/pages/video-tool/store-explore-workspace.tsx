@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, Expand, FolderPlus, Grid2X2, Images, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, Expand, FolderPlus, Grid2X2, Images, LoaderCircle, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -23,6 +23,7 @@ import { emptyVideoDraft, type StoreShot, type StoreVideoSettings, type VideoDra
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { storeAnalysisDisplay } from "./store-analysis";
+import { StorePlanSkeleton, StoreTaskProgress, storeTaskTitle } from "./store-task-progress";
 import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoSettings } from "./store-explore-request";
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
@@ -47,6 +48,9 @@ export default function StoreExploreWorkspace() {
         [editor, setEditor] = useState<Editor | null>(null);
     const mainScroll = useRef<HTMLDivElement>(null),
         tabScroll = useRef<Record<string, number>>({});
+    const planHeading = useRef<HTMLHeadingElement>(null),
+        planSuggestion = useRef<HTMLElement>(null),
+        runningPlan = useRef<string | null>(null);
     const setTab = (next: string) => {
         if (next === tab) return;
         tabScroll.current[tab] = mainScroll.current?.scrollTop || 0;
@@ -86,6 +90,24 @@ export default function StoreExploreWorkspace() {
         cloud = isReplicateVideoModel(cfg.videoModel),
         wan = cfg.videoModel === REPLICATE_VIDEO_MODEL;
     const active = wb.records.find((r) => r.id === d.activeRecord);
+    useEffect(() => {
+        if (busy && active?.stage === "script") {
+            runningPlan.current = active.id;
+            return;
+        }
+        if (busy || !runningPlan.current) return;
+        const completed = active?.id === runningPlan.current && active.status === "completed";
+        runningPlan.current = null;
+        if (!completed || tab !== "plan") return;
+        const frame = requestAnimationFrame(() => {
+            const target = planSuggestion.current || planHeading.current, scroll = mainScroll.current;
+            if (!target || !scroll) return;
+            const top = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+            scroll.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+            target.focus({ preventScroll: true });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [busy, active?.id, active?.stage, active?.status, tab]);
     const pending = wb.records.find((r) => ["running", "interrupted"].includes(r.status) && (r.modelTask || r.replicateTask || r.workerJob));
     const blocked = storeVideoError(d, cfg) || (pending ? "请先恢复已有任务查询" : "");
     const textError = (analyze = false) => {
@@ -493,8 +515,8 @@ export default function StoreExploreWorkspace() {
             ) : !session && (config.channelMode === "remote" || cloud) ? (
                 <UserStatusActions accountOnly />
             ) : (
-                <Button block type="primary" size="large" disabled={locked || primary.disabled} loading={busy} icon={<Sparkles size={16} />} onClick={primary.action}>
-                    {primary.label}
+                <Button block type="primary" size="large" disabled={locked || primary.disabled} loading={busy ? { icon: <LoaderCircle size={16} className="animate-spin motion-reduce:animate-none" aria-hidden /> } : false} icon={<Sparkles size={16} />} onClick={primary.action}>
+                    {busy ? storeTaskTitle(active?.stage) : primary.label}
                 </Button>
             )}
             {d.script && blocked && (
@@ -546,19 +568,7 @@ export default function StoreExploreWorkspace() {
                                 { key: "history", label: "历史版本" },
                             ]}
                         />
-                        {busy && (
-                            <Alert
-                                className="mb-3"
-                                type="info"
-                                showIcon
-                                title={active?.step || "正在处理"}
-                                description={
-                                    <Button size="small" onClick={wb.stop}>
-                                        停止等待
-                                    </Button>
-                                }
-                            />
-                        )}
+                        {busy && <StoreTaskProgress key={active?.id || "preparing"} record={active} onStop={wb.stop} />}
                         {!busy && pending && (
                             <Alert
                                 className="mb-3"
@@ -575,9 +585,9 @@ export default function StoreExploreWorkspace() {
                         <div ref={mainScroll} className="min-h-0 flex-1 overflow-y-auto pb-3" data-testid="store-main-scroll">
                             {tab === "materials" && <div className="max-w-xl py-2">{materialsPanel}</div>}
                             {tab === "plan" && (
-                                <div className="space-y-4 py-2">
+                                <div className={`space-y-4 py-2 ${!busy && active?.stage === "script" && active.status === "completed" ? "animate-in fade-in duration-300 motion-reduce:animate-none" : ""}`} aria-busy={busy && active?.stage === "script"}>
                                     <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <h2 className="text-base font-medium">{shots.length ? `${shots.length} 个镜头 · ${shots.at(-1)?.end} 秒` : "拍摄方案"}</h2>
+                                        <h2 ref={planHeading} tabIndex={-1} className="text-base font-medium">{shots.length ? `${shots.length} 个镜头 · ${shots.at(-1)?.end} 秒` : "拍摄方案"}</h2>
                                         <Space wrap size={4}>
                                             <Button size="small" icon={<Sparkles size={14} />} disabled={locked || Boolean(textError())} onClick={planAction}>
                                                 {d.script ? "重新编写" : "AI 编写"}
@@ -598,7 +608,8 @@ export default function StoreExploreWorkspace() {
                                         </Space>
                                     </div>
                                     {d.storeScriptStale && d.script && <Alert type="warning" title="资料或规格已变化，原方案已保留，请核对后调整" />}
-                                    {!d.script && !shots.length && (
+                                    {busy && active?.stage === "script" && !d.script && !shots.length && <StorePlanSkeleton />}
+                                    {!d.script && !shots.length && !(busy && active?.stage === "script") && (
                                         <div className="space-y-4">
                                             <div className="flex flex-wrap gap-2">
                                                 {d.media
@@ -678,7 +689,7 @@ export default function StoreExploreWorkspace() {
                                         </div>
                                     )}
                                     {d.storeScriptSuggestion && (
-                                        <section className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
+                                        <section ref={planSuggestion} tabIndex={-1} aria-label="待采用方案" className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
                                             <strong className="text-sm font-medium">待采用方案</strong>
                                             <Input.TextArea readOnly aria-label="待采用方案" value={d.storeScriptSuggestion} rows={10} />
                                             <Space wrap>

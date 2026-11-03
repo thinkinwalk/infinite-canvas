@@ -309,6 +309,7 @@ export type VideoRecord = {
     workerJob?: { id: string; url: string };
     nativeAnalysisSubmitted?: boolean;
     imageEditSubmitted?: boolean;
+    storeTextSubmitted?: boolean;
     replicateTask?: { id: string; operation: string };
     replicateBilling?: { credits: number; refunded: boolean };
     replacementMask?: UploadedFile;

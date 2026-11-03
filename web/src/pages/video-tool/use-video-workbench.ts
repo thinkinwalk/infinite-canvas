@@ -395,6 +395,8 @@ export function useVideoWorkbench(tool: VideoTool) {
         return quoteVideoModel(cfg, cfg.videoModel, signal);
     };
     const text = async (ctx: Context, instruction: string, imageFiles: (UploadedFile & { name?: string })[] = [], analyze = false, imageLabels?: string[], structured = false) => {
+        const storeStep = (step: string) => { if (tool === "store-explore") store().patchRecord(ctx.recordId, { step }); };
+        storeStep("正在准备素材");
         const cfg = analyze && ["store-explore","viral-recreate"].includes(tool) ? configForFeature(config,`${tool}.analyze`,"text") : modelConfig("text");
         const content: Exclude<AiTextMessage["content"], string> = [{ type: "text", text: instruction }];
         for (const [index, image] of imageFiles.entries()) {
@@ -410,11 +412,15 @@ export function useVideoWorkbench(tool: VideoTool) {
             }
         }
         if (["store-explore", "viral-recreate", "digital-human", "photo-talk", "lipsync"].includes(tool) && config.channelMode === "remote") {
+            storeStep("正在获取文案报价");
             const quote = await quoteTextModel(cfg, cfg.textModel, ctx.signal);
+            storeStep("等待确认费用");
             await confirmStorePrice(quote, ctx.analysisReview ? "复核参考分析" : "文案处理", ctx.signal, ctx.analysisReview ? "将当前抽样画面与待核验分析发送到所选模型；复核单独计费，结果作为建议保留" : "分析 / 撰写按当前文字模型单独计费");
             ctx.signal.throwIfAborted();
         }
-        const value = await requestImageQuestion({...cfg,model:cfg.textModel}, [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, structured ? { step: "正在整理脚本修改建议" } : { text: value }), { signal: ctx.signal });
+        ctx.signal.throwIfAborted();
+        if (tool === "store-explore") store().patchRecord(ctx.recordId, { storeTextSubmitted: true, step: "等待模型返回" });
+        const value = await requestImageQuestion({...cfg,model:cfg.textModel}, [{ role: "user", content }], (value) => store().patchRecord(ctx.recordId, structured ? { step: tool === "store-explore" ? "正在接收拍摄方案" : "正在整理脚本修改建议" } : { text: value, ...(tool === "store-explore" ? { step: "正在接收素材观察" } : {}) }), { signal: ctx.signal });
         if (!value.trim()) throw new Error("模型没有返回内容");
         return value;
     };
@@ -896,6 +902,7 @@ export function useVideoWorkbench(tool: VideoTool) {
                         : `编写探店短片分镜。只输出JSON {"shots":[{"id":"稳定镜头ID","start":0,"end":3,"materialIds":["实际素材ID"],"visual":"画面动作","dialogue":"可选台词或空串"}]}。全片连续从0至${cfg.videoSeconds}秒，这是一次生成中的创作计划，单镜无模型最低秒数限制。素材ID只能取提供列表，可为空。不虚构价格地址活动承诺，不在画面烘焙字幕。资料：${d.storeFacts || "未提供，省略未知事项"}。要求：${d.instructions}。视觉观察：${d.analysis}。素材：${JSON.stringify(images.map((m) => ({id:m.id,name:m.name,purpose:m.storePurpose,person:m.storePerson})))}。已有方案：${JSON.stringify(d.storeShots || [])}。自由原稿：${d.script}。${scope ? `修改要求：${scope.request}。${scope.ids?.length ? `只返回ID属于${JSON.stringify(scope.ids)}的镜头，原时间与ID保留，其余镜头由系统原样保留。` : "重新编写全稿。"} ` : "已有镜头尽量保留稳定ID，新镜头使用不重复ID。"}台词精简，适配短片。`;
                 const value = await text(ctx, instruction, images, stage === "analyze", images.map((m) => `${labels.find((l) => l.id === m.id)?.label}；ID=${m.id}；用途=${m.storePurpose || m.role}；人物=${m.storePerson || "未指定"}`), stage === "script");
                 if (stage === "analyze") return { ...(d.analysis ? { storeAnalysisSuggestion: value } : { analysis: value, storeAnalysisStale: false }), storeScriptStale: Boolean(d.script) };
+                store().patchRecord(ctx.recordId, { step: "正在校验拍摄方案" });
                 const shots = parseStoreShots(value, d, Number(cfg.videoSeconds), scope?.ids?.length ? scope.ids : undefined);
                 const script = renderStoreShots(shots, d);
                 return d.script ? { storeScriptSuggestion: script, storeShotSuggestion: shots, storeSuggestionBase: storePlanKey(d) } : { script, storeShots: shots, storeScriptStale: false, storeOutputStale: true };
@@ -1359,8 +1366,8 @@ export function useVideoWorkbench(tool: VideoTool) {
         } catch (error) {
             const stopped = signal.aborted;
             const submitted = store().records.find((r) => r.id === id);
-            const detail = stopped ? submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
-            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.imageEditSubmitted && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
+            const detail = stopped ? submitted?.storeTextSubmitted ? "已停止本地等待；文案请求可能继续处理或计费，不支持恢复查询，请先核对使用日志再重新发起" : submitted?.imageEditSubmitted ? "已停止等待；首帧请求可能已到达图片渠道，本接口不支持恢复查询，请先核对使用日志再发起" : submitted?.nativeAnalysisSubmitted ? "已停止等待；分析请求可能已到达渠道，请核对使用日志后再发起" : "已停止本地等待；已提交的模型任务仍可能继续运行，可恢复查询" : error instanceof Error ? error.message : "执行失败";
+            if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && !submitted?.storeTextSubmitted && !submitted?.imageEditSubmitted && !submitted?.nativeAnalysisSubmitted && !submitted?.replacementPipeline?.generated && !submitted?.replicateTask && !submitted?.workerJob && !submitted?.modelTask && (stopped || (error instanceof DOMException && error.name === "AbortError"))) {
                 useVideoWorkbenchStore.setState({ records: store().records.filter((r) => r.id !== id) });
                 patch({ activeRecord: tool === "upscale" ? d.activeRecord : undefined });
                 throw new DOMException("已取消本次制作，未创建收费任务", "AbortError");
