@@ -15,14 +15,23 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.149
-- Current production source: tag v0.19.149, commit 2a078c173776a2b9c29b1d8e8cf3cc0204816c76
+- Current production image: infinite-canvas:v0.19.150
+- Current production source: tag v0.19.150, commit 98700ded21ed41d5a2d179af05ce8bb2724c83f9
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
 
+## v0.19.150 deployment
+
+- Tag `v0.19.150`, commit `98700ded21ed41d5a2d179af05ce8bb2724c83f9`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image `infinite-canvas:v0.19.150`, ID `sha256:812c3f7c476bc4fb57f69039074cabc0c8b8f1122d58269078d5742516228f5d`, replaces v0.19.149.
+- Viral recreation and content replacement now share a history list and details view for explicitly linked browser drafts, steps and online jobs, with local/account source labels and archive recovery. Both comparison players use one controller that waits for media readiness and pauses/resynchronizes when either side stalls.
+- Focused development regression passed 34 tests / 127 assertions. Firefox 159 and Chromium 156 passed 69 browser checks across both pages; Bit Browser 464 passed 21 isolated-context checks. No paid inference was submitted.
+- Server build, internal/public health, eleven routes, history/playback markers and public/container asset hashes passed. Public JS `/assets/index-BwmRabPR.js` SHA-256 `9854aff90ac17a35a5f5c019f8baaf84f80fc64ba8beb97889effb81381bf513`; CSS `/assets/index-BAlkj_Vs.css` SHA-256 `92ebcdb0952cbeefb13392da4762956486b2618816d310c69a17b2894391c72b`. Backend binary matches v0.19.149 and is unchanged.
+- App-only deployment retained Worker `v0.19.87`, container identity, mounts and start time. Database quick check, schema/table counts, settings, protected account fields and 145 task JSON records were preserved. Metadata for 29,167 existing media files was unchanged. No production channel settings or paid tasks were changed.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.150-prebuild-20261103-023600/`; final rollback backup `/opt/infinite-canvas/backups/v0.19.150-final-20261103-023710/`. Deployment report `/opt/infinite-canvas/releases/v0.19.150-deployment.json`. Backups contain verified SQLite, Compose and private environment, not full media contents. Rollback restores the final-backup Compose and recreates App only, preserving current database/media and Worker.
+- Production browser interactions with the user's original Firefox session remain for acceptance; refresh the site to load the new assets. Historical-task and playback acceptance does not require clearing browser data or submitting a new paid task.
+
 ## v0.19.149 deployment
 
-- The next release, v0.19.150, supersedes this runtime after deployment; see its deployment section below.
 - Tag `v0.19.149`, commit `2a078c173776a2b9c29b1d8e8cf3cc0204816c76`, is pushed to `release/v0.19.60` and published as a formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.149. App image `infinite-canvas:v0.19.149`, ID `sha256:cb7dd6a310a370edab07bc246acc2d1394a971f8dd5243903f845acb9504e70d`, replaces v0.19.148.
 - Viral recreation and content replacement share three result actions: download video, save asset and task details. Versions, subtitles, task metadata and regeneration controls are available in details. Canvas insertion and manual acceptance actions are removed. Result loading has explicit retry feedback and hides stale download actions; historical video saving uses its own metadata.
 - Development passed 14 isolated mocked browser checks, including desktop/mobile 1440/390/320px light/dark layouts, selected-result metadata, downloads/saves, segmented and paused workflows, retry quote cancellation and historical-task restoration cancellation. Release repeated no local tests, type checking, build or production browser interactions. The required server Docker build, internal/public health, eleven routes, feature markers and public/container hashes passed. Independent workstation HTTPS verification also passed and confirmed the published Release targets the deployed commit.
