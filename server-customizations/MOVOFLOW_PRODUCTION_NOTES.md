@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.161
-- Current production source: tag v0.19.161, commit e4f532624b3f376c27dff0629d62d52fe8f21f4c
+- Current production image: infinite-canvas:v0.19.162
+- Current production source: tag v0.19.162, commit 2bfc28a80fcb77856c880866db51528fa0429179
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.162 deployment
+
+- Product tag `v0.19.162`, source `2bfc28a80fcb77856c880866db51528fa0429179`, is pushed on `release/v0.19.60` and formally published on GitHub. Its merge includes all v0.19.161 source and final handoff fixes. No main merge occurred. Subsequent documentation commits do not change the deployed product tag.
+- Uploaded presenters now enter script evidence as explicit identities and media roles. Writing/review requests actual visible actions and corresponding person references; candidate adoption, AI reference selection and reference-mode submission reject missing person references. Unnamed views, same-name images and a three-view sheet describe one identity. First-frame composition receives presenter references. Grounded openings, action and information progression replace generic product recitation; planned actions remain distinct from fabricated personal experience.
+- Development had 17 focused tests/83 assertions passing. Release did not repeat local tests/build/typechecking. Server image build passed; backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is identical to v0.19.161. New release browser interaction and real model identity/script quality have not been verified. No paid inference was submitted.
+- Two existing video tasks were running at deployment start. The image was built first, then the switch waited until both had ended and cloud/Worker queues were inactive. No task was cancelled or resubmitted. Only App was recreated, image ID `sha256:4373758f656cfe27fdf96243563b7bfb73577f971328ae0c8d5a085189e4ecc3`. Worker image v0.19.87, source mount v0.19.154 and start time `2026-11-03T04:49:52.32052811Z` stayed unchanged.
+- Internal/public health, twelve routes, new presenter and retained v161 markers, removed optional-person label and public/container asset hashes passed. Environment/mounts, database schema/counts/settings/accounts, 173 job records and metadata of 29,556 media files were preserved. JS `/assets/index-BDI_hZ4W.js` SHA-256 `10a049fee29ce7f64fcce0b4cbec1af05eadb707ab64cce49aac77cbb04529e0`; CSS `/assets/index-DaTH3b5h.css` SHA-256 `fcb7b1670e9a1c5abcd53aac65c0587f6e928d4a6c150ecb2e6d21997b57ac9a`.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.162-prebuild-20261103-130335/`; final `/opt/infinite-canvas/backups/v0.19.162-final-20261103-130505/` contains verified SQLite, Compose and private environment, not all media. Deployment, release and independent public verification reports are `/opt/infinite-canvas/releases/v0.19.162-{deployment,release-verification,public-verification}.json`.
+- Rollback restores the final backup Compose and recreates App only, preserving live database/media and Worker. Existing plans are retained: refresh the original page, explicitly rewrite the full plan, inspect the candidate and adopt. Single-frame routes still require confirming the adopted frame contains the intended person. Real likeness, action quality and appeal remain user acceptance during normally needed creation; do not clear original storage or regenerate solely for QA.
 
 ## v0.19.161 deployment
 
