@@ -42,6 +42,7 @@ export type ReplacementJob = {
     archived?: boolean;
     previousResults?: string[];
     createdAt: string;
+    updatedAt?: string;
     parts: { start: number; end: number; inputStart: number; inputEnd: number; seconds: number; referenceSeconds?: number; validated: boolean; submitted: boolean; input?: string; taskId?: string; generated?: string; result?: string; credits: number }[] | null;
 };
 export type ReplacementCaption = { start: number; end: number; text: string };

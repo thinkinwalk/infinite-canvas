@@ -9,7 +9,7 @@ export function isRetiredHeadSwapModel(model: string, operations: string[] = [])
 
 export function hasContentReplacementDraft(draft: VideoDraft | undefined): draft is VideoDraft {
     return Boolean(draft && (
-        draft.media.length || draft.frames.length || draft.activeRecord || draft.replacementJobId ||
+        draft.media.length || draft.frames.length || draft.activeRecord || draft.replacementJobId || draft.replacementJobIds?.length ||
         draft.video || draft.edited || draft.final || draft.replacementSource ||
         draft.instructions.trim() || draft.regions.length ||
         draft.replacement !== "person" || draft.replacementModel !== "wan" || draft.route !== "replicate" ||

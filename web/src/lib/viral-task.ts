@@ -45,7 +45,7 @@ export function viralTaskGroups(records: VideoRecord[]) {
         const draft = viralTaskDraft(current);
         return {
             id, current, records: ordered.filter((record) => record.stage !== "draft"),
-            result: ordered.find((record) => record.result) || ordered.find((record) => record.text),
+            result: ordered.find((record) => record.result?.mimeType.startsWith("video/")) || ordered.find((record) => record.result) || ordered.find((record) => record.text),
             updatedAt: ordered[0].createdAt,
             title: draft?.media.find((media) => media.kind === "video" && media.role === "reference")?.name || draft?.instructions.trim() || "未命名任务",
         };

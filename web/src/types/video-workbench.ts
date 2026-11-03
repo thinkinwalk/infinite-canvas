@@ -223,6 +223,7 @@ export type VideoDraft = {
     replaceSubtitles: boolean;
     regenerateSubtitles: boolean;
     replacementJobId?: string;
+    replacementJobIds?: string[];
     replacementTaskId?: string;
     replacementAspectRatio?: string;
     replacementResultKey?: string;

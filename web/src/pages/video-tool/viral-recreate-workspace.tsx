@@ -12,6 +12,7 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { formatBytes } from "@/lib/image-utils";
 import { hasViralTaskContent, viralTaskDraft, viralTaskGroups } from "@/lib/viral-task";
+import { videoHistoryStatus } from "@/lib/video-task-history";
 import { materialMentionError, supportedVideoInputModes, videoInputMode, videoProfile } from "@/lib/video-capabilities";
 import { VideoModelOption } from "@/components/video-model-option";
 import { publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel, reconcileReplicateTask } from "@/services/api/replicate";
@@ -34,6 +35,8 @@ import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, vi
 import ViralScriptComparison from "./viral-script-comparison";
 import { viralInitialScript, viralResolveScript, viralRestoreScript, viralScriptChangeSummary, type ViralScriptEditMode } from "./viral-script-revisions";
 import { VideoTaskDetails, videoResultRecord } from "./video-task-details";
+import { VideoTaskHistory, type VideoHistoryItem } from "./video-task-history";
+import { useVideoComparison } from "./use-video-comparison";
 
 type Role = "reference" | "visual-reference" | "product" | "background" | "model" | "first-frame";
 type Editor = "analysis" | "transcript" | "viralProductAnalysis" | "instructions" | "script";
@@ -104,10 +107,11 @@ function ViralTaskWorkspace() {
         [viewed, setViewed] = useState<VideoRecord | null>(null),
         [previewError, setPreviewError] = useState(false);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const archivedTasks = useVideoWorkbenchStore((state) => state.archivedTasks);
     const [effectSourceOpen, setEffectSourceOpen] = useState(false), [effectSelection, setEffectSelection] = useState("");
     const [comparison, setComparison] = useState<{ kind: "source" | "revision"; target: "script" | "suggestion" } | null>(null);
-    const [comparisonProgress, setComparisonProgress] = useState(0);
-    const comparisonOriginal = useRef<HTMLVideoElement | null>(null), comparisonResult = useRef<HTMLVideoElement | null>(null);
+    const playback = useVideoComparison(() => message.warning("当前浏览器无法联动播放，可分别播放或拖动对照进度"));
+    const comparisonOriginal = playback.original;
     const completedStage = useRef<string | undefined>(undefined);
     const [price, setPrice] = useState<{ key: string; value: VideoPrice } | null>(null),
         [priceError, setPriceError] = useState(""),
@@ -306,12 +310,6 @@ function ViralTaskWorkspace() {
         if (active.stage === "script") openEditor("script", Boolean(d.viralScriptSuggestion));
         if (active.stage === "keyframe") showPanel("keyframe");
     }, [busy, active?.id, active?.status]);
-    useEffect(() => {
-        setComparisonProgress(0);
-        return () => {
-            for (const player of [comparisonOriginal.current, comparisonResult.current]) if (player) { player.pause(); player.playbackRate = 1; }
-        };
-    }, [result?.url, original?.url, tab]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => {
         const next = normalizeStoreSettings({ ...settings, ...value }, config),
             modelOnly = Object.keys(value).length === 1 && "videoModel" in value;
@@ -327,25 +325,6 @@ function ViralTaskWorkspace() {
         viralEffects: [...effects, { id: crypto.randomUUID(), time: "", description, action: "keep", target: "", scriptRange: "" }],
         viralNoEffects: false, viralEffectsSource: viralEffectsSource(d),
     }, "script");
-    const seekComparison = (progress: number) => {
-        for (const player of [comparisonOriginal.current, comparisonResult.current]) if (player && Number.isFinite(player.duration)) player.currentTime = player.duration * progress / 100;
-        setComparisonProgress(progress);
-    };
-    const playComparison = async () => {
-        const source = comparisonOriginal.current, target = comparisonResult.current;
-        if (!source || !target || !Number.isFinite(source.duration) || !Number.isFinite(target.duration) || source.duration <= 0 || target.duration <= 0) { message.info("请等待两段视频加载后再对照"); return; }
-        try {
-            // 先处理成片重播，避免按旧的结尾进度把原片也定位到结尾。
-            if (target.ended || target.currentTime >= target.duration) target.currentTime = 0;
-            source.currentTime = source.duration * target.currentTime / target.duration;
-            source.playbackRate = source.duration / target.duration;
-            setComparisonProgress(target.currentTime / target.duration * 100);
-            await Promise.all([source.play(), target.play()]);
-        } catch {
-            source.pause(); target.pause(); source.playbackRate = 1;
-            message.warning("当前浏览器无法联动播放，可分别播放或拖动对照进度");
-        }
-    };
     const edit = (field: Editor, value: string) => {
         if (field === "analysis") {
             wb.edit(viralEditAnalysis(d, editorAnalysis || { text: "", provenance: viralAnalysisProvenance(d, analysisMode) }, value, showCurrentAnalysis));
@@ -1275,10 +1254,10 @@ function ViralTaskWorkspace() {
                     <h1 className="text-lg font-semibold">爆款复刻</h1>
                 </div>
                 <div className="flex items-center gap-1">
+                <Button type={tab === "history" ? "primary" : "text"} size="small" icon={<History size={14} />} onClick={() => showPanel("history")}>历史任务</Button>
                 <Button type="text" size="small" disabled={locked || Boolean(wb.storageError)} icon={<Plus size={14} />} onClick={newTask}>新建任务</Button>
-                {step === 0 && <Button type="text" size="small" icon={<Play size={14} />} onClick={() => showPanel("current")}>预览素材</Button>}
-                {step !== 1 && <Dropdown trigger={["click"]} menu={{ items: [
-                    { key: "history", label: "历史任务" },
+                {tab !== "history" && step === 0 && <Button type="text" size="small" icon={<Play size={14} />} onClick={() => showPanel("current")}>预览素材</Button>}
+                {tab !== "history" && step !== 1 && <Dropdown trigger={["click"]} menu={{ items: [
                     { key: "guide", label: "使用说明" },
                     { type: "divider" },
                     { key: "options", label: "高级设置" },
@@ -1287,12 +1266,12 @@ function ViralTaskWorkspace() {
                 </Dropdown>}
                 </div>
             </header>
-            <nav aria-label="复刻步骤" className="mx-auto w-full max-w-[1800px] shrink-0 px-4 pb-3 sm:px-6">
+            {tab !== "history" && <nav aria-label="复刻步骤" className="mx-auto w-full max-w-[1800px] shrink-0 px-4 pb-3 sm:px-6">
                 <Steps size="small" current={step} responsive={false} onChange={goStep} items={["素材与解析", "改编脚本", "生成视频"].map((title, index) => ({ title: <><span className="sm:hidden">{["解析", "脚本", "成片"][index]}</span><span className="hidden sm:inline">{title}</span></>, disabled: locked }))} />
-            </nav>
+            </nav>}
             <div ref={workspaceScroll} className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 ${step === 1 ? "xl:overflow-hidden" : "lg:overflow-hidden"}`} data-testid="viral-scroll">
-                <div className={`mx-auto grid min-h-full max-w-[1800px] grid-cols-1 gap-5 ${step === 1 ? "lg:grid-cols-[280px_minmax(0,1fr)] xl:h-full xl:min-h-0 xl:grid-cols-[280px_minmax(0,1fr)_300px]" : "lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]"}`}>
-                    <section className={`flex min-h-0 min-w-0 flex-col ${step === 1 ? "border-b pb-4 lg:border-b-0 lg:border-r lg:pb-0" : "rounded-lg border"}`} style={step === 1 ? { borderColor: token.colorBorderSecondary } : surface} aria-label="复刻素材与设置">
+                <div className={`mx-auto grid min-h-full grid-cols-1 gap-5 ${tab === "history" ? "max-w-[1200px] lg:h-full lg:min-h-0" : step === 1 ? "max-w-[1800px] lg:grid-cols-[280px_minmax(0,1fr)] xl:h-full xl:min-h-0 xl:grid-cols-[280px_minmax(0,1fr)_300px]" : "max-w-[1800px] lg:h-full lg:min-h-0 lg:grid-cols-[420px_minmax(0,1fr)]"}`}>
+                    <section className={`${tab === "history" ? "hidden" : "flex"} min-h-0 min-w-0 flex-col ${step === 1 ? "border-b pb-4 lg:border-b-0 lg:border-r lg:pb-0" : "rounded-lg border"}`} style={step === 1 ? { borderColor: token.colorBorderSecondary } : surface} aria-label="复刻素材与设置">
                         <div ref={inputScroll} className="flex min-h-0 flex-1 flex-col gap-5 p-4 lg:overflow-y-auto [&>*]:shrink-0" data-testid="viral-input-scroll">
                             {step === 1 && adaptationInputs}
                             <div hidden={step !== 0} className="space-y-4">
@@ -1352,8 +1331,8 @@ function ViralTaskWorkspace() {
                             {controls}
                         </div>
                     </section>
-                    <aside ref={previewPanel} className={`flex min-h-0 min-w-0 flex-col ${step === 1 ? "lg:overflow-y-auto" : "rounded-lg border p-4"}`} style={step === 1 ? undefined : surface} aria-label="作品与说明">
-                        {step === 1 && <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                    <aside ref={previewPanel} className={`flex min-h-0 min-w-0 flex-col ${tab === "history" ? "p-4 lg:overflow-y-auto" : step === 1 ? "lg:overflow-y-auto" : "rounded-lg border p-4"}`} style={tab === "history" || step === 1 ? undefined : surface} aria-label="作品与说明">
+                        {tab !== "history" && step === 1 && <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
                             <div className="min-w-0 flex-1">
                                 {!scriptPanel && <Button type="text" size="small" icon={<ArrowLeft size={14} />} onClick={() => openEditor("script", Boolean(d.viralScriptSuggestion))}>返回脚本</Button>}
                             </div>
@@ -1363,7 +1342,6 @@ function ViralTaskWorkspace() {
                                 { key: "keyframe", label: `视频画面${profile.firstFrameRequired ? "（当前模型需要）" : "（可选）"}` },
                                 { key: "plan", label: "复刻细节（可选）" },
                                 { type: "divider" },
-                                { key: "history", label: "历史任务" },
                                 { key: "guide", label: "使用说明" },
                                 { key: "options", label: "高级设置" },
                             ], onClick: ({ key }) => key === "options" ? setOptionsOpen(true) : key === "analysis" ? setSourceOpen(true) : showPanel(key) }}>
@@ -1418,14 +1396,13 @@ function ViralTaskWorkspace() {
                             />
                         )}
                         {!busy && active?.error && active.stage !== "analyze" && <Alert key={active.id} className="mb-3" type="warning" title="上次处理未完成" description={publicServiceText(active.error)} closable={active.status === "failed" ? { closeIcon: <X size={14} />, onClose: () => wb.patch({ activeRecord: undefined }) } : false} />}
-                        {step !== 1 && <Tabs
+                        {step !== 1 && tab !== "history" && <Tabs
                             activeKey={tab}
                             onChange={(value) => value === "editor" ? openEditor(step === 0 ? "analysis" : "script") : setTab(value)}
                             tabBarExtraContent={step === 0 ? <Button type="text" size="small" aria-label="返回素材填写" icon={<ArrowLeft size={14} />} className="lg:!hidden" onClick={() => { workspaceScroll.current?.scrollTo({ top: 0, behavior: "smooth" }); inputScroll.current?.scrollTo(0, 0); }} /> : undefined}
                             items={[
                                 { key: "current", label: step === 0 ? "素材预览" : "视频对照" },
                                 { key: "editor", label: step === 0 ? editingField === "transcript" ? "音轨文字" : editingField === "viralProductAnalysis" ? "参考图片分析" : "原片分析" : "改编脚本" },
-                                { key: "history", label: "历史任务" },
                             ]}
                         />}
                         <div className={`min-h-0 flex-1 ${step === 1 ? tab === "editor" ? "h-[65vh] min-h-[460px] xl:h-auto xl:min-h-0" : "lg:overflow-y-auto" : tab === "editor" ? "h-[65vh] min-h-96 lg:h-auto lg:min-h-0" : "lg:overflow-y-auto"}`}>
@@ -1449,7 +1426,7 @@ function ViralTaskWorkspace() {
                                         <section className="min-w-0 space-y-2">
                                             <h2 className="text-sm font-medium">参考视频</h2>
                                             {original ? (
-                                                <video ref={comparisonOriginal} controls muted src={original.url} className={`max-h-[55vh] w-full rounded object-contain ${!viewed && step === 0 && !targetImages.length ? "mx-auto max-w-3xl" : ""}`} />
+                                                <video key={original.url} ref={playback.originalRef} controls muted preload="auto" src={original.url} className={`max-h-[55vh] w-full rounded object-contain ${!viewed && step === 0 && !targetImages.length ? "mx-auto max-w-3xl" : ""}`} />
                                             ) : (
                                                 <div className="flex min-h-52 items-center justify-center">
                                                     <Empty description="上传后预览原视频" />
@@ -1466,7 +1443,7 @@ function ViralTaskWorkspace() {
                                                     </figure>)}
                                                 </div>
                                             ) : result ? (
-                                                result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史关键画面" className="max-h-[55vh] w-full object-contain" /> : <video ref={comparisonResult} controls src={result.url} className="max-h-[55vh] w-full rounded object-contain" onTimeUpdate={(e) => { const player = e.currentTarget; if (Number.isFinite(player.duration) && player.duration > 0) setComparisonProgress(player.currentTime / player.duration * 100); }} onError={() => setPreviewError(true)} />
+                                                result.mimeType.startsWith("image/") ? <img src={result.url} alt="历史关键画面" className="max-h-[55vh] w-full object-contain" /> : <video key={result.url} ref={playback.resultRef} controls preload="auto" src={result.url} className="max-h-[55vh] w-full rounded object-contain" onError={() => setPreviewError(true)} />
                                             ) : viewed?.text ? (
                                                 <Input.TextArea aria-label="历史文案" rows={12} value={viewed.stage === "analyze" ? viralVisibleAnalysis(viewed.text || "") : viewed.text} readOnly />
                                             ) : (
@@ -1477,9 +1454,9 @@ function ViralTaskWorkspace() {
                                         </section>}
                                     </div>
                                     {(step !== 0 || viewed) && original && result?.mimeType.startsWith("video/") && <div className="flex items-center gap-3">
-                                        <Tooltip title="按时长比例联动播放"><Button aria-label="联动播放对照视频" icon={<Play size={15} />} onClick={() => void playComparison()} /></Tooltip>
-                                        <Tooltip title="暂停对照"><Button aria-label="暂停对照视频" icon={<Pause size={15} />} onClick={() => { comparisonOriginal.current?.pause(); comparisonResult.current?.pause(); }} /></Tooltip>
-                                        <div className="min-w-0 flex-1"><Slider aria-label="对照进度（按时长比例）" value={comparisonProgress} onChange={seekComparison} tooltip={{ formatter: (value) => `${Math.round(value || 0)}%` }} /></div>
+                                        <Tooltip title="按时长比例联动播放"><Button aria-label="联动播放对照视频" loading={playback.waiting} icon={<Play size={15} />} onClick={playback.play} /></Tooltip>
+                                        <Tooltip title="暂停对照"><Button aria-label="暂停对照视频" icon={<Pause size={15} />} onClick={playback.pause} /></Tooltip>
+                                        <div className="min-w-0 flex-1"><Slider aria-label="对照进度（按时长比例）" value={playback.progress} onChange={playback.seek} tooltip={{ formatter: (value) => `${Math.round(value || 0)}%` }} /></div>
                                     </div>}
                                     {previewError && <Alert type="warning" title="当前浏览器无法播放此编码，仍可下载原文件" />}
                                     {result && (
@@ -1495,20 +1472,21 @@ function ViralTaskWorkspace() {
                             )}
                             {tab === "history" && (
                                 <div className="space-y-3">
+                                    <div className="flex items-center gap-3"><Button size="small" type="text" icon={<ArrowLeft size={14} />} onClick={() => setTab(step === 1 ? "editor" : "current")}>返回当前任务</Button><span className="text-sm font-medium">历史任务</span></div>
                                     <p className="text-xs" style={muted}>记录与草稿仅保存在当前浏览器，不会同步到其他设备。清理浏览器数据前请下载需要保留的作品。</p>
-                                    {!taskGroups.length && <Empty description="暂无历史任务" />}
-                                    {taskGroups.map((group) => (
-                                        <div key={group.id} className="min-w-0 space-y-3 rounded-lg border p-3" style={{ borderColor: token.colorBorderSecondary }} data-testid="viral-history-task">
-                                            <div className="grid min-w-0 gap-1 sm:flex sm:items-start sm:justify-between sm:gap-2">
-                                                <strong className="min-w-0 flex-1 break-words font-medium [overflow-wrap:anywhere]">{group.title}</strong>
-                                                <span className="shrink-0 text-xs" style={muted}>{new Date(group.updatedAt).toLocaleString()}</span>
-                                            </div>
-                                            <p className="text-xs" style={muted}>{group.current.stage === "draft" ? "草稿已保存" : `${stageLabels[group.current.stage] || group.current.stage} · ${states[group.current.status]}`}{group.records.length > 0 ? ` · ${group.records.length} 条步骤记录` : ""}</p>
-                                            <Space wrap>
-                                                <Button size="small" disabled={locked || !group.result} onClick={() => group.result && void showRecord(group.result)}>查看结果</Button>
-                                                {(group.current.viralDraft || group.current.viralInput) && <Button size="small" disabled={locked || Boolean(wb.storageError)} onClick={() => restoreInput(group.current)}>继续任务</Button>}
-                                            </Space>
-                                            {group.records.length > 0 && <Collapse ghost size="small" items={[{ key: "steps", label: "步骤记录", children: <div className="space-y-3">
+                                    <VideoTaskHistory disabled={locked || Boolean(wb.storageError)} items={taskGroups.map<VideoHistoryItem>((group) => ({
+                                        id: group.id, title: group.title, kind: "爆款复刻", updatedAt: group.updatedAt, source: "仅本机",
+                                        status: group.records[0]?.status === "completed" && group.records[0].stage !== "video" ? `${stageLabels[group.records[0].stage] || group.records[0].stage}已完成` : videoHistoryStatus(group.records, Boolean(group.result)),
+                                        archived: Boolean(archivedTasks[`viral-recreate:${group.id}`]), hasResult: Boolean(group.result),
+                                        processing: group.records.some((record) => record.status === "running"),
+                                        onView: group.result ? () => void showRecord(group.result!) : undefined,
+                                        onContinue: group.current.viralDraft || group.current.viralInput ? () => restoreInput(group.current) : undefined,
+                                        onArchive: (archived) => {
+                                            useVideoWorkbenchStore.getState().setTaskArchived([`viral-recreate:${group.id}`], archived);
+                                            if (useVideoWorkbenchStore.getState().storageError) throw new Error("归档保存失败，请检查浏览器存储后重试");
+                                        },
+                                        details: (close) => <div className="space-y-3">
+                                    {!group.records.length && <p className="text-sm" style={muted}>草稿已保存，尚未提交生成。</p>}
                                     {group.records.map((r) => (
                                         <div key={r.id} className="space-y-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
                                             <div className="flex flex-wrap justify-between gap-2">
@@ -1535,11 +1513,11 @@ function ViralTaskWorkspace() {
                                                 </p>
                                             )}
                                             <Space wrap>
-                                                <Button size="small" disabled={locked || (!r.result && !r.text)} onClick={() => void showRecord(r)}>
+                                                <Button size="small" disabled={locked || (!r.result && !r.text)} onClick={() => { close(); void showRecord(r); }}>
                                                     查看结果
                                                 </Button>
                                                 {viralRecordAnalysis(r)?.text.trim() && (
-                                                    <Button size="small" disabled={locked} onClick={() => adoptAnalysis(viralRecordAnalysis(r)!, true)}>{viralRecordAnalysis(r)!.provenance.source !== viralSource(d) ? "借鉴历史分析" : "用于当前脚本"}</Button>
+                                                    <Button size="small" disabled={locked} onClick={() => { close(); adoptAnalysis(viralRecordAnalysis(r)!, true); }}>{viralRecordAnalysis(r)!.provenance.source !== viralSource(d) ? "借鉴历史分析" : "用于当前脚本"}</Button>
                                                 )}
                                                 {r.stage === "keyframe" && r.result && <Button size="small" disabled={locked} onClick={async () => {
                                                     try {
@@ -1551,18 +1529,20 @@ function ViralTaskWorkspace() {
                                                         wb.edit({ media: [...d.media, { ...file, id, name: climax ? "历史补充画面" : "历史合成首帧", role: "first-frame", kind: "image" }], ...(climax ? { viralClimaxId: id, viralClimax: undefined, viralImageTarget: "climax" } : { viralFirstFrameId: id, viralKeyframe: undefined, viralImageTarget: "opening" }) }, "video");
                                                         goStep(1);
                                                         setTab("keyframe");
+                                                        close();
                                                     } catch (error) { message.error(error instanceof Error ? error.message : "首帧读取失败"); }
                                                 }}>使用这张{r.viralInput?.viralImageTarget === "climax" ? "补充画面" : "首帧"}</Button>}
-                                                {r.viralInput && (
-                                                    <Button size="small" disabled={locked} onClick={() => restoreInput(r)}>
+                                                {!archivedTasks[`viral-recreate:${group.id}`] && r.viralInput && (
+                                                    <Button size="small" disabled={locked} onClick={() => { close(); restoreInput(r); }}>
                                                         从这一步继续
                                                     </Button>
                                                 )}
-                                                {["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask) && (
+                                                {!archivedTasks[`viral-recreate:${group.id}`] && ["running", "interrupted"].includes(r.status) && (r.replicateTask || r.workerJob || r.modelTask) && (
                                                     <Button
                                                         size="small"
                                                         disabled={locked}
                                                         onClick={() => {
+                                                            close();
                                                             setViewed(null);
                                                             void wb.resume(r);
                                                         }}
@@ -1576,6 +1556,7 @@ function ViralTaskWorkspace() {
                                                         disabled={locked}
                                                         onClick={() => {
                                                             let predictionId = "";
+                                                            close();
                                                             modal.confirm({
                                                                 title: "核对并关联已有平台任务",
                                                                 content: <Input aria-label="Replicate 上游任务编号" placeholder="Replicate 上游任务编号" onChange={(event) => { predictionId = event.target.value.trim(); }} />,
@@ -1601,9 +1582,8 @@ function ViralTaskWorkspace() {
                                             </Space>
                                         </div>
                                     ))}
-                                            </div> }]} />}
-                                        </div>
-                                    ))}
+                                            </div>,
+                                    }))} />
                                 </div>
                             )}
                             {tab === "guide" && (
@@ -1623,15 +1603,15 @@ function ViralTaskWorkspace() {
                             )}
                         </div>
                     </aside>
-                    {step === 1 && scriptChat}
+                    {tab !== "history" && step === 1 && scriptChat}
                 </div>
             </div>
-            <footer className={`shrink-0 border-t px-4 py-3 ${step === 1 ? "" : "lg:hidden"}`} style={{ background: token.colorBgContainer, borderColor: token.colorBorderSecondary }}>
+            {tab !== "history" && <footer className={`shrink-0 border-t px-4 py-3 ${step === 1 ? "" : "lg:hidden"}`} style={{ background: token.colorBgContainer, borderColor: token.colorBorderSecondary }}>
                 <div className={step === 1 ? "mx-auto flex max-w-[1800px] flex-col gap-2 sm:items-end" : ""}>
                     {actionHint}
                     <div className={step === 1 ? "w-full sm:max-w-sm" : ""}>{controls}</div>
                 </div>
-            </footer>
+            </footer>}
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
             <Modal title="原片提取内容" open={sourceOpen} onCancel={() => setSourceOpen(false)} width={900} footer={<Button onClick={() => setSourceOpen(false)}>返回脚本</Button>}>
                 <div className="space-y-3">

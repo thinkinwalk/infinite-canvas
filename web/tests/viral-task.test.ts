@@ -87,3 +87,13 @@ test("task previews prefer the generated video over newer intermediate text", ()
     ]);
     expect(groups[0].result?.result).toBe(video);
 });
+
+test("a newer keyframe does not replace a task's existing video preview", () => {
+    const video = { url: "blob:video", storageKey: "video", bytes: 100, mimeType: "video/mp4" };
+    const image = { url: "blob:image", storageKey: "image", bytes: 100, mimeType: "image/png" };
+    const groups = viralTaskGroups([
+        record({ id: "keyframe", viralTaskId: "task-a", createdAt: 3, stage: "keyframe", result: image }),
+        record({ id: "video", viralTaskId: "task-a", createdAt: 2, stage: "video", result: video }),
+    ]);
+    expect(groups[0].result?.result).toBe(video);
+});

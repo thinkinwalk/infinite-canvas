@@ -22,6 +22,7 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 
 ## v0.19.149 deployment
 
+- The next release, v0.19.150, supersedes this runtime after deployment; see its deployment section below.
 - Tag `v0.19.149`, commit `2a078c173776a2b9c29b1d8e8cf3cc0204816c76`, is pushed to `release/v0.19.60` and published as a formal GitHub Release: https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.149. App image `infinite-canvas:v0.19.149`, ID `sha256:cb7dd6a310a370edab07bc246acc2d1394a971f8dd5243903f845acb9504e70d`, replaces v0.19.148.
 - Viral recreation and content replacement share three result actions: download video, save asset and task details. Versions, subtitles, task metadata and regeneration controls are available in details. Canvas insertion and manual acceptance actions are removed. Result loading has explicit retry feedback and hides stale download actions; historical video saving uses its own metadata.
 - Development passed 14 isolated mocked browser checks, including desktop/mobile 1440/390/320px light/dark layouts, selected-result metadata, downloads/saves, segmented and paused workflows, retry quote cancellation and historical-task restoration cancellation. Release repeated no local tests, type checking, build or production browser interactions. The required server Docker build, internal/public health, eleven routes, feature markers and public/container hashes passed. Independent workstation HTTPS verification also passed and confirmed the published Release targets the deployed commit.

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Alert, App, Button, Collapse, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
-import { ArrowLeft, ClipboardPaste, Download, FileText, FolderPlus, Image as ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Sparkles, Video, X } from "lucide-react";
+import { Alert, App, Button, Collapse, Descriptions, Empty, Input, Modal, Popover, Segmented, Select, Space, Spin, Switch, Tabs, Tag, Upload, theme, type UploadProps } from "antd";
+import { ArrowLeft, ClipboardPaste, Download, FileText, FolderPlus, History, Image as ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Sparkles, Video, X } from "lucide-react";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -13,10 +13,13 @@ import { VideoLinkImport } from "@/components/video-link-import";
 import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { hasContentReplacementDraft, hasReplacementRecovery, isCurrentReplacementRecord, isLegacyMaskedPersonRecord, isPendingReplacement, RETIRED_HEAD_SWAP_MESSAGE } from "@/lib/content-replacement-state";
+import { contentReplacementTaskGroups, replacementHistoryStates } from "@/lib/video-task-history";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { isWan30, videoReferenceDurationError, videoReferenceError } from "@/lib/video-capabilities";
 import { getReplicateModels, publicServiceText, readReplicateTask, reconcileReplicateTask, REPLICATE_MODEL_NAMES, type ReplicateOperation, type ReplicateQuote } from "@/services/api/replicate";
 import { getWorkerCapabilities, prepareWorkbenchVideo, workbenchMediaBlob } from "@/services/api/video-worker";
+import { archiveReplacementJob, isRetiredReplacementJob, type ReplacementJob } from "@/services/api/replacement-jobs";
+import { VIDEO_ACTIVE_POLL_INTERVAL_MS } from "@/services/api/video";
 import { replaceStoredVideo, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { registerTemporaryReferenceCopy } from "@/services/video-reference-retention";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -25,11 +28,13 @@ import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
-import type { MediaRole, SubtitleRegion, VideoDraft, VideoRecord, WorkerCapabilities } from "@/types/video-workbench";
+import { useReplacementJobsStore } from "@/stores/use-replacement-jobs-store";
+import { emptyVideoDraft, type MediaRole, type SubtitleRegion, type VideoDraft, type VideoRecord, type WorkerCapabilities } from "@/types/video-workbench";
 import { restoreWorkbenchFile, useVideoWorkbench } from "./use-video-workbench";
 
 import { ReplacementBatchPanel } from "./replacement-batch-panel";
 import { VideoTaskDetails, videoResultRecord } from "./video-task-details";
+import { VideoTaskHistory, type VideoHistoryItem } from "./video-task-history";
 
 const replacementNames = { person: "人物", product: "商品", background: "背景" };
 const recordNames = { running: "处理中", completed: "已完成", failed: "失败", interrupted: "等待暂停" };
@@ -47,6 +52,9 @@ export default function ContentReplaceWorkspace() {
     const updateConfig = useConfigStore((s) => s.updateConfig);
     const themeMode = useThemeStore((s) => s.theme);
     const platformToken = useUserStore((s) => s.token);
+    const onlineHistory = useReplacementJobsStore();
+    const jobs = onlineHistory.session === (platformToken || "") ? onlineHistory.jobs : [];
+    const archivedTasks = useVideoWorkbenchStore((state) => state.archivedTasks);
     const administrator = useUserStore((s) => s.user?.role === "admin");
     const appliedSearch = useRef<string | null>(null);
     const [models, setModels] = useState<ReplicateQuote[]>([]);
@@ -60,6 +68,7 @@ export default function ContentReplaceWorkspace() {
     const [tab, setTab] = useState("current");
     const [dismissedPendingId, setDismissedPendingId] = useState<string | null>(null);
     const [batchWorkspace, setBatchWorkspace] = useState<HTMLDivElement | null>(null);
+    const [batchRevision, setBatchRevision] = useState(0);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [assetRole, setAssetRole] = useState<{ role: MediaRole; accept: string } | null>(null);
     const [referenceImportOpen, setReferenceImportOpen] = useState(false);
@@ -78,6 +87,7 @@ export default function ContentReplaceWorkspace() {
     const [repairingSource, setRepairingSource] = useState(false);
     const [historyPreview, setHistoryPreview] = useState<{ record: VideoRecord; result: UploadedFile; source?: UploadedFile } | null>(null);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const [openingHistory, setOpeningHistory] = useState(false);
     const [drawRegions, setDrawRegions] = useState(false);
     const [drawing, setDrawing] = useState<SubtitleRegion | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
@@ -90,18 +100,17 @@ export default function ContentReplaceWorkspace() {
     const headSwap = person && d.replacementModel === "headswap";
     const longVideo = Boolean(reference?.durationMs && reference.durationMs > longVideoPreviewThresholdMs);
     // 人物替换统一持久化，短视频整段生成，长视频按模型能力分段。
-    const wholeVideo = person && cloud && (!headSwap || longVideo);
+    const wholeVideo = person && cloud && (Boolean(d.replacementJobId) || !headSwap || longVideo);
     const showSegmentHint = wholeVideo && longVideo;
     const showBatchWorkspace = wholeVideo && Boolean(d.replacementJobId) && !historyPreview;
-    const locked = busy || wb.importing || uploading || repairingSource || trimming;
+    const locked = busy || wb.importing || uploading || repairingSource || trimming || openingHistory;
     const imageRole = d.replacement === "background" ? "background" : "model";
     const image = d.media.find((m) => m.role === imageRole && m.kind === "image");
     const operation: ReplicateOperation = person ? (headSwap ? "head-swap" : "replace-person") : d.maskedEdit ? "masked-edit" : "video-edit";
     const model = models.find((m) => m.operation === operation);
     const active = wb.records.find((r) => r.id === d.activeRecord);
     const pending = wb.records.find((record) => isPendingReplacement(record) && isCurrentReplacementRecord(record, d)) || wb.records.find(isPendingReplacement);
-    const archivedDrafts = wb.records.filter((record) => record.replacementDraft).sort((a, b) => b.createdAt - a.createdAt);
-    const workRecords = wb.records.filter((record) => !record.replacementDraft);
+    const taskGroups = contentReplacementTaskGroups(wb.records, jobs, d);
     const inputKey = JSON.stringify([
         d.route,
         d.replacement,
@@ -129,6 +138,21 @@ export default function ContentReplaceWorkspace() {
     const muted = { color: token.colorTextSecondary };
 
     useEffect(() => {
+        const store = useReplacementJobsStore.getState();
+        store.reset(platformToken || "");
+        if (!platformToken) return;
+        let disposed = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const controller = new AbortController();
+        const poll = async () => {
+            await store.refresh(controller.signal);
+            if (!disposed) timer = setTimeout(poll, VIDEO_ACTIVE_POLL_INTERVAL_MS);
+        };
+        void poll();
+        return () => { disposed = true; controller.abort(); clearTimeout(timer); };
+    }, [platformToken]);
+
+    useEffect(() => {
         if (!wb.hydrated || initialized.current) return;
         initialized.current = true;
         const state = useVideoWorkbenchStore.getState();
@@ -154,8 +178,8 @@ export default function ContentReplaceWorkspace() {
     };
 
     const restoreDraft = async (record: VideoRecord) => {
-        if (!record.replacementDraft) return;
-        const saved = record.replacementDraft;
+        if (!record.replacementDraft && !record.replacementInput) return;
+        const saved = record.replacementDraft || { ...emptyVideoDraft("content-replace"), ...record.replacementInput, replacementTaskId: record.replacementInput?.replacementTaskId || record.id, activeRecord: record.id };
         const media = await Promise.all(saved.media.map(async (item) => ({ ...item, ...(await restoreWorkbenchFile(item)) })));
         const frames = await Promise.all(saved.frames.map(restoreWorkbenchFile));
         const outputs: Partial<VideoDraft> = {};
@@ -163,9 +187,55 @@ export default function ContentReplaceWorkspace() {
             const file = saved[key];
             if (file) outputs[key] = await restoreWorkbenchFile(file);
         }
+        if (useUserStore.getState().token !== platformToken) throw new Error("登录状态已变化，请重新打开任务");
         await useVideoWorkbenchStore.getState().openContentReplacementTask({ ...saved, ...outputs, media, frames });
         setHistoryPreview(null);
         setTab("current");
+    };
+
+    const openOnlineJob = async (job: ReplacementJob) => {
+        if (locked) return;
+        setOpeningHistory(true);
+        try {
+            const saved = wb.records.find((record) => record.replacementDraft?.replacementJobId === job.id || record.replacementDraft?.replacementJobIds?.includes(job.id))?.replacementDraft;
+            const media = saved ? await Promise.all(saved.media.map(async (item) => ({ ...item, ...(await restoreWorkbenchFile(item).catch(() => item)) }))) : [];
+            if (useUserStore.getState().token !== platformToken) throw new Error("登录状态已变化，请重新打开任务");
+            await useVideoWorkbenchStore.getState().openContentReplacementTask({
+                ...emptyVideoDraft("content-replace"), ...saved, replacement: "person", route: "replicate",
+                media,
+                replacementModel: isRetiredReplacementJob(job) ? "headswap" : "wan",
+                replacementTaskId: saved?.replacementTaskId || job.id, replacementJobId: job.id,
+                replacementJobIds: [...new Set([...(saved?.replacementJobIds || []), ...(saved?.replacementJobId ? [saved.replacementJobId] : []), job.id])],
+                replacementResultKey: undefined, replacementSource: undefined, activeRecord: undefined,
+                video: null, edited: null, final: null,
+            });
+            setHistoryPreview(null);
+            setDetailsOpen(false);
+            setBatchRevision((value) => value + 1);
+            setTab("current");
+        } catch (error) { message.error(error instanceof Error ? error.message : "任务打开失败"); }
+        finally { setOpeningHistory(false); }
+    };
+
+    const continueLocalTask = async (record: VideoRecord, resume = false) => {
+        if (locked) return;
+        setOpeningHistory(true);
+        try {
+            await restoreDraft(record);
+            if (resume) await wb.resume(record);
+        } catch (error) { message.error(error instanceof Error ? error.message : "任务恢复失败"); }
+        finally { setOpeningHistory(false); }
+    };
+
+    const archiveHistoryTask = async (group: (typeof taskGroups)[number], archived: boolean) => {
+        if (useUserStore.getState().token !== platformToken) throw new Error("登录状态已变化，请重新操作");
+        for (const job of group.jobs) {
+            const updated = await archiveReplacementJob(job.id, archived);
+            if (useUserStore.getState().token !== platformToken) throw new Error("登录状态已变化，请重新操作");
+            useReplacementJobsStore.getState().update(updated, platformToken || "");
+        }
+        useVideoWorkbenchStore.getState().setTaskArchived(group.keys, archived);
+        if (useVideoWorkbenchStore.getState().storageError) throw new Error("归档保存失败，请检查浏览器存储后重试");
     };
 
     useEffect(() => {
@@ -514,8 +584,8 @@ export default function ContentReplaceWorkspace() {
         if (!record.result) return;
         try {
             const result = await restoreWorkbenchFile(record.result);
-            const source = record.replacementInput?.media.find((m) => m.role === "reference");
-            setHistoryPreview({ record, result, source: source ? await restoreWorkbenchFile(source) : undefined });
+            const source = (record.replacementInput || record.replacementDraft)?.media.find((m) => m.role === "reference");
+            setHistoryPreview({ record, result, source: source ? await restoreWorkbenchFile(source).catch(() => undefined) : undefined });
             setTab("current");
         } catch (error) {
             message.error(publicServiceText(error instanceof Error ? error.message : "读取历史作品失败"));
@@ -617,13 +687,14 @@ export default function ContentReplaceWorkspace() {
                     <h1 className="text-lg font-semibold">内容替换</h1>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button type={tab === "history" ? "primary" : "text"} size="small" icon={<History size={14} />} onClick={() => setTab("history")}>历史任务</Button>
                     <Button type="text" size="small" disabled={locked || Boolean(wb.storageError)} icon={<Plus size={14} />} onClick={createTask}>新建任务</Button>
-                    <span className="hidden text-sm sm:block" style={muted}>上传原片与参考图，替换人物、商品或背景</span>
+                    {tab !== "history" && <span className="hidden text-sm sm:block" style={muted}>上传原片与参考图，替换人物、商品或背景</span>}
                 </div>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 lg:overflow-hidden" data-testid="replacement-scroll">
-                <div className="mx-auto grid min-h-full max-w-[1800px] gap-5 lg:h-full lg:min-h-0 lg:grid-cols-[380px_minmax(0,1fr)]">
-                    <section className="flex min-h-0 flex-col rounded-xl border" style={surface} aria-label="素材与设置">
+                <div className={`mx-auto grid min-h-full gap-5 lg:h-full lg:min-h-0 ${tab === "history" ? "max-w-[1200px] grid-cols-1" : "max-w-[1800px] lg:grid-cols-[380px_minmax(0,1fr)]"}`}>
+                    <section className={`${tab === "history" ? "hidden" : "flex"} min-h-0 flex-col rounded-xl border`} style={surface} aria-label="素材与设置">
                         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4" data-testid="replacement-input-scroll">
                             <Segmented
                                 block
@@ -708,7 +779,7 @@ export default function ContentReplaceWorkspace() {
                                     {publicServiceText(unavailable || (cloud ? model?.billingDescription || "平台按当前规格计费" : "按当前处理方式执行"))}
                                 </div>
                             </div>}
-                            {person && wholeVideo && <ReplacementBatchPanel subtitleBlocked={subtitleUnavailable} workspace={batchWorkspace}
+                            {person && wholeVideo && <ReplacementBatchPanel key={`${d.replacementTaskId}:${batchRevision}`} subtitleBlocked={subtitleUnavailable} workspace={batchWorkspace}
                                 detailsOpen={detailsOpen && showBatchWorkspace} onDetailsChange={setDetailsOpen}
                                 onOpenWorkspace={() => { setTab("current"); setHistoryPreview(null); }} />}
                             {!(person && wholeVideo) && <Collapse
@@ -848,17 +919,16 @@ export default function ContentReplaceWorkspace() {
                             {!(person && wholeVideo) && submit}
                         </div>
                     </section>
-                    <section className="flex min-h-0 min-w-0 flex-col rounded-xl border lg:overflow-y-auto" style={surface} aria-label="任务与作品区">
+                    <section className={`flex min-h-0 min-w-0 flex-col lg:overflow-y-auto ${tab === "history" ? "" : "rounded-xl border"}`} style={tab === "history" ? undefined : surface} aria-label="任务与作品区">
                         <div className="px-4 pt-2">
-                            <Tabs
+                            {tab === "history" ? <div className="flex items-center gap-3 pb-3 pt-2"><Button size="small" type="text" icon={<ArrowLeft size={14} />} onClick={() => setTab("current")}>返回当前任务</Button><span className="text-sm font-medium">历史任务</span></div> : <Tabs
                                 activeKey={tab}
                                 onChange={setTab}
                                 items={[
-                                    { key: "current", label: wholeVideo ? "当前任务" : "当前结果" },
-                                    { key: "history", label: `本地作品${workRecords.length ? ` (${workRecords.length})` : ""}` },
+                                    { key: "current", label: "当前任务" },
                                     { key: "guide", label: "使用说明" },
                                 ]}
-                            />
+                            />}
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 pt-0 sm:p-5 sm:pt-0">
                             {wb.storageError && <Alert type="error" showIcon title="本地保存异常" description={wb.storageError} />}
@@ -973,7 +1043,7 @@ export default function ContentReplaceWorkspace() {
                                     {sourcePreviewError && previewSource?.url && !historyPreview && (
                                         <Alert type="warning" showIcon title="原视频编码不兼容" description="可转换为兼容的 MP4 后继续预览；转换失败会保留原素材。" action={<Button size="small" loading={repairingSource} disabled={locked} onClick={() => void repairSource()}>修复视频预览</Button>} />
                                     )}
-                                    {previewError && <Alert type="warning" showIcon title="当前浏览器无法播放此编码" description="文件仍可下载，请从任务记录核对作品。" />}
+                                    {previewError && <Alert type="warning" showIcon title="当前浏览器无法播放此编码" description="文件仍可下载，请从历史任务核对作品。" />}
                                     {result ? (
                                         <div role="group" aria-label="成片操作" className="flex flex-wrap gap-2">
                                             <Button icon={<Download size={15} />} onClick={() => void wb.download(result)}>
@@ -990,46 +1060,46 @@ export default function ContentReplaceWorkspace() {
                                 </>
                             )}
                             {tab === "history" && <>
-                                <div className="border-b pb-3" style={{ borderColor: token.colorBorderSecondary }}>
-                                    <div className="text-sm font-medium">保存在此浏览器的生成作品</div>
-                                    <div className="mt-1 text-xs" style={muted}>分段进度和可继续处理的任务，请在“当前任务”中查看。</div>
-                                </div>
-                                {archivedDrafts.length > 0 && <>
-                                    <div className="pt-2 text-sm font-medium">已归档草稿</div>
-                                    {archivedDrafts.map((record) => (
-                                        <article key={record.id} className="flex flex-col gap-2 border-b py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
-                                            <div className="min-w-0 space-y-1">
-                                                <div className="text-sm font-medium">{record.replacementDraft?.replacement ? `换${replacementNames[record.replacementDraft.replacement]}` : "内容替换草稿"}</div>
-                                                <div className="text-xs" style={muted}>{new Date(record.createdAt).toLocaleString()} · {record.replacementDraft?.media.find((media) => media.role === "reference")?.name || "未上传原视频"}</div>
-                                                {record.text && <div className="truncate text-xs" style={muted}>{record.text}</div>}
-                                            </div>
-                                            <Button size="small" disabled={locked || Boolean(wb.storageError)} onClick={() => void restoreDraft(record).catch((error) => message.error(error instanceof Error ? error.message : "草稿恢复失败"))}>继续任务</Button>
-                                        </article>
-                                    ))}
-                                </>}
-                                {workRecords.length ? (
-                                    workRecords.map((record) => (
-                                        <article key={record.id} className="flex flex-col gap-2 border-b py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: token.colorBorderSecondary }}>
-                                            <div className="min-w-0 space-y-1">
-                                                <div className="flex flex-wrap items-center gap-2 text-sm">
-                                                    <span>{record.replacementInput ? `换${replacementNames[record.replacementInput.replacement]}` : "内容替换"}</span>
-                                                    <Tag color={record.status === "completed" ? "success" : record.status === "failed" ? "error" : "processing"}>{recordNames[record.status]}</Tag>
-                                                </div>
-                                                <div className="text-xs" style={muted}>{new Date(record.createdAt).toLocaleString()} · {record.step || "等待处理"}</div>
-                                                {record.replacementInput && <div className="truncate text-xs" style={muted}>{record.replacementInput.media.find((m) => m.role === "reference")?.name}</div>}
-                                                {record.error && <div className="text-xs" style={{ color: token.colorWarningText }}>{publicServiceText(record.error)}{record.status === "failed" && record.replicateBilling ? ` · ${record.replicateBilling.refunded ? `${record.replicateBilling.credits.toLocaleString()} 算力点已返还` : "平台尚未确认返还算力点"}` : ""}</div>}
-                                            </div>
-                                            <Space wrap className="shrink-0">
-                                                {record.result && <>
-                                                    <Button size="small" onClick={() => void showRecord(record)}>查看作品</Button>
-                                                    <Button size="small" onClick={() => void wb.download(record.result!)}>下载</Button>
-                                                </>}
-                                                {record.status !== "completed" && hasReplacementRecovery(record) && <Button size="small" disabled={locked} onClick={() => { setHistoryPreview(null); setTab("current"); void wb.resume(record); }}>{record.replacementPipeline || isLegacyMaskedPersonRecord(record) ? "继续处理旧任务" : "恢复查询"}</Button>}
-                                                {administrator && record.replicateTask && record.status === "interrupted" && <Button size="small" disabled={locked} onClick={() => reconcile(record)}>核对平台任务</Button>}
-                                            </Space>
-                                        </article>
-                                    ))
-                                ) : !archivedDrafts.length && <Empty description="此浏览器还没有保存的作品" />}
+                                <p className="text-xs" style={muted}>本机记录仅保存在此浏览器；账号任务需登录查看。</p>
+                                {!platformToken && <div className="text-xs" style={muted}>登录后可同时查看在线人物替换任务。</div>}
+                                <VideoTaskHistory disabled={locked || Boolean(wb.storageError)} loading={onlineHistory.loading}
+                                    error={onlineHistory.error ? publicServiceText(onlineHistory.error) : undefined} onReload={() => void onlineHistory.refresh()}
+                                    items={taskGroups.map<VideoHistoryItem>((group) => {
+                                        const local = group.snapshot || group.latest;
+                                        const archived = group.jobs.length ? group.jobs.every((job) => job.archived) : group.keys.some((key) => archivedTasks[key]);
+                                        return {
+                                            id: group.id, title: group.title, kind: group.kind, status: group.status, updatedAt: group.updatedAt,
+                                            source: group.jobs.length ? "账号任务" : "仅本机", archived, processing: group.processing, hasResult: group.hasResult,
+                                            onView: group.resultJob ? () => void openOnlineJob(group.resultJob!) : group.resultRecord ? () => void showRecord(group.resultRecord!) : undefined,
+                                            onContinue: group.job ? () => void openOnlineJob(group.job!) : local && (local.replacementDraft || local.replacementInput) ? () => void continueLocalTask(local) : undefined,
+                                            onArchive: (value) => archiveHistoryTask(group, value),
+                                            details: (close) => <div className="space-y-4">
+                                                {group.jobs.map((job) => <section key={job.id} className="space-y-2">
+                                                    <Descriptions size="small" column={1} items={[
+                                                        { key: "id", label: "任务编号", children: job.id },
+                                                        { key: "status", label: "任务状态", children: replacementHistoryStates[job.status] },
+                                                        { key: "model", label: "模型", children: job.modelLabel || job.model },
+                                                        { key: "spec", label: "规格", children: `${job.resolution.replace(/p$/i, "")}p · ${job.seconds} 秒` },
+                                                        { key: "budget", label: "模型预算", children: `${job.credits} 点，实际扣费与退款以使用日志为准` },
+                                                        { key: "progress", label: "进度", children: publicServiceText(job.step) },
+                                                    ]} />
+                                                    {(job.error || job.captionError) && <Alert type="warning" title={publicServiceText(job.error || job.captionError || "")} />}
+                                                    <Button size="small" disabled={locked} onClick={() => { close(); void openOnlineJob(job); }}>打开此任务</Button>
+                                                </section>)}
+                                                {group.records.filter((record) => record.stage !== "draft").map((record) => <section key={record.id} className="space-y-2 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
+                                                    <div className="text-sm">{recordNames[record.status]} · {record.step || "处理记录"}</div>
+                                                    <div className="text-xs" style={muted}>{new Date(record.createdAt).toLocaleString()}</div>
+                                                    {record.error && <div className="text-xs" style={{ color: token.colorWarningText }}>{publicServiceText(record.error)}{record.replicateBilling ? ` · ${record.replicateBilling.refunded ? `${record.replicateBilling.credits} 点已返还` : "平台尚未确认退款"}` : ""}</div>}
+                                                    <Space wrap>
+                                                        {record.result && <Button size="small" disabled={locked} onClick={() => { close(); void showRecord(record); }}>查看此结果</Button>}
+                                                        {!archived && record.status !== "completed" && hasReplacementRecovery(record) && <Button size="small" disabled={locked} onClick={() => { close(); void continueLocalTask(record, true); }}>恢复查询</Button>}
+                                                        {administrator && record.replicateTask && record.status === "interrupted" && <Button size="small" disabled={locked} onClick={() => { close(); reconcile(record); }}>核对平台任务</Button>}
+                                                    </Space>
+                                                </section>)}
+                                                {!group.jobs.length && !group.records.some((record) => record.stage !== "draft") && <div className="text-sm" style={muted}>草稿已保存，尚未提交生成。</div>}
+                                            </div>,
+                                        };
+                                    })} />
                             </>}
                             {tab === "guide" && (
                                 <div className="space-y-5 text-sm">
@@ -1051,9 +1121,9 @@ export default function ContentReplaceWorkspace() {
                     </section>
                 </div>
             </div>
-            <div className="shrink-0 border-t p-3 lg:hidden" style={surface}>
+            {tab !== "history" && <div className="shrink-0 border-t p-3 lg:hidden" style={surface}>
                 {!(person && wholeVideo) && submit}
-            </div>
+            </div>}
             <AssetPickerModal open={Boolean(assetRole)} onClose={() => setAssetRole(null)} onInsert={(payload) => void insertAsset(payload)} />
             {result && !showBatchWorkspace && <VideoTaskDetails open={detailsOpen} onClose={() => setDetailsOpen(false)} record={resultRecord} result={result} />}
             <Modal title="视频模型参数" open={settingsOpen} onCancel={() => setSettingsOpen(false)} footer={null}>

@@ -14,6 +14,8 @@ type WorkbenchState = {
     setStorageError: (error: string) => void;
     drafts: Partial<Record<VideoTool, VideoDraft>>;
     records: VideoRecord[];
+    archivedTasks: Record<string, boolean>;
+    setTaskArchived: (keys: string[], archived: boolean) => void;
     digitalPresets: DigitalHumanPreset[];
     saveDigitalPreset: (preset: DigitalHumanPreset) => void;
     removeDigitalPreset: (id: string) => void;
@@ -35,7 +37,10 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
         (set) => ({
             hydrated: false, storageError: "", busyTools: {}, setBusy: (tool, busy) => set((state) => ({ busyTools: { ...state.busyTools, [tool]: busy } })), setStorageError: (storageError) => set({ storageError }), drafts: {}, records: [], worker: { url: import.meta.env.DEV ? "http://127.0.0.1:8767" : "/api/v1/video-worker", token: "" },
             setHydrated: () => set({ hydrated: true }),
-            digitalPresets: [],
+            digitalPresets: [], archivedTasks: {},
+            setTaskArchived: (keys, archived) => set((state) => ({
+                archivedTasks: { ...state.archivedTasks, ...Object.fromEntries(keys.map((key) => [key, archived])) },
+            })),
             saveDigitalPreset: (preset) => set((state) => ({ digitalPresets: [...state.digitalPresets.filter((p) => p.id !== preset.id), preset] })),
             removeDigitalPreset: (id) => set((state) => ({ digitalPresets: state.digitalPresets.filter((p) => p.id !== id) })),
             patchDraft: (tool, patch) => set((state) => {
@@ -84,7 +89,7 @@ export const useVideoWorkbenchStore = create<WorkbenchState>()(
                 setItem: async (key, value) => { try { await storage.setItem(key, value); } catch (error) { const detail = error instanceof Error ? error.message : "本地保存失败"; if (useVideoWorkbenchStore.getState().storageError !== detail) useVideoWorkbenchStore.getState().setStorageError(detail); } },
                 removeItem: (key) => storage.removeItem(key),
             })),
-            partialize: ({ drafts, records, worker, digitalPresets }) => ({ drafts, records, worker, digitalPresets }),
+            partialize: ({ drafts, records, worker, digitalPresets, archivedTasks }) => ({ drafts, records, worker, digitalPresets, archivedTasks }),
             merge: (persisted, current) => {
                 const saved = (persisted || {}) as Partial<WorkbenchState>;
                 const draft = saved.drafts?.["content-replace"];
