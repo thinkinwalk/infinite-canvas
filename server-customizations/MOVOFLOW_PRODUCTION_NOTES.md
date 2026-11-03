@@ -15,10 +15,23 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.153
-- Current production source: tag v0.19.153, commit 6e22768f73c0f46d052f775a6609c54a32774895
+- Current production image: infinite-canvas:v0.19.154
+- Current production source: tag v0.19.154, commit 7724c8a33b068a31902dffa71a714c6a29dadc38
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.147-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.154-worker/
+
+## v0.19.154 deployment
+
+- Tag `v0.19.154`, commit `7724c8a33b068a31902dffa71a714c6a29dadc38`, is pushed to `release/v0.19.60` and published as a formal GitHub Release. App image `infinite-canvas:v0.19.154`, ID `sha256:787ebe2a58dfde8e6bd88956e11a354a7a8c19e03b88518a3492f3bafc58d00e`, replaces v0.19.153.
+- Store exploration now centers on editable shots, scoped AI preview/adopt/undo, actual input compilation, local store presets and first-frame preview/adoption. Separate narration, actual-audio captions, music and finishing reuse the original video; task IDs and original/history outputs are retained. No production npm dependencies, model catalog, prices or limits changed.
+- Worker image remains `v0.19.87`; versioned source mounts now point to `v0.19.154-worker/`, adding `store_explore.py` and updating `app.py`. App/Worker environment values and all unrelated mounts are preserved. Worker restarted at `2026-11-03T04:49:52.32052811Z`; `store-compose`, `store-transcribe`, `replacement-transcribe` and `compose` are available.
+- Server build, internal/public health, twelve routes, workspace markers and public/container asset hashes passed. JS `/assets/index-BWyx8Pxv.js` SHA-256 `c2d193968b36c56608a861cc8172b9d1b65904ad6f5701f45a5f8c783cae6ea9`; CSS `/assets/index-DuDHliS_.css` SHA-256 `e86c29879a3fc104ef11f1b522fd176bd7ba497c9d9f380884dd777a36861cf8`. Backend binary is unchanged.
+- Database quick check, schema/table counts, settings/protected accounts, 145 task JSON records and metadata for 29,269 existing media files matched the final backup. Final backup `/opt/infinite-canvas/backups/v0.19.154-final-20261103-044950/`; prebuild backup `/opt/infinite-canvas/backups/v0.19.154-prebuild-20261103-044948/`. Backups include verified SQLite, Compose and private environment, not full media contents.
+- Independent public HTTPS and isolated anonymous Chromium checks passed the four views, settings/preset dialogs, theme switching and 1440/390/320px without horizontal overflow, page exceptions or API mutations. Production Worker processed synthetic two-second clips with narration/music/captions, mute and original audio: each retained duration, expected audio and original-file hash. Temporary files were removed, with no persistent job/media or paid inference created.
+- Reports: `/opt/infinite-canvas/releases/v0.19.154-deployment.json`, `v0.19.154-public-verification.json` and `v0.19.154-worker-verification.json`. Workstation evidence is outside the repository in `artifacts/store-explore-qa/`.
+- Two deployment-script checks initially restored prior Compose: the Compose version omits `create_host_path` in normalized bind config, and the Worker health probe needed its required `X-Canvas-Worker` header. Both probe expectations were corrected, a fresh verified backup was taken and all original preservation checks passed. No database restoration or product-source patch was used to bypass these checks.
+- Rollback: restore Compose from the final backup and recreate both App and Worker, restoring v0.19.153 and v0.19.147-worker mounts. Never restore over current database/media. Preserve v0.19.154-worker source directory for recovery.
+- Development validation: 38 frontend tests/247 assertions, 26 Worker tests and nine isolated mocked-browser groups passed. Full TypeScript still has pre-existing errors in other modules and a pre-existing video-worker UUID annotation; changed store modules have no reported errors. Actual paid model quality, identity consistency, ASR accuracy and the user's original browser records remain manual acceptance. Detailed procedure: `docs/content/docs/progress/store-explore-acceptance.mdx`.
 
 ## v0.19.153 deployment
 

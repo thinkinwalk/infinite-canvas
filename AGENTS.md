@@ -88,7 +88,8 @@
 
 ## 生产环境与部署
 
-- 当前生产版本 `v0.19.153`（`6e22768f73c0f46d052f775a6609c54a32774895`），已推送发布分支/tag、发布正式 GitHub Release 并部署。本版隐藏内容替换空任务重复标题、说明和分隔线，收起空容器，保留实际任务状态、载入与操作；服务器构建、内外健康、11 页面与公网／容器资源哈希通过。Worker v0.19.87 身份／挂载／启动时间、数据库结构／表数、账号／设置、145 份任务记录与 29,269 项素材元数据保持。备份 `/opt/infinite-canvas/backups/v0.19.153-final-20261103-042427/`，报告 `/opt/infinite-canvas/releases/v0.19.153-deployment.json`。JS `/assets/index-Bx3bYT_r.js`，CSS `/assets/index-Cgdhuezx.css`。回滚恢复最终备份 Compose，仅重建 App；不覆盖当前数据库／素材。未提交收费生成，未执行本地构建／测试或生产浏览器交互，真实交互仍待验收。本版未包含工作区并行开发的探店改动。以下带版本号的条目为历史记录，以本条和生产交接文档为准。
+- 当前生产版本 `v0.19.154`（`7724c8a33b068a31902dffa71a714c6a29dadc38`），已推送发布分支/tag、发布正式 GitHub Release 并部署。探店支持分镜编辑、局部 AI 预览采用撤销、首帧预览、门店本地方案，以及保留原片的旁白／真实音轨字幕／音乐后期。服务器构建、内外健康、12 页面及资源哈希通过；数据库／设置／账号、145 份任务记录和 29,269 项素材元数据保持。Worker 镜像仍 v0.19.87，源码挂载更新为 `/opt/infinite-canvas/releases/v0.19.154-worker/` 并重启，新探店合成与识别能力可用。开发 38 项前端／247 断言、26 项 Worker 及 9 组隔离浏览器检查通过；公网匿名浏览器 1440／390／320px 和生产真实合成三组通过，未提交收费推理。JS `/assets/index-BWyx8Pxv.js`，CSS `/assets/index-DuDHliS_.css`。备份 `/opt/infinite-canvas/backups/v0.19.154-final-20261103-044950/`；部署／公网／Worker 报告位于 `/opt/infinite-canvas/releases/v0.19.154-*-verification.json` 与 `v0.19.154-deployment.json`。回滚恢复最终备份 Compose 并重建 App 和 Worker，不覆盖当前数据库／素材。真实生成和原浏览器记录待用户按 `docs/content/docs/progress/store-explore-acceptance.mdx` 验收。以下带版本号的条目为历史记录，以本条和生产交接文档为准。
+- `v0.19.153` 历史发布（`6e22768f73c0f46d052f775a6609c54a32774895`）隐藏内容替换空任务重复标题、说明和分隔线，收起空容器，保留实际任务状态、载入与操作；本版未包含当时并行开发的探店改动。备份 `/opt/infinite-canvas/backups/v0.19.153-final-20261103-042427/`，报告 `/opt/infinite-canvas/releases/v0.19.153-deployment.json`。
 - 当前生产域名是 `https://studio.lingzhouai.com`，不要再使用旧域名 `https://studio.movoflow.com` 做生产验证。
 - `v0.19.153` 本机独立 HTTPS 复核健康、两页资源、空任务说明移除／载入与历史入口保留标记、空容器隐藏样式、资源哈希和正式 Release 提交均通过，报告 `/opt/infinite-canvas/releases/v0.19.153-public-verification.json`；未执行生产浏览器交互验收。
 - 当前生产服务器是 `37.221.196.102`，登录用户 `root`，端口 `22`，主机名 `v2202606374943476754`。
