@@ -4,13 +4,12 @@ import { AudioWaveform, FolderOpen, Play, Scissors, Upload as UploadIcon, X } fr
 import { Link } from "react-router-dom";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
-import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { formatDuration } from "@/lib/image-utils";
-import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { extractVoiceReference, workbenchMediaBlob } from "@/services/api/video-worker";
-import { saveVoiceReference } from "@/services/api/voices";
-import { useUserStore } from "@/stores/use-user-store";
+import { useAssetStore } from "@/stores/use-asset-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
+import { saveVoiceAsset } from "./save-voice-asset";
 
 type VideoSource = UploadedFile & { name: string };
 type Range = [number, number];
@@ -22,9 +21,11 @@ function seconds(value: number) {
 export default function VideoVoiceExtractPage() {
     const { token } = theme.useToken();
     const { message } = App.useApp();
-    const session = useUserStore((state) => state.token);
     const worker = useVideoWorkbenchStore((state) => state.worker);
     const hydrated = useVideoWorkbenchStore((state) => state.hydrated);
+    const assetsHydrated = useAssetStore((state) => state.hydrated);
+    const [savedAssetId, setSavedAssetId] = useState("");
+    const savedAsset = useAssetStore((state) => state.assets.find((asset) => asset.id === savedAssetId));
     const [source, setSource] = useState<VideoSource | null>(null);
     const [range, setRange] = useState<Range>([0, 0]);
     const [sample, setSample] = useState<UploadedFile | null>(null);
@@ -38,6 +39,8 @@ export default function VideoVoiceExtractPage() {
     const duration = (source?.durationMs || 0) / 1000;
     const validRange = Boolean(source && duration > 0 && range[0] >= 0 && range[1] > range[0] && range[1] <= duration);
     const locked = Boolean(busy) || !hydrated;
+    const saved = savedAsset?.kind === "audio" && savedAsset.data.storageKey === sample?.storageKey
+        && savedAsset.title === sampleName.trim() && savedAsset.note === referenceText.trim();
 
     useEffect(() => () => controller.current?.abort(), []);
 
@@ -47,6 +50,7 @@ export default function VideoVoiceExtractPage() {
         setSource(next);
         setRange([0, end]);
         setSample(null);
+        setSavedAssetId("");
         setError("");
         setSampleName(`${next.name.replace(/\.[^.]+$/, "")} 音色`);
         setReferenceText("");
@@ -95,6 +99,7 @@ export default function VideoVoiceExtractPage() {
             const result = await extractVoiceReference(worker, source, range[0], range[1], abort.signal, setStep);
             abort.signal.throwIfAborted();
             setSample(result.media);
+            setSavedAssetId("");
             setReferenceText(result.transcript);
             if (result.transcriptSource === "subtitle-track" || result.transcriptSource === "burned-in-subtitle") {
                 message.success("已优先提取视频字幕，请试听并核对原文");
@@ -113,23 +118,14 @@ export default function VideoVoiceExtractPage() {
     };
 
     const save = async () => {
-        if (!sample || !sampleName.trim() || !referenceText.trim() || controller.current) return;
+        if (!sample || !sampleName.trim() || saved || controller.current) return;
         const abort = new AbortController();
         controller.current = abort;
         setBusy("save");
         setError("");
         try {
-            const blob = sample.storageKey ? await getMediaBlob(sample.storageKey) : null;
-            if (!blob) throw new Error("参考音频已清理，请重新提取");
-            await saveVoiceReference({
-                name: sampleName.trim(),
-                referenceText: referenceText.trim(),
-                language: "Chinese",
-                file: blob,
-                filename: "voice-reference.wav",
-                signal: abort.signal,
-            });
-            message.success("音色已保存到账号音色");
+            setSavedAssetId(await saveVoiceAsset(sample, sampleName, referenceText));
+            message.success("人物音色已保存到本浏览器素材库");
         } catch (cause) {
             if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "保存音色失败");
         } finally {
@@ -145,7 +141,6 @@ export default function VideoVoiceExtractPage() {
                     <Link to="/video" className="text-sm" style={{ color: token.colorTextSecondary }}>视频制作</Link>
                     <h1 className="flex items-center gap-2 text-lg font-semibold"><AudioWaveform size={19} />音色提取</h1>
                 </div>
-                {!session && <UserStatusActions accountOnly />}
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-6">
                 <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -217,7 +212,7 @@ export default function VideoVoiceExtractPage() {
                     </section>
                     <section className="min-w-0 space-y-4 rounded-xl border p-4" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
                         <div>
-                            <h2 className="m-0 text-base font-medium">保存为账号音色</h2>
+                            <h2 className="m-0 text-base font-medium">人物音色素材</h2>
                             <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>优先使用视频字幕；没有可用字幕时再识别语音。请试听、核对后保存。</p>
                         </div>
                         {sample ? (
@@ -228,11 +223,12 @@ export default function VideoVoiceExtractPage() {
                                     value={referenceText}
                                     disabled={locked}
                                     rows={5}
-                                    placeholder="提取的字幕或语音识别结果会显示在这里，也可手动填写"
+                                    placeholder="字幕或识别原文，可核对修改；留空也可保存音色"
                                     onChange={(event) => setReferenceText(event.target.value)}
                                 />
-                                <Button type="primary" block icon={<AudioWaveform size={15} />} loading={busy === "save"} disabled={locked || !session || !sampleName.trim() || !referenceText.trim()} onClick={() => void save()}>保存音色</Button>
-                                {!session && <div className="flex items-center justify-between gap-2 text-xs" style={{ color: token.colorTextSecondary }}><span>登录后保存到账号</span><UserStatusActions accountOnly /></div>}
+                                <Button type="primary" block icon={<AudioWaveform size={15} />} loading={busy === "save"} disabled={locked || !assetsHydrated || !sampleName.trim() || saved} onClick={() => void save()}>{saved ? "已保存到素材库" : "保存到素材库"}</Button>
+                                <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>保存在当前浏览器，可在探店视频中作为人物音色使用。</p>
+                                {saved && <Link to="/video/store-explore" className="inline-flex items-center gap-1 text-sm">前往探店视频</Link>}
                             </>
                         ) : (
                             <div className="flex min-h-56 items-center justify-center rounded-lg border border-dashed" style={{ borderColor: token.colorBorderSecondary }}>
@@ -241,7 +237,7 @@ export default function VideoVoiceExtractPage() {
                         )}
                         {error && <Alert type="error" showIcon title={error} closable onClose={() => setError("")} />}
                         {busy && busy !== "extract" && <div className="text-xs" role="status" style={{ color: token.colorTextSecondary }}>{busy === "upload" ? "正在读取视频…" : "正在保存音色…"}</div>}
-                        {busy && <Button type="text" size="small" icon={<X size={14} />} onClick={() => controller.current?.abort()}>取消</Button>}
+                        {busy === "extract" && <Button type="text" size="small" icon={<X size={14} />} onClick={() => controller.current?.abort()}>取消</Button>}
                     </section>
                 </div>
             </div>
