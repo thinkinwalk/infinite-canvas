@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.163
-- Current production source: tag v0.19.163, commit 95a8005d15b27c1cba1037789129f3f0c1758f77
+- Current production image: infinite-canvas:v0.19.164
+- Current production source: tag v0.19.164, commit a6c08fee368a2b9ce15aa39b97fab1d0c2dbf39e
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.163-worker/
+
+## v0.19.164 deployment
+
+- Product tag `v0.19.164`, source `a6c08fee368a2b9ce15aa39b97fab1d0c2dbf39e`, is pushed to `release/v0.19.60`. The workstation GitHub CLI is not authenticated, so no formal GitHub Release was created.
+- Video voice extraction now sends the extracted WAV through the existing Worker `transcribe` capability. The recognized transcript pre-fills the editable reference text; users can audition and correct it before saving. Recognition failure leaves manual entry available. The page clarifies that background music is not removed and can reduce transcription and voice-reference quality.
+- The production server built `infinite-canvas:v0.19.164` locally. App image ID is `sha256:c6b8a9195eaf082b50b518bda88e0a3c5dc340e44c79527488703fe54879347a`; backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is unchanged from v0.19.163. Worker image `v0.19.87`, container identity, start time, mounts and configuration were preserved.
+- Deployment preflight found no active video, Replicate or Worker jobs. The online SQLite backup passed `PRAGMA quick_check`; schema, table counts, settings and protected account values remained unchanged. Metadata for 29,568 media files and 175 task/job records was preserved. No paid inference was submitted.
+- Internal and public health, twelve routes including `/video/voice-extract`, feature copy and public/container JS/CSS hashes passed. JS `/assets/index-BYqwU_X0.js` SHA-256 `66e7d0c411002d27ed7e8cca02429d725c117ed3270aef61d4d592260cb6cfd5`; CSS `/assets/index-fSa6HH0w.css` SHA-256 `42485ef1297d7dd8aafa71e1efd8d251cdf0242a235688c801d6e6b90ed38eba`.
+- First deployment verification automatically rolled App back to v0.19.163 because its custom marker expected a nonexistent page title; the source title was checked and the marker corrected. The retry deployed successfully. Prebuild backup `/opt/infinite-canvas/backups/v0.19.164-prebuild-20261104-012916/`; final rollback backup `/opt/infinite-canvas/backups/v0.19.164-final-20261104-012918/`; report `/opt/infinite-canvas/releases/v0.19.164-deployment.json`.
+- Rollback restores the final backup Compose and recreates App only, preserving live database/media and the unchanged Worker. Transcript accuracy, real voice saving, speaker separation in mixed audio and downstream model results remain user acceptance items.
 
 ## v0.19.163 deployment
 
