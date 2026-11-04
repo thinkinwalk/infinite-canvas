@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { useNavigate } from "react-router-dom";
 
 import { createCanvasNode, videoMetadata } from "@/lib/canvas/canvas-node-factory";
+import { captureVideoFrame } from "@/lib/canvas/canvas-video-frame";
 import { isCurrentReplacementRecord, isLegacyMaskedPersonRecord, RETIRED_HEAD_SWAP_MESSAGE } from "@/lib/content-replacement-state";
 import { archiveViralTask } from "@/lib/viral-task";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
@@ -18,7 +19,7 @@ import { isWan30, remapMaterialMentions, videoProfile } from "@/lib/video-capabi
 import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
-import { parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource } from "./store-explore-plan";
+import { parseStoreFeedbackResult, parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource } from "./store-explore-plan";
 import { parseStoreMaterialSuggestion, storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
 import { storeScriptPrompt, type StoreScriptScope } from "./store-script";
 import { storePersonVoices, storeVoiceFileError, storeVoiceFileFormatError, storeVoiceSampleError } from "./store-person-voice";
@@ -34,7 +35,7 @@ import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, di
 import { contentReplacementPrompt } from "./content-replace-prompt";
 import { WorkerRequestError, analysisReferenceVideo, readWorkerJob, cancelWorkerJob, createWorkerJob, getWorkerCapabilities, prepareWorkbenchVideo, resolveWorkerUrl, storeTemporaryWorkbenchVideo, storeWorkerImage, storeWorkerResult, uploadWorkerMedia, waitForWorkerJob, workbenchMediaBlob } from "@/services/api/video-worker";
 import { originalVideoSizeError } from "@/lib/video-reference-retention";
-import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { deleteStoredMedia, getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -958,16 +959,30 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 const scope = stage === "script" && ctx.scriptRequest ? JSON.parse(ctx.scriptRequest) as StoreScriptScope : undefined;
                 const continuing = Boolean(scope && d.storeScriptSuggestion && d.storeShotSuggestion?.length);
                 const sourceDraft = continuing ? { ...d, script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion } : d;
+                const feedback = Boolean(scope?.feedbackVideoRecordId);
+                if (feedback && (sourceDraft.storeFeedbackSourceRecordId !== scope!.feedbackVideoRecordId || !sourceDraft.video)) {
+                    throw new Error("成片反馈来源与当前项目不一致，请从对应成片重新进入");
+                }
+                if (feedback && scope!.feedbackTimeSeconds !== undefined) {
+                    const duration = (sourceDraft.video!.durationMs || 0) / 1000;
+                    if (!Number.isFinite(scope!.feedbackTimeSeconds) || scope!.feedbackTimeSeconds < 0 || (duration > 0 && scope!.feedbackTimeSeconds > duration)) throw new Error("反馈时间点超出成片时长");
+                }
                 const localIds = scope?.ids?.length ? scope.ids : undefined;
                 if (localIds && (!sourceDraft.storeShots?.length || new Set(localIds).size !== localIds.length || localIds.some((id) => !sourceDraft.storeShots!.some((s) => s.id === id)))) throw new Error("选定镜头已变化，请重新选择修改范围");
-                const review = stage === "script" && !localIds;
+                const review = stage === "script" && !localIds && !feedback;
                 const pendingImages = stage === "analyze" ? images : images.filter((m) => !m.storeObservation?.trim());
                 const calls = pendingImages.length + (stage === "analyze" ? 0 : review ? 2 : 1);
                 const textConfig = stage === "analyze" ? configForFeature(config, "store-explore.analyze", "text") : modelConfig("text");
                 if (calls && textConfig.channelMode === "remote") {
                     store().patchRecord(ctx.recordId, { step: "等待确认费用" });
                     const quote = await quoteTextModel(textConfig, textConfig.textModel, ctx.signal);
-                    await confirmStorePrice({ ...quote, credits: quote.credits * calls, calculation: `${pendingImages.length} 张待观察图片逐张处理${stage === "analyze" ? "" : review ? "，另含 1 次方案编写 + 1 次独立脚本检查" : matching ? "，另含 1 次配图处理" : "，另含 1 次局部修改，不含整稿检查"}；单次 ${quote.credits} 点` }, stageLabels[stage], ctx.signal, `本次共 ${calls} 次文案调用；${stage === "analyze" ? "重新观察当前素材" : "已保存的单图观察直接复用"}，失败后不自动重试`);
+                    const detail = feedback
+                        ? `本次 1 次成片反馈改稿；${scope!.feedbackTimeSeconds === undefined ? "只发送文字反馈和任务输入快照，不发送成片画面" : `将截取成片 ${scope!.feedbackTimeSeconds.toFixed(2)} 秒画面并发送给所选文案模型`}，不追加整稿检查`
+                        : `${stage === "analyze" ? "重新观察当前素材" : "已保存的单图观察直接复用"}，失败后不自动重试`;
+                    const calculation = feedback
+                        ? `1 次成片反馈改稿；单次 ${quote.credits} 点`
+                        : `${pendingImages.length} 张待观察图片逐张处理${stage === "analyze" ? "" : review ? "，另含 1 次方案编写 + 1 次独立脚本检查" : matching ? "，另含 1 次配图处理" : "，另含 1 次局部修改，不含整稿检查"}；单次 ${quote.credits} 点`;
+                    await confirmStorePrice({ ...quote, credits: quote.credits * calls, calculation }, stageLabels[stage], ctx.signal, `本次共 ${calls} 次文案调用；${detail}`);
                 }
                 const observed = new Map<string, string>(images.map((m) => [m.id, m.storeObservation || ""]));
                 for (const [index, image] of pendingImages.entries()) {
@@ -989,13 +1004,35 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 }
                 const seconds = Number(cfg.videoSeconds), limit = videoProfile(cfg, cfg.videoModel).maxImages;
                 const instruction = storeScriptPrompt(sourceDraft, materialList, seconds, limit, scope);
-                const value = await text(ctx, instruction, [], false, undefined, true, true, localIds ? "正在修改选定镜头" : "正在规划主题与编写方案");
-                store().patchRecord(ctx.recordId, { step: "正在校验拍摄方案" });
-                let shots = parseStoreShots(value, sourceDraft, seconds, localIds);
+                let frameUrl: string | undefined;
+                let value: string;
+                try {
+                    let frame: UploadedFile | undefined;
+                    if (feedback && scope!.feedbackTimeSeconds !== undefined) {
+                        const video = sourceDraft.video!;
+                        const blob = video.storageKey ? await getMediaBlob(video.storageKey) : null;
+                        if (!blob) throw new Error("本地成片文件不可用，原稿已保留");
+                        const sourceUrl = URL.createObjectURL(blob);
+                        try {
+                            const image = await captureVideoFrame(sourceUrl, "current", scope!.feedbackTimeSeconds);
+                            frameUrl = URL.createObjectURL(image);
+                            frame = { url: frameUrl, storageKey: "", bytes: image.size, mimeType: "image/png" };
+                        } finally {
+                            URL.revokeObjectURL(sourceUrl);
+                        }
+                    }
+                    value = await text(ctx, instruction, frame ? [frame] : [], false, frame ? [`这是用户指定的已生成成片在 ${scope!.feedbackTimeSeconds!.toFixed(2)} 秒处的实际画面，仅作问题诊断依据。`] : undefined, true, true, feedback ? "正在结合成片反馈调整镜头" : localIds ? "正在修改选定镜头" : "正在规划主题与编写方案");
+                } finally {
+                    if (frameUrl) URL.revokeObjectURL(frameUrl);
+                }
+                store().patchRecord(ctx.recordId, { step: feedback ? "正在校验反馈修改范围" : "正在校验拍摄方案" });
+                const feedbackResult = feedback ? parseStoreFeedbackResult(value!, sourceDraft, seconds, localIds) : undefined;
+                let shots = feedbackResult?.shots || parseStoreShots(value!, sourceDraft, seconds, localIds);
                 const base = continuing ? d.storeSuggestionBase || storePlanKey(d) : storePlanKey(d);
                 const turn = scope ? {
-                    id: crypto.randomUUID(), request: scope.request, scope: localIds ? `镜头 ${localIds.map((id) => (sourceDraft.storeShots || []).findIndex((s) => s.id === id) + 1).join("、")}` : scope.rewrite ? "整稿改写" : "全稿调整",
+                    id: crypto.randomUUID(), request: scope.request, scope: feedbackResult ? `镜头 ${feedbackResult.affectedShotIds.map((id) => (sourceDraft.storeShots || []).findIndex((s) => s.id === id) + 1).join("、")}` : localIds ? `镜头 ${localIds.map((id) => (sourceDraft.storeShots || []).findIndex((s) => s.id === id) + 1).join("、")}` : scope.rewrite ? "整稿改写" : "全稿调整",
                     before: continuing ? d.storeScriptSuggestion! : d.script, after: renderStoreShots(shots, d), status: "pending" as const, createdAt: Date.now(),
+                    ...(feedback ? { sourceVideoRecordId: scope!.feedbackVideoRecordId, ...(scope!.feedbackTimeSeconds !== undefined ? { feedbackTimeSeconds: scope!.feedbackTimeSeconds } : {}), understanding: feedbackResult?.understanding } : {}),
                 } : undefined;
                 const turns = scope ? [
                     ...(d.storeScriptTurns || []).map((item) => item.status === "pending" ? { ...item, status: "superseded" as const } : item),
@@ -1027,7 +1064,8 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 const script = renderStoreShots(shots, d);
                 return d.script || storePlanKey(read(tool)) !== base
                     ? {
-                        storeScriptSuggestion: script, storeShotSuggestion: shots, storeSuggestionBase: base, storeScriptReview: review ? "passed" : "local",
+                        storeScriptSuggestion: script, storeShotSuggestion: shots, storeSuggestionBase: base, storeScriptReview: feedback ? "feedback" : review ? "passed" : "local",
+                        ...(feedback ? { storeScriptUnderstanding: feedbackResult!.understanding } : { storeScriptUnderstanding: undefined }),
                         ...(turns ? { storeScriptTurns: turns.map((item) => item.id === turn?.id ? { ...item, after: script } : item) } : {}),
                     }
                     : { script, storeShots: shots, storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeScriptStale: false, storeOutputStale: true };

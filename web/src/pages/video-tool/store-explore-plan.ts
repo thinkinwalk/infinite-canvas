@@ -19,7 +19,7 @@ export function storeFreeScriptError(script: string, seconds: number, ratio: str
     return "";
 }
 
-export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.media.filter((m) => m.kind === "image" || m.role === "voice").map((m) => [m.id, m.storageKey || m.url, m.role, m.storePurpose, m.storePerson])]);
+export const storePlanKey = (d: VideoDraft) => JSON.stringify([d.script, d.storeShots || [], d.storeFacts, d.instructions, d.analysis, d.storeSettings, d.storeFeedbackSourceRecordId ? [d.storeFeedbackSourceRecordId, d.video?.storageKey || d.video?.url] : null, d.media.filter((m) => m.kind === "image" || m.role === "voice").map((m) => [m.id, m.storageKey || m.url, m.role, m.storePurpose, m.storePerson])]);
 export const storeSpeechKey = (d: Pick<VideoDraft, "narration" | "voice">, model: string) => JSON.stringify([d.narration.trim(), d.voice, model]);
 export const storeSubtitleSource = (d: VideoDraft) => (d.storeAudioMode === "narration" ? d.speech?.storageKey || d.speech?.url || "" : d.storeAudioMode === "mute" ? "" : d.video?.storageKey || d.video?.url || "");
 
@@ -82,6 +82,32 @@ export function parseStoreShots(raw: string, d: VideoDraft, seconds: number, sel
     return merged;
 }
 
+export function parseStoreFeedbackResult(raw: string, d: VideoDraft, seconds: number, selectedIds?: string[]) {
+    let value: unknown;
+    try {
+        value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+    } catch {
+        throw new Error("模型未返回有效的成片反馈修改结果，原稿已保留");
+    }
+    const result = value as { understanding?: unknown; affectedShotIds?: unknown; shots?: unknown };
+    if (typeof result.understanding !== "string" || !result.understanding.trim() || !Array.isArray(result.affectedShotIds) || !result.affectedShotIds.length || result.affectedShotIds.some((id) => typeof id !== "string")) {
+        throw new Error("模型未说明理解的问题或受影响镜头，原稿已保留");
+    }
+    const affectedShotIds = result.affectedShotIds as string[];
+    if (new Set(affectedShotIds).size !== affectedShotIds.length || affectedShotIds.some((id) => !d.storeShots?.some((shot) => shot.id === id))) {
+        throw new Error("反馈修改引用了不存在或重复的镜头，原稿已保留");
+    }
+    if (selectedIds && (affectedShotIds.length !== selectedIds.length || affectedShotIds.some((id) => !selectedIds.includes(id)))) {
+        throw new Error("反馈修改超出所选镜头范围，原稿已保留");
+    }
+    const shots = parseStoreShots(JSON.stringify({ shots: result.shots }), d, seconds, affectedShotIds);
+    if (shots.every((shot) => {
+        const original = d.storeShots?.find((row) => row.id === shot.id);
+        return original && original.visual === shot.visual && original.dialogue === shot.dialogue && original.referenceNeed === shot.referenceNeed && JSON.stringify(original.materialIds) === JSON.stringify(shot.materialIds);
+    })) throw new Error("本次反馈没有产生可核对的镜头修改，原稿已保留");
+    return { understanding: result.understanding.trim(), affectedShotIds, shots };
+}
+
 export function renderStoreShots(shots: StoreShot[], d: Pick<VideoDraft, "media">) {
     return shots.map((s, i) => `${i + 1}. ${s.start}–${s.end}秒\n画面：${s.visual}\n素材：${s.materialIds.map((id) => d.media.find((m) => m.id === id)?.name || "已移除素材").join("、") || "无"}${s.dialogue ? `\n台词：${s.dialogue}` : ""}${s.referenceNeed ? `\n待补素材：${s.referenceNeed}` : ""}`).join("\n\n");
 }
@@ -111,6 +137,7 @@ export function storeExploreInput(d: VideoDraft, config: AiConfig): StoreExplore
         storeShots,
         storeReferenceIds,
         storeScriptTurns,
+        storeFeedbackSourceRecordId,
         storeAudioMode,
         narration,
         speech,
@@ -139,6 +166,7 @@ export function storeExploreInput(d: VideoDraft, config: AiConfig): StoreExplore
         storeShots,
         storeReferenceIds,
         storeScriptTurns,
+        storeFeedbackSourceRecordId,
         storeAudioMode,
         narration,
         speech,

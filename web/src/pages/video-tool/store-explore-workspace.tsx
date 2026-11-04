@@ -92,7 +92,9 @@ function StoreProjectEditor() {
     const [viewed, setViewed] = useState<VideoRecord | null>(null),
         [previewError, setPreviewError] = useState(false);
     const [request, setRequest] = useState(""),
-        [scope, setScope] = useState("all");
+        [scope, setScope] = useState(d.storeFeedbackSourceRecordId ? "feedback" : "all"),
+        [feedbackSeconds, setFeedbackSeconds] = useState<number | null>(null);
+    const feedbackVideoRef = useRef<HTMLVideoElement>(null);
     const [analysisOpen, setAnalysisOpen] = useState(false),
         [analysisView, setAnalysisView] = useState("current"),
         [analysisDraft, setAnalysisDraft] = useState<{ base: string; value: string } | null>(null);
@@ -161,6 +163,7 @@ function StoreProjectEditor() {
         return () => quoteController.current?.abort();
     }, [priceKey]);
     useEffect(() => setPreviewError(false), [result?.url]);
+    useEffect(() => setScope(d.storeFeedbackSourceRecordId ? "feedback" : "all"), [d.storeFeedbackSourceRecordId]);
     useEffect(() => { if (screens.lg && tab === "materials") setTab("plan"); }, [screens.lg, tab]);
     useEffect(() => {
         if (wb.hydrated && editable && config.audioModel && !voiceOptions.includes(d.voice)) wb.edit({ voice: cloudSpeech ? "Vivian" : "alloy" }, "speech");
@@ -230,6 +233,7 @@ function StoreProjectEditor() {
             storeScriptSuggestion: "",
             storeShotSuggestion: undefined,
             storeScriptReview: undefined,
+            storeScriptUnderstanding: undefined,
             storeScriptStale: false,
             storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "accepted" as const } : turn),
         }, "video");
@@ -320,6 +324,42 @@ function StoreProjectEditor() {
                 await useVideoWorkbenchStore.getState().createStoreProject(`${project.name} · 新版本`, { ...emptyVideoDraft("store-explore"), ...input, media, video: null, final: null, speech: null, storeSpeechKey: undefined, subtitles: [], storeOutputStale: false });
             },
         });
+    const startFeedbackRevision = async (r: VideoRecord) => {
+        if (!r.storeExploreInput || !r.result || r.status !== "completed" || r.stage !== "video") return;
+        if (!r.storeExploreInput.storeShots?.length) {
+            message.warning("该版本没有结构化镜头快照，暂不能按受影响镜头定向改稿");
+            return;
+        }
+        try {
+            const { channelMode: _channelMode, baseUrl: _baseUrl, ...input } = r.storeExploreInput;
+            const media = await Promise.all(input.media.map(async (m) => ({ ...m, ...(await restoreWorkbenchFile(m)) })));
+            const video = await restoreWorkbenchFile(r.result);
+            const project = useVideoWorkbenchStore.getState().storeProjects[wb.projectId];
+            await useVideoWorkbenchStore.getState().createStoreProject(`${project.name} · 成片反馈`, {
+                ...emptyVideoDraft("store-explore"),
+                ...input,
+                media,
+                video,
+                final: null,
+                speech: null,
+                storeSpeechKey: undefined,
+                subtitles: [],
+                storeAdoptedVideoId: r.id,
+                storeFeedbackSourceRecordId: r.id,
+                storeOutputStale: false,
+                storeScriptSuggestion: "",
+                storeShotSuggestion: undefined,
+                storeScriptReview: undefined,
+                storeScriptUnderstanding: undefined,
+                storeSuggestionBase: undefined,
+            });
+            setFeedbackSeconds(null);
+            setRequest("");
+            message.success("已新建独立的成片反馈项目，原项目和成片保持不变");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "无法创建成片反馈项目");
+        }
+    };
     const adoptResult = (record: VideoRecord) => {
         if (locked || !record.storeExploreInput || record.status !== "completed") return;
         const snapshot = { ...emptyVideoDraft("store-explore"), ...record.storeExploreInput };
@@ -790,6 +830,21 @@ function StoreProjectEditor() {
                             {tab === "materials" && <div className="max-w-xl py-2">{materialsPanel}</div>}
                             {tab === "plan" && (
                                 <div className={`space-y-4 py-2 ${!busy && active?.stage === "script" && active.status === "completed" ? "animate-in fade-in duration-300 motion-reduce:animate-none" : ""}`} aria-busy={busy && active?.stage === "script"}>
+                                    {d.storeFeedbackSourceRecordId && d.video && (
+                                        <section className="space-y-3 border-b pb-4" style={border} aria-label="成片反馈来源">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <strong className="text-sm font-medium">根据已生成成片反馈</strong>
+                                                <span className="text-xs" style={muted}>来源任务：{d.storeFeedbackSourceRecordId}</span>
+                                            </div>
+                                            <video ref={feedbackVideoRef} controls src={d.video.url} className="max-h-[42vh] min-h-40 w-full bg-black object-contain" />
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <InputNumber aria-label="反馈画面时间点" disabled={!d.video.storageKey} min={0} max={(d.video.durationMs || 0) / 1000 || undefined} step={0.1} value={feedbackSeconds} onChange={setFeedbackSeconds} addonAfter="秒" />
+                                                <Button size="small" disabled={!d.video.storageKey} onClick={() => setFeedbackSeconds(Number((feedbackVideoRef.current?.currentTime || 0).toFixed(2)))}>使用当前播放位置</Button>
+                                                {feedbackSeconds !== null && <Button size="small" onClick={() => setFeedbackSeconds(null)}>不发送画面</Button>}
+                                            </div>
+                                            <p className="text-xs" style={muted}>{!d.video.storageKey ? "该视频无法从本地素材库读取画面，本轮可使用文字反馈，但不能附加成片截图。" : feedbackSeconds === null ? "未选择时间点：本轮只向文案模型发送文字反馈和原方案，不发送成片画面。" : `本轮会截取成片 ${feedbackSeconds.toFixed(2)} 秒处的一帧，随反馈发送给所选文案模型；不会上传整段视频。`}</p>
+                                        </section>
+                                    )}
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <h2 ref={planHeading} tabIndex={-1} className="text-base font-medium">{shots.length ? `${shots.length} 个镜头 · ${shots.at(-1)?.end} 秒` : "拍摄方案"}</h2>
                                         <Space wrap size={4}>
@@ -898,7 +953,7 @@ function StoreProjectEditor() {
                                                 className="w-full sm:w-44"
                                                 disabled={locked}
                                                 onChange={setScope}
-                                                options={[{ value: "all", label: "整稿改写" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
+                                                options={[...(d.storeFeedbackSourceRecordId ? [{ value: "feedback", label: "按成片反馈定位" }] : []), { value: "all", label: "整稿改写" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
                                             />
                                             <Input aria-label="AI修改要求" className="min-w-0 flex-1" value={request} disabled={locked} onChange={(e) => setRequest(e.target.value)} placeholder={d.storeScriptSuggestion ? "继续说要怎么调整这份候选方案" : "例如：缩短台词，保留画面"} />
                                             <Dropdown disabled={locked} menu={{
@@ -911,9 +966,12 @@ function StoreProjectEditor() {
                                                 <Button aria-label="常用修改要求" title="常用修改要求" icon={<Pencil size={14} />} />
                                             </Dropdown>
                                             <Button
-                                                disabled={locked || !request.trim() || Boolean(textError()) || (scope !== "all" && !shots.some((s) => s.id === scope))}
+                                                disabled={locked || !request.trim() || Boolean(textError()) || (scope !== "all" && scope !== "feedback" && !shots.some((s) => s.id === scope))}
                                                 icon={<Sparkles size={14} />}
-                                                onClick={() => void wb.reviseScript(JSON.stringify({ request, ...(scope !== "all" ? { ids: [scope] } : { rewrite: true }) }))}
+                                                onClick={() => void wb.reviseScript(JSON.stringify({
+                                                    request,
+                                                    ...(scope !== "all" && d.storeFeedbackSourceRecordId ? { feedbackVideoRecordId: d.storeFeedbackSourceRecordId, ...(feedbackSeconds !== null ? { feedbackTimeSeconds: feedbackSeconds } : {}), ...(scope !== "feedback" ? { ids: [scope] } : {}) } : scope === "all" ? { rewrite: true } : { ids: [scope] }),
+                                                }))}
                                             >
                                                 {d.storeScriptSuggestion ? "继续调整候选" : "生成修改预览"}
                                             </Button>
@@ -939,7 +997,8 @@ function StoreProjectEditor() {
                                     {d.storeScriptSuggestion && (
                                         <section ref={planSuggestion} tabIndex={-1} aria-label="待采用方案" className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
                                             <strong className="text-sm font-medium">待采用方案</strong>
-                                            {d.storeScriptReview && <p className="text-xs" style={muted}>{d.storeScriptReview === "passed" ? "已完成脚本检查，请核对后采用。" : d.storeScriptReview === "local" ? "仅修改所选镜头，未追加整稿检查。" : d.storeScriptReview === "pending" && busy ? "候选已保存，正在检查事实与台词。" : "未检查候选：检查未完成，请人工核对后决定是否采用；不会自动重试。"}</p>}
+                                            {d.storeScriptReview && <p className="text-xs" style={muted}>{d.storeScriptReview === "passed" ? "已完成脚本检查，请核对后采用。" : d.storeScriptReview === "local" ? "仅修改所选镜头，未追加整稿检查。" : d.storeScriptReview === "feedback" ? "根据反馈生成了定向修改候选，尚未应用到正式方案。" : d.storeScriptReview === "pending" && busy ? "候选已保存，正在检查事实与台词。" : "未检查候选：检查未完成，请人工核对后决定是否采用；不会自动重试。"}</p>}
+                                            {d.storeScriptReview === "feedback" && d.storeScriptUnderstanding && <Alert type="info" showIcon title={`AI 对问题的理解：${d.storeScriptUnderstanding}`} description={`本次仅调整：${pendingScriptTurn?.scope || "按反馈定位的镜头"}。请对照原片确认后再采用。`} />}
                                             {pendingScriptTurn && <p className="text-xs" style={muted}>本轮范围：{pendingScriptTurn.scope} · {pendingScriptTurn.request}</p>}
                                             <div className="grid gap-3 md:grid-cols-2">
                                                 <label className="block space-y-1 text-xs"><span>当前正式方案</span><Input.TextArea readOnly aria-label="当前正式方案" value={d.script} rows={8} /></label>
@@ -951,6 +1010,7 @@ function StoreProjectEditor() {
                                                 </Button>
                                                 <Button size="small" disabled={locked} onClick={() => wb.patch({
                                                     storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined,
+                                                    storeScriptUnderstanding: undefined,
                                                     storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
                                                 })}>
                                                     {d.script ? "保留原稿" : "放弃候选"}
@@ -976,6 +1036,7 @@ function StoreProjectEditor() {
                                                 <span className="min-w-0 flex-1 break-words text-xs">{r.storeOrigin?.modelLabel || r.modelTask?.model || "视频"} · {new Date(r.createdAt).toLocaleString()}{d.storeAdoptedVideoId === r.id ? " · 当前采用" : ""}</span>
                                                 <Button size="small" onClick={() => void viewRecord(r)}>预览</Button>
                                                 <Button size="small" disabled={locked || d.storeAdoptedVideoId === r.id} onClick={() => adoptResult(r)}>采用本版</Button>
+                                                <Button size="small" disabled={locked || !r.storeExploreInput} onClick={() => void startFeedbackRevision(r)}>根据成片反馈优化脚本</Button>
                                             </div>
                                         ))}
                                     </section>

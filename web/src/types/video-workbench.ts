@@ -3,11 +3,11 @@ import type { VideoGenerationTask } from "@/services/api/video";
 import type { AiConfig } from "@/stores/use-config-store";
 
 export type StoreVideoSettings = Pick<AiConfig, "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoInputMode" | "videoInterpolate">;
-export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeReferenceIds" | "storeScriptTurns" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "storeAdoptedVideoId" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
+export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeReferenceIds" | "storeScriptTurns" | "storeFeedbackSourceRecordId" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "storeAdoptedVideoId" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
 export type StoreShot = { id: string; start: number; end: number; materialIds: string[]; visual: string; dialogue: string; referenceNeed?: string };
 export type StoreMaterialSuggestion = { shots: Pick<StoreShot, "id" | "materialIds">[]; referenceIds: string[]; base: string; mode: "fill" | "select" };
 export type StorePlanVersion = { script: string; shots: StoreShot[]; referenceIds?: string[]; createdAt: number };
-export type StoreScriptTurn = { id: string; request: string; scope: string; before: string; after: string; status: "pending" | "accepted" | "rejected" | "superseded"; createdAt: number };
+export type StoreScriptTurn = { id: string; request: string; scope: string; before: string; after: string; status: "pending" | "accepted" | "rejected" | "superseded"; createdAt: number; sourceVideoRecordId?: string; feedbackTimeSeconds?: number; understanding?: string };
 export type StorePreset = { id: string; name: string; media: WorkbenchMedia[]; facts: string; instructions: string; settings?: StoreVideoSettings };
 export type StoreProject = { id: string; name: string; draft: VideoDraft; createdAt: number; updatedAt: number; revision: number };
 export type StoreTaskOrigin = {
@@ -257,7 +257,9 @@ export type VideoDraft = {
     storeAdoptedVideoId?: string;
     storeAnalysisSuggestion?: string;
     storeScriptSuggestion?: string;
-    storeScriptReview?: "pending" | "failed" | "passed" | "local";
+    storeScriptReview?: "pending" | "failed" | "passed" | "local" | "feedback";
+    storeScriptUnderstanding?: string;
+    storeFeedbackSourceRecordId?: string;
     storeShots?: StoreShot[];
     storeReferenceIds?: string[];
     storeMaterialSuggestion?: StoreMaterialSuggestion;

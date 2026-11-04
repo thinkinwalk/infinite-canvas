@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { emptyVideoDraft, type StoreShot, type WorkbenchMedia } from "../src/types/video-workbench";
-import { parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeFreeScriptError, storePlanError, storePlanKey, storeSpeechKey, storeSubtitleSource } from "../src/pages/video-tool/store-explore-plan";
+import { parseStoreFeedbackResult, parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeFreeScriptError, storePlanError, storePlanKey, storeSpeechKey, storeSubtitleSource } from "../src/pages/video-tool/store-explore-plan";
 
 if (!globalThis.localStorage) {
     const memory = new Map<string, string>();
@@ -36,6 +36,28 @@ test("scoped edit preserves every unselected field and rejects extra or missing 
     expect(() => parseStoreShots(JSON.stringify({ shots }), d, 10, ["opening"])).toThrow("范围");
     expect(() => parseStoreShots(JSON.stringify({ shots: [{ ...next, id: "other" }] }), d, 10, ["opening"])).toThrow("范围");
 });
+test("video feedback merges only validated affected shots and preserves the original timeline", () => {
+    const d = draft();
+    const result = parseStoreFeedbackResult(JSON.stringify({
+        understanding: "开场商品没有清晰呈现，调整镜头画面表现。",
+        affectedShotIds: ["opening"],
+        shots: [{ ...shots[0], visual: "近景展示真实商品" }],
+    }), d, 10);
+    expect(result.affectedShotIds).toEqual(["opening"]);
+    expect(result.shots[0].visual).toBe("近景展示真实商品");
+    expect(result.shots[1]).toBe(shots[1]);
+    for (const raw of [
+        JSON.stringify({ understanding: "问题", affectedShotIds: ["missing"], shots: [{ ...shots[0], id: "missing" }] }),
+        JSON.stringify({ understanding: "问题", affectedShotIds: ["opening"], shots: [{ ...shots[0], end: 3 }] }),
+        JSON.stringify({ understanding: "问题", affectedShotIds: ["opening"], shots: [{ ...shots[0], materialIds: ["missing"] }] }),
+        JSON.stringify({ understanding: "问题", affectedShotIds: ["opening"], shots: [{ ...shots[0] }] }),
+    ]) expect(() => parseStoreFeedbackResult(raw, d, 10)).toThrow();
+    expect(() => parseStoreFeedbackResult(JSON.stringify({
+        understanding: "问题",
+        affectedShotIds: ["opening", "product"],
+        shots: [{ ...shots[0], visual: "改过的镜头" }, shots[1]],
+    }), d, 10, ["opening"])).toThrow("范围");
+});
 test("continued local revisions use the pending candidate without changing the approved draft", async () => {
     const { storeScriptPrompt } = await import("../src/pages/video-tool/store-script");
     const d = draft(), candidate = [{ ...shots[0], dialogue: "候选开场" }, shots[1]];
@@ -56,6 +78,17 @@ test("whole-plan revision mode is explicit and conversation turns persist in tas
     expect(storeScriptPrompt(d, [], 10, 7, { request: "整体加快", rewrite: true })).toContain("用户已明确选择整稿改写");
     const input = storeExploreInput(d, { channelMode: "remote", baseUrl: "" } as never);
     expect(input.storeScriptTurns).toEqual(d.storeScriptTurns);
+});
+test("feedback source and selected timestamp are persisted with the project and prompt", async () => {
+    const { storeScriptPrompt } = await import("../src/pages/video-tool/store-script");
+    const d = { ...draft(), video: image("generated-video"), storeFeedbackSourceRecordId: "record-1" };
+    const input = storeExploreInput(d, { channelMode: "remote", baseUrl: "" } as never);
+    expect(input.storeFeedbackSourceRecordId).toBe("record-1");
+    const textOnly = storeScriptPrompt(d, [], 10, 7, { request: "画面太暗", feedbackVideoRecordId: "record-1" });
+    expect(textOnly).toContain("本轮未附成片画面");
+    const withFrame = storeScriptPrompt(d, [], 10, 7, { request: "画面太暗", feedbackVideoRecordId: "record-1", feedbackTimeSeconds: 3.5 });
+    expect(withFrame).toContain("3.50 秒处的实际画面");
+    expect(storePlanKey(d)).not.toBe(storePlanKey({ ...d, storeFeedbackSourceRecordId: "record-2" }));
 });
 test("schema errors, duplicate IDs, discontinuities and invalid JSON retain the original draft", () => {
     const d = draft(), before = JSON.stringify(d);

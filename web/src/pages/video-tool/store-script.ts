@@ -1,7 +1,7 @@
 import type { StoreShot, VideoDraft, WorkbenchMedia } from "@/types/video-workbench";
 import { storeCast } from "./store-materials";
 
-export type StoreScriptScope = { request: string; ids?: string[]; rewrite?: boolean };
+export type StoreScriptScope = { request: string; ids?: string[]; rewrite?: boolean; feedbackVideoRecordId?: string; feedbackTimeSeconds?: number };
 type MaterialEvidence = { id: string; label?: string; role?: WorkbenchMedia["role"]; purpose?: string; person?: string; observation?: string };
 
 export function storeScriptPrompt(d: VideoDraft, materials: MaterialEvidence[], seconds: number, maxImages: number, scope?: StoreScriptScope, candidate?: StoreShot[]) {
@@ -28,6 +28,12 @@ ${scope?.ids?.length ? "局部修改时，上述出镜约定按合并后的全�
 对以下候选稿做一次检查并直接返回修正后的完整分镜JSON；合格内容原样保留，不输出评分、评语或新的创作分支，不请求再次检查。
 依次核对上传人物是否实际出镜且对应镜头采用了人物图、同一身份的三视图是否被误当多人、事实来源、开场看点是否在后续得到回应、镜头是否有动作与信息推进、台词是否自然且适合${seconds}秒、镜头与所选图片是否对应、缺参考是否说明。遗漏人物时直接在合适镜头补足动作与人物参考；平铺陈列时围绕已有卖点修正开场与推进，不能只做字词润色。删除无依据的体验和制作断言，但保留合理的待生成动作、确有依据的用户卖点及吸引人的表达，不能检查后变回无人静物说明。缩短来不及说完的台词。镜头ID尽量保留，修正后仍须满足时长和素材规则。
 待检查候选：${JSON.stringify(candidate)}`;
+    if (scope?.feedbackVideoRecordId) return `你是探店短片的成片反馈改稿编辑。${contract}
+用户选中的成片任务编号：${scope.feedbackVideoRecordId}。${scope.feedbackTimeSeconds === undefined ? "本轮未附成片画面；只依据用户反馈和该任务原始分镜，不得声称已观察成片。" : `附图是该成片 ${scope.feedbackTimeSeconds.toFixed(2)} 秒处的实际画面，为原生成结果的证据，不是门店素材。`}不得把成片中模型生成的错误内容当作真实事实或新的参考素材。
+用户反馈：${JSON.stringify(scope.request)}。
+${scope.ids?.length ? `用户已指定镜头：${JSON.stringify(scope.ids)}。只修改这些镜头，受影响镜头ID必须恰为此列表。` : "根据用户反馈和附图定位确实相关的最少镜头；不要顺手润色其他镜头。"}
+只改受影响镜头的画面描述、台词或现有素材引用；镜头ID、起止时间必须原样保留，未受影响镜头由系统原样合并。素材只能使用输入素材列表中真实存在的ID，不得虚构场景、事实、人物动作已经发生或新素材。若附图与计划的偏差不清楚，以用户反馈为准；不确定时在understanding中说明，不扩大修改范围。
+只输出JSON：{"understanding":"简短说明理解的问题与调整方向","affectedShotIds":["受影响镜头ID"],"shots":[{"id":"受影响镜头ID","start":0,"end":3,"materialIds":["实际素材ID"],"visual":"调整后画面描述","dialogue":"调整后台词或空串","referenceNeed":"缺少的真实参考，否则空串"}]}。shots必须且只能包含affectedShotIds中的镜头；不得输出其他镜头、解释或Markdown。`;
     return `你是探店短片编导。${contract}
 已有分镜：${JSON.stringify(d.storeShots || [])}。自由原稿：${JSON.stringify(d.script)}。
 ${scope ? `本次修改要求：${JSON.stringify(scope.request)}。${scope.ids?.length ? `仅返回ID属于${JSON.stringify(scope.ids)}的镜头，ID、start、end逐项保持原值，只改所选镜头；其他镜头由系统原样保留。` : scope.rewrite ? "用户已明确选择整稿改写，可调整全片结构与节奏，但保留有依据的事实和素材。" : "调整全片表达与节奏，保留仍适用的事实、镜头顺序和素材。"}`
