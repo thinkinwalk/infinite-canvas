@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.169
-- Current production source: tag v0.19.169, commit 0e821ab453d82b5f1173c00d93de3c772c02faee
+- Current production image: infinite-canvas:v0.19.170
+- Current production source: tag v0.19.170, commit 20d90a429d3921f1b4989ad12ea80ad1a89b5417
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.167-worker/
+
+## v0.19.170 deployment
+
+- Product tag `v0.19.170`, source `20d90a429d3921f1b4989ad12ea80ad1a89b5417`, is pushed on `release/v0.19.60` and formally released on GitHub. Voice extraction no longer shows a store-video link after saving; its page and catalog describe the general browser asset library. Audio persistence and extraction behavior are unchanged.
+- Server App build, internal/public health, thirteen routes and public/container asset hashes passed. Independent workstation HTTPS confirmed both voice/store pages, health and hashes. JS `/assets/index-DdogIuc5.js` SHA-256 `5f8be9d727384f0077be4e89dcaf8f221072c4ab49866c8bd7771e71f142faa0`; CSS `/assets/index-fSa6HH0w.css` SHA-256 `42485ef1297d7dd8aafa71e1efd8d251cdf0242a235688c801d6e6b90ed38eba`.
+- Isolated browser acceptance loaded the released public resources, mocked all API responses and used a synthetic five-second WAV. Save with empty transcript, duplicate protection, generic local-storage text, absence of the store link before/after saving, and persistence after reload passed. Screenshots at 1440/390/320px were visually inspected; no page errors or horizontal overflow occurred. No paid inference or real OCR/ASR quality check was submitted; existing user browser tabs/data were untouched. No new unit tests or full typecheck were needed for this link/text-only change.
+- Active App image `infinite-canvas:v0.19.170`, ID `sha256:d20672cbcf69204bb6cde463e900162716afa683e5ca378e6999aa896ee31710`. Backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` remains unchanged. Worker container, environment, mounts and start time `2026-11-04T02:38:32.969372688Z` are preserved.
+- SQLite online backup and `quick_check`, schema/table counts, protected accounts/settings, environment/mounts, 179 task JSON hashes and 29,637 media metadata entries passed preservation checks. No active cloud/Worker task was present at switching. Prebuild backup `/opt/infinite-canvas/backups/v0.19.170-prebuild-20261104-042942/`; final backup `/opt/infinite-canvas/backups/v0.19.170-final-20261104-043044/` contains SQLite, Compose and private environment, not full media contents.
+- Deployment script `/opt/infinite-canvas/releases/deploy-voice-v170.py`; reports `v0.19.170-deployment.json`, `v0.19.170-public-verification.json` and `v0.19.170-browser-verification.json` under the same releases directory. Local browser evidence `.codex_tmp/voice-v170-production-qa/`. The deployment-stage browser flag predates the separate browser acceptance report.
+- Rollback restores the final-backup Compose and recreates App only, retaining live data and the unchanged Worker.
 
 ## v0.19.169 deployment
 
