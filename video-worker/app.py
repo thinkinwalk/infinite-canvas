@@ -520,9 +520,9 @@ async def voice_reference_transcript(identifier: str, source: Path, audio: Path,
             stream = text_subtitle_stream(json.loads(raw).get("streams", []))
             if stream:
                 subtitle = work / "voice-reference.srt"
-                await ffmpeg(identifier, "-ss", start, "-i", source, "-t", end - start,
+                await ffmpeg(identifier, "-i", source,
                              "-map", f"0:{stream['index']}", "-c:s", "srt", "-f", "srt", subtitle)
-                transcript = parse_srt(subtitle.read_text(encoding="utf-8", errors="replace"))
+                transcript = parse_srt(subtitle.read_text(encoding="utf-8", errors="replace"), start, end)
                 if transcript:
                     return transcript, "subtitle-track"
     except Exception as error:

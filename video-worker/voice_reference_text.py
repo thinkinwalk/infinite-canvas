@@ -26,12 +26,23 @@ def text_subtitle_stream(streams):
     return next((stream for stream in candidates if stream.get("disposition", {}).get("default")), None) or next(iter(candidates), None)
 
 
-def parse_srt(value):
+def parse_srt(value, start=0, end=float("inf")):
     rows = []
     for block in re.split(r"\r?\n\s*\r?\n", value.strip()):
         lines = block.splitlines()
-        text_lines = [line for line in lines if "-->" not in line and not line.strip().isdigit()]
-        text = re.sub(r"<[^>]*>", "", html.unescape(" ".join(text_lines))).strip()
+        timing = next((index for index, line in enumerate(lines) if "-->" in line), None)
+        if timing is None:
+            continue
+        stamps = re.findall(r"(\d+):(\d{2}):(\d{2})[,.](\d{3})", lines[timing])
+        if len(stamps) != 2:
+            continue
+        cue_start, cue_end = [
+            int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis) / 1000
+            for hours, minutes, seconds, millis in stamps
+        ]
+        if cue_end <= max(start, cue_start) or cue_start >= end:
+            continue
+        text = re.sub(r"<[^>]*>", "", html.unescape(" ".join(lines[timing + 1:]))).strip()
         if text:
             rows.append(simplify_text(text))
     return "\n".join(rows)

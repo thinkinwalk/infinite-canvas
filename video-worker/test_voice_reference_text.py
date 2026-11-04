@@ -26,6 +26,22 @@ class VoiceReferenceTextTests(unittest.TestCase):
         value = "1\n00:00:00,000 --> 00:00:01,000\n這是字幕 <i>原文</i>\n"
         self.assertEqual(parse_srt(value), "这是字幕 原文")
 
+    def test_selects_only_cues_overlapping_requested_interval(self):
+        value = (
+            "1\n00:00:00,000 --> 00:00:01,000\n之前\n\n"
+            "2\n00:00:01,000 --> 00:00:03,000\n選段字幕\n\n"
+            "3\n00:00:03,000 --> 00:00:04,000\n之後\n"
+        )
+        self.assertEqual(parse_srt(value, 1, 3), "选段字幕")
+        self.assertEqual(parse_srt(value, 1.5, 2), "选段字幕")
+
+    def test_preserves_spoken_numbers_and_skips_zero_duration_cues(self):
+        value = (
+            "1\n00:00:00,000 --> 00:00:00,000\n跳過\n\n"
+            "2\n00:00:00,000 --> 00:00:01,000\n123\n"
+        )
+        self.assertEqual(parse_srt(value), "123")
+
     def test_extracts_repeated_lower_caption_lane_and_ignores_overlay_text(self):
         frames = [
             [line("固定台标", 10, 40), line("這次在機場", 260, 760)],
