@@ -256,6 +256,22 @@ export async function extractVoiceReference(config: WorkerConfig, media: Uploade
     }
 }
 
+export async function transcribeVoiceReference(config: WorkerConfig, media: UploadedFile, signal: AbortSignal, onProgress?: (step: string) => void): Promise<string> {
+    const capabilities = await getWorkerCapabilities(config, signal);
+    if (!capabilities.some((item) => item.name === "transcribe" && item.available)) throw new Error("当前处理服务未启用语音识别");
+    const source = await uploadWorkerMedia(config, { ...media, name: "voice-reference.wav", kind: "audio" }, signal);
+    const job = await createWorkerJob(config, "transcribe", { video: source }, {}, signal);
+    try {
+        const completed = await waitForWorkerJob(config, job.id, signal, (state) => onProgress?.(state.step));
+        const text = completed.result?.text?.trim();
+        if (!text) throw new Error("没有识别到清晰的人声，请检查片段或手动填写原文");
+        return text;
+    } catch (error) {
+        if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
+        throw error;
+    }
+}
+
 export async function storeWorkerImage(config: WorkerConfig, file: string): Promise<UploadedFile> {
     const response = await workerRequest(config, `media/${encodeURIComponent(file)}`);
     const image = await uploadImage(await response.blob());

@@ -7,7 +7,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { formatDuration } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { extractVoiceReference, workbenchMediaBlob } from "@/services/api/video-worker";
+import { extractVoiceReference, transcribeVoiceReference, workbenchMediaBlob } from "@/services/api/video-worker";
 import { saveVoiceReference } from "@/services/api/voices";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
@@ -95,7 +95,17 @@ export default function VideoVoiceExtractPage() {
             const result = await extractVoiceReference(worker, source, range[0], range[1], abort.signal, setStep);
             abort.signal.throwIfAborted();
             setSample(result);
-            message.success("参考音频已生成，请试听并校对原文");
+            setStep("识别录音原文");
+            try {
+                const transcript = await transcribeVoiceReference(worker, result, abort.signal, setStep);
+                abort.signal.throwIfAborted();
+                setReferenceText(transcript);
+                message.success("参考音频和原文已生成，请试听并核对");
+            } catch (cause) {
+                if (abort.signal.aborted) throw cause;
+                setReferenceText("");
+                message.warning("参考音频已生成，但原文识别失败；可试听后手动填写");
+            }
         } catch (cause) {
             if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "音色提取失败");
         } finally {
@@ -146,7 +156,7 @@ export default function VideoVoiceExtractPage() {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
                                 <h2 className="m-0 text-base font-medium">选择视频片段</h2>
-                                <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>选择目标人物单独、清晰讲话的区间，效果更稳定。</p>
+                                <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>优先选择目标人物单独、清晰讲话且背景音乐较弱的区间。</p>
                             </div>
                             <div className="flex gap-1">
                                 <Upload
@@ -199,7 +209,7 @@ export default function VideoVoiceExtractPage() {
                                     <span style={{ color: token.colorTextSecondary }}>选中 {seconds(Math.max(0, range[1] - range[0]))} 秒</span>
                                 </div>
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="text-xs" style={{ color: token.colorTextSecondary }}>建议使用 3–15 秒的干净人声，不会修改原视频。</span>
+                                    <span className="text-xs" style={{ color: token.colorTextSecondary }}>建议使用 3–15 秒的清晰人声；背景音乐越明显，识别和音色效果越容易受影响。</span>
                                     <Button type="primary" icon={<Scissors size={15} />} loading={busy === "extract"} disabled={locked || !validRange} onClick={() => void extract()}>提取参考音频</Button>
                                 </div>
                                 {busy === "extract" && <div className="flex items-center gap-2 text-xs" role="status"><Spin size="small" />{step || "处理中…"}</div>}
@@ -211,7 +221,7 @@ export default function VideoVoiceExtractPage() {
                     <section className="min-w-0 space-y-4 rounded-xl border p-4" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
                         <div>
                             <h2 className="m-0 text-base font-medium">保存为账号音色</h2>
-                            <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>试听确认后填写录音原文，供后续配音和数字人使用。</p>
+                            <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>原文会自动识别，请试听并校对后保存，供后续配音和数字人使用。</p>
                         </div>
                         {sample ? (
                             <>
@@ -221,7 +231,7 @@ export default function VideoVoiceExtractPage() {
                                     value={referenceText}
                                     disabled={locked}
                                     rows={5}
-                                    placeholder="填写这段录音实际说出的原文，用于声音克隆对齐"
+                                    placeholder="识别结果会显示在这里，请核对并修正；识别失败时可手动填写"
                                     onChange={(event) => setReferenceText(event.target.value)}
                                 />
                                 <Button type="primary" block icon={<AudioWaveform size={15} />} loading={busy === "save"} disabled={locked || !session || !sampleName.trim() || !referenceText.trim()} onClick={() => void save()}>保存音色</Button>
