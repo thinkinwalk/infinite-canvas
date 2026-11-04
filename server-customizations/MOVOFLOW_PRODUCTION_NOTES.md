@@ -15,10 +15,22 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.166
-- Current production source: tag v0.19.166, commit 19d314ca1036c2a2820e330730d31d745a8c279c
+- Current production image: infinite-canvas:v0.19.167
+- Current production source: tag v0.19.167, commit c02a15094b6a5960d05935c0bedce5614de0deae
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.166-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.167-worker/
+
+## v0.19.167 deployment
+
+- Product tag `v0.19.167`, source `c02a15094b6a5960d05935c0bedce5614de0deae`, is pushed on `release/v0.19.60` and formally published on GitHub. This includes v0.19.165 subtitle-first voice extraction and v0.19.166 store conversation revisions. Later documentation commits do not change the product tag.
+- Voice-reference extraction reads the selected interval's text subtitle track first, then attempts burned-in captions with the existing OCR adapter. Only absent or failed subtitle extraction falls back to ASR on the already cropped WAV. One Worker job returns audio, editable transcript and source together; all text is normalized to simplified Chinese. No dependency was added. Background music is retained.
+- A real FFmpeg fixture exposed that subtitle export can retain original cue timestamps despite `-ss/-t`. Text tracks now export with original times and are filtered for overlap with the requested interval. Out-of-range and zero-duration cues are excluded, while numeric dialogue is preserved. Nine focused tests and an actual 1–3-second subtitle selection passed in network-disabled containers using source and existing text dependencies read-only; OCR/ASR skipping was asserted for the text-track fixture. Actual burned-caption quality and ASR accuracy were not established by these mocked-path tests.
+- Server App build passed. App image `infinite-canvas:v0.19.167`, ID `sha256:06dc8f56f66553c589aff26cdb52b3520e6176c30808fd20e0d8b6addc618800`, is active. Worker image remains `infinite-canvas-video-worker:v0.19.87`; all ten source mounts now use `/opt/infinite-canvas/releases/v0.19.167-worker/`, with start time `2026-11-04T02:38:32.969372688Z`. Authenticated health confirms `voice-reference`, `ocr` and `transcribe` are available. Source hashes match the released files. Backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is unchanged.
+- Internal/public health, twelve routes, voice extraction text and public/container JS/CSS hashes passed. Independent workstation HTTPS confirmed the voice route, health and both asset hashes. JS `/assets/index-wwlRg2pb.js` SHA-256 `b4797ef83bc04d115c5424bab45cc92ca973b1abcf8248fd34fc67edf7343edd`; CSS `/assets/index-fSa6HH0w.css` SHA-256 `42485ef1297d7dd8aafa71e1efd8d251cdf0242a235688c801d6e6b90ed38eba`.
+- No active cloud or Worker task was present at switching. The historical replacement record still says `planning`, but its linked planning Worker task is completed; both records were retained unchanged. SQLite online backup and `quick_check`, complete schema/table counts, protected account values, settings, environment values, expected mounts, 177 existing task JSON hashes and metadata for 29,573 media files passed preservation checks. No paid inference or channel configuration change was submitted.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.167-prebuild-20261104-023827/`; final backup `/opt/infinite-canvas/backups/v0.19.167-final-20261104-023830/` contains verified SQLite, Compose and private environment, not full media contents. Report `/opt/infinite-canvas/releases/v0.19.167-deployment.json`; script `/opt/infinite-canvas/releases/deploy-voice-v167.py`; workstation report `.codex_tmp/v0.19.167-deployment.json`. The first attempt stopped before switching because its mount-count assertion expected eleven instead of the actual ten; the retry compares actual mounts and passed.
+- Rollback restores the final-backup Compose and recreates App and video-worker, preserving the current database/media. Both prior images and versioned Worker sources remain available.
+- Formal Release creation used the existing Git credential helper in-process without printing its token. Native browser checking ended because computer-use could not determine the current URL reliably; no browser publishing or production interaction acceptance was completed. Real OCR/ASR quality, processing time, voice saving and downstream audio quality remain manual acceptance items. Refresh `/video/voice-extract`, select a captioned segment and verify its text, then use an uncaptioned segment to check speech fallback; preserve existing browser data.
 
 ## v0.19.166 deployment
 
