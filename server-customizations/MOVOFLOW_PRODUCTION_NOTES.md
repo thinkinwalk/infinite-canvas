@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.170
-- Current production source: tag v0.19.170, commit 20d90a429d3921f1b4989ad12ea80ad1a89b5417
+- Current production image: infinite-canvas:v0.19.171
+- Current production source: tag v0.19.171, commit 46ac0a23f4df78865b22a0e0cc8757f873efa102
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.167-worker/
+
+## v0.19.171 deployment
+
+- Product tag `v0.19.171`, source `46ac0a23f4df78865b22a0e0cc8757f873efa102`, is pushed on `release/v0.19.60` and formally released on GitHub. Completed store videos can start an independent feedback project from their input snapshot. The user can provide text feedback and optionally select a timestamp; only that frame is sent as visual evidence to the selected text model. The response identifies the issue and affected shots, validates scope/timing/material IDs, and remains a candidate until adopted. Original project/video stay intact; adoption does not submit a new video generation.
+- Production Docker build passed. App image `infinite-canvas:v0.19.171`, image ID `sha256:f5a19dbe55fcf0480640825d0fbe84f0a9dcef8a14cf82b181ab260f609a14f2`. Backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is unchanged. Worker image `infinite-canvas-video-worker:v0.19.87`, source mount, container identity and start time `2026-11-04T02:38:32.969372688Z` are preserved.
+- Internal and public health return `ok`; the store-explore route returns HTTP 200 and references the new bundle. All thirteen public routes, five feedback UI markers, and public/container asset hashes passed. JS `/assets/index-kIch45PS.js` SHA-256 `16fba0c035985b93af3ff218f6768de310026f2bc0464915c7316ca313593a63`; CSS `/assets/index-fSa6HH0w.css` SHA-256 `42485ef1297d7dd8aafa71e1efd8d251cdf0242a235688c801d6e6b90ed38eba`. Independent workstation HTTPS rechecked public health and the store page.
+- SQLite online backup passed `PRAGMA quick_check`; schema, table counts, protected account/settings data, 180 task JSON hashes and 29,663 media metadata entries were preserved. No active cloud/Worker tasks were present at switch. No paid inference or production channel setting change occurred.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.171-prebuild-20261104-055400/`; final backup `/opt/infinite-canvas/backups/v0.19.171-final-20261104-055456/` contains SQLite, Compose and private environment, not full media contents. Deployment report: `/opt/infinite-canvas/releases/v0.19.171-deployment.json`; deployment helper: `/opt/infinite-canvas/releases/deploy-feedback-v171.py`.
+- Production browser interaction and real model quality were not tested. The user-facing hand-test steps are at `docs/content/docs/progress/store-explore-acceptance.mdx`, section “本版优先测试：根据成片反馈改稿”. Focus on preserving the source project, cancelling text-model charges, text-only vs selected-frame requests, affected-shot scope, candidate adoption/rejection, old-video staleness and the separate next video charge. Do not describe health/resource checks as feature-interaction or model-quality acceptance.
+- Rollback restores the final-backup Compose and recreates App only, retaining current live data/media and unchanged Worker.
 
 ## v0.19.170 deployment
 
