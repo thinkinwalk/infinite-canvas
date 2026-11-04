@@ -20,7 +20,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { configForFeature, managedModelBinding, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
-import { emptyVideoDraft, type StoreShot, type StoreVideoSettings, type VideoDraft, type VideoRecord } from "@/types/video-workbench";
+import { emptyVideoDraft, type StoreShot, type StoreVideoSettings, type TaskConversation, type VideoDraft, type VideoRecord } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { storeAnalysisDisplay } from "./store-analysis";
@@ -34,6 +34,9 @@ import { StoreProjectPanel, storeRecordStatus } from "./store-project-panel";
 import { useStoreProjectAccess } from "./use-store-project-access";
 import { stopStoreTask } from "./store-task-runtime";
 import { flushWorkbenchStorage } from "@/stores/workbench-storage";
+import { TaskConversationPanel } from "./task-conversation-panel";
+import { taskConversationMessage } from "./task-conversation";
+import { storeScriptConversationContextKey, type StoreScriptScope } from "./store-script";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
 const names = { storeFacts: "门店真实资料", analysis: "素材观察", instructions: "本次要求", script: "自由脚本" };
@@ -148,6 +151,15 @@ function StoreProjectEditor() {
     const shots = d.storeShots || [],
         audioMode = d.storeAudioMode || "source";
     const pendingScriptTurn = [...(d.storeScriptTurns || [])].reverse().find((turn) => turn.status === "pending");
+    const feedbackScope = scope !== "all" && Boolean(d.storeFeedbackSourceRecordId);
+    const scriptDialogueScope: StoreScriptScope = {
+        request: "",
+        ...(scope === "all" ? { rewrite: true } : {}),
+        ...(scope !== "all" && scope !== "feedback" ? { ids: [scope] } : {}),
+        ...(feedbackScope ? { feedbackVideoRecordId: d.storeFeedbackSourceRecordId, ...(feedbackSeconds !== null ? { feedbackTimeSeconds: feedbackSeconds } : {}) } : {}),
+    };
+    const scriptConversationContextKey = storeScriptConversationContextKey(d, scriptDialogueScope);
+    const scriptConversation = d.storeScriptConversation?.contextKey === scriptConversationContextKey ? d.storeScriptConversation : undefined;
     const cloudSpeech = managedModelBinding(config, config.audioModel, "audio")?.adapter === "cloud:speech";
     const voiceOptions = cloudSpeech ? cloudSpeechSpeakers : audioVoiceOptions.map((v) => v.value);
     const speechCurrent = Boolean(d.speech && d.storeSpeechKey === storeSpeechKey(d, config.audioModel));
@@ -234,9 +246,41 @@ function StoreProjectEditor() {
             storeShotSuggestion: undefined,
             storeScriptReview: undefined,
             storeScriptUnderstanding: undefined,
+            storeScriptConversation: undefined,
             storeScriptStale: false,
             storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "accepted" as const } : turn),
         }, "video");
+    };
+    const discardScriptSuggestion = () => wb.patch({
+        storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined,
+        storeScriptUnderstanding: undefined, storeScriptConversation: undefined,
+        storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
+    });
+    const sendScriptMessage = () => {
+        if (locked || !request.trim() || textError()) return;
+        const messages = [...(scriptConversation?.messages || []), taskConversationMessage("user", request.trim())];
+        const conversation: TaskConversation = { phase: "discussion", messages, contextKey: scriptConversationContextKey };
+        wb.patch({ storeScriptConversation: conversation });
+        setRequest("");
+        void wb.discussStoreScript("discussion", { ...scriptDialogueScope, contextKey: scriptConversationContextKey }, messages);
+    };
+    const organizeScriptPlan = () => {
+        if (locked || !scriptConversation?.messages.length || textError()) return;
+        void wb.discussStoreScript("proposal", { ...scriptDialogueScope, contextKey: scriptConversationContextKey }, scriptConversation.messages);
+    };
+    const confirmScriptPlan = () => {
+        const conversation = scriptConversation;
+        if (locked || !conversation?.plan || conversation.phase !== "proposal" || textError()) return;
+        const targetIds = conversation.plan.targets.map((target) => target.id).filter((id) => id !== "script");
+        const revision: StoreScriptScope = {
+            ...scriptDialogueScope,
+            request: conversation.messages.filter((item) => item.role === "user").map((item) => item.text).join("\n"),
+            messages: conversation.messages,
+            confirmedPlan: conversation.plan,
+            contextKey: scriptConversationContextKey,
+            ...(!scriptDialogueScope.rewrite && shots.length && targetIds.length ? { targetIds } : {}),
+        };
+        void wb.reviseScript(JSON.stringify(revision));
     };
     const addFiles = async (files: File[], role: "reference" | "model" | "first-frame") => {
         if (locked || uploadLock.current) return;
@@ -689,6 +733,12 @@ function StoreProjectEditor() {
             return;
         }
         setTab("plan");
+        if (d.script.trim()) {
+            setScope("all");
+            setRequest("我想调整当前整稿，请先和我讨论要解决的问题、修改范围和需要保留的内容，暂时不要改稿。");
+            requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="本轮对话内容"]')?.focus());
+            return;
+        }
         void wb.run("script");
     };
     const primary = tab === "result" && d.video && !viewed && !d.storeOutputStale && (audioMode !== "source" || d.addSubtitles || d.media.some((m) => m.role === "music") || d.final) && (!d.final || d.storeFinishStale)
@@ -849,7 +899,7 @@ function StoreProjectEditor() {
                                         <h2 ref={planHeading} tabIndex={-1} className="text-base font-medium">{shots.length ? `${shots.length} 个镜头 · ${shots.at(-1)?.end} 秒` : "拍摄方案"}</h2>
                                         <Space wrap size={4}>
                                             <Button size="small" icon={<Sparkles size={14} />} disabled={locked || Boolean(textError())} onClick={planAction}>
-                                                {d.script ? "重新编写" : "AI 编写"}
+                                            {d.script ? "对话改编" : "AI 编写"}
                                             </Button>
                                             {icon(
                                                 "撤销采用",
@@ -945,17 +995,30 @@ function StoreProjectEditor() {
                                     >
                                         添加镜头
                                     </Button>
-                                    {d.script && (
-                                        <div className="flex flex-wrap gap-2 border-t pt-4" style={border}>
+                                    {(d.script || d.storeFeedbackSourceRecordId) && (
+                                        <TaskConversationPanel
+                                            conversation={scriptConversation}
+                                            input={request}
+                                            onInput={setRequest}
+                                            onSend={sendScriptMessage}
+                                            onPlan={organizeScriptPlan}
+                                            onConfirm={confirmScriptPlan}
+                                            onApply={adopt}
+                                            onDiscard={discardScriptSuggestion}
+                                            locked={locked}
+                                            busy={busy && ["script", "script-dialogue"].includes(active?.stage || "")}
+                                            context={`${feedbackScope ? `成片反馈 · ${feedbackSeconds === null ? "文字反馈" : `${feedbackSeconds.toFixed(2)} 秒画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按反馈定位相关镜头" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`}
+                                            muted={muted}
+                                            border={border}
+                                        >
                                             <Select
                                                 aria-label="修改范围"
                                                 value={scope}
                                                 className="w-full sm:w-44"
                                                 disabled={locked}
-                                                onChange={setScope}
+                                                onChange={(value) => { setScope(value); setRequest(""); }}
                                                 options={[...(d.storeFeedbackSourceRecordId ? [{ value: "feedback", label: "按成片反馈定位" }] : []), { value: "all", label: "整稿改写" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
                                             />
-                                            <Input aria-label="AI修改要求" className="min-w-0 flex-1" value={request} disabled={locked} onChange={(e) => setRequest(e.target.value)} placeholder={d.storeScriptSuggestion ? "继续说要怎么调整这份候选方案" : "例如：缩短台词，保留画面"} />
                                             <Dropdown disabled={locked} menu={{
                                                 items: [{ key: "spoken", label: "更口语" }, { key: "shorter", label: "精简台词" }, { key: "opening", label: "换个开头" }],
                                                 onClick: ({ key }) => {
@@ -965,17 +1028,8 @@ function StoreProjectEditor() {
                                             }} trigger={["click"]}>
                                                 <Button aria-label="常用修改要求" title="常用修改要求" icon={<Pencil size={14} />} />
                                             </Dropdown>
-                                            <Button
-                                                disabled={locked || !request.trim() || Boolean(textError()) || (scope !== "all" && scope !== "feedback" && !shots.some((s) => s.id === scope))}
-                                                icon={<Sparkles size={14} />}
-                                                onClick={() => void wb.reviseScript(JSON.stringify({
-                                                    request,
-                                                    ...(scope !== "all" && d.storeFeedbackSourceRecordId ? { feedbackVideoRecordId: d.storeFeedbackSourceRecordId, ...(feedbackSeconds !== null ? { feedbackTimeSeconds: feedbackSeconds } : {}), ...(scope !== "feedback" ? { ids: [scope] } : {}) } : scope === "all" ? { rewrite: true } : { ids: [scope] }),
-                                                }))}
-                                            >
-                                                {d.storeScriptSuggestion ? "继续调整候选" : "生成修改预览"}
-                                            </Button>
-                                        </div>
+                                            {textError() && <p className="text-xs" style={{ color: token.colorWarning }}>{textError()}</p>}
+                                        </TaskConversationPanel>
                                     )}
                                     {(d.storeScriptTurns || []).length > 0 && (
                                         <section className="space-y-2 border-t pt-3" style={border} aria-label="方案改编对话记录">
@@ -1008,11 +1062,7 @@ function StoreProjectEditor() {
                                                 <Button type="primary" size="small" disabled={locked || d.storeSuggestionBase !== storePlanKey(d)} onClick={adopt}>
                                                     {d.storeScriptReview === "failed" || (d.storeScriptReview === "pending" && !busy) ? "采用未检查方案" : "采用方案"}
                                                 </Button>
-                                                <Button size="small" disabled={locked} onClick={() => wb.patch({
-                                                    storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined,
-                                                    storeScriptUnderstanding: undefined,
-                                                    storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
-                                                })}>
+                                                <Button size="small" disabled={locked} onClick={discardScriptSuggestion}>
                                                     {d.script ? "保留原稿" : "放弃候选"}
                                                 </Button>
                                             </Space>

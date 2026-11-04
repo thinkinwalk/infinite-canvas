@@ -18,7 +18,7 @@ export function splitViralScript(script: string) {
     return { segments: parts.filter((_, index) => index % 2 === 0), separators: parts.filter((_, index) => index % 2 === 1) };
 }
 
-export function applyViralScriptEdits(script: string, response: string) {
+export function applyViralScriptEdits(script: string, response: string, allowedSegments?: number[]) {
     const json = response.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     let parsed: unknown;
     try {
@@ -37,6 +37,7 @@ export function applyViralScriptEdits(script: string, response: string) {
         if (typeof segment !== "number" || !Number.isInteger(segment) || segment < 1 || segment > segments.length || typeof before !== "string" || !before.trim() || typeof after !== "string") {
             throw new Error("脚本修改建议未能对应原稿段落；原稿未改动，请重试");
         }
+        if (allowedSegments && !allowedSegments.includes(segment)) throw new Error("脚本修改超出已确认的段落范围；原稿未改动");
         const source = segments[segment - 1], start = source.indexOf(before);
         if (start < 0 || source.indexOf(before, start + 1) >= 0) throw new Error("脚本修改片段无法唯一对应原文；原稿未改动");
         const edits = replacements.get(segment) || [];
@@ -72,16 +73,17 @@ export function viralScriptChangeSummary(before: string, after: string) {
     return `${beforeLength} → ${afterLength} 字（${change < 0 ? "减少" : "增加"} ${Math.abs(change)} 字${beforeLength ? `，${Math.round(Math.abs(change) / beforeLength * 100)}%` : ""}）`;
 }
 
-export function viralScriptProposal(draft: VideoDraft, after: string, request?: string): Partial<VideoDraft> {
+export function viralScriptProposal(draft: VideoDraft, after: string, request?: string, candidateOnly = false): Partial<VideoDraft> {
     const continuing = Boolean(request && draft.viralScriptSuggestion);
+    const needsAdoption = candidateOnly || Boolean(draft.script.trim() || continuing);
     const turn: ViralScriptTurn = {
         id: crypto.randomUUID(), source: viralSource(draft), request: request || (draft.script.trim() ? "根据复刻要求修改脚本" : "撰写改编脚本"),
-        before: continuing ? draft.viralScriptSuggestion! : draft.script, beforeStale: Boolean(draft.viralScriptStale), after, status: draft.script.trim() || continuing ? "pending" : "accepted", createdAt: Date.now(),
+        before: continuing ? draft.viralScriptSuggestion! : draft.script, beforeStale: Boolean(draft.viralScriptStale), after, status: needsAdoption ? "pending" : "accepted", createdAt: Date.now(),
     };
     return {
         viralScriptTurns: [...(draft.viralScriptTurns || []).map((item) => item.status === "pending" ? { ...item, status: continuing ? "superseded" as const : "rejected" as const } : item), turn],
         ...(request ? { viralScriptChatInput: "" } : {}),
-        ...(draft.script.trim() || continuing ? { viralScriptSuggestion: after, viralScriptSuggestionBase: continuing ? draft.viralScriptSuggestionBase ?? draft.script : draft.script } : { script: after, viralScriptStale: false, viralOutputStale: true }),
+        ...(needsAdoption ? { viralScriptSuggestion: after, viralScriptSuggestionBase: continuing ? draft.viralScriptSuggestionBase ?? draft.script : draft.script } : { script: after, viralScriptStale: false, viralOutputStale: true }),
     };
 }
 
@@ -91,6 +93,7 @@ export function viralResolveScript(draft: VideoDraft, accepted: boolean): Partia
     return {
         ...(accepted ? { script: draft.viralScriptSuggestion, viralScriptStale: false, viralOutputStale: true } : {}),
         viralScriptSuggestion: "", viralScriptSuggestionBase: undefined,
+        viralScriptConversation: undefined,
         viralScriptTurns: [
             ...turns.map((turn) => turn.status === "pending" ? { ...turn, status: accepted ? "accepted" as const : "rejected" as const, before: accepted ? draft.script : turn.before, beforeStale: accepted ? Boolean(draft.viralScriptStale) : turn.beforeStale } : turn),
             ...(accepted && !turns.some((turn) => turn.status === "pending") ? [{

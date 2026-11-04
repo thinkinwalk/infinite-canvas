@@ -9,6 +9,8 @@ import { VideoLinkImport } from "@/components/video-link-import";
 import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
+import { TaskConversationPanel } from "./task-conversation-panel";
+import { taskConversationMessage } from "./task-conversation";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { formatBytes } from "@/lib/image-utils";
 import { hasViralTaskContent, viralTaskDraft, viralTaskGroups } from "@/lib/viral-task";
@@ -26,7 +28,8 @@ import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
 import type { StoreVideoSettings, VideoRecord, ViralAnalysisMode, ViralAnalysisVersion, ViralEffect, ViralIntent } from "@/types/video-workbench";
 import { useVideoCreationConfig } from "@/hooks/use-video-creation-config";
 import { normalizeStoreSettings, storeVideoSettings } from "./store-explore-request";
-import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
+import { viralAnalysisMode, viralFrameMaterials, viralImageCandidates, viralInput, viralMaterialLabels, viralReference, viralScriptConversationContextKey, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials } from "./viral-recreate-request";
+import { viralScriptRequestError } from "./viral-script-revisions";
 import { viralAdoptAnalysis, viralAdoptedAnalysisError, viralAnalysisInputKey, viralAnalysisIsCurrent, viralAnalysisNames, viralAnalysisNeedsProtection, viralAnalysisProvenance, viralCurrentAnalysis, viralEditAnalysis, viralForeignAnalysisRecovery, viralLegacyAnalysisRecovery, viralRecordAnalysis } from "./viral-analysis";
 import { viralEvidence, viralEvidenceError, viralVisibleAnalysis } from "./viral-evidence";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
@@ -1190,12 +1193,50 @@ function ViralTaskWorkspace() {
     </div>;
     const turns = (d.viralScriptTurns || []).filter((turn) => turn.source === viralSource(d));
     const undoTurn = [...turns].reverse().find((turn) => turn.status === "accepted" && turn.after === d.script && turn.before !== turn.after);
+    const scriptConversationContextKey = viralScriptConversationContextKey(d, scriptEditMode);
+    const scriptConversation = d.viralScriptConversation?.contextKey === scriptConversationContextKey ? d.viralScriptConversation : undefined;
     const sendScriptMessage = () => {
         if (locked || !d.viralScriptChatInput?.trim()) return;
-        void wb.reviseScript(d.viralScriptChatInput, scriptEditMode).then(() => {
+        const conversation = { phase: "discussion" as const, messages: [...(scriptConversation?.messages || []), taskConversationMessage("user", d.viralScriptChatInput.trim())], contextKey: scriptConversationContextKey };
+        wb.patch({ viralScriptConversation: conversation, viralScriptChatInput: "" });
+        void wb.discussViralScript("discussion", conversation.messages, scriptEditMode);
+    };
+    const organizeScriptPlan = () => {
+        const conversation = scriptConversation;
+        if (!conversation?.messages.length) return;
+        void wb.discussViralScript("proposal", conversation.messages, scriptEditMode);
+    };
+    const confirmScriptPlan = () => {
+        const conversation = scriptConversation;
+        if (!conversation?.plan || conversation.phase !== "proposal") return;
+        const request = conversation.messages.filter((item) => item.role === "user").map((item) => item.text).join("；");
+        void wb.reviseScript(JSON.stringify({ action: "revise", request, messages: conversation.messages, plan: conversation.plan, contextKey: scriptConversationContextKey }), scriptEditMode).then(() => {
             if (useVideoWorkbenchStore.getState().drafts["viral-recreate"]?.viralScriptSuggestion && !window.matchMedia("(min-width: 1280px)").matches)
                 previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" });
         });
+    };
+    const applyScriptCandidate = () => {
+        const current = useVideoWorkbenchStore.getState().drafts["viral-recreate"];
+        if (!current?.viralScriptSuggestion || useVideoWorkbenchStore.getState().busyTools["viral-recreate"] || current.viralRevision !== d.viralRevision) {
+            message.warning("脚本已变化，请重新查看本次修改");
+            return;
+        }
+        const error = viralScriptRequestError(current, current.viralScriptSuggestion);
+        if (error) { message.warning(error); return; }
+        const apply = () => {
+            wb.edit(viralResolveScript(current, true), "video");
+            setSuggestionView(false);
+            message.success("修改已应用");
+        };
+        if (current.viralScriptSuggestionBase !== undefined && current.viralScriptSuggestionBase !== current.script) {
+            modal.confirm({ title: "应用修改并替换当前脚本？", content: "本次修改生成后，你又编辑了当前脚本。应用修改会替换这些编辑，替换前的脚本会保存在版本记录中。", okText: "保存当前脚本并应用", cancelText: "继续编辑", onOk: apply });
+        } else apply();
+    };
+    const discardScriptCandidate = () => {
+        if (!d.viralScriptSuggestion) return;
+        wb.patch(viralResolveScript(d, false));
+        setSuggestionView(false);
+        message.info("本次修改未应用，可从脚本版本中找回");
     };
     const scriptChat = <aside id="viral-script-chat" className="flex min-h-0 min-w-0 flex-col border-t pt-4 lg:col-start-2 xl:col-start-auto xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0" style={{ borderColor: token.colorBorderSecondary }} aria-label="脚本对话调整">
         <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
@@ -1209,32 +1250,31 @@ function ViralTaskWorkspace() {
             }} /></Tooltip>
             </div>
         </div>
-        <div ref={chatScroll} className="min-h-32 flex-1 space-y-5 overflow-y-auto pb-4 xl:min-h-0" role="log" aria-label="脚本修改记录" aria-live="polite">
-            {!turns.length && <p className="text-sm" style={muted}>{d.script.trim() ? "想先调整哪一部分？" : "这次想做怎样的视频？"}</p>}
-            {turns.map((turn, index) => <section key={turn.id} className="space-y-2 border-b pb-4 text-sm [overflow-wrap:anywhere]" style={{ borderColor: token.colorBorderSecondary }}>
-                <p className="text-xs" style={muted}>你 · 第 {index + 1} 轮</p>
-                <p className="whitespace-pre-wrap">{turn.request}</p>
-                <p className="text-xs" style={muted}>AI · {scriptTurnStatuses[turn.status]}</p>
-                <p className="text-xs" style={muted}>{viralScriptChangeSummary(turn.before, turn.after)}</p>
-                <Button type="link" size="small" className="!px-0" onClick={() => {
-                    if (turn.status === "pending" && d.viralScriptSuggestion) { openEditor("script", true); requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" })); return; }
-                    setVersionsOpen(true);
-                }}>{turn.status === "pending" ? "查看本次修改" : "查看版本"}</Button>
-            </section>)}
-            {busy && active?.stage === "script" && <p className="flex items-center gap-2 text-sm"><Spin size="small" />正在调整脚本…</p>}
-        </div>
-        <div className="shrink-0 space-y-3 border-t pt-3" style={{ borderColor: token.colorBorderSecondary }}>
+        <TaskConversationPanel
+            conversation={scriptConversation}
+            input={d.viralScriptChatInput || ""}
+            onInput={(value) => wb.patch({ viralScriptChatInput: value })}
+            onSend={sendScriptMessage}
+            onPlan={organizeScriptPlan}
+            onConfirm={confirmScriptPlan}
+            onApply={applyScriptCandidate}
+            onDiscard={discardScriptCandidate}
+            locked={locked}
+            busy={busy && ["script", "script-dialogue"].includes(active?.stage || "")}
+            context={d.script.trim() ? `当前脚本 · ${scriptEditMode === "rewrite" ? "整稿改写" : "局部修改"}` : "当前为新脚本创作任务"}
+            muted={muted}
+            border={{ borderColor: token.colorBorderSecondary }}
+        >
             <Segmented block aria-label="脚本修改范围" value={scriptEditMode} disabled={locked} options={[{ label: "局部修改", value: "local" }, { label: "整稿改写", value: "rewrite" }]} onChange={(value) => setScriptEditMode(value as ViralScriptEditMode)} />
             <div className="flex flex-wrap gap-1">
                 {["开头更吸引人，其他部分不变", "台词更自然，保持画面不变"].map((request) => <Button key={request} type="text" size="small" className="!h-auto !whitespace-normal !text-left" disabled={locked} onClick={() => wb.patch({ viralScriptChatInput: request })}>{request}</Button>)}
             </div>
-            <Input.TextArea aria-label="本轮脚本修改要求" value={d.viralScriptChatInput || ""} disabled={locked} autoSize={{ minRows: 3, maxRows: 7 }} placeholder={d.viralScriptSuggestion ? "继续调整本次修改，例如：结尾再短一些……" : "例如：只改第二个镜头，结尾保留……"} onChange={(event) => wb.patch({ viralScriptChatInput: event.target.value })} />
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <Tooltip title="脚本模型"><Button type="text" aria-label="脚本模型设置" icon={<SlidersHorizontal size={15} />} onClick={() => setOptionsOpen(true)} /></Tooltip>
-                <Button icon={<Send size={14} />} loading={busy && active?.stage === "script"} disabled={locked || Boolean(textBlocked || scriptWritingBlocked) || !d.viralScriptChatInput?.trim()} onClick={sendScriptMessage}>{d.viralScriptSuggestion ? "继续修改" : "发送修改"}</Button>
+                {(textBlocked || scriptWritingBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptWritingBlocked}</p>}
             </div>
-            {(textBlocked || scriptWritingBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptWritingBlocked}</p>}
-        </div>
+            {(d.viralScriptTurns || []).length > 0 && <div className="text-xs" style={muted}>历史修改 {turns.length} 次 · {turns.filter((turn) => turn.status === "accepted").length} 次已采用</div>}
+        </TaskConversationPanel>
     </aside>;
     if (!wb.hydrated)
         return (

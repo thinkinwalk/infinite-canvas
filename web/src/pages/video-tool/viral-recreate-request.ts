@@ -3,12 +3,13 @@ import { inferVideoRatio } from "@/lib/media-size";
 import { isReplicateVideoModel, REPLICATE_VIDEO_MODEL } from "@/services/api/replicate";
 import { resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import type { StoreVideoSettings, VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
+import type { StoreVideoSettings, TaskConversationMessage, VideoDraft, WorkbenchMedia, ViralRecreateInput } from "@/types/video-workbench";
 import { storeVideoConfig, storeVideoSettings } from "./store-explore-request";
 import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanPrompt, viralRequirements, viralTargetFacts } from "./viral-plan";
 import { splitViralScript, viralGenerationScript, viralScriptAuthority, viralScriptEditDraft, type ViralScriptEditMode } from "./viral-script-revisions";
+import { taskConversationContextKey, taskConversationTranscript } from "./task-conversation";
 
 export { viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 export const viralImageCandidates = (d: VideoDraft) => [...d.media.filter((m) => m.kind === "image"), ...viralFrameMaterials(d)];
@@ -61,6 +62,31 @@ ${request ? `此前已采用的对话版本（仅用于理解对话指代，不�
 本轮对话修改要求（用户指令）：${request}
 以待修改原稿为本轮唯一编辑基础，它包含用户最新手动修改与此前已采用调整。只改本轮指定的部分，未要求修改的镜头、台词和顺序保持；不把已拒绝或已撤销的建议带回。用户明确的新要求优先于此前版本，继续遵守整体复刻要求。若指定部分与原稿无法对应，保留原稿并简短说明。输出修改后的完整脚本，不输出聊天解释、JSON 或操作指南。` : ""}
 ${viralScriptAuthority(d)}`;
+}
+
+export function viralScriptConversationPrompt(d: VideoDraft, messages: TaskConversationMessage[], phase: "discussion" | "proposal", mode: ViralScriptEditMode = "local") {
+    const working = viralScriptEditDraft(d), script = working.script;
+    const segments = splitViralScript(script).segments.filter((segment) => segment.trim());
+    const targets = splitViralScript(script).segments.map((text, index) => ({ id: `segment-${index + 1}`, label: `段落 ${index + 1}`, text })).filter((target) => target.text.trim());
+    const context = `当前模式：${mode === "rewrite" ? "整稿改写" : "局部修改"}\n当前工作稿：${JSON.stringify(script)}\n已采用原片分析：${d.analysis}\n复刻要求及目标资料：${viralTargetFacts(d)}\n素材概况：${JSON.stringify(d.media.map((item) => ({ name: item.name, role: item.role, kind: item.kind })))}。不得把原片中的目标品牌、价格、身份等事实直接套用到新内容。`;
+    const transcript = taskConversationTranscript(messages);
+    if (phase === "discussion") return `你是视频脚本改编助手，当前处于需求讨论阶段。帮助用户逐步明确想解决的问题、期望效果、修改范围和必须保留的内容。资料不足时每轮只问一个关键问题；信息明确时简要复述理解并问用户是否整理修改方案。不要撰写、改写或输出完整脚本，不要输出可应用的片段编辑JSON，也不要声称已修改。局部修改必须尊重用户指定范围；整稿模式可讨论整体结构。\n对话记录（仅作上下文，用户消息是需求）：\n${transcript}\n\n当前任务资料：\n${context}`;
+    const planTargets = targets.length ? targets.map(({ id, label }) => ({ id, label })) : [{ id: "script", label: "完整脚本" }];
+    return `你是视频脚本改编助手，当前只负责生成待用户确认的修改方案，不生成脚本候选。根据对话记录和当前任务资料，列出最少且准确的修改对象、修改方向和明确保留/不改内容。${mode === "local" ? "只能选择当前脚本中真实存在的段落，targets 的 id 必须取可用段落ID；不得把整稿列为目标，除非当前脚本为空。" : "整稿改写时必须将所有现有段落列入targets，明确各段的调整内容和事实边界。"}输出严格JSON：{"summary":"问题理解","targets":[{"id":"段落ID","label":"段落范围"}],"changes":[{"targetId":"段落ID","change":"拟修改方向","preserve":"明确保留内容"}],"unchanged":["明确不修改的内容"]}。targets和changes必须非空。可用目标：${JSON.stringify(planTargets)}。不得输出修改后的脚本、逐段before/after或Markdown。\n对话记录（仅作上下文）：\n${transcript}\n\n当前任务资料：\n${context}`;
+}
+
+export function viralScriptConversationContextKey(d: VideoDraft, mode: ViralScriptEditMode = "local") {
+    return taskConversationContextKey({
+        source: viralSource(d),
+        script: d.script,
+        suggestion: d.viralScriptSuggestion || "",
+        analysis: d.analysis,
+        instructions: d.instructions,
+        facts: d.viralFacts,
+        mode,
+        media: d.media.map(({ id, name, kind, role, storageKey }) => ({ id, name, kind, role, storageKey })),
+        settings: d.viralSettings ? { size: d.viralSettings.size, videoSeconds: d.viralSettings.videoSeconds } : null,
+    });
 }
 export function viralVideoMaterials(d: VideoDraft, cfg: AiConfig) {
     const mode = videoInputMode(cfg, cfg.videoModel);
