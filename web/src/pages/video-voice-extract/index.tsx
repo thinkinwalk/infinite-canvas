@@ -227,8 +227,7 @@ export default function VideoVoiceExtractPage() {
                                     onChange={(event) => setReferenceText(event.target.value)}
                                 />
                                 <Button type="primary" block icon={<AudioWaveform size={15} />} loading={busy === "save"} disabled={locked || !assetsHydrated || !sampleName.trim() || saved} onClick={() => void save()}>{saved ? "已保存到素材库" : "保存到素材库"}</Button>
-                                <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>保存在当前浏览器，可在探店视频中作为人物音色使用。</p>
-                                {saved && <Link to="/video/store-explore" className="inline-flex items-center gap-1 text-sm">前往探店视频</Link>}
+                                <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>音频保存在当前浏览器的素材库。</p>
                             </>
                         ) : (
                             <div className="flex min-h-56 items-center justify-center rounded-lg border border-dashed" style={{ borderColor: token.colorBorderSecondary }}>

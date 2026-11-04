@@ -109,7 +109,7 @@ export const videoToolGroups = [
     ] satisfies CatalogItem[] },
     { label: "视频处理", items: [
         { id: "video-extract", title: "视频提取", description: "从分享链接提取视频，下载、保存素材或用于制作。", category: "视频处理", medium: "video", source: "official", price: "沿用平台解析服务", href: "/video/extract", icon: Link2 },
-        { id: "video-voice-extract", title: "音色提取", description: "从视频片段中提取人物参考音频，保存到本浏览器素材库供探店视频使用。", category: "视频处理", medium: "video", source: "official", price: "使用现有视频处理服务", href: "/video/voice-extract", icon: AudioWaveform },
+        { id: "video-voice-extract", title: "音色提取", description: "从视频片段中提取人物参考音频，保存到本浏览器素材库。", category: "视频处理", medium: "video", source: "official", price: "使用现有视频处理服务", href: "/video/voice-extract", icon: AudioWaveform },
         { id: "video-lipsync", title: "视频对口型", description: "上传人物视频和新音频，保留画面动作并匹配新口型。", category: "视频处理", medium: "video", source: "official", price: "按音频时长报价", href: "/video/lipsync", icon: Replace },
         { id: "video-upscale", title: "视频高清", description: "提升视频清晰度并补帧。", category: "视频处理", medium: "video", source: "official", price: "按任务报价", href: "/video/upscale", icon: Wand2 },
         { id: "video-subtitle-remove", title: "字幕去除", description: "识别并修复视频中的硬字幕区域。", category: "视频处理", medium: "video", source: "official", price: "按任务报价", href: "/video/subtitle-remove", icon: Captions },
