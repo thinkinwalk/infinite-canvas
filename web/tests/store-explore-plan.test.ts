@@ -36,6 +36,27 @@ test("scoped edit preserves every unselected field and rejects extra or missing 
     expect(() => parseStoreShots(JSON.stringify({ shots }), d, 10, ["opening"])).toThrow("范围");
     expect(() => parseStoreShots(JSON.stringify({ shots: [{ ...next, id: "other" }] }), d, 10, ["opening"])).toThrow("范围");
 });
+test("continued local revisions use the pending candidate without changing the approved draft", async () => {
+    const { storeScriptPrompt } = await import("../src/pages/video-tool/store-script");
+    const d = draft(), candidate = [{ ...shots[0], dialogue: "候选开场" }, shots[1]];
+    const pending = { ...d, storeScriptSuggestion: renderStoreShots(candidate, d), storeShotSuggestion: candidate };
+    const source = { ...pending, script: pending.storeScriptSuggestion, storeShots: candidate };
+    const prompt = storeScriptPrompt(source, [], 10, 7, { request: "再自然一点", ids: ["opening"] });
+    expect(prompt).toContain("候选开场");
+    expect(prompt).toContain("再自然一点");
+    const nextShots = parseStoreShots(JSON.stringify({ shots: [{ ...candidate[0], dialogue: "更自然的开场" }] }), source, 10, ["opening"]);
+    expect(nextShots[0].dialogue).toBe("更自然的开场");
+    expect(nextShots[1]).toBe(candidate[1]);
+    expect(d.script).toBe("原稿");
+    expect(d.storeShots).toEqual(shots);
+});
+test("whole-plan revision mode is explicit and conversation turns persist in task snapshots", async () => {
+    const { storeScriptPrompt } = await import("../src/pages/video-tool/store-script");
+    const d = { ...draft(), storeScriptTurns: [{ id: "turn-1", request: "加强开头", scope: "整稿改写", before: "旧稿", after: "新稿", status: "accepted" as const, createdAt: 1 }] };
+    expect(storeScriptPrompt(d, [], 10, 7, { request: "整体加快", rewrite: true })).toContain("用户已明确选择整稿改写");
+    const input = storeExploreInput(d, { channelMode: "remote", baseUrl: "" } as never);
+    expect(input.storeScriptTurns).toEqual(d.storeScriptTurns);
+});
 test("schema errors, duplicate IDs, discontinuities and invalid JSON retain the original draft", () => {
     const d = draft(), before = JSON.stringify(d);
     for (const raw of ["not json", '{"shots":[]}', JSON.stringify({ shots: [{ ...shots[0], start: "0" }] }), JSON.stringify({ shots: [shots[0], { ...shots[1], id: shots[0].id }] }), JSON.stringify({ shots: [shots[0], { ...shots[1], start: 3 }] })]) {

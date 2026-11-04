@@ -1,7 +1,7 @@
 import type { StoreShot, VideoDraft, WorkbenchMedia } from "@/types/video-workbench";
 import { storeCast } from "./store-materials";
 
-export type StoreScriptScope = { request: string; ids?: string[] };
+export type StoreScriptScope = { request: string; ids?: string[]; rewrite?: boolean };
 type MaterialEvidence = { id: string; label?: string; role?: WorkbenchMedia["role"]; purpose?: string; person?: string; observation?: string };
 
 export function storeScriptPrompt(d: VideoDraft, materials: MaterialEvidence[], seconds: number, maxImages: number, scope?: StoreScriptScope, candidate?: StoreShot[]) {
@@ -30,7 +30,7 @@ ${scope?.ids?.length ? "局部修改时，上述出镜约定按合并后的全�
 待检查候选：${JSON.stringify(candidate)}`;
     return `你是探店短片编导。${contract}
 已有分镜：${JSON.stringify(d.storeShots || [])}。自由原稿：${JSON.stringify(d.script)}。
-${scope ? `本次修改要求：${JSON.stringify(scope.request)}。${scope.ids?.length ? `仅返回ID属于${JSON.stringify(scope.ids)}的镜头，ID、start、end逐项保持原值，只改所选镜头；其他镜头由系统原样保留。` : "重新编写全稿，保留仍适用的事实与素材。"}`
+${scope ? `本次修改要求：${JSON.stringify(scope.request)}。${scope.ids?.length ? `仅返回ID属于${JSON.stringify(scope.ids)}的镜头，ID、start、end逐项保持原值，只改所选镜头；其他镜头由系统原样保留。` : scope.rewrite ? "用户已明确选择整稿改写，可调整全片结构与节奏，但保留有依据的事实和素材。" : "调整全片表达与节奏，保留仍适用的事实、镜头顺序和素材。"}`
         : "已有镜头尽量保留稳定ID，新镜头使用不重复ID。"}
 仅返回最终分镜，不输出内部规划过程。`;
 }

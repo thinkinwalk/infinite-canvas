@@ -145,6 +145,7 @@ function StoreProjectEditor() {
         border = { borderColor: token.colorBorderSecondary };
     const shots = d.storeShots || [],
         audioMode = d.storeAudioMode || "source";
+    const pendingScriptTurn = [...(d.storeScriptTurns || [])].reverse().find((turn) => turn.status === "pending");
     const cloudSpeech = managedModelBinding(config, config.audioModel, "audio")?.adapter === "cloud:speech";
     const voiceOptions = cloudSpeech ? cloudSpeechSpeakers : audioVoiceOptions.map((v) => v.value);
     const speechCurrent = Boolean(d.speech && d.storeSpeechKey === storeSpeechKey(d, config.audioModel));
@@ -222,7 +223,16 @@ function StoreProjectEditor() {
             message.warning(castError);
             return;
         }
-        wb.edit({ script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion || [], storePlanVersions: saveVersion(), storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeScriptStale: false }, "video");
+        wb.edit({
+            script: d.storeScriptSuggestion!,
+            storeShots: d.storeShotSuggestion || [],
+            storePlanVersions: saveVersion(),
+            storeScriptSuggestion: "",
+            storeShotSuggestion: undefined,
+            storeScriptReview: undefined,
+            storeScriptStale: false,
+            storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "accepted" as const } : turn),
+        }, "video");
     };
     const addFiles = async (files: File[], role: "reference" | "model" | "first-frame") => {
         if (locked || uploadLock.current) return;
@@ -888,9 +898,9 @@ function StoreProjectEditor() {
                                                 className="w-full sm:w-44"
                                                 disabled={locked}
                                                 onChange={setScope}
-                                                options={[{ value: "all", label: "重新编写全稿" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
+                                                options={[{ value: "all", label: "整稿改写" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
                                             />
-                                            <Input aria-label="AI修改要求" className="min-w-0 flex-1" value={request} disabled={locked} onChange={(e) => setRequest(e.target.value)} placeholder="例如：缩短台词，保留画面" />
+                                            <Input aria-label="AI修改要求" className="min-w-0 flex-1" value={request} disabled={locked} onChange={(e) => setRequest(e.target.value)} placeholder={d.storeScriptSuggestion ? "继续说要怎么调整这份候选方案" : "例如：缩短台词，保留画面"} />
                                             <Dropdown disabled={locked} menu={{
                                                 items: [{ key: "spoken", label: "更口语" }, { key: "shorter", label: "精简台词" }, { key: "opening", label: "换个开头" }],
                                                 onClick: ({ key }) => {
@@ -903,22 +913,46 @@ function StoreProjectEditor() {
                                             <Button
                                                 disabled={locked || !request.trim() || Boolean(textError()) || (scope !== "all" && !shots.some((s) => s.id === scope))}
                                                 icon={<Sparkles size={14} />}
-                                                onClick={() => void wb.reviseScript(JSON.stringify({ request, ...(scope !== "all" ? { ids: [scope] } : {}) }))}
+                                                onClick={() => void wb.reviseScript(JSON.stringify({ request, ...(scope !== "all" ? { ids: [scope] } : { rewrite: true }) }))}
                                             >
-                                                预览修改
+                                                {d.storeScriptSuggestion ? "继续调整候选" : "生成修改预览"}
                                             </Button>
                                         </div>
+                                    )}
+                                    {(d.storeScriptTurns || []).length > 0 && (
+                                        <section className="space-y-2 border-t pt-3" style={border} aria-label="方案改编对话记录">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <strong className="text-sm font-medium">改编记录</strong>
+                                                <span className="text-xs" style={muted}>{d.storeScriptTurns!.length} 轮</span>
+                                            </div>
+                                            {d.storeScriptTurns!.slice(-4).map((turn, index) => (
+                                                <div key={turn.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+                                                    <span style={muted}>第 {Math.max(1, d.storeScriptTurns!.length - Math.min(4, d.storeScriptTurns!.length) + index + 1)} 轮 · {turn.scope}</span>
+                                                    <span>{turn.request}</span>
+                                                    <span style={{ color: turn.status === "pending" ? token.colorPrimary : token.colorTextSecondary }}>
+                                                        {turn.status === "pending" ? "待确认" : turn.status === "accepted" ? "已采用" : turn.status === "rejected" ? "已放弃" : "被后续修改替代"}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </section>
                                     )}
                                     {d.storeScriptSuggestion && (
                                         <section ref={planSuggestion} tabIndex={-1} aria-label="待采用方案" className="space-y-3 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
                                             <strong className="text-sm font-medium">待采用方案</strong>
                                             {d.storeScriptReview && <p className="text-xs" style={muted}>{d.storeScriptReview === "passed" ? "已完成脚本检查，请核对后采用。" : d.storeScriptReview === "local" ? "仅修改所选镜头，未追加整稿检查。" : d.storeScriptReview === "pending" && busy ? "候选已保存，正在检查事实与台词。" : "未检查候选：检查未完成，请人工核对后决定是否采用；不会自动重试。"}</p>}
-                                            <Input.TextArea readOnly aria-label="待采用方案" value={d.storeScriptSuggestion} rows={10} />
+                                            {pendingScriptTurn && <p className="text-xs" style={muted}>本轮范围：{pendingScriptTurn.scope} · {pendingScriptTurn.request}</p>}
+                                            <div className="grid gap-3 md:grid-cols-2">
+                                                <label className="block space-y-1 text-xs"><span>当前正式方案</span><Input.TextArea readOnly aria-label="当前正式方案" value={d.script} rows={8} /></label>
+                                                <label className="block space-y-1 text-xs"><span>待确认候选</span><Input.TextArea readOnly aria-label="待采用方案" value={d.storeScriptSuggestion} rows={8} /></label>
+                                            </div>
                                             <Space wrap>
                                                 <Button type="primary" size="small" disabled={locked || d.storeSuggestionBase !== storePlanKey(d)} onClick={adopt}>
                                                     {d.storeScriptReview === "failed" || (d.storeScriptReview === "pending" && !busy) ? "采用未检查方案" : "采用方案"}
                                                 </Button>
-                                                <Button size="small" disabled={locked} onClick={() => wb.patch({ storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined })}>
+                                                <Button size="small" disabled={locked} onClick={() => wb.patch({
+                                                    storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined,
+                                                    storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
+                                                })}>
                                                     {d.script ? "保留原稿" : "放弃候选"}
                                                 </Button>
                                             </Space>

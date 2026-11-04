@@ -273,7 +273,15 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 dialogue: remapMaterialMentions(s.dialogue, storeMaterialLabels(current), storeMaterialLabels({ ...current, ...value })),
             })) : undefined;
             const candidatesOnly = value.media && invalidate === "materials" && current.media.every((m) => value.media!.some((next) => next.id === m.id && next.storageKey === m.storageKey && next.role === m.role && next.storePerson === m.storePerson && next.storePurpose === m.storePurpose));
-            patch({ ...(invalidate && !candidatesOnly ? { storeFinishStale: true } : {}), ...(invalidate && !finishOnly && !candidatesOnly ? { storeOutputStale: true, storeScriptStale: invalidate !== "video", storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined } : {}), ...(invalidate === "materials" ? { storeAnalysisStale: true, storeAnalysisSuggestion: "" } : {}), ...mentions, ...(storeShots ? { storeShots } : {}), ...value }, true);
+            patch({
+                ...(invalidate && !candidatesOnly ? { storeFinishStale: true } : {}),
+                ...(invalidate && !finishOnly && !candidatesOnly ? {
+                    storeOutputStale: true, storeScriptStale: invalidate !== "video", storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined,
+                    storeScriptTurns: (current.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
+                } : {}),
+                ...(invalidate === "materials" ? { storeAnalysisStale: true, storeAnalysisSuggestion: "" } : {}),
+                ...mentions, ...(storeShots ? { storeShots } : {}), ...value,
+            }, true);
             return;
         }
         if (digital && value.digitalHumanMode && value.digitalHumanMode !== read(tool).digitalHumanMode) {
@@ -948,8 +956,10 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 if ((stage === "analyze" || matching) && !images.length) throw new Error("请先补充素材");
                 if (matching && !d.script.trim()) throw new Error("请先填写或生成拍摄方案");
                 const scope = stage === "script" && ctx.scriptRequest ? JSON.parse(ctx.scriptRequest) as StoreScriptScope : undefined;
+                const continuing = Boolean(scope && d.storeScriptSuggestion && d.storeShotSuggestion?.length);
+                const sourceDraft = continuing ? { ...d, script: d.storeScriptSuggestion!, storeShots: d.storeShotSuggestion } : d;
                 const localIds = scope?.ids?.length ? scope.ids : undefined;
-                if (localIds && (!d.storeShots?.length || new Set(localIds).size !== localIds.length || localIds.some((id) => !d.storeShots!.some((s) => s.id === id)))) throw new Error("选定镜头已变化，请重新选择修改范围");
+                if (localIds && (!sourceDraft.storeShots?.length || new Set(localIds).size !== localIds.length || localIds.some((id) => !sourceDraft.storeShots!.some((s) => s.id === id)))) throw new Error("选定镜头已变化，请重新选择修改范围");
                 const review = stage === "script" && !localIds;
                 const pendingImages = stage === "analyze" ? images : images.filter((m) => !m.storeObservation?.trim());
                 const calls = pendingImages.length + (stage === "analyze" ? 0 : review ? 2 : 1);
@@ -978,21 +988,29 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                     return { storeMaterialSuggestion: parseStoreMaterialSuggestion(raw, d, limit, mode) };
                 }
                 const seconds = Number(cfg.videoSeconds), limit = videoProfile(cfg, cfg.videoModel).maxImages;
-                const instruction = storeScriptPrompt(d, materialList, seconds, limit, scope);
+                const instruction = storeScriptPrompt(sourceDraft, materialList, seconds, limit, scope);
                 const value = await text(ctx, instruction, [], false, undefined, true, true, localIds ? "正在修改选定镜头" : "正在规划主题与编写方案");
                 store().patchRecord(ctx.recordId, { step: "正在校验拍摄方案" });
-                let shots = parseStoreShots(value, d, seconds, localIds);
-                const base = storePlanKey(d);
+                let shots = parseStoreShots(value, sourceDraft, seconds, localIds);
+                const base = continuing ? d.storeSuggestionBase || storePlanKey(d) : storePlanKey(d);
+                const turn = scope ? {
+                    id: crypto.randomUUID(), request: scope.request, scope: localIds ? `镜头 ${localIds.map((id) => (sourceDraft.storeShots || []).findIndex((s) => s.id === id) + 1).join("、")}` : scope.rewrite ? "整稿改写" : "全稿调整",
+                    before: continuing ? d.storeScriptSuggestion! : d.script, after: renderStoreShots(shots, d), status: "pending" as const, createdAt: Date.now(),
+                } : undefined;
+                const turns = scope ? [
+                    ...(d.storeScriptTurns || []).map((item) => item.status === "pending" ? { ...item, status: "superseded" as const } : item),
+                    turn!,
+                ] : d.storeScriptTurns;
                 if (review) {
                     // Persist the completed draft before the independent request can fail or be stopped.
-                    const candidate = { storeScriptSuggestion: renderStoreShots(shots, d), storeShotSuggestion: shots, storeSuggestionBase: base, storeScriptReview: "pending" as const };
+                    const candidate = { storeScriptSuggestion: renderStoreShots(shots, d), storeShotSuggestion: shots, storeSuggestionBase: base, storeScriptReview: "pending" as const, ...(turns ? { storeScriptTurns: turns } : {}) };
                     patch(candidate);
                     store().patchRecord(ctx.recordId, { draftPatch: candidate, text: candidate.storeScriptSuggestion });
                     try {
-                        const checked = await text(ctx, storeScriptPrompt(d, materialList, seconds, limit, scope, shots), [], false, undefined, true, true, "正在检查事实与台词");
+                        const checked = await text(ctx, storeScriptPrompt(sourceDraft, materialList, seconds, limit, scope, shots), [], false, undefined, true, true, "正在检查事实与台词");
                         ctx.signal.throwIfAborted();
-                        shots = parseStoreShots(checked, d, seconds);
-                        const castError = storeCastReferenceError(d, shots.flatMap((s) => s.materialIds));
+                        shots = parseStoreShots(checked, sourceDraft, seconds, localIds);
+                        const castError = storeCastReferenceError(sourceDraft, shots.flatMap((s) => s.materialIds));
                         if (castError) throw new Error(castError);
                     } catch (error) {
                         const saved = { ...candidate, storeScriptReview: "failed" as const };
@@ -1003,12 +1021,15 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                     }
                 }
                 if (localIds && !storeCastReferenceError(d, storeSelectedIds(d))) {
-                    const castError = storeCastReferenceError(d, shots.flatMap((s) => s.materialIds));
+                    const castError = storeCastReferenceError(sourceDraft, shots.flatMap((s) => s.materialIds));
                     if (castError) throw new Error(castError);
                 }
                 const script = renderStoreShots(shots, d);
                 return d.script || storePlanKey(read(tool)) !== base
-                    ? { storeScriptSuggestion: script, storeShotSuggestion: shots, storeSuggestionBase: base, storeScriptReview: review ? "passed" : "local" }
+                    ? {
+                        storeScriptSuggestion: script, storeShotSuggestion: shots, storeSuggestionBase: base, storeScriptReview: review ? "passed" : "local",
+                        ...(turns ? { storeScriptTurns: turns.map((item) => item.id === turn?.id ? { ...item, after: script } : item) } : {}),
+                    }
                     : { script, storeShots: shots, storeScriptSuggestion: "", storeShotSuggestion: undefined, storeScriptReview: undefined, storeScriptStale: false, storeOutputStale: true };
             }
             if (stage === "speech") {
