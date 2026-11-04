@@ -7,7 +7,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { formatDuration } from "@/lib/image-utils";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { extractVoiceReference, transcribeVoiceReference, workbenchMediaBlob } from "@/services/api/video-worker";
+import { extractVoiceReference, workbenchMediaBlob } from "@/services/api/video-worker";
 import { saveVoiceReference } from "@/services/api/voices";
 import { useUserStore } from "@/stores/use-user-store";
 import { useVideoWorkbenchStore } from "@/stores/use-video-workbench-store";
@@ -94,17 +94,14 @@ export default function VideoVoiceExtractPage() {
         try {
             const result = await extractVoiceReference(worker, source, range[0], range[1], abort.signal, setStep);
             abort.signal.throwIfAborted();
-            setSample(result);
-            setStep("识别录音原文");
-            try {
-                const transcript = await transcribeVoiceReference(worker, result, abort.signal, setStep);
-                abort.signal.throwIfAborted();
-                setReferenceText(transcript);
-                message.success("参考音频和原文已生成，请试听并核对");
-            } catch (cause) {
-                if (abort.signal.aborted) throw cause;
-                setReferenceText("");
-                message.warning("参考音频已生成，但原文识别失败；可试听后手动填写");
+            setSample(result.media);
+            setReferenceText(result.transcript);
+            if (result.transcriptSource === "subtitle-track" || result.transcriptSource === "burned-in-subtitle") {
+                message.success("已优先提取视频字幕，请试听并核对原文");
+            } else if (result.transcriptSource === "speech") {
+                message.success("未发现可用字幕，已识别语音原文，请试听并核对");
+            } else {
+                message.warning("参考音频已生成，未能提取字幕或识别语音；可试听后手动填写原文");
             }
         } catch (cause) {
             if (!abort.signal.aborted) setError(cause instanceof Error ? cause.message : "音色提取失败");
@@ -221,7 +218,7 @@ export default function VideoVoiceExtractPage() {
                     <section className="min-w-0 space-y-4 rounded-xl border p-4" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
                         <div>
                             <h2 className="m-0 text-base font-medium">保存为账号音色</h2>
-                            <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>原文会自动识别，请试听并校对后保存，供后续配音和数字人使用。</p>
+                            <p className="m-0 text-xs" style={{ color: token.colorTextSecondary }}>优先使用视频字幕；没有可用字幕时再识别语音。请试听、核对后保存。</p>
                         </div>
                         {sample ? (
                             <>
@@ -231,7 +228,7 @@ export default function VideoVoiceExtractPage() {
                                     value={referenceText}
                                     disabled={locked}
                                     rows={5}
-                                    placeholder="识别结果会显示在这里，请核对并修正；识别失败时可手动填写"
+                                    placeholder="提取的字幕或语音识别结果会显示在这里，也可手动填写"
                                     onChange={(event) => setReferenceText(event.target.value)}
                                 />
                                 <Button type="primary" block icon={<AudioWaveform size={15} />} loading={busy === "save"} disabled={locked || !session || !sampleName.trim() || !referenceText.trim()} onClick={() => void save()}>保存音色</Button>

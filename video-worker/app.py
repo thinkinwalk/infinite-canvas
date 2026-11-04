@@ -29,6 +29,7 @@ from subtitle_matching import matched_ocr_indices, normalize_text, validate_segm
 from replacement_subtitles import caption_lane_boxes, locate_caption_masks, audio_captions
 from replacement_masks import composite_masked_frames, validate_mask_frames
 from segmentation import analyze as analyze_segments, segment_limits
+from voice_reference_text import extract_burned_subtitles, parse_srt, simplify_text, text_subtitle_stream
 
 
 ROOT = Path(os.environ.get("VIDEO_WORKER_DATA", Path(__file__).parent / "data")).resolve()
@@ -484,16 +485,8 @@ async def probe_video(identifier, source):
     return await probe_replacement_video(identifier, source, command, FFPROBE)
 
 
-async def transcribe(identifier: str, video: Path, work: Path):
-    audio = work / "transcription.wav"
+async def transcribe_audio(identifier: str, audio: Path, work: Path):
     output = work / "transcription.json"
-    try:
-        await ffmpeg(identifier, "-hide_banner", "-loglevel", "error", "-i", video, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio)
-    except RuntimeError as error:
-        print(str(error), file=sys.stderr, flush=True)
-        if "matches no streams" in str(error):
-            raise ValueError("参考视频没有音轨，无法识别口播原文。请上传带清晰人声的视频，或在参考原文框中手动粘贴文案。") from error
-        raise RuntimeError("无法读取视频音频，请确认视频含有可正常播放的声音后重试。") from error
     update_job(identifier, step="识别语音与时间轴")
     try:
         await command(identifier, [sys.executable, str(Path(__file__).parent / "adapters" / "transcribe.py"),
@@ -505,6 +498,63 @@ async def transcribe(identifier: str, video: Path, work: Path):
         print(str(error), file=sys.stderr, flush=True)
         raise RuntimeError("语音识别模型加载失败：处理服务所在电脑可用内存不足。请关闭不用的程序后重试；若仍失败，请检查系统虚拟内存。") from error
     return json.loads(output.read_text(encoding="utf-8"))
+
+
+async def transcribe(identifier: str, video: Path, work: Path):
+    audio = work / "transcription.wav"
+    try:
+        await ffmpeg(identifier, "-hide_banner", "-loglevel", "error", "-i", video, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", audio)
+    except RuntimeError as error:
+        print(str(error), file=sys.stderr, flush=True)
+        if "matches no streams" in str(error):
+            raise ValueError("参考视频没有音轨，无法识别口播原文。请上传带清晰人声的视频，或在参考原文框中手动粘贴文案。") from error
+        raise RuntimeError("无法读取视频音频，请确认视频含有可正常播放的声音后重试。") from error
+    return await transcribe_audio(identifier, audio, work)
+
+
+async def voice_reference_transcript(identifier: str, source: Path, audio: Path, start: float, end: float, work: Path):
+    try:
+        if FFPROBE:
+            update_job(identifier, step="读取选中片段字幕")
+            raw, _ = await command(identifier, [FFPROBE, "-v", "error", "-show_streams", "-of", "json", source])
+            stream = text_subtitle_stream(json.loads(raw).get("streams", []))
+            if stream:
+                subtitle = work / "voice-reference.srt"
+                await ffmpeg(identifier, "-ss", start, "-i", source, "-t", end - start,
+                             "-map", f"0:{stream['index']}", "-c:s", "srt", "-f", "srt", subtitle)
+                transcript = parse_srt(subtitle.read_text(encoding="utf-8", errors="replace"))
+                if transcript:
+                    return transcript, "subtitle-track"
+    except Exception as error:
+        print(f"Embedded subtitle extraction failed: {error}", file=sys.stderr, flush=True)
+
+    if next(item for item in capabilities() if item["name"] == "ocr")["available"]:
+        try:
+            update_job(identifier, step="提取画面字幕")
+            frames = work / "voice-reference-frames"
+            frames.mkdir()
+            await ffmpeg(identifier, "-ss", start, "-i", source, "-t", end - start,
+                         "-vf", "fps=1", frames / "%04d.png")
+            images = sorted(frames.glob("*.png"))
+            if images:
+                output = work / "voice-reference-ocr.jsonl"
+                await command(identifier, [sys.executable, str(Path(__file__).parent / "adapters" / "ocr.py"),
+                                           "--frames", str(frames), "--output", str(output)])
+                rows = [json.loads(line)["items"] for line in output.read_text(encoding="utf-8").splitlines()]
+                with Image.open(images[0]) as frame:
+                    transcript = extract_burned_subtitles(rows, frame.size)
+                if transcript:
+                    return transcript, "burned-in-subtitle"
+        except Exception as error:
+            print(f"Burned-in subtitle extraction failed: {error}", file=sys.stderr, flush=True)
+
+    try:
+        transcript = "\n".join(segment["text"] for segment in await transcribe_audio(identifier, audio, work))
+        transcript = simplify_text(transcript).strip()
+        return (transcript, "speech") if transcript else ("", "")
+    except Exception as error:
+        print(f"Voice reference transcription failed: {error}", file=sys.stderr, flush=True)
+        return "", ""
 
 
 def ass_time(seconds):
@@ -866,8 +916,9 @@ async def run_job(identifier: str, request: JobRequest):
                 "-c:a", "pcm_s16le",
                 output,
             )
+            transcript, transcript_source = await voice_reference_transcript(identifier, source, output, start, end, work)
             published = publish(output)
-            result = {"file": published, "metadata": {"start": start, "end": end, "duration": end - start, "sampleRate": 16000, "channels": 1}}
+            result = {"file": published, "metadata": {"start": start, "end": end, "duration": end - start, "sampleRate": 16000, "channels": 1, "transcript": transcript, "transcriptSource": transcript_source}}
         elif operation == "frames":
             source = inputs["video"]
             info = await asyncio.to_thread(metadata, source)

@@ -240,7 +240,7 @@ export async function storeWorkerResult(config: WorkerConfig, file: string): Pro
     return registerTemporaryReferenceCopy(id, media);
 }
 
-export async function extractVoiceReference(config: WorkerConfig, media: UploadedFile, start: number, end: number, signal: AbortSignal, onProgress?: (step: string) => void): Promise<UploadedFile> {
+export async function extractVoiceReference(config: WorkerConfig, media: UploadedFile, start: number, end: number, signal: AbortSignal, onProgress?: (step: string) => void): Promise<{ media: UploadedFile; transcript: string; transcriptSource: string }> {
     if (![start, end].every(Number.isFinite) || start < 0 || end <= start) throw new Error("请选择有效的音色提取范围");
     const capabilities = await getWorkerCapabilities(config, signal);
     if (!capabilities.some((item) => item.name === "voice-reference" && item.available)) throw new Error("当前视频处理服务暂不支持音色提取，请更新 Worker 后重试");
@@ -249,23 +249,12 @@ export async function extractVoiceReference(config: WorkerConfig, media: Uploade
     try {
         const completed = await waitForWorkerJob(config, job.id, signal, (state) => onProgress?.(state.step));
         if (!completed.result?.file) throw new Error("处理服务未返回参考音频");
-        return await storeWorkerResult(config, completed.result.file);
-    } catch (error) {
-        if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
-        throw error;
-    }
-}
-
-export async function transcribeVoiceReference(config: WorkerConfig, media: UploadedFile, signal: AbortSignal, onProgress?: (step: string) => void): Promise<string> {
-    const capabilities = await getWorkerCapabilities(config, signal);
-    if (!capabilities.some((item) => item.name === "transcribe" && item.available)) throw new Error("当前处理服务未启用语音识别");
-    const source = await uploadWorkerMedia(config, { ...media, name: "voice-reference.wav", kind: "audio" }, signal);
-    const job = await createWorkerJob(config, "transcribe", { video: source }, {}, signal);
-    try {
-        const completed = await waitForWorkerJob(config, job.id, signal, (state) => onProgress?.(state.step));
-        const text = completed.result?.text?.trim();
-        if (!text) throw new Error("没有识别到清晰的人声，请检查片段或手动填写原文");
-        return text;
+        const metadata = completed.result.metadata || {};
+        return {
+            media: await storeWorkerResult(config, completed.result.file),
+            transcript: typeof metadata.transcript === "string" ? metadata.transcript : "",
+            transcriptSource: typeof metadata.transcriptSource === "string" ? metadata.transcriptSource : "",
+        };
     } catch (error) {
         if (signal.aborted) void cancelWorkerJob(config, job.id).catch(() => {});
         throw error;
