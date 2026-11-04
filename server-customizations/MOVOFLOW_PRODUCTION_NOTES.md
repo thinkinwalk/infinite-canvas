@@ -15,10 +15,23 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.164
-- Current production source: tag v0.19.164, commit a6c08fee368a2b9ce15aa39b97fab1d0c2dbf39e
+- Current production image: infinite-canvas:v0.19.166
+- Current production source: tag v0.19.166, commit 19d314ca1036c2a2820e330730d31d745a8c279c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
-- Current worker source mount: /opt/infinite-canvas/releases/v0.19.163-worker/
+- Current worker source mount: /opt/infinite-canvas/releases/v0.19.166-worker/
+
+## v0.19.166 deployment
+
+- Product tag `v0.19.166`, source `19d314ca1036c2a2820e330730d31d745a8c279c`, is pushed to `release/v0.19.60` and formally published at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.166 . It includes v0.19.165 voice-reference subtitle preference. A concurrent v0.19.167 source commit does not itself change this verified deployment; later handoff-only commits do not move the v0.19.166 tag.
+- Store plans now support full-plan or single-shot conversational revisions, continuation from an unadopted candidate, current/candidate comparison and saved revision records. Explicit adoption preserves the previous version for undo; rejection retains the formal draft. Local revisions preserve selected shot identity/times and all other shots. Full rewriting retains independent review and existing fee confirmation.
+- App image `infinite-canvas:v0.19.166`, ID `sha256:7e44c2457d786fc44a34599748bb0363cb82430d71814485d24fe993765caa56`, was built on the production server. Backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is unchanged. Worker image `v0.19.87` was retained, but Worker was recreated with nine updated source mounts under `/opt/infinite-canvas/releases/v0.19.166-worker/` plus `voice_reference_text.py`; it started at `2026-11-04T02:32:51.689568839Z`. Do not describe this as an App-only release.
+- Authenticated Worker health, voice-reference/OCR capabilities and simplified-Chinese subtitle parsing passed. Worker health requires both its existing authorization and `X-Canvas-Worker: 1` header. Isolated tests use the production text dependency directory read-only with `PYTHONPATH=/data/engines/text/python`; the image alone lacks `opencc`.
+- Development passed 19 focused frontend tests/91 assertions and a frontend build. Full TypeScript checking still reports eight existing errors outside the changed feature files. Local Worker tests lacked `opencc`; the same two modules passed seven tests in an isolated production-runtime container with networking disabled and source/dependencies read-only. No paid inference was submitted.
+- Internal/public health, twelve deployment routes, new feature markers and public/container JS/CSS hashes passed. Independent workstation HTTPS additionally verified `/video/store-explore` HTTP 200, health and both asset hashes. JS `/assets/index-yjoIG4ep.js` SHA-256 `60b565507767737f83861f17adc0837503ff3f685f09ce65becef7960eeb51df`; CSS `/assets/index-fSa6HH0w.css` SHA-256 `42485ef1297d7dd8aafa71e1efd8d251cdf0242a235688c801d6e6b90ed38eba`.
+- Before switching, no active cloud/Worker jobs were present. Verified SQLite online backup, schema/table counts, settings/protected accounts, complete environment values, expected mounts, 177 existing job-record hashes and 29,573 media metadata entries were preserved. No production channel setting was changed.
+- An isolated test first stopped before switching because its dependency mount was missing. A subsequent health verifier omitted the required Worker header and automatically restored v0.19.164. Adding the existing dependency mount and correcting the health probe resolved these deployment-tool checks; the final deployment passed without a product-source workaround.
+- Prebuild backup `/opt/infinite-canvas/backups/v0.19.166-prebuild-20261104-023245/`; final rollback backup `/opt/infinite-canvas/backups/v0.19.166-final-20261104-023249/`. These contain verified SQLite, Compose and private environment, not a full media backup. Deployment script `/opt/infinite-canvas/releases/deploy-v0.19.166.py`; report `/opt/infinite-canvas/releases/v0.19.166-deployment.json`.
+- Rollback restores the final backup Compose and recreates both App and video-worker, preserving the live database/media. Prior images and source mounts remain available. Browser integration exposed no controllable web browser, so production UI interactions and true model-output quality remain manual acceptance. Follow the 15 conversation-revision steps in `docs/content/docs/progress/store-explore-acceptance.mdx`; no video generation is required. Saved candidates/turns persist per browser project; unsent input/scope are not promised across refresh, and undo restores the plan without rewriting historical turn statuses.
 
 ## v0.19.164 deployment
 
