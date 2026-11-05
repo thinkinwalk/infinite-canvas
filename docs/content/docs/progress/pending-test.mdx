@@ -9,7 +9,10 @@ description: Implemented changes that still need manual verification
 
 - 探店拍摄方案和爆款复刻对话区缩短标题和说明；本轮依据及素材帧默认收起但可展开核对；去掉空白时的大块教学卡和无操作的历史修改计数；按讨论、方案、候选阶段显示当前下一步操作。正式方案仍需明确采用候选后才会更新，候选前后差异、报价确认和历史记录保留。
 - 定向回归 `task-conversation.test.ts` 与 `store-explore-plan.test.ts` 共 21 项／86 个断言通过；Vite 生产构建通过，保留既有分包及大包体积警告。全量 TypeScript 检查仍有 8 组既有错误，均在本次未修改的模型管理、提示增强、画布任务和 API 文件中；本次涉及文件无类型报错。
-- 部署完成后补记版本提交、正式 Release、生产检查、备份和回滚信息。本机 BitBrowser CDP `127.0.0.1:51360` 当前不可连接，生产浏览器交互留待用户刷新手测。
+- 已提交 `4b4490c0978c21fcc4a24e434cc14ee871993ce7`，推送 `release/v0.19.60` 与 `v0.19.178` tag，并发布[正式 GitHub Release](https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.178)。
+- 生产 App `infinite-canvas:v0.19.178`（`sha256:773e5b35386a4b0a1b5843f0183088a5aa94ca1e153e35f5739400fac4702ace`）；内网与公网健康、13 个页面、功能标记和公网/容器 JS/CSS SHA-256 一致性通过。JS `/assets/index-DbpbR0sN.js`（SHA-256 `f2a324545e6abf4f376fe16c5fe1308f4d52a77224a4265240109e46e2ecce83`），CSS `/assets/index-CaRwZLpg.css`（SHA-256 `418c6572ac7c5896847d5968d9052bdd1f717db6b2899e30fa45594216505441`）。
+- SQLite `quick_check`、结构、表计数、账号/设置保持；180 条既有任务、30,025 项媒体保持。Worker `infinite-canvas-video-worker:v0.19.87`、容器、启动时间、环境变量和挂载未变；无活动任务、生产渠道配置变更或收费推理。构建前备份 `/opt/infinite-canvas/backups/v0.19.178-prebuild-20261105-125946/`，切换前备份 `/opt/infinite-canvas/backups/v0.19.178-final-20261105-130059/`；部署报告 `/opt/infinite-canvas/releases/v0.19.178-deployment.json`。回滚恢复最终备份 Compose 并仅重建 App。
+- 浏览器交互未完成：BitBrowser CDP `127.0.0.1:51360` 不可连接，未操作用户标签页。刷新后按下方流程手测，不需要生成视频或额外付费。
 - 部署后手测：刷新 `https://studio.lingzhouai.com/video/store-explore`，进入探店方案对话，确认标题与空白区更简洁；展开“本轮依据”核对是否附带成片帧及保留项；依次讨论、整理方案、确认并生成候选，检查每个阶段只出现对应操作，未采用前正式方案不变。
 - 在爆款复刻的“改编脚本”重复检查精简界面、按范围连续讨论、候选对比、采用/放弃及历史记录；无需生成视频或提交额外付费生成。
 
