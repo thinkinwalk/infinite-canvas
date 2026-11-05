@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.175
-- Current production source: tag v0.19.175, commit a1589f9458bfd63538411cc17cf500477b3c1d5c
+- Current production image: infinite-canvas:v0.19.176
+- Current production source: tag v0.19.176, commit e11199966db86cd9f30179954abf3bfcf0af83df
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.167-worker/
+
+## v0.19.176 deployment
+
+- Product tag `v0.19.176`, source `e11199966db86cd9f30179954abf3bfcf0af83df`, is pushed to `release/v0.19.60` and formally released at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.176. Canvas Agent is limited to canvas routes; store conversation context identifies the current project/revision and feedback video samples, and stale candidates cannot be adopted.
+- The initial deployment preflight stopped before backup or switching because the helper normalized the previous version label incorrectly. The deployment helper correction is follow-up commit `fa4bf96` on the release branch; the product tag was not moved. The corrected helper then built and deployed the exact `v0.19.176` tag.
+- Active App image `infinite-canvas:v0.19.176`, ID `sha256:bd97abfbbea8baf4e0eb41c3a99b3dcd53f1ae507807d6270d6c9f79fbb9aea2`. Public and internal health, thirteen routes, feature markers, and public/container asset hashes passed. JS `/assets/index-Dw2O0ugW.js` SHA-256 `72b8346f2c3442225ee735a185d69e6fd0b3dfa321b18d475765eaaae7a3068e`; CSS `/assets/index-CaRwZLpg.css` SHA-256 `418c6572ac7c5896847d5968d9052bdd1f717db6b2899e30fa45594216505441`.
+- Worker `infinite-canvas-video-worker:v0.19.87`, container identity, mounts, environment, and start time `2026-11-04T02:38:32.969372688Z` were preserved. Backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is unchanged.
+- SQLite online backup passed `PRAGMA quick_check`; schema, table counts, protected account/settings values, 180 task/job JSON hashes, and 30,019 existing non-database file snapshot entries were preserved. No active cloud/Worker tasks or paid inference occurred; no production model/channel settings changed. Prebuild backup `/opt/infinite-canvas/backups/v0.19.176-prebuild-20261105-111136/`; final backup `/opt/infinite-canvas/backups/v0.19.176-final-20261105-111239/`; report `/opt/infinite-canvas/releases/v0.19.176-deployment.json`.
+- BitBrowser local CDP acceptance on the local build covered canvas-only Agent visibility, feedback sample previews, stale-candidate blocking, and 320px overflow. Production browser interaction and real model quality remain for user testing; release verification only checked health, routes, markers, and resource hashes.
+- Rollback restores the final-backup Compose and recreates App only, retaining live data/media and the unchanged Worker.
 
 ## v0.19.173 deployment
 

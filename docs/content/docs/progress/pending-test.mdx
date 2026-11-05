@@ -15,7 +15,10 @@ description: Implemented changes that still need manual verification
 - 发布部署后手测：刷新 `https://studio.lingzhouai.com/video/store-explore`，打开已有或新建探店项目，在对话区确认项目名、方案修订和历史版本对应当前项目。选择“根据成片反馈”任务，选一个时间点或一段区间，核对预览时间与画面、拟发送帧数；清除时间范围后确认明确显示“仅文字与方案”。
 - 再依次执行“开始讨论 → 继续讨论 → 整理修改方案 → 确认方案并生成候选”，确认讨论和方案阶段不改正式稿；检查候选关联问题、镜头范围及成片时间。生成候选后修改方案或素材依据，确认候选标记过期且“采用”不可点击；重新生成候选后分别验证放弃保留原稿、采用生成新版本。无需生成新视频或触发真实收费模型。
 - 最后进入 `/canvas` 确认画布任务对话仍可使用原线程；切换到探店页确认画布 Agent 消失，再返回画布确认线程仍保留。真实模型的对话质量及用户自己的项目数据仍由手测确认。
-- `v0.19.176` 发布与部署结果待本次发布后补录。
+- 已发布 [GitHub Release v0.19.176](https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.176)，产品标签及部署源码为提交 `e11199966db86cd9f30179954abf3bfcf0af83df`，已推送至 `release/v0.19.60`。首轮部署预检发现部署校验器的前版本标签规范化错误，在任何备份/切换操作前停止；修正提交 `fa4bf96` 已推送发布分支，随后使用修正的部署校验器从产品标签完成部署，未移动产品标签。
+- 生产 App 镜像 `infinite-canvas:v0.19.176`（`sha256:bd97abfbbea8baf4e0eb41c3a99b3dcd53f1ae507807d6270d6c9f79fbb9aea2`）；内外健康、13 个路由、对话和成片反馈标记及生产静态资源与容器内文件哈希均通过。公网 JS `/assets/index-Dw2O0ugW.js`（SHA-256 `72b8346f2c3442225ee735a185d69e6fd0b3dfa321b18d475765eaaae7a3068e`），CSS `/assets/index-CaRwZLpg.css`（SHA-256 `418c6572ac7c5896847d5968d9052bdd1f717db6b2899e30fa45594216505441`）。
+- SQLite 在线备份 `quick_check`、结构、表计数、账号/设置、180 条任务记录及 30,019 项既有媒体文件快照保持；Worker `infinite-canvas-video-worker:v0.19.87`、容器启动时间、环境变量和挂载未变；仅更新 App，未改生产模型/渠道配置、未调用收费推理。构建前备份 `/opt/infinite-canvas/backups/v0.19.176-prebuild-20261105-111136/`，切换前备份 `/opt/infinite-canvas/backups/v0.19.176-final-20261105-111239/`；部署报告 `/opt/infinite-canvas/releases/v0.19.176-deployment.json`。
+- 发布前在 BitBrowser 464 本地 CDP 对本地构建通过路由隔离、成片取样预览、过期候选禁用及 320px 无横向溢出的浏览器验收。生产发布阶段完成 HTTP、页面、功能标记和资源哈希核验，未进行生产浏览器交互；真实项目多轮模型输出和费用仍待用户按上面的手测步骤验证。
 
 ## 通用任务对话工作台（v0.19.175 已发布，待用户手测）
 
