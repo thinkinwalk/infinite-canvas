@@ -13,7 +13,7 @@ export type TaskConversationWorkspaceProps = {
     border: CSSProperties;
 };
 
-export function TaskConversationContextHeader({ context, muted, border, right, gridClassName = "grid-cols-2 gap-2 text-xs sm:grid-cols-4" }: { context: Partial<TaskConversationAdapter["context"]>; muted: CSSProperties; border: CSSProperties; right?: ReactNode; gridClassName?: string }) {
+export function TaskConversationContextHeader({ context, muted, border, right, gridClassName = "grid-cols-2 gap-2 text-xs" }: { context: Partial<TaskConversationAdapter["context"]>; muted: CSSProperties; border: CSSProperties; right?: ReactNode; gridClassName?: string }) {
     return <div className="space-y-3">
         <header className="flex shrink-0 items-start justify-between gap-3">
             <div className="min-w-0">
@@ -26,10 +26,10 @@ export function TaskConversationContextHeader({ context, muted, border, right, g
             {right}
         </header>
         <div className={`grid ${gridClassName}`} aria-label="任务上下文">
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>当前对象</span><strong className="block truncate" title={context.subject || "当前任务"}>{context.subject || "当前任务"}</strong></div>
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>修改范围</span><strong className="block truncate" title={context.scope || "待讨论"}>{context.scope || "待讨论"}</strong></div>
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>来源依据</span><strong className="block truncate" title={context.source || "当前内容"}>{context.source || "当前内容"}</strong></div>
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>版本/状态</span><strong className="block truncate" title={context.version || "当前草稿"}>{context.version || "当前草稿"}</strong></div>
+            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>当前对象</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.subject || "当前任务"}>{context.subject || "当前任务"}</strong></div>
+            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>修改范围</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.scope || "待讨论"}>{context.scope || "待讨论"}</strong></div>
+            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>来源依据</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.source || "当前内容"}>{context.source || "当前内容"}</strong></div>
+            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>版本/状态</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.version || "当前草稿"}>{context.version || "当前草稿"}</strong></div>
         </div>
     </div>;
 }
