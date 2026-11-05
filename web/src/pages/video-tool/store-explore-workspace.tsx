@@ -34,8 +34,9 @@ import { StoreProjectPanel, storeRecordStatus } from "./store-project-panel";
 import { useStoreProjectAccess } from "./use-store-project-access";
 import { stopStoreTask } from "./store-task-runtime";
 import { flushWorkbenchStorage } from "@/stores/workbench-storage";
-import { TaskConversationPanel } from "./task-conversation-panel";
-import { taskConversationMessage, taskConversationPlanText, type TaskConversationQuote } from "./task-conversation";
+import { TaskConversationWorkspace } from "@/components/task-conversation/task-conversation-workspace";
+import { taskConversationMessage, taskConversationPlanText } from "@/lib/task-conversation";
+import type { TaskConversationAdapter, TaskConversationQuote } from "@/types/task-conversation";
 import { storeScriptConversationContextKey, type StoreScriptScope } from "./store-script";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
@@ -849,6 +850,43 @@ function StoreProjectEditor() {
             )}
         </div>
     );
+    const conversationAdapter: TaskConversationAdapter = {
+        context: {
+            business: "探店视频",
+            taskTitle: "拍摄方案对话工作台",
+            subject: d.storeFeedbackSourceRecordId ? "根据成片反馈调整方案" : "当前拍摄方案",
+            scope: scope === "all" ? "整稿改写" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`,
+            source: d.storeFeedbackSourceRecordId ? `成片任务 ${d.storeFeedbackSourceRecordId}` : "门店资料与当前素材",
+            version: `${(d.storeScriptTurns || []).length + 1} 次讨论记录`,
+            description: `${feedbackScope ? `成片反馈 · ${feedbackRange === null ? "文字反馈" : `${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒取样画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`,
+            evidence: feedbackScope ? (feedbackRange === null ? "本轮只发送文字反馈和原方案" : `本轮仅发送 ${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒范围内的取样画面`) : undefined,
+            constraints: ["未经采用不覆盖正式方案", "未选中的镜头和门店事实保持不变"],
+        },
+        conversation: scriptConversation,
+        candidate: d.storeScriptSuggestion ? {
+            status: "pending",
+            summary: "候选已生成；正式方案仅在你明确采用后更新。",
+            currentContent: d.script,
+            candidateContent: d.storeScriptSuggestion,
+        } : undefined,
+        input: request,
+        locked,
+        busy: busy && ["script", "script-dialogue"].includes(active?.stage || ""),
+        historySummary: (d.storeScriptTurns || []).length ? `历史修改 ${(d.storeScriptTurns || []).length} 次 · ${(d.storeScriptTurns || []).filter((turn) => turn.status === "accepted").length} 次已采用` : "尚无已采用的修改版本",
+        onInput: setRequest,
+        sendMessage: sendScriptMessage,
+        organizePlan: organizeScriptPlan,
+        generateCandidate: confirmScriptPlan,
+        applyCandidate: adopt,
+        discardCandidate: discardScriptSuggestion,
+        prepareQuote: config.channelMode === "remote" ? (action) => prepareScriptQuote(action) : undefined,
+        controls: <>
+            <Select aria-label="修改范围" value={scope} className="w-full" disabled={locked} onChange={(value) => { setScope(value); setRequest(""); }} options={[...(d.storeFeedbackSourceRecordId ? [{ value: "feedback", label: "按成片反馈定位" }] : []), { value: "all", label: "整稿改写" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]} />
+            <Dropdown disabled={locked} menu={{ items: [{ key: "spoken", label: "更口语" }, { key: "shorter", label: "精简台词" }, { key: "opening", label: "换个开头" }], onClick: ({ key }) => { setRequest(key === "spoken" ? "台词改得更口语，保留事实与画面" : key === "shorter" ? "精简台词，保留核心信息与画面" : "换一个具体自然的开头，保留事实和原时长"); if (key === "opening") setScope(shots[0]?.id || "all"); } }} trigger={["click"]}><Button aria-label="常用修改要求" title="常用修改要求" icon={<Pencil size={14} />} /></Dropdown>
+            {textError() && <p className="text-xs" style={{ color: token.colorWarning }}>{textError()}</p>}
+        </>,
+    };
+    const conversationPanel = (d.script || d.storeFeedbackSourceRecordId) ? <TaskConversationWorkspace adapter={conversationAdapter} muted={muted} border={border} /> : null;
     if (!wb.hydrated)
         return (
             <div className="p-12 text-center">
@@ -874,15 +912,15 @@ function StoreProjectEditor() {
             </header>
             {wb.storageError && <Alert type="error" title={wb.storageError} showIcon />}
             {!editable && wb.hydrated && <Alert type="info" showIcon title="此项目正在另一标签页编辑，可查看进度或新建项目" />}
-            <div className="min-h-0 flex-1 overflow-hidden" data-testid="store-scroll">
-                <div className="mx-auto grid h-full max-w-[1680px] lg:grid-cols-[320px_minmax(0,1fr)]">
-                    <aside className="hidden min-h-0 flex-col border-r lg:flex" style={border} aria-label="门店素材">
+            <div className="min-h-0 flex-1 overflow-y-auto xl:overflow-hidden" data-testid="store-scroll">
+                <div className="mx-auto grid min-h-full max-w-[1680px] grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] xl:h-full xl:grid-cols-[280px_minmax(0,1fr)_380px]">
+                    <aside className="hidden min-h-0 flex-col border-r lg:flex xl:col-start-1 xl:row-start-1" style={border} aria-label="门店素材">
                         <div className="min-h-0 flex-1 overflow-y-auto p-5">{materialsPanel}</div>
                         <div className="shrink-0 border-t p-4" style={border}>
                             {controls}
                         </div>
                     </aside>
-                    <section className="flex min-h-0 min-w-0 flex-col px-4 pb-4 sm:px-6">
+                    <section className="flex min-h-[70vh] min-w-0 flex-col px-4 pb-4 sm:px-6 xl:col-start-2 xl:row-start-1 xl:min-h-0">
                         <Tabs
                             activeKey={tab}
                             onChange={setTab}
@@ -1025,43 +1063,6 @@ function StoreProjectEditor() {
                                     >
                                         添加镜头
                                     </Button>
-                                    {(d.script || d.storeFeedbackSourceRecordId) && (
-                                        <TaskConversationPanel
-                                            conversation={scriptConversation}
-                                            input={request}
-                                            onInput={setRequest}
-                                            onSend={sendScriptMessage}
-                                            onPlan={organizeScriptPlan}
-                                            onConfirm={confirmScriptPlan}
-                                            onApply={adopt}
-                                            onDiscard={discardScriptSuggestion}
-                                            locked={locked}
-                                            busy={busy && ["script", "script-dialogue"].includes(active?.stage || "")}
-                                            context={`${feedbackScope ? `成片反馈 · ${feedbackRange === null ? "文字反馈" : `${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒取样画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`}
-                                            muted={muted}
-                                            border={border}
-                                            prepareQuote={config.channelMode === "remote" ? (action) => prepareScriptQuote(action) : undefined}
-                                        >
-                                            <Select
-                                                aria-label="修改范围"
-                                                value={scope}
-                                                className="w-full sm:w-44"
-                                                disabled={locked}
-                                                onChange={(value) => { setScope(value); setRequest(""); }}
-                                                options={[...(d.storeFeedbackSourceRecordId ? [{ value: "feedback", label: "按成片反馈定位" }] : []), { value: "all", label: "整稿改写" }, ...shots.map((s, i) => ({ value: s.id, label: `只改镜头 ${i + 1}` }))]}
-                                            />
-                                            <Dropdown disabled={locked} menu={{
-                                                items: [{ key: "spoken", label: "更口语" }, { key: "shorter", label: "精简台词" }, { key: "opening", label: "换个开头" }],
-                                                onClick: ({ key }) => {
-                                                    setRequest(key === "spoken" ? "台词改得更口语，保留事实与画面" : key === "shorter" ? "精简台词，保留核心信息与画面" : "换一个具体自然的开头，保留事实和原时长");
-                                                    if (key === "opening") setScope(shots[0]?.id || "all");
-                                                },
-                                            }} trigger={["click"]}>
-                                                <Button aria-label="常用修改要求" title="常用修改要求" icon={<Pencil size={14} />} />
-                                            </Dropdown>
-                                            {textError() && <p className="text-xs" style={{ color: token.colorWarning }}>{textError()}</p>}
-                                        </TaskConversationPanel>
-                                    )}
                                     {(d.storeScriptTurns || []).length > 0 && (
                                         <section className="space-y-2 border-t pt-3" style={border} aria-label="方案改编对话记录">
                                             <div className="flex items-center justify-between gap-2">
@@ -1397,6 +1398,9 @@ function StoreProjectEditor() {
                             )}
                         </div>
                     </section>
+                    {tab === "plan" && conversationPanel && <aside className="flex min-h-[32rem] min-w-0 flex-col border-t p-4 lg:col-span-2 xl:col-span-1 xl:col-start-3 xl:row-start-1 xl:min-h-0 xl:border-l xl:border-t-0" style={border} aria-label="探店方案多轮对话">
+                        {conversationPanel}
+                    </aside>}
                 </div>
             </div>
             <footer className="shrink-0 border-t px-4 py-3 lg:hidden" style={{ ...border, background: token.colorBgContainer }}>

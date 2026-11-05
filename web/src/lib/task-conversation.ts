@@ -1,6 +1,5 @@
-import type { TaskChangePlan, TaskConversationMessage } from "@/types/video-workbench";
-
-export type TaskConversationQuote = { credits: number; calculation: string; details: string; contextKey: string; pricingKey: string };
+import type { TaskChangePlan, TaskConversationMessage } from "@/types/task-conversation";
+import { diffLines } from "diff";
 
 export function taskConversationMessage(role: TaskConversationMessage["role"], text: string): TaskConversationMessage {
     return { id: crypto.randomUUID(), role, text, createdAt: Date.now() };
@@ -55,4 +54,25 @@ export function taskConversationPlanText(plan: TaskChangePlan) {
 
 export function taskConversationTranscript(messages: TaskConversationMessage[]) {
     return messages.map((message) => `${message.role === "user" ? "用户" : "助手"}：${message.text}`).join("\n");
+}
+
+export function taskConversationDiffRows(before: string, after: string) {
+    const rows: { before: string; after: string; changed: boolean }[] = [];
+    const changes = diffLines(before, after);
+    for (let i = 0; i < changes.length; i++) {
+        const part = changes[i];
+        if (!part.added && !part.removed) {
+            rows.push({ before: part.value, after: part.value, changed: false });
+            continue;
+        }
+        let left = "", right = "";
+        while (i < changes.length && (changes[i].added || changes[i].removed)) {
+            if (changes[i].removed) left += changes[i].value;
+            else right += changes[i].value;
+            i++;
+        }
+        i--;
+        rows.push({ before: left, after: right, changed: true });
+    }
+    return rows;
 }

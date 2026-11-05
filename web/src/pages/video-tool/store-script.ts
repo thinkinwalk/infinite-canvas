@@ -1,6 +1,6 @@
 import type { StoreShot, TaskChangePlan, TaskConversationMessage, VideoDraft, WorkbenchMedia } from "@/types/video-workbench";
 import { storeCast } from "./store-materials";
-import { taskConversationContextKey, taskConversationTranscript } from "./task-conversation";
+import { taskConversationContextKey, taskConversationTranscript } from "@/lib/task-conversation";
 
 export type StoreScriptScope = { request: string; ids?: string[]; targetIds?: string[]; rewrite?: boolean; feedbackVideoRecordId?: string; feedbackTimeSeconds?: number; feedbackTimeRange?: [number, number]; dialoguePhase?: "discussion" | "proposal"; messages?: TaskConversationMessage[]; confirmedPlan?: TaskChangePlan; contextKey?: string };
 type MaterialEvidence = { id: string; label?: string; role?: WorkbenchMedia["role"]; purpose?: string; person?: string; observation?: string };

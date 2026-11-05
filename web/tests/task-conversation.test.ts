@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseTaskChangePlan, taskConversationPlanText, taskConversationTranscript } from "../src/pages/video-tool/task-conversation";
+import { parseTaskChangePlan, taskConversationDiffRows, taskConversationPlanText, taskConversationTranscript } from "../src/lib/task-conversation";
 import { storeFeedbackRangeError, storeFeedbackSampleTimes } from "../src/pages/video-tool/store-script";
 
 test("a confirmed plan keeps its targets, changes, preserved content and video evidence", () => {
@@ -37,6 +37,13 @@ test("dialogue history remains ordered and distinguishes user feedback from assi
         { id: "3", role: "user" as const, text: "保留原时长", createdAt: 3 },
     ];
     expect(taskConversationTranscript(messages)).toBe("用户：只调整开头\n助手：保留哪些内容？\n用户：保留原时长");
+});
+
+test("candidate comparisons align unchanged and changed text without changing either source", () => {
+    expect(taskConversationDiffRows("第一段。\n保留这句。\n", "第一段更新。\n保留这句。\n")).toEqual([
+        { before: "第一段。\n", after: "第一段更新。\n", changed: true },
+        { before: "保留这句。\n", after: "保留这句。\n", changed: false },
+    ]);
 });
 
 test("feedback ranges select only start, midpoint and end samples", () => {

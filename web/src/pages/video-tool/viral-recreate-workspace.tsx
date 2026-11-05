@@ -9,8 +9,9 @@ import { VideoLinkImport } from "@/components/video-link-import";
 import { VideoReferenceRetention } from "@/components/video-reference-retention";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
-import { TaskConversationPanel } from "./task-conversation-panel";
-import { taskConversationMessage, taskConversationPlanText, type TaskConversationQuote } from "./task-conversation";
+import { TaskConversationWorkspace } from "@/components/task-conversation/task-conversation-workspace";
+import { taskConversationMessage, taskConversationPlanText } from "@/lib/task-conversation";
+import type { TaskConversationAdapter, TaskConversationQuote } from "@/types/task-conversation";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { formatBytes } from "@/lib/image-utils";
 import { hasViralTaskContent, viralTaskDraft, viralTaskGroups } from "@/lib/viral-task";
@@ -1247,44 +1248,56 @@ function ViralTaskWorkspace() {
         setSuggestionView(false);
         message.info("本次修改未应用，可从脚本版本中找回");
     };
-    const scriptChat = <aside id="viral-script-chat" className="flex min-h-0 min-w-0 flex-col border-t pt-4 lg:col-start-2 xl:col-start-auto xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0" style={{ borderColor: token.colorBorderSecondary }} aria-label="脚本对话调整">
-        <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
-            <h2 className="font-medium">对话调整</h2>
-            <div className="flex items-center gap-1">
-            <Tooltip title="返回脚本编辑"><Button className="xl:!hidden" type="text" aria-label="返回脚本编辑" icon={<ArrowLeft size={15} />} onClick={() => { openEditor("script", Boolean(d.viralScriptSuggestion)); requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" })); }} /></Tooltip>
-            <Tooltip title="撤销上次应用"><Button type="text" aria-label="撤销上次应用" icon={<Undo2 size={15} />} disabled={locked || !undoTurn || Boolean(d.viralScriptSuggestion)} onClick={() => {
-                if (!undoTurn) return;
-                wb.edit({ script: undoTurn.before, viralScriptStale: undoTurn.beforeStale, viralScriptTurns: (d.viralScriptTurns || []).map((turn) => turn.id === undoTurn.id ? { ...turn, status: "reverted" } : turn) }, "video");
-                setSuggestionView(false);
-            }} /></Tooltip>
-            </div>
-        </div>
-        <TaskConversationPanel
-            conversation={scriptConversation}
-            input={d.viralScriptChatInput || ""}
-            onInput={(value) => wb.patch({ viralScriptChatInput: value })}
-            onSend={sendScriptMessage}
-            onPlan={organizeScriptPlan}
-            onConfirm={confirmScriptPlan}
-            onApply={applyScriptCandidate}
-            onDiscard={discardScriptCandidate}
-            locked={locked}
-            busy={busy && ["script", "script-dialogue"].includes(active?.stage || "")}
-            context={d.script.trim() ? `当前脚本 · ${scriptEditMode === "rewrite" ? "整稿改写" : "局部修改"}` : "当前为新脚本创作任务"}
-            muted={muted}
-            border={{ borderColor: token.colorBorderSecondary }}
-            prepareQuote={(action) => prepareScriptQuote(action)}
-        >
+    const undoAppliedScript = () => {
+        if (!undoTurn || d.viralScriptSuggestion) return;
+        wb.edit({ script: undoTurn.before, viralScriptStale: undoTurn.beforeStale, viralScriptTurns: (d.viralScriptTurns || []).map((turn) => turn.id === undoTurn.id ? { ...turn, status: "reverted" } : turn) }, "video");
+        setSuggestionView(false);
+    };
+    const scriptConversationAdapter: TaskConversationAdapter = {
+        context: {
+            business: "爆款复刻",
+            taskTitle: "改编脚本对话工作台",
+            subject: d.script.trim() ? "当前改编脚本" : "新脚本创作",
+            scope: scriptEditMode === "rewrite" ? "整稿改写" : "局部修改",
+            source: d.media.find((item) => item.kind === "video")?.name || "当前参考视频",
+            version: `${turns.length + 1} 次讨论记录`,
+            description: d.script.trim() ? `当前脚本 · ${scriptEditMode === "rewrite" ? "整稿改写" : "局部修改"}` : "当前为新脚本创作任务",
+            evidence: "参考视频、当前脚本和本轮复刻要求仅作为本任务上下文使用",
+            constraints: ["候选未采用前不覆盖正式脚本", "局部修改保留未选片段"],
+        },
+        conversation: scriptConversation,
+        candidate: d.viralScriptSuggestion ? {
+            status: "pending",
+            summary: "候选只在你明确采用后写入正式脚本。",
+            currentContent: d.script,
+            candidateContent: d.viralScriptSuggestion,
+        } : undefined,
+        input: d.viralScriptChatInput || "",
+        locked,
+        busy: busy && ["script", "script-dialogue"].includes(active?.stage || ""),
+        historySummary: turns.length ? `历史修改 ${turns.length} 次 · ${turns.filter((turn) => turn.status === "accepted").length} 次已采用` : "尚无已采用的修改版本",
+        onInput: (value) => wb.patch({ viralScriptChatInput: value }),
+        sendMessage: sendScriptMessage,
+        organizePlan: organizeScriptPlan,
+        generateCandidate: confirmScriptPlan,
+        applyCandidate: applyScriptCandidate,
+        discardCandidate: discardScriptCandidate,
+        undo: undoTurn && !d.viralScriptSuggestion ? undoAppliedScript : undefined,
+        prepareQuote: (action) => prepareScriptQuote(action),
+        controls: <>
             <Segmented block aria-label="脚本修改范围" value={scriptEditMode} disabled={locked} options={[{ label: "局部修改", value: "local" }, { label: "整稿改写", value: "rewrite" }]} onChange={(value) => setScriptEditMode(value as ViralScriptEditMode)} />
             <div className="flex flex-wrap gap-1">
                 {["开头更吸引人，其他部分不变", "台词更自然，保持画面不变"].map((request) => <Button key={request} type="text" size="small" className="!h-auto !whitespace-normal !text-left" disabled={locked} onClick={() => wb.patch({ viralScriptChatInput: request })}>{request}</Button>)}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
+                <Tooltip title="返回脚本编辑"><Button className="xl:!hidden" type="text" aria-label="返回脚本编辑" icon={<ArrowLeft size={15} />} onClick={() => { openEditor("script", Boolean(d.viralScriptSuggestion)); requestAnimationFrame(() => previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" })); }} /></Tooltip>
                 <Tooltip title="脚本模型"><Button type="text" aria-label="脚本模型设置" icon={<SlidersHorizontal size={15} />} onClick={() => setOptionsOpen(true)} /></Tooltip>
                 {(textBlocked || scriptWritingBlocked) && <p className="text-xs" style={{ color: token.colorWarning }}>{textBlocked || scriptWritingBlocked}</p>}
             </div>
-            {(d.viralScriptTurns || []).length > 0 && <div className="text-xs" style={muted}>历史修改 {turns.length} 次 · {turns.filter((turn) => turn.status === "accepted").length} 次已采用</div>}
-        </TaskConversationPanel>
+        </>,
+    };
+    const scriptChat = <aside id="viral-script-chat" className="flex min-h-0 min-w-0 flex-col border-t pt-4 lg:col-start-2 xl:col-start-auto xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0" style={{ borderColor: token.colorBorderSecondary }} aria-label="脚本对话调整">
+        <TaskConversationWorkspace adapter={scriptConversationAdapter} muted={muted} border={{ borderColor: token.colorBorderSecondary }} />
     </aside>;
     if (!wb.hydrated)
         return (

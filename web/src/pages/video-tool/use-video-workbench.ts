@@ -29,7 +29,8 @@ import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, vir
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisContent, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { viralFrameLabel } from "./viral-evidence";
-import { parseTaskChangePlan, taskConversationMessage, taskConversationPlanText, taskConversationTranscript, type TaskConversationQuote } from "./task-conversation";
+import { parseTaskChangePlan, taskConversationMessage, taskConversationPlanText, taskConversationTranscript } from "@/lib/task-conversation";
+import type { TaskConversationQuote } from "@/types/task-conversation";
 import { requestViralAnalysis, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";

@@ -9,7 +9,7 @@ import { viralAdoptedAnalysisError, viralAdoptedAnalysisText, viralAnalysisMode,
 import { viralKeyframeError, viralVisualRole } from "./viral-keyframe";
 import { viralEffectsSource, viralIntent, viralIntentError, viralPlanEffects, viralPlanPrompt, viralRequirements, viralTargetFacts } from "./viral-plan";
 import { splitViralScript, viralGenerationScript, viralScriptAuthority, viralScriptEditDraft, type ViralScriptEditMode } from "./viral-script-revisions";
-import { taskConversationContextKey, taskConversationTranscript } from "./task-conversation";
+import { taskConversationContextKey, taskConversationTranscript } from "@/lib/task-conversation";
 
 export { viralAnalysisMode, viralFrameMaterials, viralReference, viralSource } from "./viral-analysis";
 export const viralImageCandidates = (d: VideoDraft) => [...d.media.filter((m) => m.kind === "image"), ...viralFrameMaterials(d)];

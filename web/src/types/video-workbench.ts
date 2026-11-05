@@ -1,16 +1,8 @@
 import type { UploadedFile } from "@/services/file-storage";
 import type { VideoGenerationTask } from "@/services/api/video";
 import type { AiConfig } from "@/stores/use-config-store";
-
-export type TaskConversationMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: number };
-export type TaskChangePlan = {
-    summary: string;
-    targets: { id: string; label: string }[];
-    changes: { targetId: string; change: string; preserve: string }[];
-    unchanged: string[];
-    evidence?: { timeSeconds?: number; description: string }[];
-};
-export type TaskConversation = { phase: "discussion" | "proposal" | "candidate"; messages: TaskConversationMessage[]; plan?: TaskChangePlan; contextKey?: string };
+export type { TaskChangePlan, TaskConversation, TaskConversationMessage } from "@/types/task-conversation";
+import type { TaskChangePlan, TaskConversation, TaskConversationMessage } from "@/types/task-conversation";
 
 export type StoreVideoSettings = Pick<AiConfig, "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoInputMode" | "videoInterpolate">;
 export type StoreExploreInput = Pick<VideoDraft, "media" | "storeFacts" | "instructions" | "analysis" | "script" | "storeFirstFrameId" | "storeLastFrameId" | "storeSettings" | "storeShots" | "storeReferenceIds" | "storeScriptTurns" | "storeFeedbackSourceRecordId" | "storeAudioMode" | "narration" | "speech" | "storeSpeechKey" | "voice" | "video" | "final" | "storeAdoptedVideoId" | "subtitles" | "storeSubtitleSource" | "addSubtitles" | "musicVolume" | "subtitleSize" | "subtitleColor" | "storeSubtitleBottom"> & { channelMode: AiConfig["channelMode"]; baseUrl: string };
