@@ -896,7 +896,7 @@ function StoreProjectEditor() {
     const conversationAdapter: TaskConversationAdapter = {
         context: {
             business: "探店视频",
-            taskTitle: "拍摄方案对话工作台",
+            taskTitle: "拍摄方案对话",
             subject: `${storeProject?.name || "当前探店项目"} · ${d.storeFeedbackSourceRecordId ? "根据成片反馈调整方案" : "当前拍摄方案"}`,
             scope: scriptConversation?.phase === "proposal" && scriptConversation.plan?.targets.length
                 ? "待确认：" + scriptConversation.plan.targets.map((target) => target.label).join("、")
@@ -906,6 +906,7 @@ function StoreProjectEditor() {
             source: d.storeFeedbackSourceRecordId ? `来源成片任务 ${d.storeFeedbackSourceRecordId}${feedbackSourceRecord ? ` · 生成于 ${new Date(feedbackSourceRecord.createdAt).toLocaleString()}` : " · 使用项目中保存的成片快照"}` : "当前门店资料、方案与素材",
             version: `方案修订 ${storeProject?.revision ?? 0} · ${d.storePlanVersions?.length || 0} 个历史版本`,
             description: `${feedbackScope ? `成片反馈 · ${feedbackRange === null ? "文字反馈" : `${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒取样画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`,
+            evidenceSummary: feedbackScope ? (feedbackRange === null ? "文字反馈 · 当前分镜 · 未附成片画面" : feedbackRange[0] === feedbackRange[1] ? `拟发送 1 帧 · ${feedbackRange[0].toFixed(1)} 秒` : `拟发送 ${feedbackSampleTimes.length} 帧 · ${feedbackRange[0].toFixed(1)}–${feedbackRange[1].toFixed(1)} 秒`) : "当前方案 · 门店资料 · 已关联素材",
             evidence: feedbackScope ? (feedbackRange === null ? "本轮依据：反馈对话、当前分镜、门店资料及素材文字观察；未选择或发送成片画面，不代表分析过整条视频。" : "本轮拟发送：反馈对话、当前分镜、门店资料及素材文字观察；另附关联成片 " + feedbackSampleTimes.map((time) => `${time.toFixed(2)} 秒`).join("、") + ` 的 ${feedbackSampleTimes.length} 帧取样画面，不上传整段视频。只代表这些取样帧，不代表逐帧分析全片。` + (feedbackPreviewsLoading ? " 正在从本地成片生成预览。" : feedbackPreviewsError ? ` ${feedbackPreviewsError}` : feedbackPreviews.length ? " 下方显示本轮对应的取样画面。" : "")) : "本轮依据：当前探店项目的门店资料、正式方案和已关联素材。",
             evidencePreviews: feedbackPreviews.map(({ time, url }) => ({ label: `${time.toFixed(2)} 秒`, url })),
             constraints: ["未经采用不覆盖正式方案", "未选中的镜头和门店事实保持不变"],
@@ -914,14 +915,13 @@ function StoreProjectEditor() {
         candidate: d.storeScriptSuggestion ? {
             status: "pending",
             stale: d.storeSuggestionBase !== storePlanKey(d),
-            summary: `${pendingScriptTurn?.understanding ? `关联问题：${pendingScriptTurn.understanding}；` : ""}本次影响：${pendingScriptTurn?.scope || "候选涉及的方案内容"}${pendingScriptTurn?.sourceVideoRecordId ? ` · 来源成片任务 ${pendingScriptTurn.sourceVideoRecordId}${pendingScriptTurn.feedbackTimeRange ? ` · ${pendingScriptTurn.feedbackTimeRange[0].toFixed(2)}–${pendingScriptTurn.feedbackTimeRange[1].toFixed(2)} 秒` : pendingScriptTurn.feedbackTimeSeconds !== undefined ? ` · ${pendingScriptTurn.feedbackTimeSeconds.toFixed(2)} 秒` : " · 文字反馈"}` : ""}。正式方案仅在你明确采用后更新。`,
+            summary: `${pendingScriptTurn?.understanding ? `关联问题：${pendingScriptTurn.understanding}；` : ""}本次影响：${pendingScriptTurn?.scope || "候选涉及的方案内容"}${pendingScriptTurn?.sourceVideoRecordId ? ` · 来源成片任务 ${pendingScriptTurn.sourceVideoRecordId}${pendingScriptTurn.feedbackTimeRange ? ` · ${pendingScriptTurn.feedbackTimeRange[0].toFixed(2)}–${pendingScriptTurn.feedbackTimeRange[1].toFixed(2)} 秒` : pendingScriptTurn.feedbackTimeSeconds !== undefined ? ` · ${pendingScriptTurn.feedbackTimeSeconds.toFixed(2)} 秒` : " · 文字反馈"}` : ""}`,
             currentContent: d.script,
             candidateContent: d.storeScriptSuggestion,
         } : undefined,
         input: request,
         locked,
         busy: busy && ["script", "script-dialogue"].includes(active?.stage || ""),
-        historySummary: (d.storeScriptTurns || []).length ? `历史修改 ${(d.storeScriptTurns || []).length} 次 · ${(d.storeScriptTurns || []).filter((turn) => turn.status === "accepted").length} 次已采用` : "尚无已采用的修改版本",
         onInput: setRequest,
         sendMessage: sendScriptMessage,
         organizePlan: organizeScriptPlan,

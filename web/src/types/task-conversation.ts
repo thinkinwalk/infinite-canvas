@@ -30,6 +30,7 @@ export type TaskConversationContext = {
     version?: string;
     source?: string;
     scope?: string;
+    evidenceSummary?: string;
     evidence?: string;
     evidencePreviews?: { label: string; url: string }[];
     constraints?: string[];
@@ -57,7 +58,6 @@ export type TaskConversationAdapter = {
     input: string;
     locked: boolean;
     busy: boolean;
-    historySummary?: string;
     controls?: ReactNode;
     onInput: (value: string) => void;
     sendMessage: (quote?: TaskConversationQuote) => void | Promise<void>;
