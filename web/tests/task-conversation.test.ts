@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseTaskChangePlan, taskConversationDiffRows, taskConversationPlanText, taskConversationTranscript } from "../src/lib/task-conversation";
+import { parseTaskChangePlan, taskConversationActionError, taskConversationDiffRows, taskConversationPlanText, taskConversationQuoteError, taskConversationTranscript } from "../src/lib/task-conversation";
 import { storeFeedbackRangeError, storeFeedbackSampleTimes } from "../src/pages/video-tool/store-script";
 
 test("a confirmed plan keeps its targets, changes, preserved content and video evidence", () => {
@@ -37,6 +37,17 @@ test("dialogue history remains ordered and distinguishes user feedback from assi
         { id: "3", role: "user" as const, text: "保留原时长", createdAt: 3 },
     ];
     expect(taskConversationTranscript(messages)).toBe("用户：只调整开头\n助手：保留哪些内容？\n用户：保留原时长");
+});
+
+test("quote failures are translated to actionable user-facing messages", () => {
+    expect(taskConversationQuoteError(new Error("Failed to fetch"))).toContain("检查网络");
+    expect(taskConversationQuoteError(new Error("Unexpected token '<', invalid JSON"))).toContain("稍后重试");
+    expect(taskConversationQuoteError(new Error("报价未开放"))).toBe("报价未开放");
+});
+
+test("discussion and candidate failures explain that the formal plan remains unchanged", () => {
+    expect(taskConversationActionError(new Error("Unexpected token in JSON"), "discussion")).toContain("正式拍摄方案未修改");
+    expect(taskConversationActionError(new Error("Failed to fetch"), "candidate")).toContain("重新整理方案");
 });
 
 test("candidate comparisons align unchanged and changed text without changing either source", () => {

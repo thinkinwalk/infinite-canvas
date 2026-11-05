@@ -9,7 +9,7 @@ import { useThemeStore } from "@/stores/use-theme-store";
 
 const PANEL_MOTION_SECONDS = CANVAS_AGENT_PANEL_MOTION_MS / 1000;
 
-export function AgentPanel() {
+export function AgentPanel({ visible = true }: { visible?: boolean }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const width = useAgentStore((state) => state.width);
@@ -46,7 +46,7 @@ export function AgentPanel() {
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: panelOpen ? width + 1 : 0, opacity: panelOpen ? 1 : 0 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: [0.22, 1, 0.36, 1] }}
-            style={{ overflow: "clip", pointerEvents: panelOpen && !panelClosing ? undefined : "none" }}
+            style={{ display: visible ? undefined : "none", overflow: "clip", pointerEvents: panelOpen && !panelClosing ? undefined : "none" }}
         >
             <motion.aside
                 className="relative flex h-full shrink-0 flex-col border-l"

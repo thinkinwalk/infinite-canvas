@@ -56,6 +56,21 @@ export function taskConversationTranscript(messages: TaskConversationMessage[]) 
     return messages.map((message) => `${message.role === "user" ? "用户" : "助手"}：${message.text}`).join("\n");
 }
 
+export function taskConversationQuoteError(error: unknown) {
+    const message = error instanceof Error ? error.message : "";
+    if (/failed to fetch|networkerror|load failed|timeout/i.test(message)) return "暂时无法连接费用服务，请检查网络后重试";
+    if (/invalid json|unexpected token|json parse|cannot read properties|is not a function/i.test(message)) return "费用服务返回内容异常，请稍后重试";
+    return message || "暂时无法读取本次费用";
+}
+
+export function taskConversationActionError(error: unknown, action: "discussion" | "candidate") {
+    let message = error instanceof Error ? error.message : "";
+    if (/failed to fetch|networkerror|load failed|timeout/i.test(message)) message = "网络暂时不可用，请检查连接后重试";
+    else if (/invalid json|unexpected token|json parse|cannot read properties|is not a function|schema|missing required/i.test(message)) message = action === "discussion" ? "暂时无法整理本轮回复，请补充需求或稍后重试" : "暂时无法整理可核对的候选，请检查需求和素材后重试";
+    else if (!message) message = action === "discussion" ? "本轮讨论暂未完成，请稍后重试" : "本次候选暂未生成，请稍后重试";
+    return `${message}；正式拍摄方案未修改。${action === "discussion" ? "可调整文案模型或网络后继续讨论。" : "可继续讨论、重新整理方案后再生成候选。"}`;
+}
+
 export function taskConversationDiffRows(before: string, after: string) {
     const rows: { before: string; after: string; changed: boolean }[] = [];
     const changes = diffLines(before, after);

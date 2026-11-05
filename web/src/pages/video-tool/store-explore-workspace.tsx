@@ -10,6 +10,7 @@ import { FeatureModelPicker } from "@/components/feature-model-picker";
 import { VideoModelOption } from "@/components/video-model-option";
 import { videoSizeLabel } from "@/components/video-settings-panel";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
+import { captureVideoFrame } from "@/lib/canvas/canvas-video-frame";
 import { audioVoiceOptions, cloudSpeechSpeakers } from "@/lib/audio-generation";
 import { supportedVideoInputModes, videoInputMode, videoProfile } from "@/lib/video-capabilities";
 import { publicServiceText, REPLICATE_VIDEO_MODEL, isReplicateVideoModel } from "@/services/api/replicate";
@@ -37,7 +38,7 @@ import { flushWorkbenchStorage } from "@/stores/workbench-storage";
 import { TaskConversationWorkspace } from "@/components/task-conversation/task-conversation-workspace";
 import { taskConversationMessage, taskConversationPlanText } from "@/lib/task-conversation";
 import type { TaskConversationAdapter, TaskConversationQuote } from "@/types/task-conversation";
-import { storeScriptConversationContextKey, type StoreScriptScope } from "./store-script";
+import { storeFeedbackSampleTimes, storeScriptConversationContextKey, type StoreScriptScope } from "./store-script";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
 const names = { storeFacts: "门店真实资料", analysis: "素材观察", instructions: "本次要求", script: "自由脚本" };
@@ -50,6 +51,8 @@ export default function StoreExploreWorkspace() {
 function StoreProjectEditor() {
     const screens = Grid.useBreakpoint();
     const projectId = useVideoWorkbenchStore((s) => s.activeStoreProjectId);
+    const storeProject = useVideoWorkbenchStore((s) => s.storeProjects[projectId]);
+    const allStoreRecords = useVideoWorkbenchStore((s) => s.records);
     const editable = useStoreProjectAccess(projectId);
     const wb = useVideoWorkbench("store-explore", editable),
         { draft: d, busy } = wb;
@@ -98,7 +101,10 @@ function StoreProjectEditor() {
         [previewError, setPreviewError] = useState(false);
     const [request, setRequest] = useState(""),
         [scope, setScope] = useState(d.storeFeedbackSourceRecordId ? "feedback" : "all"),
-        [feedbackRange, setFeedbackRange] = useState<[number, number] | null>(null);
+        [feedbackRange, setFeedbackRange] = useState<[number, number] | null>(null),
+        [feedbackPreviews, setFeedbackPreviews] = useState<{ time: number; url: string }[]>([]),
+        [feedbackPreviewsLoading, setFeedbackPreviewsLoading] = useState(false),
+        [feedbackPreviewsError, setFeedbackPreviewsError] = useState("");
     const feedbackVideoRef = useRef<HTMLVideoElement>(null);
     const [analysisOpen, setAnalysisOpen] = useState(false),
         [analysisView, setAnalysisView] = useState("current"),
@@ -156,6 +162,43 @@ function StoreProjectEditor() {
     const unlinkedMaterialCount = storeUnlinkedMaterialIds(d).length;
     const pendingScriptTurn = [...(d.storeScriptTurns || [])].reverse().find((turn) => turn.status === "pending");
     const feedbackScope = Boolean(d.storeFeedbackSourceRecordId);
+    const feedbackSourceRecord = feedbackScope ? allStoreRecords.find((record) => record.id === d.storeFeedbackSourceRecordId) : undefined;
+    const feedbackSampleTimes = feedbackScope && feedbackRange ? storeFeedbackSampleTimes({ request: "", feedbackTimeRange: feedbackRange }) : [];
+    useEffect(() => {
+        let cancelled = false;
+        const urls: string[] = [];
+        setFeedbackPreviews([]);
+        setFeedbackPreviewsError("");
+        if (!d.storeFeedbackSourceRecordId || !feedbackRange || !d.video?.storageKey) {
+            setFeedbackPreviewsLoading(false);
+            return;
+        }
+        setFeedbackPreviewsLoading(true);
+        void (async () => {
+            let sourceUrl = "";
+            try {
+                const blob = await getMediaBlob(d.video!.storageKey);
+                if (!blob) throw new Error("本地成片文件不可用");
+                sourceUrl = URL.createObjectURL(blob);
+                for (const time of storeFeedbackSampleTimes({ request: "", feedbackTimeRange: feedbackRange })) {
+                    const frame = await captureVideoFrame(sourceUrl, "current", time);
+                    if (cancelled) break;
+                    const url = URL.createObjectURL(frame);
+                    urls.push(url);
+                    setFeedbackPreviews((current) => [...current, { time, url }]);
+                }
+            } catch {
+                if (!cancelled) setFeedbackPreviewsError("无法生成取样画面预览。发送时仍会重新读取同一时间点；若读取失败，原方案不会修改。");
+            } finally {
+                if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+                if (!cancelled) setFeedbackPreviewsLoading(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+            urls.forEach((url) => URL.revokeObjectURL(url));
+        };
+    }, [d.storeFeedbackSourceRecordId, d.video?.storageKey, feedbackRange?.[0], feedbackRange?.[1]]);
     const scriptDialogueScope: StoreScriptScope = {
         request: "",
         ...(scope === "all" ? { rewrite: true } : {}),
@@ -854,18 +897,24 @@ function StoreProjectEditor() {
         context: {
             business: "探店视频",
             taskTitle: "拍摄方案对话工作台",
-            subject: d.storeFeedbackSourceRecordId ? "根据成片反馈调整方案" : "当前拍摄方案",
-            scope: scope === "all" ? "整稿改写" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`,
-            source: d.storeFeedbackSourceRecordId ? `成片任务 ${d.storeFeedbackSourceRecordId}` : "门店资料与当前素材",
-            version: `${(d.storeScriptTurns || []).length + 1} 次讨论记录`,
+            subject: `${storeProject?.name || "当前探店项目"} · ${d.storeFeedbackSourceRecordId ? "根据成片反馈调整方案" : "当前拍摄方案"}`,
+            scope: scriptConversation?.phase === "proposal" && scriptConversation.plan?.targets.length
+                ? "待确认：" + scriptConversation.plan.targets.map((target) => target.label).join("、")
+                : d.storeScriptSuggestion && pendingScriptTurn?.scope
+                  ? "候选影响：" + pendingScriptTurn.scope
+                  : scope === "all" ? "整稿改写" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`,
+            source: d.storeFeedbackSourceRecordId ? `来源成片任务 ${d.storeFeedbackSourceRecordId}${feedbackSourceRecord ? ` · 生成于 ${new Date(feedbackSourceRecord.createdAt).toLocaleString()}` : " · 使用项目中保存的成片快照"}` : "当前门店资料、方案与素材",
+            version: `方案修订 ${storeProject?.revision ?? 0} · ${d.storePlanVersions?.length || 0} 个历史版本`,
             description: `${feedbackScope ? `成片反馈 · ${feedbackRange === null ? "文字反馈" : `${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒取样画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`,
-            evidence: feedbackScope ? (feedbackRange === null ? "本轮只发送文字反馈和原方案" : `本轮仅发送 ${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒范围内的取样画面`) : undefined,
+            evidence: feedbackScope ? (feedbackRange === null ? "本轮依据：反馈对话、当前分镜、门店资料及素材文字观察；未选择或发送成片画面，不代表分析过整条视频。" : "本轮拟发送：反馈对话、当前分镜、门店资料及素材文字观察；另附关联成片 " + feedbackSampleTimes.map((time) => `${time.toFixed(2)} 秒`).join("、") + ` 的 ${feedbackSampleTimes.length} 帧取样画面，不上传整段视频。只代表这些取样帧，不代表逐帧分析全片。` + (feedbackPreviewsLoading ? " 正在从本地成片生成预览。" : feedbackPreviewsError ? ` ${feedbackPreviewsError}` : feedbackPreviews.length ? " 下方显示本轮对应的取样画面。" : "")) : "本轮依据：当前探店项目的门店资料、正式方案和已关联素材。",
+            evidencePreviews: feedbackPreviews.map(({ time, url }) => ({ label: `${time.toFixed(2)} 秒`, url })),
             constraints: ["未经采用不覆盖正式方案", "未选中的镜头和门店事实保持不变"],
         },
         conversation: scriptConversation,
         candidate: d.storeScriptSuggestion ? {
             status: "pending",
-            summary: "候选已生成；正式方案仅在你明确采用后更新。",
+            stale: d.storeSuggestionBase !== storePlanKey(d),
+            summary: `${pendingScriptTurn?.understanding ? `关联问题：${pendingScriptTurn.understanding}；` : ""}本次影响：${pendingScriptTurn?.scope || "候选涉及的方案内容"}${pendingScriptTurn?.sourceVideoRecordId ? ` · 来源成片任务 ${pendingScriptTurn.sourceVideoRecordId}${pendingScriptTurn.feedbackTimeRange ? ` · ${pendingScriptTurn.feedbackTimeRange[0].toFixed(2)}–${pendingScriptTurn.feedbackTimeRange[1].toFixed(2)} 秒` : pendingScriptTurn.feedbackTimeSeconds !== undefined ? ` · ${pendingScriptTurn.feedbackTimeSeconds.toFixed(2)} 秒` : " · 文字反馈"}` : ""}。正式方案仅在你明确采用后更新。`,
             currentContent: d.script,
             candidateContent: d.storeScriptSuggestion,
         } : undefined,

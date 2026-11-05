@@ -3,7 +3,7 @@ import { Check, FileClock, MessageSquare, Send, Sparkles, Undo2, X } from "lucid
 import { diffArrays } from "diff";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { TaskConversationAdapter, TaskConversationQuote } from "@/types/task-conversation";
-import { taskConversationDiffRows, taskConversationPlanText } from "@/lib/task-conversation";
+import { taskConversationDiffRows, taskConversationPlanText, taskConversationQuoteError } from "@/lib/task-conversation";
 
 export type ConversationAction = "message" | "plan" | "candidate";
 
@@ -39,7 +39,7 @@ const phaseLabels = { discussion: "讨论需求", proposal: "确认方案", cand
 export function TaskConversationWorkspace({ adapter, muted, border }: TaskConversationWorkspaceProps) {
     const { conversation, input, onInput, locked, busy, historySummary, prepareQuote, candidate } = adapter;
     const { token } = theme.useToken();
-    const { evidence, constraints, description: context } = adapter.context;
+    const { evidence, evidencePreviews, constraints, description: context } = adapter.context;
     const phase = conversation?.phase || "discussion";
     const comparisonRows = useMemo(() => {
         if (candidate?.currentContent === undefined || candidate.candidateContent === undefined) return [];
@@ -78,7 +78,7 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
                 }
             } else setPendingQuote({ action, key: actionKey(action), quote });
         } catch (error) {
-            setQuoteError(error instanceof Error ? error.message : "暂时无法读取本次费用");
+            setQuoteError(taskConversationQuoteError(error));
         } finally {
             setQuoting(false);
         }
@@ -93,9 +93,10 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
                 {phase === "candidate" && <Tag color="gold">待采用</Tag>}
             </div>
 
-            {(evidence || constraints?.length) && <div className="space-y-1 border p-3 text-xs" style={border} aria-label="来源与约束">
-                <strong>来源与约束</strong>
+            {(evidence || evidencePreviews?.length || constraints?.length) && <div className="space-y-2 border p-3 text-xs" style={border} aria-label="来源与约束">
+                <strong>本轮依据与约束</strong>
                 {evidence && <p className="m-0 whitespace-pre-wrap" style={muted}>{evidence}</p>}
+                {evidencePreviews?.length ? <div className="flex gap-2 overflow-x-auto" aria-label="本轮拟发送的成片取样画面">{evidencePreviews.map((preview) => <figure key={preview.label} className="m-0 w-24 shrink-0"><img src={preview.url} alt={preview.label} className="aspect-video w-full object-contain" /><figcaption className="mt-1 break-words" style={muted}>{preview.label}</figcaption></figure>)}</div> : null}
                 {constraints?.map((item) => <p key={item} className="m-0" style={muted}>保留：{item}</p>)}
             </div>}
 
@@ -106,8 +107,9 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
 
             {conversation?.plan && <div className="max-h-40 space-y-2 overflow-y-auto border-l-2 pl-3" style={{ borderColor: "var(--ant-color-primary)" }} aria-label="已整理修改方案"><div className="flex items-center justify-between gap-2"><strong className="text-sm">待确认修改方案</strong><Tag color="blue">尚未执行</Tag></div><p className="m-0 whitespace-pre-wrap text-sm">{taskConversationPlanText(conversation.plan)}</p></div>}
             {candidate && <div className="space-y-2 border-l-2 pl-3 text-xs" style={{ borderColor: token.colorPrimary }} aria-label="候选状态">
-                <strong>候选状态：{candidate.status === "pending" ? "待你采用" : candidate.status === "applied" ? "已采用" : "已放弃"}</strong>
+                <strong>候选状态：{candidate.stale ? "依据已变化，需重新生成" : candidate.status === "pending" ? "待你采用" : candidate.status === "applied" ? "已采用" : "已放弃"}</strong>
                 {candidate.summary && <p className="m-0" style={muted}>{candidate.summary}</p>}
+                {candidate.stale && <p className="m-0 text-amber-600" role="status">正式方案未被覆盖。请继续讨论并重新生成候选，再核对后采用。</p>}
                 {candidate.currentContent !== undefined && candidate.candidateContent !== undefined && <>
                     <div className="flex flex-wrap items-center gap-3" aria-label="候选修改标记"><span style={{ color: token.colorErrorText }}>− 原有内容</span><span style={{ color: token.colorSuccessText }}>+ 改编内容</span><span style={muted}>{comparisonRows.filter((row) => row.changed).length} 处变化</span></div>
                     <div className="max-h-64 overflow-y-auto">
@@ -136,9 +138,9 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
                 <Input.TextArea aria-label="任务对话输入" value={input} disabled={locked || busy} autoSize={{ minRows: 3, maxRows: 7 }} placeholder={phase === "candidate" ? "继续说候选哪里需要调整" : "描述问题、修改目标、要保留的内容或成片时间点"} onChange={(event) => onInput(event.target.value)} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); void requestAction("message"); } }} />
                 <div className="flex flex-wrap items-center gap-2">
                     <Button icon={<Send size={14} />} loading={busy || quoting} disabled={locked || !input.trim() || quoting} onClick={() => void requestAction("message")}>{conversation?.messages.length ? "继续讨论" : prepareQuote ? "讨论并查看费用" : "开始讨论"}</Button>
-                    {phase === "proposal" ? <Button type="primary" icon={<Sparkles size={14} />} loading={busy || quoting} disabled={locked || Boolean(input.trim()) || quoting} onClick={() => void requestAction("candidate")}>确认方案并生成候选</Button> : phase === "candidate" ? <>{adapter.applyCandidate && <Button type="primary" icon={<Check size={14} />} loading={busy} disabled={locked} onClick={() => void adapter.applyCandidate?.()}>采用候选</Button>}{adapter.discardCandidate && <Button icon={<X size={14} />} loading={busy} disabled={locked} onClick={() => void adapter.discardCandidate?.()}>放弃候选</Button>}</> : <Button icon={<Sparkles size={14} />} loading={busy || quoting} disabled={locked || !conversation?.messages.some((message) => message.role === "user") || quoting} onClick={() => void requestAction("plan")}>{prepareQuote ? "整理方案 · 查看费用" : "整理修改方案"}</Button>}
+                    {phase === "proposal" ? <Button type="primary" icon={<Sparkles size={14} />} loading={busy || quoting} disabled={locked || Boolean(input.trim()) || quoting} onClick={() => void requestAction("candidate")}>确认方案并生成候选</Button> : phase === "candidate" ? <>{adapter.applyCandidate && <Button type="primary" icon={<Check size={14} />} loading={busy} disabled={locked || candidate?.stale} onClick={adapter.applyCandidate}>{candidate?.stale ? "候选已过期" : "采用候选"}</Button>}{adapter.discardCandidate && <Button icon={<X size={14} />} loading={busy} disabled={locked} onClick={adapter.discardCandidate}>放弃候选</Button>}</> : <Button icon={<Sparkles size={14} />} loading={busy || quoting} disabled={locked || !conversation?.messages.some((message) => message.role === "user") || quoting} onClick={() => void requestAction("plan")}>{prepareQuote ? "整理方案 · 查看费用" : "整理修改方案"}</Button>}
                 </div>
-                {quoteError && <p className="m-0 text-xs text-red-600" role="alert">{quoteError}</p>}
+                {quoteError && <p className="m-0 text-xs text-red-600" role="alert">费用暂时无法核对，本轮尚未发送。{quoteError}</p>}
                 {currentQuote && <div className="space-y-2 border p-3 text-sm" aria-label="费用确认"><div className="flex flex-wrap items-baseline justify-between gap-2"><strong>{actionLabel} · {currentQuote.quote.credits.toLocaleString()} 算力点</strong><span className="text-xs" style={muted}>{currentQuote.quote.calculation}</span></div><p className="m-0 text-xs" style={muted}>{currentQuote.quote.details}</p>{currentQuote.changed && <p className="m-0 text-xs text-amber-600">处理范围或费用已变化，请重新核对；当前还没有执行。</p>}<div className="flex gap-2"><Button type="primary" size="small" loading={quoting} disabled={locked} onClick={() => void requestAction(currentQuote.action)}>确认费用并继续</Button><Button size="small" disabled={quoting} onClick={() => setPendingQuote(undefined)}>取消</Button></div></div>}
                 {historySummary && <p className="m-0 flex items-center gap-1 text-xs" style={muted}><FileClock size={13} />{historySummary}</p>}
             </div>

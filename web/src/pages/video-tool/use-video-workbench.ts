@@ -29,7 +29,7 @@ import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, vir
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisContent, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { viralFrameLabel } from "./viral-evidence";
-import { parseTaskChangePlan, taskConversationMessage, taskConversationPlanText, taskConversationTranscript } from "@/lib/task-conversation";
+import { parseTaskChangePlan, taskConversationActionError, taskConversationMessage, taskConversationPlanText, taskConversationTranscript } from "@/lib/task-conversation";
 import type { TaskConversationQuote } from "@/types/task-conversation";
 import { requestViralAnalysis, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
@@ -1721,7 +1721,7 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             throw new Error(detail);
         }
     };
-    const guard = async (action: (signal: AbortSignal) => Promise<void>, showSuccess = true) => {
+    const guard = async (action: (signal: AbortSignal) => Promise<void>, showSuccess = true, conversationFailure?: "discussion" | "candidate") => {
         if (isBusy() || controllers.has(controllerKey) || importSignal.current || (tool === "store-explore" && !storeEditable)) return;
         const controller = new AbortController();
         const session = useUserStore.getState().token;
@@ -1736,6 +1736,7 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             if (showSuccess) message.success(tool === "store-explore" && store().records.some((r) => r.storeProjectId === projectId && r.status === "running" && r.modelTask) ? "任务已提交，可继续编辑或新建探店项目" : "处理完成，结果已保存到本地工作台");
         } catch (error) {
             if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && error instanceof DOMException && error.name === "AbortError") message.info(error.message);
+            else if (tool === "store-explore" && conversationFailure) message.error(taskConversationActionError(error, conversationFailure));
             else message.error(publicServiceText(error instanceof Error ? error.message : "处理失败"));
         } finally {
             taskConversationApproval.current = null;
@@ -1745,8 +1746,13 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             else store().setBusy(tool, false);
         }
     };
-    const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode, approvedQuote?: TaskConversationQuote) =>
-        guard(async (signal) => {
+    const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode, approvedQuote?: TaskConversationQuote) => {
+        let conversationFailure: "discussion" | "candidate" | undefined;
+        if (tool === "store-explore" && stage === "script-dialogue") {
+            try { conversationFailure = JSON.parse(scriptRequest || "{}").confirmedPlan ? "candidate" : "discussion"; }
+            catch { conversationFailure = "discussion"; }
+        }
+        return guard(async (signal) => {
             taskConversationApproval.current = approvedQuote || null;
             if (analysisReview) {
                 const current = read(tool), p = analysisReview.provenance;
@@ -1815,7 +1821,8 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             if (stage === "analyze" && !(tool === "viral-recreate" && viralAnalysisMode(read(tool), config) === "video") && read(tool).media.some((m) => m.role === "reference" && m.kind === "video") && (!read(tool).frames.length || (tool === "viral-recreate" && read(tool).viralFrameSource !== viralSource(read(tool)))))
                 await perform("frames", signal);
             await perform(stage, signal, analysisReview, scriptRequest, scriptEditMode);
-        }, stage !== "script-dialogue");
+        }, stage !== "script-dialogue", conversationFailure);
+    };
     const automatic = () =>
         guard(async (signal) => {
             const d = read(tool);

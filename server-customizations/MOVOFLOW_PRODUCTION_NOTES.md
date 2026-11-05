@@ -15,8 +15,8 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.173
-- Current production source: tag v0.19.173, commit c2f3e36b56e949e2a4d1a8f6f4e3ebc536e41355
+- Current production image: infinite-canvas:v0.19.175
+- Current production source: tag v0.19.175, commit a1589f9458bfd63538411cc17cf500477b3c1d5c
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.167-worker/
 

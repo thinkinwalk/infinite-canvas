@@ -31,11 +31,13 @@ export type TaskConversationContext = {
     source?: string;
     scope?: string;
     evidence?: string;
+    evidencePreviews?: { label: string; url: string }[];
     constraints?: string[];
 };
 
 export type TaskConversationCandidate = {
     status: "pending" | "applied" | "discarded";
+    stale?: boolean;
     summary?: string;
     currentContent?: string;
     candidateContent?: string;
