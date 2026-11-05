@@ -10,7 +10,7 @@ import { VideoReferenceRetention } from "@/components/video-reference-retention"
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { TaskConversationPanel } from "./task-conversation-panel";
-import { taskConversationMessage } from "./task-conversation";
+import { taskConversationMessage, taskConversationPlanText, type TaskConversationQuote } from "./task-conversation";
 import { computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { formatBytes } from "@/lib/image-utils";
 import { hasViralTaskContent, viralTaskDraft, viralTaskGroups } from "@/lib/viral-task";
@@ -1195,25 +1195,34 @@ function ViralTaskWorkspace() {
     const undoTurn = [...turns].reverse().find((turn) => turn.status === "accepted" && turn.after === d.script && turn.before !== turn.after);
     const scriptConversationContextKey = viralScriptConversationContextKey(d, scriptEditMode);
     const scriptConversation = d.viralScriptConversation?.contextKey === scriptConversationContextKey ? d.viralScriptConversation : undefined;
-    const sendScriptMessage = () => {
+    const sendScriptMessage = (approvedQuote?: TaskConversationQuote) => {
         if (locked || !d.viralScriptChatInput?.trim()) return;
         const conversation = { phase: "discussion" as const, messages: [...(scriptConversation?.messages || []), taskConversationMessage("user", d.viralScriptChatInput.trim())], contextKey: scriptConversationContextKey };
         wb.patch({ viralScriptConversation: conversation, viralScriptChatInput: "" });
-        void wb.discussViralScript("discussion", conversation.messages, scriptEditMode);
+        void wb.discussViralScript("discussion", conversation.messages, scriptEditMode, approvedQuote);
     };
-    const organizeScriptPlan = () => {
+    const organizeScriptPlan = (approvedQuote?: TaskConversationQuote) => {
         const conversation = scriptConversation;
         if (!conversation?.messages.length) return;
-        void wb.discussViralScript("proposal", conversation.messages, scriptEditMode);
+        void wb.discussViralScript("proposal", conversation.messages, scriptEditMode, approvedQuote);
     };
-    const confirmScriptPlan = () => {
+    const confirmScriptPlan = (approvedQuote?: TaskConversationQuote) => {
         const conversation = scriptConversation;
         if (!conversation?.plan || conversation.phase !== "proposal") return;
         const request = conversation.messages.filter((item) => item.role === "user").map((item) => item.text).join("；");
-        void wb.reviseScript(JSON.stringify({ action: "revise", request, messages: conversation.messages, plan: conversation.plan, contextKey: scriptConversationContextKey }), scriptEditMode).then(() => {
+        void wb.reviseScript(JSON.stringify({ action: "revise", request, messages: conversation.messages, plan: conversation.plan, contextKey: scriptConversationContextKey }), scriptEditMode, approvedQuote).then(() => {
             if (useVideoWorkbenchStore.getState().drafts["viral-recreate"]?.viralScriptSuggestion && !window.matchMedia("(min-width: 1280px)").matches)
                 previewPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" });
         });
+    };
+    const prepareScriptQuote = (action: "message" | "plan" | "candidate") => {
+        const messages = action === "message" ? [...(scriptConversation?.messages || []), taskConversationMessage("user", d.viralScriptChatInput?.trim() || "")] : scriptConversation?.messages || [];
+        const phase = action === "message" ? "discussion" : action === "plan" ? "proposal" : undefined;
+        const request = phase
+            ? JSON.stringify({ phase, messages, mode: scriptEditMode, contextKey: scriptConversationContextKey })
+            : JSON.stringify({ action: "revise", request: messages.filter((item) => item.role === "user").map((item) => item.text).join("；"), messages, plan: scriptConversation?.plan, contextKey: scriptConversationContextKey });
+        const details = phase === "discussion" ? "只讨论需求，不改正式脚本。" : phase === "proposal" ? "只整理待确认方案，不改正式脚本。" : "确认方案后生成脚本候选；正式脚本保持不变，需单独采用。";
+        return wb.quoteTaskConversation(action === "message" ? "discussion" : action === "plan" ? "proposal" : "candidate", request, details);
     };
     const applyScriptCandidate = () => {
         const current = useVideoWorkbenchStore.getState().drafts["viral-recreate"];
@@ -1264,6 +1273,7 @@ function ViralTaskWorkspace() {
             context={d.script.trim() ? `当前脚本 · ${scriptEditMode === "rewrite" ? "整稿改写" : "局部修改"}` : "当前为新脚本创作任务"}
             muted={muted}
             border={{ borderColor: token.colorBorderSecondary }}
+            prepareQuote={(action) => prepareScriptQuote(action)}
         >
             <Segmented block aria-label="脚本修改范围" value={scriptEditMode} disabled={locked} options={[{ label: "局部修改", value: "local" }, { label: "整稿改写", value: "rewrite" }]} onChange={(value) => setScriptEditMode(value as ViralScriptEditMode)} />
             <div className="flex flex-wrap gap-1">
@@ -1670,6 +1680,7 @@ function ViralTaskWorkspace() {
                             <span className="text-xs" style={muted}>{scriptTurnStatuses[turn.status]}</span>
                         </div>
                         <Input.TextArea aria-label={`版本：${turn.request}`} readOnly value={turn.after} autoSize={{ minRows: 2, maxRows: 6 }} />
+                        {turn.discussion?.length ? <details><summary className="cursor-pointer text-xs">查看讨论与确认方案</summary><div className="mt-2 space-y-2 border-l pl-3" style={{ borderColor: token.colorBorderSecondary }}>{turn.discussion.map((message) => <p key={message.id} className="m-0 whitespace-pre-wrap text-xs"><span style={muted}>{message.role === "user" ? "你：" : "助手："}</span>{message.text}</p>)}{turn.confirmedPlan && <p className="m-0 whitespace-pre-wrap text-xs"><strong>已确认方案</strong>{"\n"}{taskConversationPlanText(turn.confirmedPlan)}</p>}</div></details> : null}
                         <Space wrap>
                             <Button size="small" disabled={locked || Boolean(d.viralScriptSuggestion) || turn.after === d.script} onClick={() => {
                                 wb.edit(viralRestoreScript(d, turn.after, "恢复历史脚本版本"), "video");

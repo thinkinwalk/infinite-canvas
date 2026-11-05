@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Dropdown, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, Images, Library, LoaderCircle, Mic, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, History, Images, Library, LoaderCircle, Mic, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -27,7 +27,7 @@ import { storeAnalysisDisplay } from "./store-analysis";
 import { StorePlanSkeleton, StoreTaskProgress, storeTaskTitle } from "./store-task-progress";
 import { normalizeStoreSettings, storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoSettings } from "./store-explore-request";
 import { renderStoreShots, storeCaptionError, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource, storeSuggestedPurpose } from "./store-explore-plan";
-import { storeCandidateMaterials, storeCast, storeCastReferenceError, storeMaterialKey, storeSelectedIds } from "./store-materials";
+import { storeCandidateMaterials, storeCast, storeCastReferenceError, storeMaterialKey, storeSelectedIds, storeUnlinkedMaterialIds } from "./store-materials";
 import { storePersonVoiceError, storePersonVoices, storeVoiceMinimumSeconds } from "./store-person-voice";
 import { restoreWorkbenchFile, stageLabels, useVideoWorkbench } from "./use-video-workbench";
 import { StoreProjectPanel, storeRecordStatus } from "./store-project-panel";
@@ -35,7 +35,7 @@ import { useStoreProjectAccess } from "./use-store-project-access";
 import { stopStoreTask } from "./store-task-runtime";
 import { flushWorkbenchStorage } from "@/stores/workbench-storage";
 import { TaskConversationPanel } from "./task-conversation-panel";
-import { taskConversationMessage } from "./task-conversation";
+import { taskConversationMessage, taskConversationPlanText, type TaskConversationQuote } from "./task-conversation";
 import { storeScriptConversationContextKey, type StoreScriptScope } from "./store-script";
 
 type Editor = "storeFacts" | "analysis" | "instructions" | "script";
@@ -55,6 +55,7 @@ function StoreProjectEditor() {
     const querying = useVideoWorkbenchStore((s) => s.storeQuerying);
     const previewRecordId = useVideoWorkbenchStore((s) => s.storePreviewRecordId);
     const [adopting, setAdopting] = useState(false);
+    const [versionsOpen, setVersionsOpen] = useState(false);
     const config = useVideoCreationConfig(),
         cfg = storeVideoConfig(d, config),
         settings = storeVideoSettings(cfg);
@@ -96,7 +97,7 @@ function StoreProjectEditor() {
         [previewError, setPreviewError] = useState(false);
     const [request, setRequest] = useState(""),
         [scope, setScope] = useState(d.storeFeedbackSourceRecordId ? "feedback" : "all"),
-        [feedbackSeconds, setFeedbackSeconds] = useState<number | null>(null);
+        [feedbackRange, setFeedbackRange] = useState<[number, number] | null>(null);
     const feedbackVideoRef = useRef<HTMLVideoElement>(null);
     const [analysisOpen, setAnalysisOpen] = useState(false),
         [analysisView, setAnalysisView] = useState("current"),
@@ -150,13 +151,15 @@ function StoreProjectEditor() {
         border = { borderColor: token.colorBorderSecondary };
     const shots = d.storeShots || [],
         audioMode = d.storeAudioMode || "source";
+    const candidateIds = new Set(candidates.map((media) => media.id));
+    const unlinkedMaterialCount = storeUnlinkedMaterialIds(d).length;
     const pendingScriptTurn = [...(d.storeScriptTurns || [])].reverse().find((turn) => turn.status === "pending");
-    const feedbackScope = scope !== "all" && Boolean(d.storeFeedbackSourceRecordId);
+    const feedbackScope = Boolean(d.storeFeedbackSourceRecordId);
     const scriptDialogueScope: StoreScriptScope = {
         request: "",
         ...(scope === "all" ? { rewrite: true } : {}),
         ...(scope !== "all" && scope !== "feedback" ? { ids: [scope] } : {}),
-        ...(feedbackScope ? { feedbackVideoRecordId: d.storeFeedbackSourceRecordId, ...(feedbackSeconds !== null ? { feedbackTimeSeconds: feedbackSeconds } : {}) } : {}),
+        ...(feedbackScope ? { feedbackVideoRecordId: d.storeFeedbackSourceRecordId, ...(feedbackRange ? { feedbackTimeRange: feedbackRange } : {}) } : {}),
     };
     const scriptConversationContextKey = storeScriptConversationContextKey(d, scriptDialogueScope);
     const scriptConversation = d.storeScriptConversation?.contextKey === scriptConversationContextKey ? d.storeScriptConversation : undefined;
@@ -207,7 +210,7 @@ function StoreProjectEditor() {
         if (wb.hydrated) void refreshCapabilities();
     }, [wb.hydrated, wb.worker.url, wb.worker.token, session]);
     const changeSettings = (value: Partial<StoreVideoSettings>) => wb.edit({ storeSettings: normalizeStoreSettings({ ...settings, ...value }, config) }, "script");
-    const saveVersion = () => [...(d.storePlanVersions || []), { script: d.script, shots, referenceIds: d.storeReferenceIds, createdAt: Date.now() }];
+    const saveVersion = (turnId?: string) => [...(d.storePlanVersions || []), { id: crypto.randomUUID(), ...(turnId ? { turnId } : {}), script: d.script, shots, referenceIds: d.storeReferenceIds, createdAt: Date.now() }];
     const edit = (field: Editor, value: string) =>
         wb.edit(
             { [field]: value, ...(field === "script" ? { storeShots: [], ...(shots.length ? { storeReferenceIds: selectedIds } : {}), storeScriptStale: false, ...(shots.length ? { storePlanVersions: saveVersion() } : {}) } : field === "analysis" ? { storeAnalysisStale: false } : {}) },
@@ -241,7 +244,7 @@ function StoreProjectEditor() {
         wb.edit({
             script: d.storeScriptSuggestion!,
             storeShots: d.storeShotSuggestion || [],
-            storePlanVersions: saveVersion(),
+            storePlanVersions: saveVersion(pendingScriptTurn?.id),
             storeScriptSuggestion: "",
             storeShotSuggestion: undefined,
             storeScriptReview: undefined,
@@ -256,19 +259,34 @@ function StoreProjectEditor() {
         storeScriptUnderstanding: undefined, storeScriptConversation: undefined,
         storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
     });
-    const sendScriptMessage = () => {
+    const restorePlanVersion = (version: NonNullable<VideoDraft["storePlanVersions"]>[number]) => {
+        wb.edit({
+            script: version.script,
+            storeShots: version.shots,
+            storeReferenceIds: version.referenceIds || [],
+            storePlanVersions: saveVersion(),
+            storeScriptSuggestion: "",
+            storeShotSuggestion: undefined,
+            storeScriptReview: undefined,
+            storeScriptConversation: undefined,
+            storeScriptTurns: (d.storeScriptTurns || []).map((turn) => turn.status === "pending" ? { ...turn, status: "rejected" as const } : turn),
+        }, "video");
+        setVersionsOpen(false);
+        message.success("已恢复该版本，原有版本记录均已保留");
+    };
+    const sendScriptMessage = (approvedQuote?: TaskConversationQuote) => {
         if (locked || !request.trim() || textError()) return;
         const messages = [...(scriptConversation?.messages || []), taskConversationMessage("user", request.trim())];
         const conversation: TaskConversation = { phase: "discussion", messages, contextKey: scriptConversationContextKey };
         wb.patch({ storeScriptConversation: conversation });
         setRequest("");
-        void wb.discussStoreScript("discussion", { ...scriptDialogueScope, contextKey: scriptConversationContextKey }, messages);
+        void wb.discussStoreScript("discussion", { ...scriptDialogueScope, contextKey: scriptConversationContextKey }, messages, approvedQuote);
     };
-    const organizeScriptPlan = () => {
+    const organizeScriptPlan = (approvedQuote?: TaskConversationQuote) => {
         if (locked || !scriptConversation?.messages.length || textError()) return;
-        void wb.discussStoreScript("proposal", { ...scriptDialogueScope, contextKey: scriptConversationContextKey }, scriptConversation.messages);
+        void wb.discussStoreScript("proposal", { ...scriptDialogueScope, contextKey: scriptConversationContextKey }, scriptConversation.messages, approvedQuote);
     };
-    const confirmScriptPlan = () => {
+    const confirmScriptPlan = (approvedQuote?: TaskConversationQuote) => {
         const conversation = scriptConversation;
         if (locked || !conversation?.plan || conversation.phase !== "proposal" || textError()) return;
         const targetIds = conversation.plan.targets.map((target) => target.id).filter((id) => id !== "script");
@@ -280,7 +298,19 @@ function StoreProjectEditor() {
             contextKey: scriptConversationContextKey,
             ...(!scriptDialogueScope.rewrite && shots.length && targetIds.length ? { targetIds } : {}),
         };
-        void wb.reviseScript(JSON.stringify(revision));
+        void wb.reviseScript(JSON.stringify(revision), "local", approvedQuote);
+    };
+    const prepareScriptQuote = (action: "message" | "plan" | "candidate") => {
+        const messages = action === "message" ? [...(scriptConversation?.messages || []), taskConversationMessage("user", request.trim())] : scriptConversation?.messages || [];
+        const phase = action === "message" ? "discussion" : action === "plan" ? "proposal" : undefined;
+        const targetIds = scriptConversation?.plan?.targets.map((target) => target.id).filter((id) => id !== "script");
+        const requestBody = phase
+            ? JSON.stringify({ ...scriptDialogueScope, dialoguePhase: phase, messages, contextKey: scriptConversationContextKey })
+            : JSON.stringify({ ...scriptDialogueScope, request: messages.filter((item) => item.role === "user").map((item) => item.text).join("\n"), messages, confirmedPlan: scriptConversation?.plan, contextKey: scriptConversationContextKey, ...(!scriptDialogueScope.rewrite && shots.length && targetIds?.length ? { targetIds } : {}) });
+        const details = feedbackScope
+            ? `${phase === "discussion" ? "讨论需求" : phase === "proposal" ? "整理修改方案" : "生成定向修改候选"}；${feedbackRange ? `只附加 ${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒范围内最多 3 个取样画面` : "只发送文字反馈及原方案"}，不自动生成视频。`
+            : phase === "discussion" ? "只讨论需求，不改正式方案。" : phase === "proposal" ? "只整理待确认方案，不改正式方案。" : "生成候选供对照，正式方案要等你单独采用才会更新。";
+        return wb.quoteTaskConversation(action === "message" ? "discussion" : action === "plan" ? "proposal" : "candidate", requestBody, details);
     };
     const addFiles = async (files: File[], role: "reference" | "model" | "first-frame") => {
         if (locked || uploadLock.current) return;
@@ -397,7 +427,7 @@ function StoreProjectEditor() {
                 storeScriptUnderstanding: undefined,
                 storeSuggestionBase: undefined,
             });
-            setFeedbackSeconds(null);
+            setFeedbackRange(null);
             setRequest("");
             message.success("已新建独立的成片反馈项目，原项目和成片保持不变");
         } catch (error) {
@@ -457,16 +487,17 @@ function StoreProjectEditor() {
     };
     const materialThumbnails = (ids: string[], onClick: () => void, label: string, need?: string) => (
         <div className="flex flex-wrap items-center gap-2" aria-label={label}>
-            {ids.map((id) => {
-                const m = d.media.find((v) => v.id === id);
+            {ids.filter((id) => candidateIds.has(id)).map((id) => {
+                const m = candidates.find((v) => v.id === id);
                 return m ? (
                     <Tooltip key={id} title={`${m.name} · 点击更换`}>
                         <button type="button" aria-label={`更换${m.name}`} disabled={locked} onClick={onClick} className="h-14 w-14 shrink-0 overflow-hidden rounded border" style={border}>
                             <img src={m.url} alt={m.name} className="h-full w-full object-cover" />
                         </button>
                     </Tooltip>
-                ) : <Button key={id} danger size="small" disabled={locked} onClick={onClick}>重新选择已移除素材</Button>;
+                ) : null;
             })}
+            {ids.some((id) => !candidateIds.has(id)) && <Button size="small" type="link" disabled={locked} onClick={onClick}>{ids.filter((id) => !candidateIds.has(id)).length} 个引用待关联 · 检查</Button>}
             <Tooltip title="添加或更换参考图片">
                 <Button aria-label={label} type="text" disabled={locked} icon={<Plus size={18} />} onClick={onClick} className="!h-14 !w-14 shrink-0" />
             </Tooltip>
@@ -888,11 +919,12 @@ function StoreProjectEditor() {
                                             </div>
                                             <video ref={feedbackVideoRef} controls src={d.video.url} className="max-h-[42vh] min-h-40 w-full bg-black object-contain" />
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <InputNumber aria-label="反馈画面时间点" disabled={!d.video.storageKey} min={0} max={(d.video.durationMs || 0) / 1000 || undefined} step={0.1} value={feedbackSeconds} onChange={setFeedbackSeconds} addonAfter="秒" />
-                                                <Button size="small" disabled={!d.video.storageKey} onClick={() => setFeedbackSeconds(Number((feedbackVideoRef.current?.currentTime || 0).toFixed(2)))}>使用当前播放位置</Button>
-                                                {feedbackSeconds !== null && <Button size="small" onClick={() => setFeedbackSeconds(null)}>不发送画面</Button>}
+                                                <InputNumber aria-label="反馈片段开始时间" disabled={!d.video.storageKey} min={0} max={(d.video.durationMs || 0) / 1000 || undefined} step={0.1} value={feedbackRange?.[0] ?? null} onChange={(value) => setFeedbackRange(value === null ? null : [Number(value), Math.max(Number(value), feedbackRange?.[1] ?? Number(value))])} addonBefore="从" addonAfter="秒" />
+                                                <InputNumber aria-label="反馈片段结束时间" disabled={!d.video.storageKey} min={feedbackRange?.[0] || 0} max={(d.video.durationMs || 0) / 1000 || undefined} step={0.1} value={feedbackRange?.[1] ?? null} onChange={(value) => setFeedbackRange(value === null ? null : [Math.min(feedbackRange?.[0] ?? Number(value), Number(value)), Number(value)])} addonBefore="到" addonAfter="秒" />
+                                                <Button size="small" disabled={!d.video.storageKey} onClick={() => { const time = Number((feedbackVideoRef.current?.currentTime || 0).toFixed(2)); setFeedbackRange([time, time]); }}>使用当前播放位置</Button>
+                                                {feedbackRange !== null && <Button size="small" onClick={() => setFeedbackRange(null)}>只发文字</Button>}
                                             </div>
-                                            <p className="text-xs" style={muted}>{!d.video.storageKey ? "该视频无法从本地素材库读取画面，本轮可使用文字反馈，但不能附加成片截图。" : feedbackSeconds === null ? "未选择时间点：本轮只向文案模型发送文字反馈和原方案，不发送成片画面。" : `本轮会截取成片 ${feedbackSeconds.toFixed(2)} 秒处的一帧，随反馈发送给所选文案模型；不会上传整段视频。`}</p>
+                                            <p className="text-xs" style={muted}>{!d.video.storageKey ? "该视频无法从本地素材库读取画面，本轮可使用文字反馈，但不能附加成片截图。" : feedbackRange === null ? "未选择时间范围：本轮只向文案模型发送文字反馈和原方案，不发送成片画面。" : feedbackRange[0] === feedbackRange[1] ? `本轮将发送成片 ${feedbackRange[0].toFixed(2)} 秒处的 1 帧。` : `本轮仅发送 ${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒区间内的起点、中点和终点共 3 帧，不会上传整段视频。`}</p>
                                         </section>
                                     )}
                                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -901,14 +933,11 @@ function StoreProjectEditor() {
                                             <Button size="small" icon={<Sparkles size={14} />} disabled={locked || Boolean(textError())} onClick={planAction}>
                                             {d.script ? "对话改编" : "AI 编写"}
                                             </Button>
+                                            <Button size="small" icon={<History size={14} />} disabled={!d.storePlanVersions?.length} onClick={() => setVersionsOpen(true)}>版本记录</Button>
                                             {icon(
                                                 "撤销采用",
                                                 <Undo2 size={14} />,
-                                                () => {
-                                                    const versions = d.storePlanVersions!,
-                                                        last = versions.at(-1)!;
-                                                    wb.edit({ script: last.script, storeShots: last.shots, storeReferenceIds: last.referenceIds, storePlanVersions: versions.slice(0, -1) }, "video");
-                                                },
+                                                () => restorePlanVersion(d.storePlanVersions!.at(-1)!),
                                                 locked || !d.storePlanVersions?.length,
                                             )}
                                             <Button size="small" icon={<Expand size={13} />} onClick={() => setEditor("script")}>
@@ -917,6 +946,7 @@ function StoreProjectEditor() {
                                         </Space>
                                     </div>
                                     {d.storeScriptStale && d.script && <Alert type="warning" title="资料或规格已变化，原方案已保留，请核对后调整" />}
+                                    {unlinkedMaterialCount > 0 && <Alert type="warning" showIcon title={`方案中有 ${unlinkedMaterialCount} 个素材引用未关联到当前可用图片`} description="这只表示方案里的引用未关联到当前可发送图片，不代表文件已删除。若素材仍在素材库，可在对应镜头重新关联；否则可清除未关联引用。" />}
                                     {d.script && candidates.length > 0 && mode === "reference" && profile.maxImages > 0 && (overLimit || !shots.length || shots.some((s) => !s.materialIds.length)) && (
                                         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                                             <span style={muted}>{overLimit ? `已选 ${actualMaterials.length} 张，当前模型最多 ${profile.maxImages} 张` : "可用已有素材为镜头配图"}</span>
@@ -1007,9 +1037,10 @@ function StoreProjectEditor() {
                                             onDiscard={discardScriptSuggestion}
                                             locked={locked}
                                             busy={busy && ["script", "script-dialogue"].includes(active?.stage || "")}
-                                            context={`${feedbackScope ? `成片反馈 · ${feedbackSeconds === null ? "文字反馈" : `${feedbackSeconds.toFixed(2)} 秒画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按反馈定位相关镜头" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`}
+                                            context={`${feedbackScope ? `成片反馈 · ${feedbackRange === null ? "文字反馈" : `${feedbackRange[0].toFixed(2)}–${feedbackRange[1].toFixed(2)} 秒取样画面`} · ` : ""}${scope === "all" ? "整稿" : scope === "feedback" ? "按成片反馈定位" : `镜头 ${shots.findIndex((shot) => shot.id === scope) + 1}`} · 确认方案后生成候选，再单独采用`}
                                             muted={muted}
                                             border={border}
+                                            prepareQuote={config.channelMode === "remote" ? (action) => prepareScriptQuote(action) : undefined}
                                         >
                                             <Select
                                                 aria-label="修改范围"
@@ -1044,6 +1075,7 @@ function StoreProjectEditor() {
                                                     <span style={{ color: turn.status === "pending" ? token.colorPrimary : token.colorTextSecondary }}>
                                                         {turn.status === "pending" ? "待确认" : turn.status === "accepted" ? "已采用" : turn.status === "rejected" ? "已放弃" : "被后续修改替代"}
                                                     </span>
+                                                    {turn.discussion?.length ? <details className="basis-full pt-1"><summary className="cursor-pointer">查看讨论与确认方案</summary><div className="mt-2 space-y-2 border-l pl-3" style={border}>{turn.sourceVideoRecordId && <p style={muted}>来源成片任务：{turn.sourceVideoRecordId}{turn.feedbackTimeRange ? ` · ${turn.feedbackTimeRange[0].toFixed(2)}–${turn.feedbackTimeRange[1].toFixed(2)} 秒取样` : turn.feedbackTimeSeconds !== undefined ? ` · ${turn.feedbackTimeSeconds.toFixed(2)} 秒取样` : " · 文字反馈"}</p>}{turn.discussion.map((message) => <p key={message.id} className="m-0 whitespace-pre-wrap"><span style={muted}>{message.role === "user" ? "你：" : "助手："}</span>{message.text}</p>)}{turn.confirmedPlan && <p className="m-0 whitespace-pre-wrap"><strong>已确认方案</strong>{"\n"}{taskConversationPlanText(turn.confirmedPlan)}</p>}</div></details> : null}
                                                 </div>
                                             ))}
                                         </section>
@@ -1418,11 +1450,25 @@ function StoreProjectEditor() {
                         })}
                         {!candidates.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="补充照片作为参考" />}
                     </div>
-                    {materialPicker?.ids.some((id) => !candidates.some((m) => m.id === id)) && <Button danger size="small" onClick={() => setMaterialPicker((current) => current ? { ...current, ids: current.ids.filter((id) => candidates.some((m) => m.id === id)) } : null)}>移除失效引用</Button>}
+                    {materialPicker?.ids.some((id) => !candidates.some((m) => m.id === id)) && <Alert type="warning" showIcon title="有些引用未关联到当前可发送的参考图片" description={<div className="space-y-2"><span>这些素材可能仍在项目或素材库中；这里只会从本镜头引用中清除，不会删除素材文件。你可以重新勾选上方可用图片。</span><div><Button size="small" onClick={() => setMaterialPicker((current) => current ? { ...current, ids: current.ids.filter((id) => candidates.some((m) => m.id === id)) } : null)}>清除未关联项</Button></div></div>} />}
                     <p className="text-xs" style={muted}>{mode === "reference" ? `整条视频图片去重后最多 ${profile.maxImages} 张，人物参考也计入。` : "镜头配图用于编写方案，生成只发送指定首帧或尾帧。"}</p>
                 </div>
             </Modal>
             <AssetPickerModal open={Boolean(assetRole)} allowedKinds={assetRole === "voice" ? ["audio"] : undefined} onClose={() => setAssetRole(null)} onInsert={(p) => void insertAsset(p)} />
+            <Modal open={versionsOpen} title="拍摄方案版本" width={900} onCancel={() => setVersionsOpen(false)} footer={<Button onClick={() => setVersionsOpen(false)}>返回方案</Button>}>
+                <div className="max-h-[65vh] space-y-4 overflow-y-auto">
+                    {[...(d.storePlanVersions || [])].reverse().map((version, index) => {
+                        const turn = version.turnId ? d.storeScriptTurns?.find((item) => item.id === version.turnId) : undefined;
+                        return <section key={version.id || `${version.createdAt}-${index}`} className="space-y-2 border-b pb-4" style={border}>
+                            <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">历史版本 · {new Date(version.createdAt).toLocaleString()}</strong><span className="text-xs" style={muted}>{version.shots.length} 个镜头 · {version.shots.at(-1)?.end || 0} 秒</span></div>
+                            {turn && <p className="m-0 text-xs" style={muted}>关联改编：{turn.request} · {turn.status === "accepted" ? "已采用" : turn.status === "rejected" ? "已放弃" : turn.status}</p>}
+                            <Input.TextArea readOnly aria-label={`历史方案版本 ${index + 1}`} value={version.script} autoSize={{ minRows: 3, maxRows: 9 }} />
+                            {turn?.discussion?.length ? <details><summary className="cursor-pointer text-xs">查看该版本关联的讨论与方案</summary><div className="mt-2 space-y-2 border-l pl-3" style={border}>{turn.sourceVideoRecordId && <p className="text-xs" style={muted}>来源成片任务：{turn.sourceVideoRecordId}{turn.feedbackTimeRange ? ` · ${turn.feedbackTimeRange[0].toFixed(2)}–${turn.feedbackTimeRange[1].toFixed(2)} 秒取样` : turn.feedbackTimeSeconds !== undefined ? ` · ${turn.feedbackTimeSeconds.toFixed(2)} 秒取样` : " · 文字反馈"}</p>}{turn.discussion.map((message) => <p key={message.id} className="m-0 whitespace-pre-wrap text-xs"><span style={muted}>{message.role === "user" ? "你：" : "助手："}</span>{message.text}</p>)}{turn.confirmedPlan && <p className="m-0 whitespace-pre-wrap text-xs"><strong>已确认方案</strong>{"\n"}{taskConversationPlanText(turn.confirmedPlan)}</p>}</div></details> : null}
+                            <Button size="small" disabled={locked || version.script === d.script} onClick={() => restorePlanVersion(version)}>恢复此版本</Button>
+                        </section>;
+                    })}
+                </div>
+            </Modal>
             <Modal
                 open={analysisOpen}
                 title="素材观察"

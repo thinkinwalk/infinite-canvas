@@ -1,4 +1,4 @@
-import type { VideoDraft, ViralScriptTurn } from "@/types/video-workbench";
+import type { TaskConversation, VideoDraft, ViralScriptTurn } from "@/types/video-workbench";
 import { viralAdoptedAnalysisError, viralSource } from "./viral-analysis";
 import { viralVisibleAnalysis } from "./viral-evidence";
 
@@ -73,12 +73,13 @@ export function viralScriptChangeSummary(before: string, after: string) {
     return `${beforeLength} → ${afterLength} 字（${change < 0 ? "减少" : "增加"} ${Math.abs(change)} 字${beforeLength ? `，${Math.round(Math.abs(change) / beforeLength * 100)}%` : ""}）`;
 }
 
-export function viralScriptProposal(draft: VideoDraft, after: string, request?: string, candidateOnly = false): Partial<VideoDraft> {
+export function viralScriptProposal(draft: VideoDraft, after: string, request?: string, candidateOnly = false, conversation?: Pick<TaskConversation, "messages" | "plan">): Partial<VideoDraft> {
     const continuing = Boolean(request && draft.viralScriptSuggestion);
     const needsAdoption = candidateOnly || Boolean(draft.script.trim() || continuing);
     const turn: ViralScriptTurn = {
         id: crypto.randomUUID(), source: viralSource(draft), request: request || (draft.script.trim() ? "根据复刻要求修改脚本" : "撰写改编脚本"),
         before: continuing ? draft.viralScriptSuggestion! : draft.script, beforeStale: Boolean(draft.viralScriptStale), after, status: needsAdoption ? "pending" : "accepted", createdAt: Date.now(),
+        ...(conversation?.messages ? { discussion: conversation.messages } : {}), ...(conversation?.plan ? { confirmedPlan: conversation.plan } : {}),
     };
     return {
         viralScriptTurns: [...(draft.viralScriptTurns || []).map((item) => item.status === "pending" ? { ...item, status: continuing ? "superseded" as const : "rejected" as const } : item), turn],

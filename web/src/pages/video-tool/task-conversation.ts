@@ -1,5 +1,7 @@
 import type { TaskChangePlan, TaskConversationMessage } from "@/types/video-workbench";
 
+export type TaskConversationQuote = { credits: number; calculation: string; details: string; contextKey: string; pricingKey: string };
+
 export function taskConversationMessage(role: TaskConversationMessage["role"], text: string): TaskConversationMessage {
     return { id: crypto.randomUUID(), role, text, createdAt: Date.now() };
 }

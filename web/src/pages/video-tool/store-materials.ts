@@ -1,7 +1,19 @@
 import type { StoreMaterialSuggestion, VideoDraft } from "@/types/video-workbench";
 
 export const storeCandidateMaterials = (d: Pick<VideoDraft, "media">) => d.media.filter((m) => m.kind === "image" && ["reference", "model", "first-frame"].includes(m.role));
-export const storeSelectedIds = (d: VideoDraft) => [...new Set(d.storeShots?.length ? d.storeShots.flatMap((s) => s.materialIds) : d.storeReferenceIds || [])];
+export const storeSelectedIds = (d: Pick<VideoDraft, "storeShots" | "storeReferenceIds">) => [...new Set(d.storeShots?.length ? d.storeShots.flatMap((s) => s.materialIds) : d.storeReferenceIds || [])];
+export function storeUnlinkedMaterialIds(d: Pick<VideoDraft, "media" | "storeShots" | "storeReferenceIds">) {
+    const candidates = new Set(storeCandidateMaterials(d).map((m) => m.id));
+    return storeSelectedIds(d).filter((id) => !candidates.has(id));
+}
+export function storeSelectedMaterialError(d: Pick<VideoDraft, "media" | "storeShots" | "storeReferenceIds">) {
+    const candidates = new Set(storeCandidateMaterials(d).map((m) => m.id));
+    const invalid = storeUnlinkedMaterialIds(d);
+    if (!invalid.length) return "";
+    return invalid.some((id) => d.media.some((m) => m.id === id))
+        ? "方案中的图片引用当前类型或用途不可用；原素材仍在项目中，请调整素材用途或重新关联可用图片。"
+        : "方案中的图片引用未关联到当前项目。素材库原文件不会被删除，请从素材库重新添加，或清除未关联引用。";
+}
 export function storeCast(d: Pick<VideoDraft, "media">) {
     const people = new Map<string, string[]>();
     for (const m of d.media.filter((m) => m.kind === "image" && m.role === "model")) {

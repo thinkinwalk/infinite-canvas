@@ -5,7 +5,7 @@ import { selectableModelsByCapability, useConfigStore, type AiConfig } from "@/s
 import { useUserStore } from "@/stores/use-user-store";
 import type { VideoDraft, StoreVideoSettings } from "@/types/video-workbench";
 import { storeFreeScriptError, storePlanError } from "./store-explore-plan";
-import { storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
+import { storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds, storeSelectedMaterialError } from "./store-materials";
 import { storePersonVoiceError, storePersonVoices, storePersonVoicePrompt } from "./store-person-voice";
 
 export function storeVideoSettings(config: AiConfig): StoreVideoSettings {
@@ -70,7 +70,8 @@ export function storeVideoError(d: VideoDraft, config: AiConfig) {
     const mode = videoInputMode(config, model);
     const materials = storeVideoMaterials(d, config);
     if (mode === "reference") {
-        if (storeSelectedIds(d).some((id) => !storeCandidateMaterials(d).some((m) => m.id === id))) return "已采用的参考素材已移除，请重新选择";
+        const materialError = storeSelectedMaterialError(d);
+        if (materialError) return materialError;
         const castError = storeCastReferenceError(d, storeSelectedIds(d));
         if (castError) return castError;
         const mentioned = (d.storeShots?.length ? d.storeShots.map((s) => `${s.visual}\n${s.dialogue}`).join("\n") : d.script).match(/@?图片\d+/g) || [];

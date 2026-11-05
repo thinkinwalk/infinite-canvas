@@ -54,6 +54,16 @@ test("a conversation response preserves the current script until accepted", () =
     expect(adopted.viralScriptTurns?.[0].status).toBe("accepted");
 });
 
+test("accepted conversation revisions retain their messages and confirmed plan for history", () => {
+    const conversation = {
+        messages: [{ id: "m1", role: "user" as const, text: "只改开头", createdAt: 1 }],
+        plan: { summary: "开头偏慢", targets: [{ id: "segment-1", label: "段落 1" }], changes: [{ targetId: "segment-1", change: "突出动作", preserve: "保留结尾" }], unchanged: ["段落 2"] },
+    };
+    const proposed = viralScriptProposal(draft(), "新稿", "只改开头", true, conversation);
+    expect(proposed.viralScriptTurns?.[0]?.discussion).toEqual(conversation.messages);
+    expect(proposed.viralScriptTurns?.[0]?.confirmedPlan).toEqual(conversation.plan);
+});
+
 test("keeping the current draft rejects the proposal and retains manual changes", () => {
     const d = { ...draft(), script: "原稿" };
     const proposed = { ...d, ...viralScriptProposal(d, "建议稿", "换开头"), script: "建议返回后的人工编辑" };

@@ -32,7 +32,7 @@ export function storePlanError(shots: StoreShot[], mediaIds: string[], duration:
         ids.add(shot.id);
         if (!Number.isFinite(shot.start) || !Number.isFinite(shot.end) || Math.abs(shot.start - end) > 0.001 || shot.end <= shot.start) return `镜头 ${i + 1} 的时间应连续且结束晚于开始`;
         if (!shot.visual.trim()) return `请填写镜头 ${i + 1} 的画面`;
-        if (shot.materialIds.some((id) => !mediaIds.includes(id))) return `镜头 ${i + 1} 引用了已移除的素材，请重新选择`;
+        if (shot.materialIds.some((id) => !mediaIds.includes(id))) return `镜头 ${i + 1} 引用的图片未关联到当前项目，请在该镜头重新选择素材库图片`;
         end = shot.end;
     }
     return Math.abs(end - duration) > 0.001 ? `方案共 ${end} 秒，与当前 ${duration} 秒不一致，请调整镜头时间或重新编写` : "";
@@ -109,7 +109,7 @@ export function parseStoreFeedbackResult(raw: string, d: VideoDraft, seconds: nu
 }
 
 export function renderStoreShots(shots: StoreShot[], d: Pick<VideoDraft, "media">) {
-    return shots.map((s, i) => `${i + 1}. ${s.start}–${s.end}秒\n画面：${s.visual}\n素材：${s.materialIds.map((id) => d.media.find((m) => m.id === id)?.name || "已移除素材").join("、") || "无"}${s.dialogue ? `\n台词：${s.dialogue}` : ""}${s.referenceNeed ? `\n待补素材：${s.referenceNeed}` : ""}`).join("\n\n");
+    return shots.map((s, i) => `${i + 1}. ${s.start}–${s.end}秒\n画面：${s.visual}\n素材：${s.materialIds.map((id) => d.media.find((m) => m.id === id)?.name || "当前项目未关联的图片").join("、") || "无"}${s.dialogue ? `\n台词：${s.dialogue}` : ""}${s.referenceNeed ? `\n待补素材：${s.referenceNeed}` : ""}`).join("\n\n");
 }
 
 export function storeCaptionError(d: VideoDraft, duration: number) {

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { emptyVideoDraft, type StoreShot, type WorkbenchMedia } from "../src/types/video-workbench";
+import { storeSelectedMaterialError, storeUnlinkedMaterialIds } from "../src/pages/video-tool/store-materials";
 import { parseStoreFeedbackResult, parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeFreeScriptError, storePlanError, storePlanKey, storeSpeechKey, storeSubtitleSource } from "../src/pages/video-tool/store-explore-plan";
 
 if (!globalThis.localStorage) {
@@ -25,8 +26,16 @@ test("internal shots may be shorter than model minimum; duration must match exac
 test("material IDs survive reordering and deletion is detected rather than rebound", () => {
     const d = draft();
     expect(parseStoreShots(JSON.stringify({ shots }), { ...d, media: [...d.media].reverse() }, 10)).toEqual(shots);
-    expect(storePlanError(shots, ["product"], 10)).toContain("已移除");
+    expect(storePlanError(shots, ["product"], 10)).toContain("未关联到当前项目");
     expect(() => parseStoreShots(JSON.stringify({ shots }), { ...d, media: [image("product")] }, 10)).toThrow("引用");
+});
+test("stale material references distinguish project links from removed project assets", () => {
+    const d = draft();
+    expect(storeSelectedMaterialError({ ...d, storeShots: [{ ...shots[0], materialIds: ["not-linked"] }] })).toContain("素材库原文件不会被删除");
+    expect(storeUnlinkedMaterialIds({ ...d, storeShots: [{ ...shots[0], materialIds: ["not-linked", "another-unlinked"] }] })).toEqual(["not-linked", "another-unlinked"]);
+    const unavailable = { ...d.media[0], kind: "audio" as const, role: "voice" as const };
+    expect(storeSelectedMaterialError({ ...d, media: [unavailable], storeShots: [{ ...shots[0], materialIds: [unavailable.id] }] })).toContain("仍在项目中");
+    expect(storeSelectedMaterialError({ ...d, storeShots: shots })).toBe("");
 });
 test("scoped edit preserves every unselected field and rejects extra or missing IDs", () => {
     const d = draft(), next = { ...shots[0], dialogue: "进来看看" };
@@ -87,7 +96,7 @@ test("feedback source and selected timestamp are persisted with the project and 
     const textOnly = storeScriptPrompt(d, [], 10, 7, { request: "画面太暗", feedbackVideoRecordId: "record-1" });
     expect(textOnly).toContain("本轮未附成片画面");
     const withFrame = storeScriptPrompt(d, [], 10, 7, { request: "画面太暗", feedbackVideoRecordId: "record-1", feedbackTimeSeconds: 3.5 });
-    expect(withFrame).toContain("3.50 秒处的实际画面");
+    expect(withFrame).toContain("3.50 秒处的取样画面");
     expect(storePlanKey(d)).not.toBe(storePlanKey({ ...d, storeFeedbackSourceRecordId: "record-2" }));
 });
 test("schema errors, duplicate IDs, discontinuities and invalid JSON retain the original draft", () => {

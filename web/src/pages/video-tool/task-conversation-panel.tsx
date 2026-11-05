@@ -1,8 +1,10 @@
 import { Button, Input } from "antd";
 import { Send, Sparkles } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import type { TaskConversation } from "@/types/video-workbench";
-import { taskConversationPlanText } from "./task-conversation";
+import { taskConversationPlanText, type TaskConversationQuote } from "./task-conversation";
+
+type ConversationAction = "message" | "plan" | "candidate";
 
 export function TaskConversationPanel({
     conversation,
@@ -13,6 +15,7 @@ export function TaskConversationPanel({
     onConfirm,
     onApply,
     onDiscard,
+    prepareQuote,
     locked,
     busy,
     context,
@@ -23,11 +26,12 @@ export function TaskConversationPanel({
     conversation?: TaskConversation;
     input: string;
     onInput: (value: string) => void;
-    onSend: () => void;
-    onPlan: () => void;
-    onConfirm: () => void;
+    onSend: (approvedQuote?: TaskConversationQuote) => void;
+    onPlan: (approvedQuote?: TaskConversationQuote) => void;
+    onConfirm: (approvedQuote?: TaskConversationQuote) => void;
     onApply?: () => void;
     onDiscard?: () => void;
+    prepareQuote?: (action: ConversationAction) => Promise<TaskConversationQuote | null>;
     locked: boolean;
     busy: boolean;
     context: string;
@@ -36,6 +40,43 @@ export function TaskConversationPanel({
     children?: ReactNode;
 }) {
     const phase = conversation?.phase || "discussion";
+    const [pendingQuote, setPendingQuote] = useState<{ action: ConversationAction; key: string; quote: TaskConversationQuote; changed?: boolean }>();
+    const [quoting, setQuoting] = useState(false);
+    const [quoteError, setQuoteError] = useState("");
+    const actionKey = (action: ConversationAction) => JSON.stringify([action, context, input, conversation?.messages, conversation?.plan]);
+    const currentQuote = pendingQuote && pendingQuote.key === actionKey(pendingQuote.action) ? pendingQuote : undefined;
+    const execute = (action: ConversationAction, approvedQuote?: TaskConversationQuote) => {
+        if (action === "message") onSend(approvedQuote);
+        else if (action === "plan") onPlan(approvedQuote);
+        else onConfirm(approvedQuote);
+    };
+    const requestAction = async (action: ConversationAction) => {
+        if (locked || busy || quoting) return;
+        setQuoteError("");
+        if (!prepareQuote) return execute(action);
+        setQuoting(true);
+        try {
+            const quote = await prepareQuote(action);
+            if (!quote) {
+                setPendingQuote(undefined);
+                execute(action);
+            } else if (currentQuote?.action === action) {
+                if (quote.credits !== currentQuote.quote.credits || quote.calculation !== currentQuote.quote.calculation || quote.details !== currentQuote.quote.details) {
+                    setPendingQuote({ action, key: actionKey(action), quote, changed: true });
+                } else {
+                    setPendingQuote(undefined);
+                    execute(action, quote);
+                }
+            } else {
+                setPendingQuote({ action, key: actionKey(action), quote });
+            }
+        } catch (error) {
+            setQuoteError(error instanceof Error ? error.message : "暂时无法读取本次费用");
+        } finally {
+            setQuoting(false);
+        }
+    };
+    const actionLabel = currentQuote?.action === "message" ? "本轮对话" : currentQuote?.action === "plan" ? "整理修改方案" : "生成修改候选";
     return (
         <section className="space-y-3 border-t pt-4" style={border} aria-label="多轮对话改编">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -66,23 +107,38 @@ export function TaskConversationPanel({
                 autoSize={{ minRows: 2, maxRows: 6 }}
                 placeholder={phase === "candidate" ? "继续讨论候选怎么调整" : "补充问题、偏好或需要保留的内容"}
                 onChange={(event) => onInput(event.target.value)}
-                onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); onSend(); } }}
+                onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); void requestAction("message"); } }}
             />
             <div className="flex flex-wrap items-center gap-2">
-                <Button icon={<Send size={14} />} loading={busy} disabled={locked || !input.trim()} onClick={onSend}>
-                    {conversation?.messages.length ? "继续讨论" : "开始讨论"}
+                <Button icon={<Send size={14} />} loading={busy || quoting} disabled={locked || !input.trim() || quoting} onClick={() => void requestAction("message")}>
+                    {prepareQuote ? "开始讨论 · 查看费用" : conversation?.messages.length ? "继续讨论" : "开始讨论"}
                 </Button>
                 {phase === "proposal" ? (
-                    <Button type="primary" icon={<Sparkles size={14} />} loading={busy} disabled={locked || Boolean(input.trim())} onClick={onConfirm}>确认方案并生成修改预览</Button>
+                    <Button type="primary" icon={<Sparkles size={14} />} loading={busy || quoting} disabled={locked || Boolean(input.trim()) || quoting} onClick={() => void requestAction("candidate")}>{prepareQuote ? "生成候选 · 查看费用" : "确认方案并生成修改预览"}</Button>
                 ) : phase === "candidate" ? (
                     <>
                         {onApply && <Button type="primary" loading={busy} disabled={locked} onClick={onApply}>应用修改</Button>}
                         {onDiscard && <Button loading={busy} disabled={locked} onClick={onDiscard}>不应用修改</Button>}
                     </>
                 ) : (
-                    <Button icon={<Sparkles size={14} />} loading={busy} disabled={locked || !conversation?.messages.some((message) => message.role === "user")} onClick={onPlan}>整理修改方案</Button>
+                    <Button icon={<Sparkles size={14} />} loading={busy || quoting} disabled={locked || !conversation?.messages.some((message) => message.role === "user") || quoting} onClick={() => void requestAction("plan")}>{prepareQuote ? "整理方案 · 查看费用" : "整理修改方案"}</Button>
                 )}
             </div>
+            {quoteError && <p className="text-xs text-red-600" role="alert">{quoteError}</p>}
+            {currentQuote && (
+                <div className="space-y-2 border p-3 text-sm" aria-label="文案费用确认">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <strong>{actionLabel} · {currentQuote.quote.credits.toLocaleString()} 算力点</strong>
+                        <span className="text-xs" style={muted}>{currentQuote.quote.calculation}</span>
+                    </div>
+                    <p className="m-0 text-xs" style={muted}>{currentQuote.quote.details}</p>
+                    {currentQuote.changed && <p className="m-0 text-xs text-amber-600">费用或处理范围已变化，请核对后再次确认；当前还没有发送请求。</p>}
+                    <div className="flex gap-2">
+                        <Button type="primary" size="small" loading={quoting} disabled={locked} onClick={() => void requestAction(currentQuote.action)}>确认费用并继续</Button>
+                        <Button size="small" disabled={quoting} onClick={() => setPendingQuote(undefined)}>取消</Button>
+                    </div>
+                </div>
+            )}
         </section>
     );
 }

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { parseTaskChangePlan, taskConversationPlanText, taskConversationTranscript } from "../src/pages/video-tool/task-conversation";
+import { storeFeedbackRangeError, storeFeedbackSampleTimes } from "../src/pages/video-tool/store-script";
 
 test("a confirmed plan keeps its targets, changes, preserved content and video evidence", () => {
     const plan = parseTaskChangePlan(JSON.stringify({
@@ -36,4 +37,13 @@ test("dialogue history remains ordered and distinguishes user feedback from assi
         { id: "3", role: "user" as const, text: "保留原时长", createdAt: 3 },
     ];
     expect(taskConversationTranscript(messages)).toBe("用户：只调整开头\n助手：保留哪些内容？\n用户：保留原时长");
+});
+
+test("feedback ranges select only start, midpoint and end samples", () => {
+    expect(storeFeedbackSampleTimes({ request: "", feedbackTimeRange: [2, 4] })).toEqual([2, 3, 4]);
+    expect(storeFeedbackSampleTimes({ request: "", feedbackTimeSeconds: 3.5 })).toEqual([3.5]);
+    expect(storeFeedbackSampleTimes({ request: "" })).toEqual([]);
+    expect(storeFeedbackRangeError({ request: "", feedbackTimeRange: [4, 2] }, 10)).toContain("范围无效");
+    expect(storeFeedbackRangeError({ request: "", feedbackTimeRange: [2, 11] }, 10)).toContain("超出成片时长");
+    expect(storeFeedbackRangeError({ request: "", feedbackTimeRange: [2, 4] }, 10)).toBe("");
 });

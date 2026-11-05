@@ -21,7 +21,7 @@ import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { parseStoreFeedbackResult, parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource } from "./store-explore-plan";
 import { parseStoreMaterialSuggestion, storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
-import { storeScriptConversationContextKey, storeScriptDialoguePrompt, storeScriptPrompt, type StoreScriptScope } from "./store-script";
+import { storeFeedbackRangeError, storeFeedbackSampleTimes, storeScriptConversationContextKey, storeScriptDialoguePrompt, storeScriptPrompt, type StoreScriptScope } from "./store-script";
 import { storePersonVoices, storeVoiceFileError, storeVoiceFileFormatError, storeVoiceSampleError } from "./store-person-voice";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptConversationContextKey, viralScriptConversationPrompt, viralScriptPrompt, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
 import { applyViralScriptEdits, splitViralScript, viralScriptEditDraft, viralScriptProposal, viralScriptRequestError, type ViralScriptEditMode } from "./viral-script-revisions";
@@ -29,7 +29,7 @@ import { viralKeyframeInputKey, viralKeyframeMaterials, viralKeyframePrompt, vir
 import { viralIntentError, viralPlanState, viralReferenceImages, viralTargetFacts } from "./viral-plan";
 import { viralAdoptedAnalysisError, viralAnalysisConfig, viralAnalysisContent, viralAnalysisProvenance, viralAnalysisResultPatch, viralAnalysisSections } from "./viral-analysis";
 import { viralFrameLabel } from "./viral-evidence";
-import { parseTaskChangePlan, taskConversationMessage, taskConversationPlanText, taskConversationTranscript } from "./task-conversation";
+import { parseTaskChangePlan, taskConversationMessage, taskConversationPlanText, taskConversationTranscript, type TaskConversationQuote } from "./task-conversation";
 import { requestViralAnalysis, videoAnalysisConfig } from "@/services/api/video-understanding";
 import { upscaleError, upscaleInput } from "./upscale-settings";
 import { digitalHumanBriefText, digitalHumanRequest, digitalHumanScriptError, digitalHumanScriptPrompt, digitalHumanSubtitleError, digitalLearningSource } from "./digital-human-request";
@@ -152,6 +152,28 @@ export async function restoreWorkbenchFile(file: UploadedFile): Promise<Uploaded
     return { ...file, url: await (file.mimeType.startsWith("image/") ? resolveImageUrl(file.storageKey, file.url) : resolveMediaUrl(file.storageKey, file.url)) };
 }
 
+async function captureStoreFeedbackFrames(video: UploadedFile, scope: StoreScriptScope, signal: AbortSignal) {
+    const times = storeFeedbackSampleTimes(scope);
+    if (!times.length) return { files: [] as UploadedFile[], labels: [] as string[], dispose() {} };
+    const blob = video.storageKey ? await getMediaBlob(video.storageKey) : null;
+    if (!blob) throw new Error("本地成片文件不可用，原稿已保留");
+    const sourceUrl = URL.createObjectURL(blob), urls: string[] = [], files: UploadedFile[] = [];
+    try {
+        for (const time of times) {
+            signal.throwIfAborted();
+            const image = await captureVideoFrame(sourceUrl, "current", time), url = URL.createObjectURL(image);
+            urls.push(url);
+            files.push({ url, storageKey: "", bytes: image.size, mimeType: "image/png" });
+        }
+        return { files, labels: times.map((time) => `这是用户关联的已生成成片 ${time.toFixed(2)} 秒处取样画面，仅作问题讨论依据；不是门店素材。`), dispose: () => urls.forEach((url) => URL.revokeObjectURL(url)) };
+    } catch (error) {
+        urls.forEach((url) => URL.revokeObjectURL(url));
+        throw error;
+    } finally {
+        URL.revokeObjectURL(sourceUrl);
+    }
+}
+
 type Context = { signal: AbortSignal; recordId: string; worker: WorkerConfig; analysisReview?: ViralAnalysisVersion; scriptRequest?: string; scriptEditMode?: ViralScriptEditMode };
 type Invalidation = "materials" | "brief" | "learning" | "preview" | "script" | "speech" | "video" | "finish" | "cover";
 export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
@@ -167,6 +189,7 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
     const isBusy = () => Boolean(tool === "store-explore" ? store().storeBusyProjects[projectId] : store().busyTools[tool]);
     const controllerKey = tool === "store-explore" ? `store:${projectId}` : tool;
     const cloudReferences = useRef({ token: "", urls: new Map<string, string>() });
+    const taskConversationApproval = useRef<TaskConversationQuote | null>(null);
     const [importing, setImporting] = useState(false);
     const importSignal = useRef<AbortSignal | null>(null);
     const digital = isTalkingVideoTool(tool);
@@ -405,6 +428,43 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
         const model = config[`${capability}Model`];
         if (!model) throw new Error(`请先在模型设置中选择${{ text: "分析/文案", video: "视频", audio: "语音", image: "封面图片" }[capability]}模型`);
         return { ...config, model, ...overrides };
+    };
+    const taskConversationPricingKey = (contextKey: string) => JSON.stringify([tool, contextKey, config.channelMode, config.textModel, config.managed?.revision, useUserStore.getState().token]);
+    const quoteTaskConversation = async (stage: "discussion" | "proposal" | "candidate", request = "", requestedDetails = ""): Promise<TaskConversationQuote | null> => {
+        if (config.channelMode !== "remote") return null;
+        const cfg = modelConfig("text"), quote = await quoteTextModel(cfg, cfg.textModel);
+        let contextKey = "", calls = 1, details = stage === "discussion" ? "本轮只讨论需求，不修改正式内容。" : stage === "proposal" ? "本轮只整理待确认方案，不修改正式内容。" : "确认方案后生成候选；正式内容仍需另行采用。";
+        if (tool === "store-explore") {
+            const d = read(tool), scope = request ? JSON.parse(request) as StoreScriptScope : { request: "" };
+            contextKey = scope.contextKey || storeScriptConversationContextKey(d, scope);
+            if (stage === "candidate") {
+                const continuing = Boolean(d.storeScriptSuggestion && d.storeShotSuggestion?.length);
+                const source = continuing ? { ...d, media: d.media, storeShots: d.storeShotSuggestion } : d;
+                const pendingImages = storeCandidateMaterials(source).filter((m) => !m.storeObservation?.trim()).length;
+                const targetIds = scope.targetIds?.length ? scope.targetIds : scope.ids;
+                const review = !scope.feedbackVideoRecordId && (!targetIds || Boolean(scope.rewrite));
+                calls = pendingImages + (review ? 2 : 1);
+                details = `${pendingImages ? `${pendingImages} 张新增素材观察` : "复用已保存的素材观察"}${review ? "，另含方案编写和脚本检查" : "，不追加整稿检查"}；失败时保留原稿和候选状态，不自动重试。`;
+            }
+            if (scope.feedbackVideoRecordId) {
+                const times = storeFeedbackSampleTimes(scope);
+                details += times.length ? ` 来源成片仅发送 ${times.join("、")} 秒处的取样画面，不发送整段视频。` : " 仅发送文字反馈和原方案，不发送成片画面。";
+            }
+        } else if (tool === "viral-recreate") {
+            const d = read(tool), parsed = request ? JSON.parse(request) as { contextKey?: string } : {};
+            contextKey = parsed.contextKey || viralScriptConversationContextKey(d, "local");
+            if (stage === "candidate") details = "本次只生成脚本候选；正式脚本保持不变，需单独采用。";
+        }
+        const credits = quote.credits * calls;
+        return { credits, calculation: calls > 1 ? `${calls} 次调用 × ${quote.credits.toLocaleString()} 点/次 = ${credits.toLocaleString()} 点` : `${quote.credits.toLocaleString()} 点 · ${quote.calculation}`, details: requestedDetails ? `${requestedDetails}${tool === "store-explore" && stage === "candidate" ? ` ${details}` : ""}` : details, contextKey, pricingKey: taskConversationPricingKey(contextKey) };
+    };
+    const consumeTaskConversationQuote = (contextKey: string, credits: number) => {
+        const approved = taskConversationApproval.current;
+        taskConversationApproval.current = null;
+        if (!approved || approved.contextKey !== contextKey || approved.pricingKey !== taskConversationPricingKey(contextKey))
+            throw new Error("请在对话区查看并确认本轮费用；本轮尚未发送");
+        if (approved.credits !== credits)
+            throw new Error("费用已变化，本轮尚未发送；请重新查看最新报价并确认");
     };
     const confirmStorePrice = (quote: VideoPrice, label: string, signal: AbortSignal, details: string, materials: WorkbenchMedia[] = []) =>
         new Promise<void>((resolve, reject) => {
@@ -895,7 +955,10 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 if (!input.messages?.length || !["discussion", "proposal"].includes(input.phase)) throw new Error("对话状态已变化，请重新发送本轮内容");
                 if (input.contextKey !== viralScriptConversationContextKey(d, input.mode)) throw new Error("脚本、原片或改编范围已变化，请重新开始本轮讨论");
                 const prompt = viralScriptConversationPrompt(d, input.messages, input.phase, input.mode);
-                const raw = await text(ctx, prompt, [], false, undefined, true, false, input.phase === "discussion" ? "正在讨论脚本修改需求" : "正在整理脚本修改方案");
+                const textConfig = modelConfig("text");
+                const quote = textConfig.channelMode === "remote" ? await quoteTextModel(textConfig, textConfig.textModel, ctx.signal) : undefined;
+                if (quote) consumeTaskConversationQuote(input.contextKey, quote.credits);
+                const raw = await text(ctx, prompt, [], false, undefined, true, Boolean(quote), input.phase === "discussion" ? "正在讨论脚本修改需求" : "正在整理脚本修改方案");
                 const allowed = splitViralScript(viralScriptEditDraft(d).script).segments.map((segment, index) => segment.trim() ? `segment-${index + 1}` : "").filter(Boolean);
                 const plan = input.phase === "proposal" ? parseTaskChangePlan(raw, allowed.length ? allowed : ["script"]) : undefined;
                 if (plan && input.mode === "rewrite" && allowed.length && (plan.targets.length !== allowed.length || allowed.some((id) => !plan.targets.some((target) => target.id === id)))) throw new Error("整稿改写方案必须覆盖全部现有段落，请调整讨论后重新整理方案");
@@ -930,7 +993,10 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 stage === "product-analyze"
                       ? `分析参考图片的可见内容与可用于视频改编的特征，按每张图的实际内容区分主体、环境或视觉风格，不默认都是商品或背景。编号与用途：${images.map((m) => `${viralMaterialLabels(d).find((l) => l.id === m.id)?.label}=${viralVisualRole(m.role)}`).join("；")}。用户真实资料：${viralTargetFacts(d)}。只写可见事实，不编造身份、价格、优惠、功效或承诺；不能辨认时说明。`
                       : viralScriptPrompt(d, cfg, revisionRequest, ctx.scriptEditMode);
-            const value = await text(ctx, instruction, images, stage === "product-analyze", undefined, localScriptEdit);
+            const textConfig = modelConfig("text");
+            const quote = revision && textConfig.channelMode === "remote" ? await quoteTextModel(textConfig, textConfig.textModel, ctx.signal) : undefined;
+            if (quote && revision?.contextKey) consumeTaskConversationQuote(revision.contextKey, quote.credits);
+            const value = await text(ctx, instruction, images, stage === "product-analyze", undefined, localScriptEdit, Boolean(quote));
             if (stage === "product-analyze") return { ...(d.viralProductAnalysis ? { viralProductSuggestion: value } : { viralProductAnalysis: value, viralProductStale: false }), viralScriptStale: Boolean(d.script), viralOutputStale: true };
             const allowedSegments = revision?.plan?.targets.map((target) => Number(target.id.replace(/^segment-/, ""))).filter(Number.isInteger);
             const script = localScriptEdit ? applyViralScriptEdits(scriptDraft.script, value, allowedSegments?.length ? allowedSegments : undefined) : value;
@@ -939,7 +1005,7 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 const allowedIds = revision.plan.targets.map((target) => target.id);
                 if (segmentIds.length !== allowedIds.length || segmentIds.some((id) => !allowedIds.includes(id))) throw new Error("整稿修改结果未覆盖全部已确认段落，原稿未变");
             }
-            const proposal = viralScriptProposal(d, script, revision?.request || ctx.scriptRequest, Boolean(revision));
+            const proposal = viralScriptProposal(d, script, revision?.request || ctx.scriptRequest, Boolean(revision), revision ? { messages: revision.messages || [], plan: revision.plan } : undefined);
             return revision?.messages ? { ...proposal, viralScriptConversation: { phase: "candidate", messages: [...revision.messages, taskConversationMessage("assistant", "已根据确认方案生成待核对候选，请对照后选择继续讨论、应用修改或不应用。")], ...(revision.plan ? { plan: revision.plan } : {}), contextKey: viralScriptConversationContextKey({ ...d, ...proposal }, ctx.scriptEditMode) } } : proposal;
         }
         if (tool === "viral-recreate" && stage === "video") {
@@ -1017,9 +1083,9 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 if (feedback && (sourceDraft.storeFeedbackSourceRecordId !== scope!.feedbackVideoRecordId || !sourceDraft.video)) {
                     throw new Error("成片反馈来源与当前项目不一致，请从对应成片重新进入");
                 }
-                if (feedback && scope!.feedbackTimeSeconds !== undefined) {
-                    const duration = (sourceDraft.video!.durationMs || 0) / 1000;
-                    if (!Number.isFinite(scope!.feedbackTimeSeconds) || scope!.feedbackTimeSeconds < 0 || (duration > 0 && scope!.feedbackTimeSeconds > duration)) throw new Error("反馈时间点超出成片时长");
+                if (feedback) {
+                    const error = storeFeedbackRangeError(scope!, (sourceDraft.video!.durationMs || 0) / 1000);
+                    if (error) throw new Error(error);
                 }
                 const localIds = scope?.ids?.length ? scope.ids : undefined;
                 if (localIds && (!sourceDraft.storeShots?.length || new Set(localIds).size !== localIds.length || localIds.some((id) => !sourceDraft.storeShots!.some((s) => s.id === id)))) throw new Error("选定镜头已变化，请重新选择修改范围");
@@ -1036,7 +1102,10 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                     const calculation = feedback
                         ? `1 次${stage === "script-dialogue" ? "成片反馈对话" : "成片反馈改稿"}；单次 ${quote.credits} 点`
                         : `${pendingImages.length} 张待观察图片逐张处理${stage === "analyze" ? "" : review ? "，另含 1 次方案编写 + 1 次独立脚本检查" : matching ? "，另含 1 次配图处理" : "，另含 1 次局部修改，不含整稿检查"}；单次 ${quote.credits} 点`;
-                    await confirmStorePrice({ ...quote, credits: quote.credits * calls, calculation }, stageLabels[stage], ctx.signal, `本次共 ${calls} 次文案调用；${detail}`);
+                    if (stage === "script-dialogue" || scope?.confirmedPlan) {
+                        if (!scope?.contextKey) throw new Error("对话来源已变化，请重新讨论并确认方案");
+                        consumeTaskConversationQuote(scope.contextKey, quote.credits * calls);
+                    } else await confirmStorePrice({ ...quote, credits: quote.credits * calls, calculation }, stageLabels[stage], ctx.signal, `本次共 ${calls} 次文案调用；${detail}`);
                 }
                 const observed = new Map<string, string>(images.map((m) => [m.id, m.storeObservation || ""]));
                 for (const [index, image] of pendingImages.entries()) {
@@ -1053,24 +1122,10 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 if (stage === "script-dialogue") {
                     const phase = scope?.dialoguePhase;
                     if (!scope || !phase || !scope.messages?.length) throw new Error("对话状态已变化，请重新发送本轮内容");
-                    let frameUrl: string | undefined;
+                    const feedbackFrames = feedback ? await captureStoreFeedbackFrames(sourceDraft.video!, scope, ctx.signal) : { files: [] as UploadedFile[], labels: [] as string[], dispose() {} };
                     try {
-                        let frame: UploadedFile | undefined;
-                        if (feedback && scope.feedbackTimeSeconds !== undefined) {
-                            const video = sourceDraft.video!;
-                            const blob = video.storageKey ? await getMediaBlob(video.storageKey) : null;
-                            if (!blob) throw new Error("本地成片文件不可用，原稿已保留");
-                            const sourceUrl = URL.createObjectURL(blob);
-                            try {
-                                const image = await captureVideoFrame(sourceUrl, "current", scope.feedbackTimeSeconds);
-                                frameUrl = URL.createObjectURL(image);
-                                frame = { url: frameUrl, storageKey: "", bytes: image.size, mimeType: "image/png" };
-                            } finally {
-                                URL.revokeObjectURL(sourceUrl);
-                            }
-                        }
                         const instruction = storeScriptDialoguePrompt(sourceDraft, materialList, scope, phase);
-                        const value = await text(ctx, instruction, frame ? [frame] : [], false, frame ? [`这是用户指定的已生成成片在 ${scope.feedbackTimeSeconds!.toFixed(2)} 秒处的实际画面，仅作对话讨论依据。`] : undefined, true, true, phase === "discussion" ? "正在讨论脚本修改需求" : "正在整理脚本修改方案");
+                        const value = await text(ctx, instruction, feedbackFrames.files, false, feedbackFrames.labels, true, true, phase === "discussion" ? "正在讨论脚本修改需求" : "正在整理脚本修改方案");
                         const availableIds = (sourceDraft.storeShots || []).map((shot) => shot.id);
                         const allowedIds = scope.ids?.length ? scope.ids : availableIds.length ? availableIds : ["script"];
                         const plan = phase === "proposal" ? parseTaskChangePlan(value, allowedIds) : undefined;
@@ -1084,7 +1139,7 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                             } as TaskConversation,
                         };
                     } finally {
-                        if (frameUrl) URL.revokeObjectURL(frameUrl);
+                        feedbackFrames.dispose();
                     }
                 }
                 if (matching) {
@@ -1095,26 +1150,12 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 }
                 const seconds = Number(cfg.videoSeconds), limit = videoProfile(cfg, cfg.videoModel).maxImages;
                 const instruction = storeScriptPrompt(sourceDraft, materialList, seconds, limit, scope);
-                let frameUrl: string | undefined;
+                const feedbackFrames = feedback ? await captureStoreFeedbackFrames(sourceDraft.video!, scope!, ctx.signal) : { files: [] as UploadedFile[], labels: [] as string[], dispose() {} };
                 let value: string;
                 try {
-                    let frame: UploadedFile | undefined;
-                    if (feedback && scope!.feedbackTimeSeconds !== undefined) {
-                        const video = sourceDraft.video!;
-                        const blob = video.storageKey ? await getMediaBlob(video.storageKey) : null;
-                        if (!blob) throw new Error("本地成片文件不可用，原稿已保留");
-                        const sourceUrl = URL.createObjectURL(blob);
-                        try {
-                            const image = await captureVideoFrame(sourceUrl, "current", scope!.feedbackTimeSeconds);
-                            frameUrl = URL.createObjectURL(image);
-                            frame = { url: frameUrl, storageKey: "", bytes: image.size, mimeType: "image/png" };
-                        } finally {
-                            URL.revokeObjectURL(sourceUrl);
-                        }
-                    }
-                    value = await text(ctx, instruction, frame ? [frame] : [], false, frame ? [`这是用户指定的已生成成片在 ${scope!.feedbackTimeSeconds!.toFixed(2)} 秒处的实际画面，仅作问题诊断依据。`] : undefined, true, true, feedback ? "正在结合成片反馈调整镜头" : localIds ? "正在修改选定镜头" : "正在规划主题与编写方案");
+                    value = await text(ctx, instruction, feedbackFrames.files, false, feedbackFrames.labels, true, true, feedback ? "正在结合成片反馈调整镜头" : localIds ? "正在修改选定镜头" : "正在规划主题与编写方案");
                 } finally {
-                    if (frameUrl) URL.revokeObjectURL(frameUrl);
+                    feedbackFrames.dispose();
                 }
                 store().patchRecord(ctx.recordId, { step: feedback ? "正在校验反馈修改范围" : "正在校验拍摄方案" });
                 const feedbackResult = feedback ? parseStoreFeedbackResult(value!, sourceDraft, seconds, targetIds) : undefined;
@@ -1123,7 +1164,9 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
                 const turn = scope ? {
                     id: crypto.randomUUID(), request: scope.request, scope: feedbackResult ? `镜头 ${feedbackResult.affectedShotIds.map((id) => (sourceDraft.storeShots || []).findIndex((s) => s.id === id) + 1).join("、")}` : targetIds ? `镜头 ${targetIds.map((id) => (sourceDraft.storeShots || []).findIndex((s) => s.id === id) + 1).join("、")}` : scope.rewrite ? "整稿改写" : "全稿调整",
                     before: continuing ? d.storeScriptSuggestion! : d.script, after: renderStoreShots(shots, d), status: "pending" as const, createdAt: Date.now(),
-                    ...(feedback ? { sourceVideoRecordId: scope!.feedbackVideoRecordId, ...(scope!.feedbackTimeSeconds !== undefined ? { feedbackTimeSeconds: scope!.feedbackTimeSeconds } : {}), understanding: feedbackResult?.understanding } : {}),
+                    ...(feedback ? { sourceVideoRecordId: scope!.feedbackVideoRecordId, ...(scope!.feedbackTimeSeconds !== undefined ? { feedbackTimeSeconds: scope!.feedbackTimeSeconds } : {}), ...(scope!.feedbackTimeRange ? { feedbackTimeRange: scope!.feedbackTimeRange } : {}), understanding: feedbackResult?.understanding } : {}),
+                    ...(scope?.messages ? { discussion: scope.messages } : {}),
+                    ...(scope?.confirmedPlan ? { confirmedPlan: scope.confirmedPlan } : {}),
                 } : undefined;
                 const turns = scope ? [
                     ...(d.storeScriptTurns || []).map((item) => item.status === "pending" ? { ...item, status: "superseded" as const } : item),
@@ -1694,14 +1737,16 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
             if (["content-replace", "store-explore", "viral-recreate", "upscale", "digital-human", "photo-talk", "lipsync"].includes(tool) && error instanceof DOMException && error.name === "AbortError") message.info(error.message);
             else message.error(publicServiceText(error instanceof Error ? error.message : "处理失败"));
         } finally {
+            taskConversationApproval.current = null;
             unsubscribe();
             controllers.delete(controllerKey);
             if (tool === "store-explore") store().setStoreBusy(projectId, false);
             else store().setBusy(tool, false);
         }
     };
-    const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode) =>
+    const run = (stage: string, analysisReview?: ViralAnalysisVersion, scriptRequest?: string, scriptEditMode?: ViralScriptEditMode, approvedQuote?: TaskConversationQuote) =>
         guard(async (signal) => {
+            taskConversationApproval.current = approvedQuote || null;
             if (analysisReview) {
                 const current = read(tool), p = analysisReview.provenance;
                 if (tool !== "viral-recreate" || stage !== "analyze" || !analysisReview.text.trim() || p.mode !== viralAnalysisMode(current, config)
@@ -1976,9 +2021,11 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
         importLink,
         removeMedia,
         run,
-        reviseScript: (request: string, mode: ViralScriptEditMode = "local") => request.trim() ? run("script", undefined, request.trim(), mode) : Promise.resolve(),
-        discussViralScript: (phase: "discussion" | "proposal", messages: TaskConversation["messages"], mode: ViralScriptEditMode = "local") => run("script-dialogue", undefined, JSON.stringify({ phase, messages, mode, contextKey: viralScriptConversationContextKey(read(tool), mode) }), mode),
-        discussStoreScript: (phase: "discussion" | "proposal", scope: StoreScriptScope, messages: TaskConversation["messages"]) => run("script-dialogue", undefined, JSON.stringify({ ...scope, dialoguePhase: phase, messages })),
+        reviseScript: (request: string, mode: ViralScriptEditMode = "local", approvedQuote?: TaskConversationQuote) => request.trim() ? run("script", undefined, request.trim(), mode, approvedQuote) : Promise.resolve(),
+        discussViralScript: (phase: "discussion" | "proposal", messages: TaskConversation["messages"], mode: ViralScriptEditMode = "local", approvedQuote?: TaskConversationQuote) => run("script-dialogue", undefined, JSON.stringify({ phase, messages, mode, contextKey: viralScriptConversationContextKey(read(tool), mode) }), mode, approvedQuote),
+        discussStoreScript: (phase: "discussion" | "proposal", scope: StoreScriptScope, messages: TaskConversation["messages"], approvedQuote?: TaskConversationQuote) => run("script-dialogue", undefined, JSON.stringify({ ...scope, dialoguePhase: phase, messages }), undefined, approvedQuote),
+        approveTaskConversationQuote: (quote?: TaskConversationQuote) => { taskConversationApproval.current = quote || null; },
+        quoteTaskConversation,
         quoteReplacement,
         quoteDigitalHuman,
         quoteUpscale,
