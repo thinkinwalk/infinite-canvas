@@ -9,8 +9,12 @@ description: Implemented changes that still need manual verification
 
 - 探店拍摄方案和爆款复刻的对话工作台不再显示“当前对象、修改范围、来源依据、版本/状态”四张重复卡片；页面保留工作台标题、讨论阶段、实际依据、待确认方案、候选对比及采用/放弃操作。部署校验还会检查旧的任务上下文卡容器标记已移除。
 - 画布 Agent 仅在“对话”页显示紧凑的当前画布/对话上下文；历史、技能、运行记录和连接设置页不显示任务上下文卡片，连接状态仍由顶部连接指示器展示。
-- 手动验收：刷新 `https://studio.lingzhouai.com/video/store-explore`，分别进入探店“对话改编”和爆款复刻“改编脚本”，确认四张卡片已移除，且“开始讨论 → 整理修改方案 → 确认方案并生成候选 → 采用/放弃候选”流程仍可用；再进入 `/canvas` 检查 Agent 各页签显示范围。
-- 本次只调整展示，不改变对话上下文、候选保护、版本记录、画布线程、工具审批或节点写入行为；真实项目多轮模型质量仍需用户手测。部署构建与生产核验结果将在发布完成后补录。
+- 已随 `v0.19.177`（`7863613b14cec1547393d5c2660822ce9ba6b3b6`）提交、推送至 `release/v0.19.60`、打 tag 并发布[正式 GitHub Release](https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.177)。
+- 生产 App `infinite-canvas:v0.19.177`，镜像 ID `sha256:cd56c16b5cd7661bb1bfc707a85c559564f2937f0d65e500adc68fbd8b3fd5b4`。内网 `http://127.0.0.1:3002/api/health` 与公网 `https://studio.lingzhouai.com/api/health` 均返回 `ok`；13 个页面、功能标记、主包移除旧卡片标题及公网/容器资源 SHA-256 一致性通过。JS `/assets/index-BaypaaOq.js`（SHA-256 `166b9bb6ecbae2d720021e243c51427b35f7fad1125d5f338c83ea5c49de7988`），CSS `/assets/index-CaRwZLpg.css`（SHA-256 `418c6572ac7c5896847d5968d9052bdd1f717db6b2899e30fa45594216505441`）。
+- SQLite 在线备份 `quick_check`、数据库结构、表计数、账号和设置保持；180 条既有任务、30,019 项媒体保持。Worker `infinite-canvas-video-worker:v0.19.87`、容器 ID、启动时间、环境变量与挂载未变；无活动云端/Worker 任务、生产渠道配置变更或收费推理。构建前备份 `/opt/infinite-canvas/backups/v0.19.177-prebuild-20261105-120837/`，切换前备份 `/opt/infinite-canvas/backups/v0.19.177-final-20261105-120839/`；部署报告 `/opt/infinite-canvas/releases/v0.19.177-deployment.json`。
+- 首次切换因部署校验仍要求已移除的旧布局 CSS 标记而自动回滚至 v0.19.176；没有继续部署校验或改动生产数据。修复校验器并重新部署后通过，产品 tag 未移动。校验器修复提交 `fc19f53` 已推送到发布分支。
+- 生产浏览器交互未完成：本地 BitBrowser CDP `127.0.0.1:51360` 拒绝连接，因此没有操作原标签页，也没有把 HTTP/资源核验当作 UI 验收。请手动刷新 `https://studio.lingzhouai.com/video/store-explore`，检查探店对话和爆款复刻“改编脚本”均不再显示四张卡片，并确认范围选择、依据、阶段、方案和候选操作正常；再在 `/canvas` 检查上下文仅在 Agent 对话页显示。无需触发收费视频生成。
+- 本次只调整展示，不改变对话上下文、候选保护、版本记录、画布线程、工具审批或节点写入行为；真实项目多轮模型质量仍需用户手测。
 
 ## 通用任务对话工作台完善（v0.19.176）
 
