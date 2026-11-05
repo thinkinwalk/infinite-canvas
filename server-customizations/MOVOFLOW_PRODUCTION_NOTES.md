@@ -15,10 +15,20 @@ This file is the current production handoff for the Infinite Canvas deployment. 
 - Compose file: /opt/infinite-canvas/docker-compose.deploy.yml
 - Container name: infinite-canvas
 - Data directory: /opt/infinite-canvas/data
-- Current production image: infinite-canvas:v0.19.171
-- Current production source: tag v0.19.171, commit 46ac0a23f4df78865b22a0e0cc8757f873efa102
+- Current production image: infinite-canvas:v0.19.173
+- Current production source: tag v0.19.173, commit c2f3e36b56e949e2a4d1a8f6f4e3ebc536e41355
 - Current worker image: infinite-canvas-video-worker:v0.19.87
 - Current worker source mount: /opt/infinite-canvas/releases/v0.19.167-worker/
+
+## v0.19.173 deployment
+
+- Product tag `v0.19.173`, source `c2f3e36b56e949e2a4d1a8f6f4e3ebc536e41355`, is pushed to `release/v0.19.60` and formally released at https://github.com/thinkinwalk/infinite-canvas/releases/tag/v0.19.173. The release moves conversation quotes into the conversation panel with a shared mouse/Enter confirmation path, supports start/middle/end frame sampling for a selected feedback range, records feedback context with adopted revisions, and clarifies that unlinked material references do not mean source files were deleted.
+- Production image `infinite-canvas:v0.19.173`, ID `sha256:0a057ef660ab313605056cc9b9e9b6a809fb4c4013003f9a91751c80d586ddff`, was built from the exact tag on the server. Public and internal health, all thirteen routes, feature markers, and public/container asset hashes passed. JS `/assets/index-DQIfobQ5.js` SHA-256 `5913fb6fc489a79cf39550498cdddaabdc8c3e2988ffe172568930f8bcec3e3e`; CSS `/assets/index-BUJJlCCI.css` SHA-256 `38f635403d4cf1e6d3ea358cacf1c55286bf7cbd04d6840fc2aefa48888234c3`.
+- Worker image `infinite-canvas-video-worker:v0.19.87`, container identity, mounts, environment, and start time `2026-11-04T02:38:32.969372688Z` were preserved. Backend SHA-256 `a1bc4557d32548f13b05d1b0aadba66ca2d8f7475728b96699ac2223874bdd61` is unchanged.
+- SQLite online backup passed `PRAGMA quick_check`; schema, table counts, protected account/settings values, 180 task/job JSON hashes, and 29,769 existing non-database file snapshot entries were preserved. No active cloud/Worker tasks or paid inference occurred; no production model/channel settings changed.
+- The first switch attempt stopped on an outdated bundle-marker assertion and automatically restored v0.19.172. After correcting that assertion, the exact-tag build and deployment passed. Successful prebuild backup `/opt/infinite-canvas/backups/v0.19.173-prebuild-20261105-014717/`; final backup `/opt/infinite-canvas/backups/v0.19.173-final-20261105-014719/`. Report `/opt/infinite-canvas/releases/v0.19.173-deployment.json`; helper `/opt/infinite-canvas/releases/deploy-conversation-v173.py`.
+- BitBrowser isolated CDP smoke loaded the production store-explore route at 1440/390/320px without horizontal overflow or runtime errors. Only GET API calls were allowed. No project was opened, so conversation controls and real feedback workflow were not exercised; real-project interaction, charge confirmation, model quality, and adoption/restore remain for user hand testing.
+- Rollback restores the final-backup Compose and recreates App only, retaining current live data/media and the unchanged Worker.
 
 ## v0.19.171 deployment
 
