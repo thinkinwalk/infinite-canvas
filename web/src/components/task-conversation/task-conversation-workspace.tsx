@@ -13,7 +13,7 @@ export type TaskConversationWorkspaceProps = {
     border: CSSProperties;
 };
 
-export function TaskConversationContextHeader({ context, muted, border, right, gridClassName = "grid-cols-2 gap-2 text-xs" }: { context: Partial<TaskConversationAdapter["context"]>; muted: CSSProperties; border: CSSProperties; right?: ReactNode; gridClassName?: string }) {
+export function TaskConversationContextHeader({ context, muted, right, compact = false }: { context: Partial<TaskConversationAdapter["context"]>; muted: CSSProperties; right?: ReactNode; compact?: boolean }) {
     return <div className="space-y-3">
         <header className="flex shrink-0 items-start justify-between gap-3">
             <div className="min-w-0">
@@ -21,16 +21,10 @@ export function TaskConversationContextHeader({ context, muted, border, right, g
                     <MessageSquare size={17} aria-hidden />
                     <h2 className="m-0 text-base font-semibold">{context.taskTitle || "通用任务对话"}</h2>
                 </div>
-                <p className="mt-1 text-xs" style={muted}>{context.business || "当前业务"} · {context.description || "围绕当前任务讨论"}</p>
+                <p className="mt-1 text-xs" style={muted}>{compact ? [context.business, context.subject, context.description].filter(Boolean).join(" · ") : `${context.business || "当前业务"} · ${context.description || "围绕当前任务讨论"}`}</p>
             </div>
             {right}
         </header>
-        <div className={`grid ${gridClassName}`} aria-label="任务上下文">
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>当前对象</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.subject || "当前任务"}>{context.subject || "当前任务"}</strong></div>
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>修改范围</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.scope || "待讨论"}>{context.scope || "待讨论"}</strong></div>
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>来源依据</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.source || "当前内容"}>{context.source || "当前内容"}</strong></div>
-            <div className="min-w-0 border p-2" style={border}><span className="block" style={muted}>版本/状态</span><strong className="block whitespace-normal break-words [overflow-wrap:anywhere]" title={context.version || "当前草稿"}>{context.version || "当前草稿"}</strong></div>
-        </div>
     </div>;
 }
 
@@ -86,7 +80,7 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
     const actionLabel = currentQuote?.action === "message" ? "本轮讨论" : currentQuote?.action === "plan" ? "整理方案" : "生成候选";
     return (
         <section className="flex min-h-0 flex-1 flex-col gap-3" aria-label="通用任务对话工作台">
-            <TaskConversationContextHeader context={{ ...adapter.context, description: `${context || "围绕当前任务讨论"} · 只讨论和确认，不会自动覆盖正式内容` }} muted={muted} border={border} right={adapter.undo && <Button type="text" size="small" icon={<Undo2 size={15} />} disabled={locked || busy} onClick={adapter.undo}>撤销</Button>} />
+            <TaskConversationContextHeader context={{ ...adapter.context, description: `${context || "围绕当前任务讨论"} · 只讨论和确认，不会自动覆盖正式内容` }} muted={muted} right={adapter.undo && <Button type="text" size="small" icon={<Undo2 size={15} />} disabled={locked || busy} onClick={adapter.undo}>撤销</Button>} />
 
             <div className="flex items-center gap-1 overflow-x-auto border-y py-2" style={border} aria-label="对话阶段">
                 {(["discussion", "proposal", "candidate"] as const).map((item, index) => <div key={item} className="flex shrink-0 items-center gap-1 text-xs"><Tag color={phase === item ? "blue" : index < (["discussion", "proposal", "candidate"] as const).indexOf(phase) ? "green" : undefined}>{index + 1}. {phaseLabels[item]}</Tag>{index < 2 && <span style={muted}>›</span>}</div>)}

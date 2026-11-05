@@ -1318,22 +1318,18 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const connectionStatusColor = connectError ? "#dc2626" : connected ? "#16a34a" : enabled ? "#d97706" : theme.node.muted;
     const content = (
         <>
-            <div className="shrink-0 border-b px-3 py-3" style={{ borderColor: theme.node.stroke }}>
+            {activeTab === "chat" && <div className="shrink-0 border-b px-3 py-2" style={{ borderColor: theme.node.stroke }}>
                 <TaskConversationContextHeader
+                    compact
                     context={{
                         business: "无限画布",
                         taskTitle: "画布任务对话",
-                        subject: activeThreadId ? threads.find((thread) => thread.id === activeThreadId)?.name || "当前 Agent 线程" : "当前画布",
-                        scope: activeTab === "chat" ? "当前选区与画布工具" : activeTab === "history" ? "Agent 对话历史" : activeTab === "skills" ? "Agent 技能" : activeTab === "log" ? "Agent 运行记录" : "Agent 连接设置",
-                        source: "当前画布项目",
-                        version: conversation.status === "ready" || conversation.status === "warning" ? "对话已连接" : "等待连接",
-                        description: "Agent 与当前画布共享上下文；节点写入受现有权限控制",
+                        subject: activeThreadId ? `当前对话：${threads.find((thread) => thread.id === activeThreadId)?.name || "Agent 线程"}` : "当前画布",
+                        description: "共享画布上下文；节点写入仍受权限控制",
                     }}
                     muted={{ color: theme.node.muted }}
-                    border={{ borderColor: theme.node.stroke }}
-                    gridClassName="grid-cols-2 gap-2 text-xs"
                 />
-            </div>
+            </div>}
             <AgentPanelTabs
                 value={activeTab}
                 theme={theme}

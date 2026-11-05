@@ -192,7 +192,7 @@ try:
     markers = [
         "根据成片反馈调整方案", "按成片反馈定位", "AI 对问题的理解", "不发送成片画面", "来源任务：",
         "通用任务对话工作台", "拍摄方案对话工作台", "改编脚本对话工作台", "画布任务对话",
-        "当前对象", "修改范围", "来源依据", "版本/状态", "讨论需求", "确认方案", "预览候选",
+        "讨论需求", "确认方案", "预览候选",
         "开始讨论", "整理修改方案", "确认方案并生成候选", "采用候选", "放弃候选",
         "待确认修改方案", "候选修改标记", "当前正式内容", "待确认候选", "费用确认", "确认费用并继续",
         "起点、中点和终点共 3 帧", "这只表示方案里的引用未关联到当前可发送图片，不代表文件已删除。",
@@ -200,6 +200,7 @@ try:
         "本轮拟发送：", "依据已变化，需重新生成", "候选已过期", "根据成片反馈调整方案",
     ]
     assert all(marker in bundle for marker in markers), "Missing release preview interaction marker"
+    assert "当前对象" not in bundle, "Obsolete task context cards are still present"
     assert "音频保存在当前浏览器的素材库" in bundle, "Existing v0.19.170 feature marker is missing"
     pages = ["/", "/admin/settings", "/admin/models", "/video", "/image", "/cases", "/cases/image-variations", "/video/content-replace", "/video/viral-recreate", "/video/voice-extract", "/video/store-explore", "/assets", "/prompts"]
     for page in pages:
