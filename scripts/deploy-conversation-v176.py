@@ -12,7 +12,7 @@ from urllib.request import urlopen
 
 VERSION = sys.argv[2] if len(sys.argv) > 2 else "v0.19.176"
 PREVIOUS_VERSION = sys.argv[3] if len(sys.argv) > 3 else "v0.19.175"
-PREVIOUS = "infinite-canvas:" + PREVIOUS_VERSION.removeprefix("v")
+PREVIOUS = "infinite-canvas:" + (PREVIOUS_VERSION if PREVIOUS_VERSION.startswith("v") else "v" + PREVIOUS_VERSION)
 EXPECTED_SOURCE = sys.argv[1]
 assert re.fullmatch(r"v\d+\.\d+\.\d+", VERSION)
 assert re.fullmatch(r"v?\d+\.\d+\.\d+", PREVIOUS_VERSION)
