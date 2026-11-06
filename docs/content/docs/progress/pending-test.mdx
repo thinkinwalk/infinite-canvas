@@ -5,11 +5,14 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-## 对话讨论阶段改为连续推进
+## 对话讨论阶段改为连续推进（v0.19.179）
 
 - 探店拍摄方案和爆款复刻「改编脚本」的讨论阶段改为连续对话：用户提问直接给具体回答，不再改写成确认问题；用户提改动时不再复述已确认的范围和保留项，只补问仍缺的一项；需要提问时一轮最多一个问题且不重复已问过的问题。
 - 本次只改讨论阶段的提示词，不改历史记录传递、费用确认、方案确认、候选生成、正式稿保护或版本记录逻辑。对话记录仍按全部消息逐条拼入提示词，未做截断。
-- 待手测：刷新 `https://studio.lingzhouai.com/video/store-explore` 进入探店对话，连续提问两轮（例如先问表演风格建议、再问镜头节奏），确认第二轮直接给出建议而不是重新确认范围；确认此前说过的镜头范围和保留项不再被重复复述。再在爆款复刻「改编脚本」重复同样的两轮提问。无需生成视频或触发收费生成。
+- 已提交 `d6af7e222869a05b6b3786a52b3c0c36e31c2137`，推送 `release/v0.19.60` 与 `v0.19.179` tag。
+- 生产 App `infinite-canvas:v0.19.179`（`sha256:6defb53a6413ddae4253ec072600f1132a78cd1d44ea82bdfc5074b8cc655774`）；内网与公网健康、13 个页面、对话功能标记（含本次新提示词文案）和公网/容器 JS/CSS SHA-256 一致性通过，后端二进制与 v0.19.178 一致。JS `/assets/index-1YLAA8vW.js`（SHA-256 `7d7704829aa4889d7ec6995041fa7701a4f43a8d4ce1e87b14a5bf1bac17012c`），CSS `/assets/index-CaRwZLpg.css`（SHA-256 `418c6572ac7c5896847d5968d9052bdd1f717db6b2899e30fa45594216505441`）。
+- SQLite `quick_check`、结构、表计数、账号/设置保持；180 条既有任务、30,120 项媒体保持。Worker `infinite-canvas-video-worker:v0.19.87`、容器、启动时间、环境变量和挂载未变；无活动任务、生产渠道配置变更或收费推理。构建前备份 `/opt/infinite-canvas/backups/v0.19.179-prebuild-20261106-084551`，切换前备份 `/opt/infinite-canvas/backups/v0.19.179-final-20261106-084742`；部署报告 `/opt/infinite-canvas/releases/v0.19.179-deployment.json`。回滚恢复最终备份 Compose 并仅重建 App。
+- 待手测（由用户在线上完成）：刷新 `https://studio.lingzhouai.com/video/store-explore` 进入探店对话，连续提问两轮（例如先问表演风格建议、再问镜头节奏），确认第二轮直接给出建议而不是重新确认范围；确认此前说过的镜头范围和保留项不再被重复复述。再在爆款复刻「改编脚本」重复同样的两轮提问。无需生成视频或触发收费生成。
 - 已知未处理：已确认结论没有单独的清单字段，长对话仍可能漂回复述；对话依据变化（换素材、应用候选）仍会清空对话历史。
 
 ## 对话界面精简优化（v0.19.178）
