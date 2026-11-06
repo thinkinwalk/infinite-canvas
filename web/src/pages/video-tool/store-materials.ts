@@ -1,7 +1,29 @@
-import type { StoreMaterialSuggestion, VideoDraft } from "@/types/video-workbench";
+import type { StoreMaterialSuggestion, VideoDraft, WorkbenchMedia } from "@/types/video-workbench";
 
 export const storeCandidateMaterials = (d: Pick<VideoDraft, "media">) => d.media.filter((m) => m.kind === "image" && ["reference", "model", "first-frame"].includes(m.role));
 export const storeSelectedIds = (d: Pick<VideoDraft, "storeShots" | "storeReferenceIds">) => [...new Set(d.storeShots?.length ? d.storeShots.flatMap((s) => s.materialIds) : d.storeReferenceIds || [])];
+
+// 素材被删除或替换后，方案里可能残留指向已不存在素材的编号。这里把所有引用点按剩余素材统一收口，
+// 新增持有素材编号的字段时只改这里，不要在各个删除入口分别清理。
+export function pruneStoreMediaReferences(d: VideoDraft, media: WorkbenchMedia[]): Partial<VideoDraft> {
+    const kept = new Set(media.map((m) => m.id));
+    const ids = (list: string[]) => list.filter((id) => kept.has(id));
+    const keptFrame = (id: string) => (kept.has(id) ? id : undefined);
+    const shots = (list: { materialIds: string[] }[]) => list.map((shot) => ({ ...shot, materialIds: ids(shot.materialIds) }));
+    const next: Partial<VideoDraft> = {};
+    if (d.storeShots) next.storeShots = shots(d.storeShots) as typeof d.storeShots;
+    if (d.storeReferenceIds) next.storeReferenceIds = ids(d.storeReferenceIds);
+    if (d.storeFirstFrameId) next.storeFirstFrameId = keptFrame(d.storeFirstFrameId);
+    if (d.storeLastFrameId) next.storeLastFrameId = keptFrame(d.storeLastFrameId);
+    if (d.storeShotSuggestion) next.storeShotSuggestion = shots(d.storeShotSuggestion) as typeof d.storeShotSuggestion;
+    if (d.storeMaterialSuggestion) {
+        const suggestion = d.storeMaterialSuggestion;
+        next.storeMaterialSuggestion = { ...suggestion, shots: suggestion.shots.map((shot) => ({ ...shot, materialIds: ids(shot.materialIds) })), referenceIds: ids(suggestion.referenceIds) };
+    }
+    if (d.storePlanVersions) next.storePlanVersions = d.storePlanVersions.map((version) => ({ ...version, shots: shots(version.shots) as typeof version.shots, referenceIds: version.referenceIds ? ids(version.referenceIds) : undefined }));
+    return next;
+}
+
 export function storeUnlinkedMaterialIds(d: Pick<VideoDraft, "media" | "storeShots" | "storeReferenceIds">) {
     const candidates = new Set(storeCandidateMaterials(d).map((m) => m.id));
     return storeSelectedIds(d).filter((id) => !candidates.has(id));

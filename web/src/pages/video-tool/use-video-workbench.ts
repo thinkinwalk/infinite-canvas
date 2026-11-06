@@ -20,7 +20,7 @@ import { inferVideoRatio } from "@/lib/media-size";
 import { quoteManagedFixed } from "@/services/api/model-management";
 import { storeMaterialLabels, storeVideoConfig, storeVideoError, storeVideoMaterials, storeVideoPrompt, storeVideoSettings } from "./store-explore-request";
 import { parseStoreFeedbackResult, parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeKeyframeKey, storePlanKey, storeSpeechKey, storeSubtitleSource } from "./store-explore-plan";
-import { parseStoreMaterialSuggestion, storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
+import { parseStoreMaterialSuggestion, pruneStoreMediaReferences, storeCandidateMaterials, storeCast, storeCastReferenceError, storeSelectedIds } from "./store-materials";
 import { storeFeedbackRangeError, storeFeedbackSampleTimes, storeScriptConversationContextKey, storeScriptDialoguePrompt, storeScriptPrompt, type StoreScriptScope } from "./store-script";
 import { storePersonVoices, storeVoiceFileError, storeVoiceFileFormatError, storeVoiceSampleError } from "./store-person-voice";
 import { viralAnalysisMode, viralInput, viralMaterialLabels, viralReference, viralScriptConversationContextKey, viralScriptConversationPrompt, viralScriptPrompt, viralSettingsRequireScriptReview, viralSource, viralVideoConfig, viralVideoError, viralVideoMaterials, viralVideoPrompt } from "./viral-recreate-request";
@@ -288,6 +288,8 @@ export function useVideoWorkbench(tool: VideoTool, storeEditable = true) {
         }
         if (tool === "store-explore") {
             const current = read(tool);
+            // 素材新增、删除或替换后，方案和历史版本里的引用统一按剩余素材收口，避免留下指向已删除素材的编号。
+            if (value.media) value = { ...pruneStoreMediaReferences(current, value.media), ...value };
             const mentions = value.media
                 ? {
                       instructions: remapMaterialMentions(current.instructions, storeMaterialLabels(current), storeMaterialLabels({ ...current, ...value })),

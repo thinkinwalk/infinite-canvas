@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { emptyVideoDraft, type StoreShot, type WorkbenchMedia } from "../src/types/video-workbench";
-import { storeSelectedMaterialError, storeUnlinkedMaterialIds } from "../src/pages/video-tool/store-materials";
+import { pruneStoreMediaReferences, storeSelectedMaterialError, storeUnlinkedMaterialIds } from "../src/pages/video-tool/store-materials";
 import { parseStoreFeedbackResult, parseStoreShots, renderStoreShots, storeCaptionError, storeExploreInput, storeFreeScriptError, storePlanError, storePlanKey, storeSpeechKey, storeSubtitleSource } from "../src/pages/video-tool/store-explore-plan";
 
 if (!globalThis.localStorage) {
@@ -145,4 +145,26 @@ test("final prompt excludes superseded analysis and requests and maps only submi
     expect(prompt).not.toContain("旧要求");
     expect(prompt).toContain("生成首帧");
     expect(prompt).toContain("无直接图片输入");
+});
+test("removing a material prunes every reference that pointed at it", () => {
+    const d = {
+        ...draft(),
+        storeReferenceIds: ["store", "product"],
+        storeFirstFrameId: "store",
+        storeLastFrameId: "gone",
+        storeMaterialSuggestion: { shots: [{ id: "opening", materialIds: ["gone", "store"] }], referenceIds: ["gone"], base: "", mode: "fill" as const },
+        storePlanVersions: [{ id: "v1", script: "", shots: [{ ...shots[0], materialIds: ["gone"] }], referenceIds: ["gone", "product"], createdAt: 1 }],
+    };
+    const pruned = pruneStoreMediaReferences(d, [image("product")]);
+    expect(pruned.storeShots?.[0].materialIds).toEqual([]);
+    expect(pruned.storeShots?.[1].materialIds).toEqual(["product"]);
+    expect(pruned.storeReferenceIds).toEqual(["product"]);
+    expect(pruned.storeFirstFrameId).toBeUndefined();
+    expect(pruned.storeLastFrameId).toBeUndefined();
+    expect(pruned.storeMaterialSuggestion?.shots[0].materialIds).toEqual([]);
+    expect(pruned.storeMaterialSuggestion?.referenceIds).toEqual([]);
+    expect(pruned.storePlanVersions?.[0].shots[0].materialIds).toEqual([]);
+    expect(pruned.storePlanVersions?.[0].referenceIds).toEqual(["product"]);
+    // 收口后不再存在失效引用，可以直接通过选中素材校验
+    expect(storeUnlinkedMaterialIds({ ...d, ...pruned, media: [image("product")] })).toEqual([]);
 });
