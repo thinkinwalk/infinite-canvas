@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert, App, Button, Collapse, Dropdown, Empty, Grid, Input, InputNumber, Mentions, Modal, Segmented, Select, Slider, Space, Spin, Switch, Tabs, Tooltip, Upload, theme } from "antd";
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, History, Images, Library, LoaderCircle, Mic, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Expand, FolderPlus, Grid2X2, History, Images, Library, LoaderCircle, Mic, Pencil, Plus, RefreshCw, Save, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
@@ -74,6 +74,7 @@ function StoreProjectEditor() {
         tabScroll = useRef<Record<string, number>>({});
     const planHeading = useRef<HTMLHeadingElement>(null),
         planSuggestion = useRef<HTMLElement>(null),
+        shotRefs = useRef<Record<string, HTMLElement | null>>({}),
         runningPlan = useRef<string | null>(null);
     const setTab = (next: string) => {
         if (next === tab) return;
@@ -160,6 +161,17 @@ function StoreProjectEditor() {
         audioMode = d.storeAudioMode || "source";
     const candidateIds = new Set(candidates.map((media) => media.id));
     const unlinkedMaterialCount = storeUnlinkedMaterialIds(d).length;
+    const unlinkedTargets = shots
+        .map((shot, index) => ({ key: shot.id, label: `镜头 ${index + 1}`, count: shot.materialIds.filter((id) => !candidateIds.has(id)).length }))
+        .filter((target) => target.count > 0)
+        .concat((d.storeReferenceIds || []).some((id) => !candidateIds.has(id)) ? [{ key: "", label: "本次参考图", count: 1 }] : []);
+    const jumpToShot = (key: string) => {
+        const target = key ? shotRefs.current[key] : planHeading.current, scroll = mainScroll.current;
+        if (!target || !scroll) return;
+        const top = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+        scroll.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+        target.focus({ preventScroll: true });
+    };
     const pendingScriptTurn = [...(d.storeScriptTurns || [])].reverse().find((turn) => turn.status === "pending");
     const feedbackScope = Boolean(d.storeFeedbackSourceRecordId);
     const feedbackSourceRecord = feedbackScope ? allStoreRecords.find((record) => record.id === d.storeFeedbackSourceRecordId) : undefined;
@@ -529,7 +541,25 @@ function StoreProjectEditor() {
         setMaterialSearch("");
         setMaterialPicker({ shotId, ids: shotId ? shots.find((s) => s.id === shotId)?.materialIds || [] : d.storeReferenceIds || [] });
     };
-    const materialThumbnails = (ids: string[], onClick: () => void, label: string, need?: string) => (
+    const unlinkedReason = (id: string) => {
+        const media = d.media.find((m) => m.id === id);
+        if (!media) return "这张图已不在项目里，无法作为参考发送";
+        if (media.kind !== "image") return `这张${media.kind === "video" ? "视频" : "音频"}不能作为参考图发送`;
+        return media.role === "product" ? "这张图已改为商品图，不能再作为参考发送" : "这张图的用途已变化，不能再作为参考发送";
+    };
+    const unlinkedPlaceholders = (ids: string[], onPick: () => void, onRemove: () => void) =>
+        ids.filter((id) => !candidateIds.has(id)).map((id) => {
+            const media = d.media.find((m) => m.id === id);
+            return (
+                <div key={id} className="flex min-h-14 flex-wrap items-center gap-2 rounded border border-dashed px-2 py-1.5" style={{ borderColor: token.colorError }}>
+                    <AlertTriangle size={14} style={{ color: token.colorError }} />
+                    <span className="text-xs" style={{ color: token.colorError }}>{media ? `「${media.name}」` : ""}{unlinkedReason(id)}</span>
+                    <Button size="small" type="link" className="!px-1" disabled={locked} onClick={onPick}>重新选择</Button>
+                    <Button size="small" type="link" className="!px-1" disabled={locked} onClick={onRemove}>移除</Button>
+                </div>
+            );
+        });
+    const materialThumbnails = (ids: string[], onClick: () => void, label: string, need?: string, onRemove?: () => void) => (
         <div className="flex flex-wrap items-center gap-2" aria-label={label}>
             {ids.filter((id) => candidateIds.has(id)).map((id) => {
                 const m = candidates.find((v) => v.id === id);
@@ -541,7 +571,7 @@ function StoreProjectEditor() {
                     </Tooltip>
                 ) : null;
             })}
-            {ids.some((id) => !candidateIds.has(id)) && <Button size="small" type="link" disabled={locked} onClick={onClick}>{ids.filter((id) => !candidateIds.has(id)).length} 个引用待关联 · 检查</Button>}
+            {onRemove && unlinkedPlaceholders(ids, onClick, onRemove)}
             <Tooltip title="添加或更换参考图片">
                 <Button aria-label={label} type="text" disabled={locked} icon={<Plus size={18} />} onClick={onClick} className="!h-14 !w-14 shrink-0" />
             </Tooltip>
@@ -925,6 +955,7 @@ function StoreProjectEditor() {
         onInput: setRequest,
         sendMessage: sendScriptMessage,
         organizePlan: organizeScriptPlan,
+        updatePlan: (plan) => { if (scriptConversation) wb.patch({ storeScriptConversation: { ...scriptConversation, plan } }); },
         generateCandidate: confirmScriptPlan,
         applyCandidate: adopt,
         discardCandidate: discardScriptSuggestion,
@@ -1033,7 +1064,13 @@ function StoreProjectEditor() {
                                         </Space>
                                     </div>
                                     {d.storeScriptStale && d.script && <Alert type="warning" title="资料或规格已变化，原方案已保留，请核对后调整" />}
-                                    {unlinkedMaterialCount > 0 && <Alert type="warning" showIcon title={`方案中有 ${unlinkedMaterialCount} 个素材引用未关联到当前可用图片`} description="这只表示方案里的引用未关联到当前可发送图片，不代表文件已删除。若素材仍在素材库，可在对应镜头重新关联；否则可清除未关联引用。" />}
+                                    {unlinkedMaterialCount > 0 && unlinkedTargets.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: token.colorError }}>
+                                            <AlertTriangle size={14} />
+                                            <span>{unlinkedTargets.map((t) => t.label).join("、")} 有 {unlinkedMaterialCount} 张参考图不可用，无法生成</span>
+                                            {unlinkedTargets.length > 1 && <Button size="small" type="link" className="!px-1 !text-xs" onClick={() => jumpToShot(unlinkedTargets[0].key)}>定位到{unlinkedTargets[0].label}</Button>}
+                                        </div>
+                                    )}
                                     {d.script && candidates.length > 0 && mode === "reference" && profile.maxImages > 0 && (overLimit || !shots.length || shots.some((s) => !s.materialIds.length)) && (
                                         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                                             <span style={muted}>{overLimit ? `已选 ${actualMaterials.length} 张，当前模型最多 ${profile.maxImages} 张` : "可用已有素材为镜头配图"}</span>
@@ -1082,7 +1119,7 @@ function StoreProjectEditor() {
                                     )}
                                     {shots.length
                                         ? shots.map((s, i) => (
-                                              <article key={s.id} className="space-y-3 border-b pb-4" style={border}>
+                                              <article key={s.id} ref={(el) => { shotRefs.current[s.id] = el; }} tabIndex={-1} className="space-y-3 border-b pb-4" style={border}>
                                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                                       <strong className="text-sm font-medium">镜头 {i + 1}</strong>
                                                       <div className="flex flex-wrap items-center gap-1">
@@ -1096,11 +1133,11 @@ function StoreProjectEditor() {
                                                       </div>
                                                   </div>
                                                   <Input.TextArea aria-label={`镜头${i + 1}画面`} autoSize={{ minRows: 2 }} value={s.visual} disabled={locked} onChange={(e) => updateShot(s.id, { visual: e.target.value })} />
-                                                  {materialThumbnails(s.materialIds, () => openMaterialPicker(s.id), `镜头${i + 1}素材`, s.referenceNeed)}
+                                                  {materialThumbnails(s.materialIds, () => openMaterialPicker(s.id), `镜头${i + 1}素材`, s.referenceNeed, () => updateShot(s.id, { materialIds: s.materialIds.filter((id) => candidateIds.has(id)) }))}
                                                   <Input.TextArea aria-label={`镜头${i + 1}台词`} autoSize={{ minRows: 1 }} placeholder="台词（可选）" disabled={locked} value={s.dialogue} onChange={(e) => updateShot(s.id, { dialogue: e.target.value })} />
                                               </article>
                                           ))
-                                        : d.script && <>{mentions("script", 12)}{mode === "reference" && materialThumbnails(d.storeReferenceIds || [], () => openMaterialPicker(null), "本次参考图")}</>}
+                                        : d.script && <>{mentions("script", 12)}{mode === "reference" && materialThumbnails(d.storeReferenceIds || [], () => openMaterialPicker(null), "本次参考图", undefined, () => wb.edit({ storeReferenceIds: (d.storeReferenceIds || []).filter((id) => candidateIds.has(id)) }, "video"))}</>}
                                     <Button
                                         size="small"
                                         disabled={locked || Boolean(d.script && !shots.length)}

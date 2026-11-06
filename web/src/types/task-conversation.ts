@@ -63,6 +63,7 @@ export type TaskConversationAdapter = {
     sendMessage: (quote?: TaskConversationQuote) => void | Promise<void>;
     organizePlan: (quote?: TaskConversationQuote) => void | Promise<void>;
     generateCandidate: (quote?: TaskConversationQuote) => void | Promise<void>;
+    updatePlan?: (plan: TaskChangePlan) => void;
     applyCandidate?: () => void | Promise<void>;
     discardCandidate?: () => void | Promise<void>;
     undo?: () => void;

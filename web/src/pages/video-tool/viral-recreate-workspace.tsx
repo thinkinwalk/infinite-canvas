@@ -1278,6 +1278,7 @@ function ViralTaskWorkspace() {
         onInput: (value) => wb.patch({ viralScriptChatInput: value }),
         sendMessage: sendScriptMessage,
         organizePlan: organizeScriptPlan,
+        updatePlan: (plan) => { if (scriptConversation) wb.patch({ viralScriptConversation: { ...scriptConversation, plan } }); },
         generateCandidate: confirmScriptPlan,
         applyCandidate: applyScriptCandidate,
         discardCandidate: discardScriptCandidate,

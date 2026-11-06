@@ -1,8 +1,8 @@
-import { Button, Empty, Input, theme } from "antd";
-import { Check, ChevronDown, MessageSquare, Send, Sparkles, Undo2, X } from "lucide-react";
+import { Button, Empty, Input, Modal, theme } from "antd";
+import { Check, ChevronDown, MessageSquare, Maximize2, Send, Sparkles, Undo2, X } from "lucide-react";
 import { diffArrays } from "diff";
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import type { TaskConversationAdapter, TaskConversationQuote } from "@/types/task-conversation";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import type { TaskChangePlan, TaskConversationAdapter, TaskConversationQuote } from "@/types/task-conversation";
 import { taskConversationDiffRows, taskConversationPlanText, taskConversationQuoteError } from "@/lib/task-conversation";
 
 export type ConversationAction = "message" | "plan" | "candidate";
@@ -51,6 +51,21 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
     const [pendingQuote, setPendingQuote] = useState<{ action: ConversationAction; key: string; quote: TaskConversationQuote; changed?: boolean }>();
     const [quoting, setQuoting] = useState(false);
     const [quoteError, setQuoteError] = useState("");
+    const [planDraft, setPlanDraft] = useState<TaskChangePlan>();
+    const planText = conversation?.plan ? taskConversationPlanText(conversation.plan) : "";
+    useEffect(() => {
+        if (!planText) setPlanDraft(undefined);
+    }, [planText]);
+    const savePlanDraft = () => {
+        if (!planDraft?.summary.trim() || !planDraft.changes.every((change) => change.change.trim())) return;
+        adapter.updatePlan?.({
+            ...planDraft,
+            summary: planDraft.summary.trim(),
+            changes: planDraft.changes.map((change) => ({ ...change, change: change.change.trim(), preserve: change.preserve.trim() })),
+            unchanged: planDraft.unchanged.filter((item) => item.trim()),
+        });
+        setPlanDraft(undefined);
+    };
     const actionKey = (action: ConversationAction) => JSON.stringify([action, adapter.context, input, conversation?.messages, conversation?.plan]);
     const currentQuote = pendingQuote && pendingQuote.key === actionKey(pendingQuote.action) ? pendingQuote : undefined;
     const execute = (action: ConversationAction, approvedQuote?: TaskConversationQuote) => {
@@ -124,7 +139,13 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
                 {conversation?.messages.map((message) => <div key={message.id} className={`max-w-[94%] space-y-1 border p-3 text-sm [overflow-wrap:anywhere] ${message.role === "user" ? "ml-auto" : "mr-auto"}`} style={border}><span className="text-xs" style={muted}>{message.role === "user" ? "你" : "助手"}</span><p className="m-0 whitespace-pre-wrap">{message.text}</p></div>)}
             </div>
 
-            {conversation?.plan && <div className="max-h-40 space-y-2 overflow-y-auto border-l-2 pl-3" style={{ borderColor: "var(--ant-color-primary)" }} aria-label="已整理修改方案"><strong className="text-sm">待确认方案</strong><p className="m-0 whitespace-pre-wrap text-sm">{taskConversationPlanText(conversation.plan)}</p></div>}
+            {conversation?.plan && <div className="max-h-40 space-y-2 overflow-y-auto border-l-2 pl-3" style={{ borderColor: "var(--ant-color-primary)" }} aria-label="已整理修改方案">
+                <div className="flex items-center justify-between gap-2">
+                    <strong className="text-sm">待确认方案</strong>
+                    <Button type="text" size="small" aria-label="放大查看待确认方案" title="放大查看与编辑" icon={<Maximize2 size={14} />} disabled={!adapter.updatePlan} onClick={() => setPlanDraft(structuredClone(conversation.plan!))}>放大</Button>
+                </div>
+                <p className="m-0 whitespace-pre-wrap text-sm">{planText}</p>
+            </div>}
             {candidate && <div className="space-y-2 border-l-2 pl-3 text-xs" style={{ borderColor: token.colorPrimary }} aria-label="候选状态">
                 <strong>候选状态：{candidate.stale ? "依据已变化，需重新生成" : candidate.status === "pending" ? "待你采用" : candidate.status === "applied" ? "已采用" : "已放弃"}</strong>
                 {candidate.summary && <p className="m-0" style={muted}>{candidate.summary}</p>}
@@ -162,6 +183,32 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
                 {quoteError && <p className="m-0 text-xs text-red-600" role="alert">费用暂时无法核对，本轮尚未发送。{quoteError}</p>}
                 {currentQuote && <div className="space-y-2 border p-3 text-sm" aria-label="费用确认"><div className="flex flex-wrap items-baseline justify-between gap-2"><strong>{actionLabel} · {currentQuote.quote.credits.toLocaleString()} 算力点</strong><span className="text-xs" style={muted}>{currentQuote.quote.calculation}</span></div><p className="m-0 text-xs" style={muted}>{currentQuote.quote.details}</p>{currentQuote.changed && <p className="m-0 text-xs text-amber-600">处理范围或费用已变化，请重新核对；当前还没有执行。</p>}<div className="flex gap-2"><Button type="primary" size="small" loading={quoting} disabled={locked} onClick={() => void requestAction(currentQuote.action)}>确认费用并继续</Button><Button size="small" disabled={quoting} onClick={() => setPendingQuote(undefined)}>取消</Button></div></div>}
             </div>
+
+            <Modal
+                open={Boolean(planDraft)}
+                title="待确认方案"
+                width={760}
+                okText="保存修改"
+                cancelText="取消"
+                okButtonProps={{ disabled: locked || !planDraft?.summary.trim() || !planDraft.changes.every((change) => change.change.trim()) }}
+                onOk={savePlanDraft}
+                onCancel={() => setPlanDraft(undefined)}
+                destroyOnHidden
+                styles={{ body: { maxHeight: "calc(100dvh - 220px)", overflowY: "auto" } }}
+            >
+                {planDraft && <div className="space-y-4 text-sm">
+                    <label className="block space-y-1"><span className="text-xs" style={muted}>问题理解</span><Input.TextArea aria-label="问题理解" autoSize={{ minRows: 2 }} value={planDraft.summary} onChange={(event) => setPlanDraft({ ...planDraft, summary: event.target.value })} /></label>
+                    <div className="space-y-1"><span className="text-xs" style={muted}>影响范围</span><p className="m-0">{planDraft.targets.map((target) => target.label).join("、")}</p></div>
+                    {planDraft.changes.map((change, index) => <div key={`${change.targetId}-${index}`} className="space-y-2 border-l-2 pl-3" style={{ borderColor: token.colorPrimary }}>
+                        <strong className="text-sm font-medium">{planDraft.targets.find((target) => target.id === change.targetId)?.label || `修改项 ${index + 1}`}</strong>
+                        <label className="block space-y-1"><span className="text-xs" style={muted}>调整内容</span><Input.TextArea aria-label={`调整内容${index + 1}`} autoSize={{ minRows: 2 }} value={change.change} onChange={(event) => setPlanDraft({ ...planDraft, changes: planDraft.changes.map((item, i) => i === index ? { ...item, change: event.target.value } : item) })} /></label>
+                        <label className="block space-y-1"><span className="text-xs" style={muted}>保留</span><Input.TextArea aria-label={`保留内容${index + 1}`} autoSize={{ minRows: 1 }} value={change.preserve} onChange={(event) => setPlanDraft({ ...planDraft, changes: planDraft.changes.map((item, i) => i === index ? { ...item, preserve: event.target.value } : item) })} /></label>
+                    </div>)}
+                    <label className="block space-y-1"><span className="text-xs" style={muted}>明确不修改（每行一项）</span><Input.TextArea aria-label="明确不修改" autoSize={{ minRows: 2 }} value={planDraft.unchanged.join("\n")} onChange={(event) => setPlanDraft({ ...planDraft, unchanged: event.target.value.split("\n") })} /></label>
+                    {planDraft.evidence?.length ? <div className="space-y-1"><span className="text-xs" style={muted}>成片依据</span>{planDraft.evidence.map((item, index) => <p key={index} className="m-0 text-xs" style={muted}>{item.timeSeconds === undefined ? "" : `${item.timeSeconds.toFixed(2)} 秒：`}{item.description}</p>)}</div> : null}
+                    <p className="m-0 text-xs" style={muted}>保存后仍按这份方案生成候选，正式内容要等你采用候选才会更新。</p>
+                </div>}
+            </Modal>
         </section>
     );
 }
