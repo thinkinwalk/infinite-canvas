@@ -10,7 +10,12 @@ description: Implemented changes that still need manual verification
 - 探店拍摄方案和爆款复刻「改编脚本」在整理出方案后，对话区的「待确认方案」右上角新增「放大」按钮，点击后在弹窗中完整显示方案；弹窗内可直接修改问题理解、每个目标的调整内容与保留项、明确不修改列表，影响范围和成片依据只读展示。
 - 保存的仍是同一份结构化方案，再点「确认方案并生成候选」会按修改后的方案生成；正式内容仍需采用候选后才会更新。取消弹窗不改变已整理方案。
 - `task-conversation.test.ts` 7 项测试通过；全量 TypeScript 检查剩余 8 项错误均在其他未改动模块。
-- 待手测：进入探店或爆款复刻对话，整理出一份方案后点「放大」，确认弹窗内容完整可读；修改一条调整内容并保存，核对对话区摘要同步更新，再生成候选检查按修改后的内容执行；无需生成视频。
+- 已提交 `15ce878618b0655d0f1960b93d502b13262c1694`，推送 `release/v0.19.60` 与 `v0.19.181` tag；GitHub Release 创建因 PAT 缺少仓库 Release 权限（403）未完成，需补权限后手动发布。
+- 生产 App 镜像 `infinite-canvas:v0.19.181`（`sha256:33298d762222423fe7386a9a18ad836a1b59dd67b03b92d3a31d00dbe5910b41`）；内外健康、13 个页面、对话与方案编辑标记、公网/容器 JS/CSS SHA-256 一致性通过，后端二进制与 v0.19.180 一致。JS `/assets/index-BZF4FFPH.js`（`612cd9727ba35c0d48d4ec7a2f62fd4ff12934ba80606d571b55832fa40f1100`），CSS `/assets/index-DjlD4GCu.css`（`980d1c9d1559e0f9c0bc0c8234f1a54b85ef82a5e4f23193e035e5f54ec91a2b`）。
+- SQLite `quick_check`、结构、表计数、账号/设置保持；180 条既有任务、30,122 项媒体保持。Worker `infinite-canvas-video-worker:v0.19.87`、容器、启动时间、环境与挂载未变。备份 `/opt/infinite-canvas/backups/v0.19.181-prebuild-20261106-092343`、`/opt/infinite-canvas/backups/v0.19.181-final-20261106-092346`；部署报告 `/opt/infinite-canvas/releases/v0.19.181-deployment.json`。
+- 首次部署因校验清单仍含已被替换的旧提示文案（「这只表示方案里的引用未关联到当前可发送图片…」）自动回滚到 v0.19.180，更新标记为按镜头的不可用提示后重试通过；说明校验标记要随界面文案变更新，不能沿用上一版文案。
+- 本次同时补齐了未关联参考图的按镜头提示与「定位到镜头」快捷跳转，替换原先笼统的顶部提示条。
+- 待手测：刷新 `https://studio.lingzhouai.com/video/store-explore`，整理出一份方案后点「放大」，确认弹窗内容完整可读；修改一条调整内容并保存，核对对话区摘要同步更新，再生成候选检查按修改后的内容执行。在爆款复刻「改编脚本」重复一次。无需生成视频或触发收费生成。
 
 ## 对话区 0 点时不再确认费用（v0.19.180）
 
