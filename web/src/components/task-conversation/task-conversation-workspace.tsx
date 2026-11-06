@@ -65,9 +65,9 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
         setQuoting(true);
         try {
             const quote = await prepareQuote(action);
-            if (!quote) {
+            if (!quote || quote.credits === 0) {
                 setPendingQuote(undefined);
-                execute(action);
+                execute(action, quote || undefined);
             } else if (currentQuote?.action === action) {
                 if (quote.credits !== currentQuote.quote.credits || quote.calculation !== currentQuote.quote.calculation || quote.details !== currentQuote.quote.details) setPendingQuote({ action, key: actionKey(action), quote, changed: true });
                 else {
