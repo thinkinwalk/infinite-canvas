@@ -10,6 +10,8 @@ description: Implemented changes that still need manual verification
 - 探店素材新增、删除或替换后，`edit()` 会统一调用 `pruneStoreMediaReferences`，把 `storeShots[].materialIds`、`storeReferenceIds`、首尾帧 ID、配图建议及历史版本里的引用按剩余素材收口，不再残留指向已删除图片的编号。
 - 之前出现的「这张图已不在项目里，无法作为参考发送」红框，是因为删除素材只过滤了 `media`、没有清理方案引用；已存在的失效引用仍会显示一次，点「移除」即可清除，新产生的不会再出现。
 - `tests/store-explore-plan.test.ts` 新增删除素材后的收口断言，15 项测试通过；全量 TypeScript 检查仍为其他模块 8 项既有错误。
+- 已提交 `d6d12b2eb4378824534272b07e241231121b1dbb`，推送 `release/v0.19.60` 与 `v0.19.182` tag。生产 App 镜像 `infinite-canvas:v0.19.182`（`sha256:6c903ce62f863988778482053e17c31813373648192c126d8e572aae379b617b`）；内外健康、13 个页面、对话标记和公网/容器 JS/CSS SHA-256 一致性通过，后端二进制与 v0.19.181 一致。JS `/assets/index-DmAzR_6A.js`（`0e97757f24586aed7d4cab807c471eb73b5f2fe1310ec3bd4a78f8b9928dac86`）。
+- SQLite `quick_check`、结构、表计数、账号/设置保持；180 条既有任务、30,122 项媒体保持。Worker `infinite-canvas-video-worker:v0.19.87` 未变。备份 `/opt/infinite-canvas/backups/v0.19.182-prebuild-20261106-095210`、`/opt/infinite-canvas/backups/v0.19.182-final-20261106-095306`；部署报告 `/opt/infinite-canvas/releases/v0.19.182-deployment.json`。
 - 待手测：在探店项目里删除一张已被镜头引用的参考图，确认对应镜头不再出现「不在项目里」的提示；再更换一次人物参考，确认方案里旧人物图引用同步清除、镜头文案序号没有错乱。
 
 ## 待确认方案放大查看与编辑
