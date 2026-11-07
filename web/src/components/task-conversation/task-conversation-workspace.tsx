@@ -1,4 +1,4 @@
-import { Button, Empty, Input, Modal, theme } from "antd";
+import { Button, Empty, Input, Modal, Switch, theme } from "antd";
 import { Check, ChevronDown, MessageSquare, Maximize2, Send, Sparkles, Undo2, X } from "lucide-react";
 import { diffArrays } from "diff";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
@@ -52,6 +52,28 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
     const [quoting, setQuoting] = useState(false);
     const [quoteError, setQuoteError] = useState("");
     const [planDraft, setPlanDraft] = useState<TaskChangePlan>();
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [onlyChanged, setOnlyChanged] = useState(true);
+    const changedCount = comparisonRows.filter((row) => row.changed).length;
+    const renderComparison = (full: boolean) => {
+        const rows = full && onlyChanged ? comparisonRows.filter((row) => row.changed) : comparisonRows;
+        return <>
+            <div className={`sticky top-0 z-10 hidden grid-cols-2 border-b font-medium ${full ? "text-sm" : "text-xs"}`} style={{ background: token.colorBgContainer, borderColor: token.colorBorderSecondary }}><div className="px-3 py-2">当前正式内容</div><div className="border-l px-3 py-2" style={{ borderColor: token.colorBorderSecondary }}>待确认候选</div></div>
+            {rows.map((row, index) => <div key={index} className="grid grid-cols-1 border-b last:border-b-0 md:grid-cols-2" style={border}>
+                {(["before", "after"] as const).map((side) => {
+                    const left = side === "before", value = row[side];
+                    const visibleParts = row.changed ? row.parts.filter((part) => left ? !part.added : !part.removed) : [];
+                    return <section key={side} className={`min-w-0 ${full ? "p-3 text-sm leading-6" : "p-2 text-xs leading-5"} ${left ? "" : "border-t md:border-l md:border-t-0"}`} style={{ borderColor: token.colorBorderSecondary, background: row.changed ? left ? token.colorErrorBg : token.colorSuccessBg : undefined }} aria-label={left ? "当前正式内容" : "待确认候选"}>
+                        <div className="mb-1 font-medium md:hidden">{left ? "当前正式内容" : "待确认候选"}</div>
+                        <div className="flex items-start gap-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                            <span className="w-3 shrink-0 select-none text-center" aria-hidden="true" style={{ color: row.changed ? left ? token.colorError : token.colorSuccess : token.colorTextQuaternary }}>{row.changed ? left ? "−" : "+" : "="}</span>
+                            <span className="min-w-0 flex-1">{row.changed ? visibleParts.map((part, partIndex) => <span key={partIndex} style={part.added || part.removed ? { color: left ? token.colorErrorText : token.colorSuccessText, background: left ? token.colorErrorBgHover : token.colorSuccessBgHover, textDecoration: left ? "line-through" : "underline", textUnderlineOffset: 2 } : undefined}>{part.value.join("")}</span>) : value}{row.changed && !value && <span style={muted}>无对应文字</span>}</span>
+                        </div>
+                    </section>;
+                })}
+            </div>)}
+        </>;
+    };
     const planText = conversation?.plan ? taskConversationPlanText(conversation.plan) : "";
     useEffect(() => {
         if (!planText) setPlanDraft(undefined);
@@ -151,27 +173,34 @@ export function TaskConversationWorkspace({ adapter, muted, border }: TaskConver
                 {candidate.summary && <p className="m-0" style={muted}>{candidate.summary}</p>}
                 {candidate.stale && <p className="m-0 text-amber-600" role="status">正式方案未被覆盖。请继续讨论并重新生成候选，再核对后采用。</p>}
                 {candidate.currentContent !== undefined && candidate.candidateContent !== undefined && <>
-                    <div className="flex flex-wrap items-center gap-3" aria-label="候选修改标记"><span style={{ color: token.colorErrorText }}>− 原有内容</span><span style={{ color: token.colorSuccessText }}>+ 改编内容</span><span style={muted}>{comparisonRows.filter((row) => row.changed).length} 处变化</span></div>
+                    <div className="flex flex-wrap items-center gap-3" aria-label="候选修改标记">
+                        <span style={{ color: token.colorErrorText }}>− 原有内容</span><span style={{ color: token.colorSuccessText }}>+ 改编内容</span><span style={muted}>{changedCount} 处变化</span>
+                        <Button className="ml-auto" type="text" size="small" aria-label="全屏对照正式内容与候选" title="全屏对照" icon={<Maximize2 size={14} />} onClick={() => setCompareOpen(true)} />
+                    </div>
                     <div className="max-h-64 overflow-y-auto">
-                        {!comparisonRows.length ? <div className="p-4"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可对照内容" /></div> : <>
-                            <div className="sticky top-0 z-10 hidden grid-cols-2 border-b text-xs font-medium md:grid" style={{ background: token.colorBgContainer, borderColor: token.colorBorderSecondary }}><div className="px-2 py-1.5">当前正式内容</div><div className="border-l px-2 py-1.5" style={{ borderColor: token.colorBorderSecondary }}>待确认候选</div></div>
-                            {comparisonRows.map((row, index) => <div key={index} className="grid grid-cols-1 border-b last:border-b-0 md:grid-cols-2" style={border}>
-                            {(["before", "after"] as const).map((side) => {
-                                const left = side === "before", value = row[side];
-                                const visibleParts = row.changed ? row.parts.filter((part) => left ? !part.added : !part.removed) : [];
-                                return <section key={side} className={`min-w-0 p-2 ${left ? "" : "border-t md:border-l md:border-t-0"}`} style={{ borderColor: token.colorBorderSecondary, background: row.changed ? left ? token.colorErrorBg : token.colorSuccessBg : undefined }} aria-label={left ? "当前正式内容" : "待确认候选"}>
-                                    <div className="mb-1 font-medium md:hidden">{left ? "当前正式内容" : "待确认候选"}</div>
-                                    <div className="flex items-start gap-2 whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">
-                                        <span className="w-3 shrink-0 select-none text-center" aria-hidden="true" style={{ color: row.changed ? left ? token.colorError : token.colorSuccess : token.colorTextQuaternary }}>{row.changed ? left ? "−" : "+" : "="}</span>
-                                        <span className="min-w-0 flex-1">{row.changed ? visibleParts.map((part, partIndex) => <span key={partIndex} style={part.added || part.removed ? { color: left ? token.colorErrorText : token.colorSuccessText, background: left ? token.colorErrorBgHover : token.colorSuccessBgHover, textDecoration: left ? "line-through" : "underline", textUnderlineOffset: 2 } : undefined}>{part.value.join("")}</span>) : value}{row.changed && !value && <span style={muted}>无对应文字</span>}</span>
-                                    </div>
-                                </section>;
-                            })}
-                            </div>)}
-                        </>}
+                        {!comparisonRows.length ? <div className="p-4"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可对照内容" /></div> : renderComparison(false)}
                     </div>
                 </>}
             </div>}
+            <Modal
+                open={compareOpen}
+                title="全屏对照 · 当前正式内容 / 待确认候选"
+                width="min(1400px, 96vw)"
+                style={{ top: 24 }}
+                onCancel={() => setCompareOpen(false)}
+                destroyOnHidden
+                footer={[
+                    adapter.applyCandidate && <Button key="apply" type="primary" loading={busy} disabled={locked || candidate?.stale} onClick={() => { setCompareOpen(false); adapter.applyCandidate?.(); }}>{candidate?.stale ? "候选已过期" : "采用候选"}</Button>,
+                    <Button key="close" onClick={() => setCompareOpen(false)}>关闭</Button>,
+                ]}
+                styles={{ body: { height: "calc(100dvh - 200px)", overflow: "auto", padding: 0 } }}
+            >
+                <div className="flex flex-wrap items-center gap-4 border-b px-3 py-2 text-xs" style={border}>
+                    <span style={{ color: token.colorErrorText }}>− 原有内容</span><span style={{ color: token.colorSuccessText }}>+ 改编内容</span><span style={muted}>共 {changedCount} 处变化</span>
+                    <Switch size="small" checked={onlyChanged} onChange={setOnlyChanged} /> <span style={muted}>只看变化</span>
+                </div>
+                {comparisonRows.length ? renderComparison(true) : <div className="p-8"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可对照内容" /></div>}
+            </Modal>
             {adapter.controls}
 
             <div className="shrink-0 space-y-2 border-t pt-3" style={border}>
